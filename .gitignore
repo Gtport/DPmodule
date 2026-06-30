@@ -3,13 +3,13 @@
 *.env
 !.env.example
 
-# собранные бинарники
+# собранные бинарники (якорь к корню — иначе матчит cmd/server, cmd/migrate, internal/server)
 /bin/
 /build/
 *.exe
-dpmodule
-server
-migrate
+/dpmodule
+/server
+/migrate
 
 # логи
 *.log
@@ -21,3 +21,6 @@ migrate
 .vscode/
 *.swp
 .DS_Store
+
+# клиентские seed-данные справочников — вне репозитория, грузятся per-deployment
+_reference/seed/
