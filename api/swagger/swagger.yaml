@@ -1,0 +1,39 @@
+basePath: /
+host: localhost:8080
+info:
+  contact: {}
+  description: IQPort microservice template.
+  title: IQPort Service API
+  version: "1.0"
+paths:
+  /health:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+      summary: Liveness probe
+      tags:
+      - system
+  /ready:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            type: object
+      summary: Readiness probe — checks DB connectivity
+      tags:
+      - system
+securityDefinitions:
+  BearerAuth:
+    description: 'Keycloak JWT. Format: "Bearer <token>"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+      - "9090:9090"   # /metrics
+    volumes:
+      - ../config.docker.yaml:/etc/app/config.yaml:ro
+      - app_logs:/var/log/iqport
+    environment:
+      PG_PASSWORD: iqport
+      KEYCLOAK_CLIENT_SECRET: ""
+    restart: on-failure
+
+volumes:
+  app_logs:

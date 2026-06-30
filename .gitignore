@@ -1,0 +1,23 @@
+# секреты и локальная конфигурация
+.env
+*.env
+!.env.example
+
+# собранные бинарники
+/bin/
+/build/
+*.exe
+dpmodule
+server
+migrate
+
+# логи
+*.log
+/var/log/
+
+# временное / IDE
+/tmp/
+.idea/
+.vscode/
+*.swp
+.DS_Store

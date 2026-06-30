@@ -1,0 +1,38 @@
+app:
+  name: iqport-service
+  env: dev
+
+http:
+  port: 8080
+  read_timeout: 10s
+  write_timeout: 30s
+  shutdown_timeout: 15s
+
+metrics:
+  port: 9090   # отдельный порт для /metrics; задать = http.port, чтобы отдавать на основном
+
+# enabled: false по умолчанию — образ поднимается без внешних сервисов.
+# DevOps включает нужные зависимости на стенде, выставив enabled: true.
+postgres:
+  enabled: false
+  host: postgres      # имя сервиса в docker-compose
+  port: 5432
+  dbname: iqport
+  user: iqport
+  sslmode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+
+keycloak:
+  enabled: false
+  jwks_url: http://keycloak:8080/realms/iqport/protocol/openid-connect/certs
+  issuer: http://keycloak:8080/realms/iqport
+  audience: iqport-backend
+
+log:
+  level: info
+  file: /var/log/iqport/service.log
+  max_size_mb: 100
+  max_backups: 5
+  max_age_days: 30
