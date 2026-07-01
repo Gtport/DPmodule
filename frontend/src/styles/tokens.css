@@ -1,0 +1,121 @@
+/* ============================================================================
+ * IQPort — дизайн-токены. ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ для всех модулей платформы.
+ * Источник правил: /Users/mac/coding/IQPort_Design_Rules.md (на основе dpport).
+ *
+ * ПРАВИЛО (Design Rules §1.2): модули, склонированные из шаблона, НЕ переопределяют
+ * эти токены и НЕ хардкодят цвета/радиусы/тени — только var(--token).
+ * Соблюдение проверяется stylelint'ом (см. .stylelintrc.json).
+ * ========================================================================== */
+
+:root {
+  /* --- Палитра (§2.1). Брендовый синий — единственный источник истины --- */
+  --color-primary: #1677ff;
+  --color-primary-hover: #40a9ff;
+  --color-primary-active: #096dd9;
+
+  --color-danger: #ff4d4f;
+  --color-danger-hover: #ff7875;
+  --color-success: #52c41a;
+  --color-warning: #fac253;
+  --color-info: #1890ff;
+
+  /* Текст */
+  --color-text: #333333;
+  --color-text-secondary: #666666;
+  --color-text-muted: #999999;
+
+  /* Фон */
+  --color-bg-canvas: #edecec;   /* фон страницы/layout */
+  --color-bg-surface: #ffffff;  /* карточки, модалки, таблицы */
+  --color-bg-subtle: #fafafa;   /* заголовки таблиц, hover-подложки */
+  --color-bg-hover: #f0f0f0;
+
+  /* Границы */
+  --color-border: #e0e0e0;
+  --color-border-light: #f0f0f0;
+  --color-border-dark: #d9d9d9;
+
+  /* Иконки (§2.2): нейтральный серый по умолчанию, синий на hover/active */
+  --color-icon-default: #898484;
+  --color-icon-hover: #40a9ff;
+  --color-icon-active: #096dd9;
+
+  /* Спец-нейтрали */
+  --color-tooltip-bg: #43454a;  /* §10: тёмный фон тултипа */
+
+  /* --- Типографика (§3) --- */
+  --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                      'Helvetica Neue', Arial, sans-serif;
+  --font-size-page-title: 24px;
+  --font-size-card-title: 18px;
+  --font-size-subtitle: 14px;
+  --font-size-base: 14px;
+  --font-size-sm: 12px;
+  --line-height-base: 1.6;
+
+  /* --- Spacing (§4) --- */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  /* --- Радиусы (§5) --- */
+  --radius-sm: 4px;   /* кнопки, инпуты */
+  --radius-md: 6px;   /* карточки, модалки, таблицы */
+  --radius-lg: 8px;   /* dropdown, leaflet popup */
+  --radius-circle: 50%;
+
+  /* --- Тени (§6) --- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.25);  /* dropdown/role switcher */
+
+  /* Фокус-кольцо (§10: = --color-primary @ 20%) */
+  --focus-ring: 0 0 0 2px rgba(22, 119, 255, 0.2);
+
+  /* --- Z-index (§7) --- */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-notification: 1080;
+
+  /* --- Layout (§8). Использовать ТОЛЬКО переменные, не числа (см. §9.2) --- */
+  --layout-sidebar-width: 250px;
+  --layout-sidebar-collapsed-width: 60px;
+  --layout-navbar-height: 64px;
+  --layout-icon-size: 16px;
+  --layout-avatar-size: 32px;
+}
+
+/* --- Тёмная тема (§11). Черновой набор — прогнать через WCAG AA до прода.
+ * brand/статусные цвета НЕ темним, только фон/текст/границы. --- */
+[data-theme='dark'] {
+  --color-bg-canvas: #141414;
+  --color-bg-surface: #1f1f1f;
+  --color-bg-subtle: #1a1a1a;
+  --color-bg-hover: #2a2a2a;
+  --color-text: #e6e6e6;
+  --color-text-secondary: #b0b0b0;
+  --color-text-muted: #808080;
+  --color-border: #303030;
+  --color-border-light: #262626;
+  --color-border-dark: #404040;
+}
+
+/* Базовая типографика страницы на токенах */
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--color-text);
+  background: var(--color-bg-canvas);
+}
+* { box-sizing: border-box; }

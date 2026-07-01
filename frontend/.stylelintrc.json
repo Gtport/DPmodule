@@ -1,0 +1,22 @@
+{
+  "extends": "stylelint-config-standard",
+  "rules": {
+    "color-no-hex": true,
+    "color-named": "never",
+    "declaration-property-value-disallowed-list": {
+      "/^(background|background-color|color|border|border-color|box-shadow|fill|stroke)$/": ["/rgb/", "/rgba/", "/hsl/"]
+    }
+  },
+  "overrides": [
+    {
+      "files": ["src/styles/tokens.css", "src/styles.less"],
+      "rules": {
+        "color-no-hex": null,
+        "color-named": null,
+        "declaration-property-value-disallowed-list": null,
+        "less/no-duplicate-variables": null
+      }
+    }
+  ],
+  "ignoreFiles": ["dist/**", "node_modules/**"]
+}

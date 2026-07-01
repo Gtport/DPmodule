@@ -1,0 +1,41 @@
+/* ============================================================================
+ * Глобальные стили шаблона модуля IQPort.
+ *
+ * Тема ng-zorro задаётся ЧЕРЕЗ Less-переменные (Design Rules §9.4: не CSS-оверрайды
+ * .ant-* классов). Значения — канон из IQPort_Design_Rules.md (§2–§8).
+ *
+ * Порядок важен: сначала импорт ng-zorro.less, затем переопределение переменных
+ * (Less: последнее определение выигрывает для всей области).
+ *
+ * NB: импорт ng-zorro.less требует less javascriptEnabled — в @angular/build
+ * (esbuild) он включён. Если сборка падает на резолве пути — заменить на
+ * '../node_modules/ng-zorro-antd/ng-zorro-antd.less'.
+ * ========================================================================== */
+
+@import 'ng-zorro-antd/ng-zorro-antd.less';
+
+@primary-color: #1677ff;
+@info-color: #1890ff;
+@success-color: #52c41a;
+@warning-color: #fac253;
+@error-color: #ff4d4f;
+
+@text-color: #333333;
+@text-color-secondary: #666666;
+@heading-color: #333333;
+
+@border-color-base: #e0e0e0;
+@border-radius-base: 4px;
+
+@font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+              'Helvetica Neue', Arial, sans-serif;
+@font-size-base: 14px;
+
+@layout-body-background: #edecec;
+@layout-header-height: 64px;
+@component-background: #ffffff;
+
+@box-shadow-base: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+/* Токены IQPort для собственных компонентов (CSS custom properties). */
+@import './styles/tokens.css';

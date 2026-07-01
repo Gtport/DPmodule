@@ -1,0 +1,25 @@
+# Dependencies
+/node_modules
+
+# Build artifacts
+/dist
+/out-tsc
+/.angular
+
+# IDE
+/.idea
+/.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# Env / secrets — never commit
+*.env
+.env.*
+пароли.txt
+credentials_found.txt
+# Keycloak realm export — содержит секреты клиентов и ключи подписи realm
+keycloak/realm-iqport.json
+
+# Logs
+*.log
+npm-debug.log*
