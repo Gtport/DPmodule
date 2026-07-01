@@ -22,6 +22,11 @@ import (
 	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
+// jwksMinRefreshInterval — минимальный интервал между обновлениями JWKS при
+// встрече неизвестного kid. Защищает Keycloak от шторма запросов и одновременно
+// позволяет подхватить ротацию ключей в пределах минуты.
+const jwksMinRefreshInterval = time.Minute
+
 // KeycloakJWT validates Bearer tokens against Keycloak's JWKS endpoint.
 // Keys are cached and refreshed lazily when a matching kid is not found.
 type KeycloakJWT struct {
@@ -91,10 +96,20 @@ func extractBearer(r *http.Request) (string, error) {
 }
 
 func (k *KeycloakJWT) validate(ctx context.Context, raw string) (*auth.Claims, error) {
-	token, err := jwt.Parse(raw, k.keyFunc(ctx),
+	opts := []jwt.ParserOption{
+		jwt.WithValidMethods([]string{"RS256"}), // только RSA/RS256 (Keycloak по умолчанию)
 		jwt.WithIssuer(k.cfg.Issuer),
 		jwt.WithExpirationRequired(),
-	)
+	}
+	// Audience проверяем ТОЛЬКО если он задан в конфиге: пустой audience →
+	// шаблон/дев без aud остаётся рабочим. Когда задан — Keycloak обязан класть
+	// это значение в claim `aud` (audience-mapper на клиенте), иначе токен
+	// отвергается. Закрывает дыру «токен другого клиента проходит».
+	if k.cfg.Audience != "" {
+		opts = append(opts, jwt.WithAudience(k.cfg.Audience))
+	}
+
+	token, err := jwt.Parse(raw, k.keyFunc(ctx), opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +142,13 @@ func (k *KeycloakJWT) getKey(ctx context.Context, kid string) (*rsa.PublicKey, e
 
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if time.Since(k.loadAt) > 5*time.Minute {
+	// Повторная проверка под write-lock: другой поток мог уже загрузить ключ.
+	if key, ok = k.keys[kid]; ok {
+		return key, nil
+	}
+	// Неизвестный kid → обновляем JWKS, но не чаще jwksMinRefreshInterval
+	// (rate-limit против шторма запросов с поддельными kid).
+	if time.Since(k.loadAt) > jwksMinRefreshInterval {
 		if err := k.fetchJWKS(ctx); err != nil {
 			return nil, fmt.Errorf("jwks refresh: %w", err)
 		}
@@ -150,16 +171,24 @@ type jwk struct {
 	E   string `json:"e"`
 }
 
+// jwksHTTPClient — отдельный клиент с таймаутом: не даём загрузке JWKS подвесить
+// запрос (http.DefaultClient таймаута не имеет). Контекст запроса тоже уважается.
+var jwksHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 func (k *KeycloakJWT) fetchJWKS(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, k.cfg.JWKSURL, nil)
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := jwksHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("jwks: unexpected status %d from %s", resp.StatusCode, k.cfg.JWKSURL)
+	}
 
 	var jwks jwksResponse
 	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {

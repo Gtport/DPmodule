@@ -24,3 +24,6 @@
 
 # клиентские seed-данные справочников — вне репозитория, грузятся per-deployment
 _reference/seed/
+
+# локальный dev-Keycloak (realm с тестовыми юзерами/паролями) — вне репозитория
+deploy/keycloak/

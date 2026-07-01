@@ -56,6 +56,7 @@ func Build(
 	if jwtMW != nil {
 		api.Use(jwtMW.Middleware())
 	}
+	handler.NewMeHandler().RegisterRoutes(api)
 
 	return &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.HTTP.Port),
