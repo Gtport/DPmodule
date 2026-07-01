@@ -59,7 +59,7 @@ func Build(
 	handler.NewMeHandler().RegisterRoutes(api)
 
 	return &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.HTTP.Port),
+		Addr:         fmt.Sprintf("%s:%d", cfg.HTTP.Host, cfg.HTTP.Port),
 		Handler:      router,
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
@@ -68,11 +68,11 @@ func Build(
 
 // NewMetricsServer returns a minimal http.Server that serves /metrics only,
 // on its own port — kept off the public API surface.
-func NewMetricsServer(port int) *http.Server {
+func NewMetricsServer(host string, port int) *http.Server {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metrics.StdHandler())
 	return &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
+		Addr:    fmt.Sprintf("%s:%d", host, port),
 		Handler: mux,
 	}
 }
