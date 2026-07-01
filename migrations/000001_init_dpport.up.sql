@@ -94,7 +94,7 @@ CREATE TABLE dpport.dislocation (
     prog_jd            timestamp,
     date_kon           timestamp,
     date_prib          timestamp,
-    is_bam             boolean NOT NULL DEFAULT false,
+    alternative_move   integer NOT NULL DEFAULT 0,
     car_owner_name     text NOT NULL DEFAULT '',
     car_owner_okpo     text NOT NULL DEFAULT '',
     car_tenant_name    text NOT NULL DEFAULT '',

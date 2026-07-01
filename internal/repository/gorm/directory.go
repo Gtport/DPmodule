@@ -21,6 +21,7 @@ type stationModel struct {
 	Road      string   `gorm:"column:road"`
 	Latitude  *float64 `gorm:"column:latitude"`
 	Longitude *float64 `gorm:"column:longitude"`
+	IsBam     bool     `gorm:"column:is_bam"`
 }
 
 func (stationModel) TableName() string { return "stations" }
@@ -80,7 +81,7 @@ func (r *DirectoryRepository) LoadStations(ctx context.Context) ([]domain.Statio
 	for i, m := range ms {
 		out[i] = domain.Station{
 			Kod: m.Kod, Kod4: m.Kod4, Name: m.Name, Road: m.Road,
-			Latitude: m.Latitude, Longitude: m.Longitude,
+			Latitude: m.Latitude, Longitude: m.Longitude, IsBam: m.IsBam,
 		}
 	}
 	return out, nil
