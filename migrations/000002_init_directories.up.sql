@@ -21,7 +21,8 @@ CREATE TABLE dpport.stations (
     name       text    NOT NULL DEFAULT '',    -- → StationNach/StanNazn/StationOper
     road       text    NOT NULL DEFAULT '',    -- → DorogaNach/DorogaOper
     latitude   double precision,               -- → Latitude
-    longitude  double precision                -- → Longitude
+    longitude  double precision,               -- → Longitude
+    is_bam     boolean NOT NULL DEFAULT false   -- признак БАМ (Байкало-Амурская магистраль)
 );
 CREATE INDEX ix_stations_kod_4 ON dpport.stations (kod_4);
 

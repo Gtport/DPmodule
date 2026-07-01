@@ -12,6 +12,7 @@ type Station struct {
 	Road      string   // → DorogaNach / DorogaOper
 	Latitude  *float64 // → Latitude (может отсутствовать)
 	Longitude *float64 // → Longitude
+	IsBam     bool     // признак БАМ (Байкало-Амурская магистраль)
 }
 
 // CargoOperation — справочник операций груза (Stage 1). Ключ: Kod.
