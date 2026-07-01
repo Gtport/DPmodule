@@ -127,7 +127,7 @@ func run() error {
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
-		metricsSrv = server.NewMetricsServer(cfg.Metrics.Port)
+		metricsSrv = server.NewMetricsServer(cfg.HTTP.Host, cfg.Metrics.Port)
 	}
 
 	// -- graceful shutdown --

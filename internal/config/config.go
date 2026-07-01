@@ -23,6 +23,7 @@ type App struct {
 }
 
 type HTTP struct {
+	Host            string        `yaml:"host"` // пусто = все интерфейсы (docker); 127.0.0.1 = только loopback (VPS за nginx)
 	Port            int           `yaml:"port"`
 	ReadTimeout     time.Duration `yaml:"read_timeout"`
 	WriteTimeout    time.Duration `yaml:"write_timeout"`
