@@ -16,7 +16,7 @@ import { provideNzIcons } from 'ng-zorro-antd/icon';
 import {
   MenuOutline, UserOutline, LockOutline, LogoutOutline, SettingOutline, AppstoreOutline,
   DashboardOutline, CalendarOutline, ScheduleOutline, DeploymentUnitOutline,
-  FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline,
+  FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
 } from '@ant-design/icons-angular/icons';
 
 import { routes } from './app.routes';
@@ -30,7 +30,7 @@ registerLocaleData(localeRu);
 const icons = [
   MenuOutline, UserOutline, LockOutline, LogoutOutline, SettingOutline, AppstoreOutline,
   DashboardOutline, CalendarOutline, ScheduleOutline, DeploymentUnitOutline,
-  FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline,
+  FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
 ];
 
 export const appConfig: ApplicationConfig = {
