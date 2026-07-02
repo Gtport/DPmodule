@@ -37,6 +37,7 @@ type DataSourceConfig struct {
 	AllowedExt     []string          `json:"allowed_ext,omitempty"`    // ["xlsx","xls"]
 	MaxMB          int               `json:"max_mb,omitempty"`         // лимит размера файла
 	OkpoMap        map[string]string `json:"okpo_map,omitempty"`       // ОКПО грузополучателя → код порта (AT/NMTP)
+	OkpoColumn     string            `json:"okpo_column,omitempty"`    // заголовок колонки ОКПО грузополучателя
 	HeaderMarker   string            `json:"header_marker,omitempty"`  // текст строки заголовка таблицы
 	DateCutoffHour int               `json:"date_cutoff_hour,omitempty"`
 }

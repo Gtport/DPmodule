@@ -15,6 +15,13 @@ type Config struct {
 	Postgres Postgres `yaml:"postgres"`
 	Keycloak Keycloak `yaml:"keycloak"`
 	Log      Log      `yaml:"log"`
+	Storage  Storage  `yaml:"storage"`
+}
+
+// Storage — локальное файловое хранилище на сервере (вне git). Загруженные
+// файлы ЛК кладутся в <BaseDir>/lk/. По умолчанию "_data".
+type Storage struct {
+	BaseDir string `yaml:"base_dir"`
 }
 
 type App struct {
@@ -165,6 +172,9 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
+	}
+	if cfg.Storage.BaseDir == "" {
+		cfg.Storage.BaseDir = "_data"
 	}
 }
 
