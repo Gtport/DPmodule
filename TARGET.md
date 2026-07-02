@@ -85,7 +85,8 @@
 CREATE TABLE client_settings (
     id                  INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1), -- синглтон
     client_name         TEXT NOT NULL,            -- 'GTport (3 порта)'
-    timezone_offset     INTEGER DEFAULT 7,        -- baseline; смещение per-канал — в data_source.tz_offset_min (§3.10)
+    -- timezone_offset УПРАЗДНЁН: часовых поясов нет (§3.11). Всё время — Московское
+    --   naive; «сейчас» даёт единый clock-хелпер. Никаких смещений в БД.
     -- json_files_count УПРАЗДНЁН: производное от data_source (§3.10),
     --   = count(*) WHERE category='dislocation' AND ingest='api_pull' AND enabled
     sync_enabled        BOOLEAN DEFAULT true,     -- было DISABLE_FILE_SYNC (инверсно)
@@ -103,8 +104,9 @@ CREATE TABLE client_settings (
   токены/ключи (ESAT, Telegram, MAX, Yandex, SMTP-пароль), сертификаты.
   Секретам не место в БД.
 - **`client_settings` (бизнес-параметры, админ меняет без редеплоя):** имя
-  клиента, число файлов, расписание синка, флаги интеграций, пороги, смещение
-  часового пояса, набор фич.
+  клиента, расписание синка, флаги интеграций, пороги приёма (`ingest_policy`),
+  набор фич. (Смещения часового пояса нет — §3.11; число файлов — производное
+  от `data_source`, §3.10.)
 
 Сейчас многое из второй категории сидит в `_env` (`FILE_SYNC_SCHEDULE`,
 `DISABLE_FILE_SYNC`, `AUTO_EXPORT_*`) — это кандидаты на переезд в таблицу.
@@ -349,7 +351,6 @@ CREATE TABLE data_source (
     ingest            TEXT NOT NULL,               -- 'api_pull' | 'upload' (расширяемо: sftp, folder_watch)
     category          TEXT NOT NULL,               -- 'dislocation' | 'plan' | 'tech_state' | 'operation'
     parser_profile_id INTEGER REFERENCES parser_profiles(id),  -- формат (§3.8); profiles.kind = тип парсера
-    tz_offset_min     INTEGER,                     -- смещение времени источника; NULL → client_settings.timezone_offset
     config            JSONB NOT NULL DEFAULT '{}', -- транспорт + пер-файловая валидация
     sort_order        INTEGER NOT NULL DEFAULT 0,
     created_at        TIMESTAMP NOT NULL DEFAULT now(),
@@ -357,24 +358,32 @@ CREATE TABLE data_source (
 );
 ```
 
-> `tz_offset_min` — отдельной колонкой, потому что в GTport смещения **разные по
-> источнику**: ESAT-JSON `+10ч` (600), ЛК/планы `+7ч` (420). Это свойство канала,
-> а не глобальный `client_settings.timezone_offset`.
+> Смещения времени (`tz_offset_min`/`timezone_offset`) в модели **нет намеренно**:
+> часовые пояса запрещены (§3.11). Данные приходят в Московском времени и хранятся
+> как есть; «свежесть» считается против «сейчас по Москве» из clock-хелпера.
 
 **`config` JSONB — контракт по типу приёма** (секреты только ссылками в env):
 
 ```jsonc
-// api_pull (ESAT)
-{ "provider":"esat", "remote_type":"at",
-  "api_key_ref":"env:ESAT_API_KEY", "base_url_ref":"env:ESAT_BASE_URL",
-  "filename_regex":"^at_dis_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})\\.json$",
-  "min_size_kb":200, "max_size_mb":30, "require_newer_than_local":true }
+// api_pull v2 — HTTP-ручка на порт, метка формирования ВНУТРИ тела ответа
+{ "provider":"esat",
+  "endpoint_ref":"env:ESAT_AT_URL",                 // своя ручка на каждый порт (Аттис/НМТП/любой)
+  "auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},
+  "success_field":"status", "success_value":"success",
+  "formation_ts_path":"data.getReferenceSPV4664Response.DATE_IZM", // где метка формирования в теле (уточнить по API)
+  "min_body_kb":200, "max_body_mb":30 }
 
 // upload (ЛК)
 { "detect":["Личный кабинет"],
   "subtype_marker":{"Дислокация вагонов":"lk","Техническое состояние":"vg"},
   "allowed_ext":["xlsx","xls"], "max_mb":10 }
 ```
+
+> Переход с файлов на HTTP: `filename_regex`, `require_newer_than_local` и вся
+> механика скачивания/rename **уходят**. Метка «когда сформировано» берётся не из
+> имени файла, а из тела (`formation_ts_path`); «новее ли» — сравнение этой метки
+> с текущей загруженной дислокацией порта. «Разные ручки для разных портов» = разные
+> строки `data_source`, код общий.
 
 **Связь с существующими сущностями:**
 
@@ -401,11 +410,42 @@ CREATE TABLE data_source (
 ```jsonc
 // client_settings.extra.ingest_policy
 { "dislocation": { "max_gap_minutes":15, "max_staleness_minutes":60,
-                   "reject_older_than_current":true, "reject_older_role_exempt":"administrator" },
+                   "reject_older_than_current":true, "reject_older_role_exempt":"administrator",
+                   "max_data_loss_pct":30 },   // порог потери данных (был хардкод 30 в 3 местах)
   "plan":        { "plan_max_lag_hours":1 } }
 ```
 
+> `max_data_loss_pct` — глобальный порог: обновление отклоняется, если новый набор
+> меньше текущего снимка на ≥ N%. В GTport зашито `30` (продублировано в Stage 0/3/4).
+
 Сид текущего клиента — в разделе 5.
+
+### 3.11. Время: Московское naive, без часовых поясов (жёсткий инвариант)
+
+**Правило (не нарушать):** всё время — в Excel, JSON, в БД, в API — трактуется как
+**Московское без указания часового пояса**. Приложение **не использует часовые
+пояса** и **не корректирует** время: отдаём ровно так, как пришло. Тип — наш
+`LocalTime` (без `Z`, `timestamp without time zone`).
+
+- **«Сейчас» — только по Москве.** Любое сравнение с текущим временем (свежесть,
+  устаревание, «сегодня», окна) берёт «сейчас» из **единого clock-хелпера**
+  `clock.Now()`. Это **единственное** место, где допустим `LoadLocation("Europe/Moscow")`;
+  хелпер возвращает `LocalTime` (naive). Весь остальной код — TZ-free и не зависит
+  от часового пояса сервера (VPS во Франкфурте ≠ Москва).
+- **Запрещено в бизнес-коде:** `time.LoadLocation`, `time.FixedZone`, `.In(...)`,
+  `time.Now().UTC()`, сдвиги-«корректировки» (`Add(±7h/±10h)`), `gocron` не в MSK.
+  В GTport этого много (`GetVladivostokTime`=UTC+10, `+7`/`+10`, `Asia/Vladivostok`) —
+  для нас это **список «не переносить»**, а не образец.
+- **`CreatedAt/UpdatedAt`** и прочие «сейчас»-штампы — через `clock.Now()`, не
+  через голый `time.Now()` (иначе получим время сервера).
+- **Метка формирования выгрузки** — из тела ответа (`data_source.config.formation_ts_path`),
+  как есть, без сдвигов; не из имени файла.
+- **Бизнес-правило «час ≥ 18 → +1 сутки»** (дата рейса `DateNach`, стабильность ID) —
+  это **не** часовой пояс, а операционные сутки; **остаётся** (допустимо хардкодом,
+  сейчас — `DateCutoffHour` в профиле парсера). Единственное сохраняемое «правило дня».
+
+Наш greenfield уже соответствует (LocalTime без `Z`; `+7`/`+10`/`LoadLocation` не
+переносились). Остаётся ввести `clock.Now()` и провести через него штампы времени.
 
 ---
 
@@ -461,27 +501,29 @@ naznach := pc.Naznach
 `enterprise_id`):
 
 ```sql
--- настроечный синглтон (+ межфайловые пороги приёма §3.9/§3.10)
-INSERT INTO client_settings (id, client_name, timezone_offset, extra)
-VALUES (1, 'GTport (3 порта)', 7,
+-- настроечный синглтон (пороги приёма §3.9/§3.10; без timezone — §3.11)
+INSERT INTO client_settings (id, client_name, extra)
+VALUES (1, 'GTport (3 порта)',
   '{"ingest_policy":{"dislocation":{"max_gap_minutes":15,"max_staleness_minutes":60,
-    "reject_older_than_current":true,"reject_older_role_exempt":"administrator"},
+    "reject_older_than_current":true,"reject_older_role_exempt":"administrator",
+    "max_data_loss_pct":30},
     "plan":{"plan_max_lag_hours":1}}}')
 ON CONFLICT (id) DO NOTHING;
 
 -- каналы ввода (§3.10). parser_profile_id проставляется на этапе парсеров.
-INSERT INTO data_source (id, name, ingest, category, tz_offset_min, config) VALUES
- ('json_at',  'Аттис (JSON, ESAT)',         'api_pull','dislocation',600,
-   '{"provider":"esat","remote_type":"at","api_key_ref":"env:ESAT_API_KEY","base_url_ref":"env:ESAT_BASE_URL","filename_regex":"^at_dis_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})\\.json$","min_size_kb":200,"max_size_mb":30,"require_newer_than_local":true}'),
- ('json_nmtp','НМТП (JSON, ESAT)',          'api_pull','dislocation',600,
-   '{"provider":"esat","remote_type":"nmtp","api_key_ref":"env:ESAT_API_KEY","base_url_ref":"env:ESAT_BASE_URL","filename_regex":"^nmtp_dis_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})\\.json$","min_size_kb":200,"max_size_mb":30,"require_newer_than_local":true}'),
- ('lk',       'Дислокация из ЛК РЖД',        'upload',  'dislocation',420,
+-- Без смещений времени (§3.11); JSON — HTTP-ручка на порт, метка формирования в теле.
+INSERT INTO data_source (id, name, ingest, category, config) VALUES
+ ('json_at',  'Аттис (JSON, ESAT)',         'api_pull','dislocation',
+   '{"provider":"esat","endpoint_ref":"env:ESAT_AT_URL","auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},"success_field":"status","success_value":"success","formation_ts_path":"data.getReferenceSPV4664Response.DATE_IZM","min_body_kb":200,"max_body_mb":30}'),
+ ('json_nmtp','НМТП (JSON, ESAT)',          'api_pull','dislocation',
+   '{"provider":"esat","endpoint_ref":"env:ESAT_NMTP_URL","auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},"success_field":"status","success_value":"success","formation_ts_path":"data.getReferenceSPV4664Response.DATE_IZM","min_body_kb":200,"max_body_mb":30}'),
+ ('lk',       'Дислокация из ЛК РЖД',        'upload',  'dislocation',
    '{"detect":["Личный кабинет"],"subtype_marker":{"Дислокация вагонов":"lk"},"allowed_ext":["xlsx","xls"],"max_mb":10}'),
- ('vg',       'Техническое состояние (ЛК)',  'upload',  'tech_state', 420,
+ ('vg',       'Техническое состояние (ЛК)',  'upload',  'tech_state',
    '{"detect":["Техническое состояние"],"allowed_ext":["xlsx","xls"],"max_mb":10}'),
- ('plan_ma',  'План подвода — Мыс Астафьева','upload',  'plan',       420, '{"allowed_ext":["xlsx","xls"],"max_mb":10}'),
- ('plan_nk',  'План подвода — Находка',      'upload',  'plan',       420, '{"allowed_ext":["xlsx","xls"],"max_mb":10}'),
- ('plan_rb',  'План подвода — Рыбники',      'upload',  'plan',       420, '{"allowed_ext":["xlsx","xls"],"max_mb":10}')
+ ('plan_ma',  'План подвода — Мыс Астафьева','upload',  'plan', '{"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('plan_nk',  'План подвода — Находка',      'upload',  'plan', '{"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('plan_rb',  'План подвода — Рыбники',      'upload',  'plan', '{"allowed_ext":["xlsx","xls"],"max_mb":10}')
 ON CONFLICT (id) DO NOTHING;
 
 -- проставить новые атрибуты существующим портам
