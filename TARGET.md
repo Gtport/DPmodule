@@ -68,6 +68,7 @@
 | `report_column_mappings` | 3.2, 4.3 (раскладка отчётов) | новая |
 | `parser_profiles` (+ дочерние) | 5.1, 5.2 (форматы файлов) | новые, поздний этап |
 | `data_source` | число/природа входных потоков (2 JSON + ЛК/ВГ + планы) | новая (§3.10) |
+| `data_source_state` | «последняя загрузка» (была файлами на диске) | новая (§3.10) |
 | `sms_plan_cache` (строковая модель) | 2.4 (колонки port_at/ut/gut) | миграция |
 
 Нигде нет `enterprise_id` — все справочники принадлежат единственному клиенту БД.
@@ -365,12 +366,12 @@ CREATE TABLE data_source (
 **`config` JSONB — контракт по типу приёма** (секреты только ссылками в env):
 
 ```jsonc
-// api_pull v2 — HTTP-ручка на порт, метка формирования ВНУТРИ тела ответа
+// api_pull v2 — HTTP-ручка на порт; метка формирования и count в ЗАГОЛОВКАХ ответа
 { "provider":"esat",
   "endpoint_ref":"env:ESAT_AT_URL",                 // своя ручка на каждый порт (Аттис/НМТП/любой)
   "auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},
   "success_field":"status", "success_value":"success",
-  "formation_ts_path":"data.getReferenceSPV4664Response.DATE_IZM", // где метка формирования в теле (уточнить по API)
+  "headers":{ "count":"X-Count", "formation_ts":"X-Timestamp" }, // имена реальных заголовков — уточнить по API
   "min_body_kb":200, "max_body_mb":30 }
 
 // upload (ЛК)
@@ -380,10 +381,36 @@ CREATE TABLE data_source (
 ```
 
 > Переход с файлов на HTTP: `filename_regex`, `require_newer_than_local` и вся
-> механика скачивания/rename **уходят**. Метка «когда сформировано» берётся не из
-> имени файла, а из тела (`formation_ts_path`); «новее ли» — сравнение этой метки
-> с текущей загруженной дислокацией порта. «Разные ручки для разных портов» = разные
-> строки `data_source`, код общий.
+> механика скачивания/rename **уходят**. Метка «когда сформировано» и `count`
+> берутся из **HTTP-заголовков** ответа (`headers`), а не из имени файла и не из
+> тела — значит свежесть и потерю данных можно проверить **до** парсинга тела, а
+> число распарсенных записей сверить с `count` (integrity-check). «Разные ручки для
+> разных портов» = разные строки `data_source`, код общий.
+
+**Память о предыдущей выгрузке — `data_source_state`.** Раньше «что уже загружено»
+помнили файлы на диске (`findNewestLocalFile`). Файлов нет → нужна явная память
+последней принятой выгрузки на источник. Храним **метаданные** (метка + count), а не
+сам прошлый JSON: сама предыдущая дислокация лежит снимком в `disl_actual`.
+
+```sql
+CREATE TABLE data_source_state (
+    data_source_id    TEXT PRIMARY KEY REFERENCES data_source(id) ON DELETE CASCADE,
+    last_formation_ts TIMESTAMP,   -- метка из заголовка последней ПРИНЯТОЙ выгрузки (Московское naive)
+    last_count        INTEGER,     -- count из заголовка последней принятой
+    last_success_at   TIMESTAMP,   -- когда приняли (clock.Now())
+    last_status       TEXT,        -- 'ok' | 'skipped' | 'error'
+    last_error        TEXT
+);
+```
+
+> Отдельно от `data_source` намеренно: `data_source` — декларативный конфиг
+> (сидируется, правит админ, идёт в git-сид), а это — изменчивое runtime-состояние
+> (пишется каждую синхронизацию). Смешивать нельзя — сид затрёт состояние.
+>
+> Как используется (замена файловой логики): «новее?» = `header.ts >
+> last_formation_ts` иначе `skipped`; потеря данных = падение `header.count` vs
+> `last_count` ≥ `max_data_loss_pct` (до парсинга); разрыв/устаревание — из
+> `ingest_policy` против «сейчас по Москве» (§3.11).
 
 **Связь с существующими сущностями:**
 
@@ -514,9 +541,9 @@ ON CONFLICT (id) DO NOTHING;
 -- Без смещений времени (§3.11); JSON — HTTP-ручка на порт, метка формирования в теле.
 INSERT INTO data_source (id, name, ingest, category, config) VALUES
  ('json_at',  'Аттис (JSON, ESAT)',         'api_pull','dislocation',
-   '{"provider":"esat","endpoint_ref":"env:ESAT_AT_URL","auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},"success_field":"status","success_value":"success","formation_ts_path":"data.getReferenceSPV4664Response.DATE_IZM","min_body_kb":200,"max_body_mb":30}'),
+   '{"provider":"esat","endpoint_ref":"env:ESAT_AT_URL","auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},"success_field":"status","success_value":"success","headers":{"count":"X-Count","formation_ts":"X-Timestamp"},"min_body_kb":200,"max_body_mb":30}'),
  ('json_nmtp','НМТП (JSON, ESAT)',          'api_pull','dislocation',
-   '{"provider":"esat","endpoint_ref":"env:ESAT_NMTP_URL","auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},"success_field":"status","success_value":"success","formation_ts_path":"data.getReferenceSPV4664Response.DATE_IZM","min_body_kb":200,"max_body_mb":30}'),
+   '{"provider":"esat","endpoint_ref":"env:ESAT_NMTP_URL","auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},"success_field":"status","success_value":"success","headers":{"count":"X-Count","formation_ts":"X-Timestamp"},"min_body_kb":200,"max_body_mb":30}'),
  ('lk',       'Дислокация из ЛК РЖД',        'upload',  'dislocation',
    '{"detect":["Личный кабинет"],"subtype_marker":{"Дислокация вагонов":"lk"},"allowed_ext":["xlsx","xls"],"max_mb":10}'),
  ('vg',       'Техническое состояние (ЛК)',  'upload',  'tech_state',
