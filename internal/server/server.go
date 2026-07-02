@@ -12,6 +12,7 @@ import (
 
 	"github.com/Gtport/DPmodule/internal/config"
 	"github.com/Gtport/DPmodule/internal/handler"
+	"github.com/Gtport/DPmodule/internal/port"
 	"github.com/Gtport/DPmodule/internal/service"
 	"github.com/Gtport/DPmodule/pkg/metrics"
 	"github.com/Gtport/DPmodule/pkg/middleware"
@@ -25,6 +26,7 @@ func Build(
 	db *sql.DB,
 	cfgCache *service.ConfigCache,
 	dirCache *service.DirectoryCache,
+	dislRepo port.DislocationRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -67,6 +69,12 @@ func Build(
 	if cfgCache != nil && dirCache != nil {
 		lkIntake := service.NewLKIntake(cfgCache, dirCache, cfg.Storage.BaseDir)
 		handler.NewLKUploadHandler(lkIntake).RegisterRoutes(api)
+
+		// Шаг 2 (обработка в снимок) — требует репозиторий дислокации (БД).
+		if dislRepo != nil {
+			proc := service.NewLKProcessor(lkIntake, dislRepo)
+			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
+		}
 	}
 
 	return &http.Server{

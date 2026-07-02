@@ -27,6 +27,7 @@ import (
 
 	_ "github.com/Gtport/DPmodule/api/swagger"
 	"github.com/Gtport/DPmodule/internal/config"
+	"github.com/Gtport/DPmodule/internal/port"
 	gormrepo "github.com/Gtport/DPmodule/internal/repository/gorm"
 	"github.com/Gtport/DPmodule/internal/server"
 	"github.com/Gtport/DPmodule/internal/service"
@@ -101,8 +102,10 @@ func run() error {
 	var (
 		cfgCache *service.ConfigCache
 		dirCache *service.DirectoryCache
+		dislRepo port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
 	)
 	if db != nil {
+		dislRepo = gormrepo.NewDislocationRepository(db)
 		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
@@ -141,7 +144,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv := server.Build(cfg, sqlDB, cfgCache, dirCache, jwtMW, log, metricsOnMain)
+	srv := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
