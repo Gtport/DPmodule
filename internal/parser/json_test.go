@@ -96,3 +96,38 @@ func TestJSONParser_WrapperNonSuccess(t *testing.T) {
 	_, err := parser.NewJSONParser().ParseBytes(raw)
 	assert.Error(t, err)
 }
+
+func TestJSONParser_NewEnvelope_CountTimestampWagons(t *testing.T) {
+	// Новый формат: count/timestamp в теле, массив под ключом "wagons".
+	// "None" в строковом поле → пусто. VES_GRZ 70000 кг → 70.0 т.
+	raw := []byte(`{
+		"count":2,
+		"timestamp":"2026-07-02T06:04:52.832",
+		"wagons":[
+			{"NOM_VAG":"52275476","STAN_NACH":"937906","DATE_NACH":"2026-06-29T22:09:00.000",
+			 "VES_GRZ":"70000","FREIGHT_EXACT_NAME":"None","CAR_OWNER_NAME":"None"},
+			{"NOM_VAG":"777","STAN_NACH":"100000"}
+		]
+	}`)
+	res, err := parser.NewJSONParser().Parse(raw)
+	require.NoError(t, err)
+	require.Len(t, res.Records, 2)
+
+	assert.Equal(t, "52275476", res.Records[0].Vagon)
+	assert.Equal(t, "937906", res.Records[0].CodeStationNach)
+	assert.Equal(t, "", res.Records[0].FreightExactName) // "None" → пусто
+	assert.Equal(t, "", res.Records[0].CarOwnerName)     // "None" → пусто
+	require.NotNil(t, res.Records[0].Ves)
+	assert.InDelta(t, 70.0, *res.Records[0].Ves, 1e-9)
+
+	// метаданные конверта (для слоя приёма)
+	require.NotNil(t, res.FormationTS)
+	assert.Equal(t, "2026-07-02T06:04:52", res.FormationTS.String()) // без Z, миллисекунды отброшены форматом
+	require.NotNil(t, res.DeclaredCount)
+	assert.Equal(t, 2, *res.DeclaredCount)
+
+	// ParseBytes-совместимость: только записи
+	recs, err := parser.NewJSONParser().ParseBytes(raw)
+	require.NoError(t, err)
+	assert.Len(t, recs, 2)
+}
