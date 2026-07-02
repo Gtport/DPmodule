@@ -35,8 +35,10 @@ type Marka struct {
 	Sms1       string // → CargoSms / Sms1
 }
 
-// Ports — справочник причалов/грузополучателей (Stage 2).
-// Ключ: Okpo+Location (НЕ уникален).
+// Ports — справочник причалов/грузополучателей (Stage 2) + слой настроек/физики
+// (миграция 000004, TARGET.md §3.12). Идентичность порта — по составному ключу
+// Okpo+Location (НЕ уникален: один ОКПО может относиться к нескольким причалам на
+// разных станциях, напр. НМТП → ГУТ-2 (Мыс Астафьева) и УТ-1 (Находка)).
 type Ports struct {
 	Okpo         int64
 	Location     string
@@ -44,4 +46,18 @@ type Ports struct {
 	NameS        string // → GruzpolS (краткое имя причала: УТ-1 / АЭ / ГУТ-2)
 	Name         string
 	Code         string
+
+	// Настроечные/физические поля (000004). pc_* и Front — nil, если род груза не
+	// обрабатывается терминалом. Интервал между поездами (Stage 4) считается из
+	// перерабатывающей способности: interval_h = вагонов × 24 / pc_рода.
+	PlanCode    string // param_s1: 'ma'/'nk'/'rb' — тип плана подвода
+	StationCode string // param_s2: код причальной станции
+	PcCoal      *int   // перераб. способность, ваг/сут, уголь
+	PcMetal     *int   // ... металл
+	PcOther     *int   // ... прочее
+	PcTotal     *int   // суммарно
+	Front       *int   // фронт выгрузки
+	Color       string // цвет отображения
+	Enabled     bool   // at_work
+	SortOrder   int
 }

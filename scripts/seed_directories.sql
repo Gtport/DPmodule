@@ -19,7 +19,7 @@ TRUNCATE stations, cargo_operations, marka, ports RESTART IDENTITY;
 \copy stations(kod,kod_4,name,road,latitude,longitude) FROM '_reference/seed/stations.csv' WITH (FORMAT csv, HEADER true)
 \copy cargo_operations(kod,oper,oper_s) FROM '_reference/seed/cargo_operations.csv' WITH (FORMAT csv, HEADER true)
 \copy marka(okpo,station_kod,cargo_kod,shipper,cargo_s,client,cargo_group,sms_1) FROM '_reference/seed/marka.csv' WITH (FORMAT csv, HEADER true)
-\copy ports(okpo,location,organisation,name_s,name,code) FROM '_reference/seed/ports.csv' WITH (FORMAT csv, HEADER true)
+\copy ports(okpo,location,organisation,name_s,name,code,plan_code,station_code,pc_coal,pc_metal,pc_other,pc_total,front,color,enabled) FROM '_reference/seed/ports.csv' WITH (FORMAT csv, HEADER true)
 
 -- Контроль загрузки:
 SELECT 'stations' AS tbl, count(*) FROM stations

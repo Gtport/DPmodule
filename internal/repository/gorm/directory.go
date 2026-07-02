@@ -56,6 +56,17 @@ type portsModel struct {
 	NameS        string `gorm:"column:name_s"`
 	Name         string `gorm:"column:name"`
 	Code         string `gorm:"column:code"`
+	// Слой настроек/физики (000004).
+	PlanCode    string `gorm:"column:plan_code"`
+	StationCode string `gorm:"column:station_code"`
+	PcCoal      *int   `gorm:"column:pc_coal"`
+	PcMetal     *int   `gorm:"column:pc_metal"`
+	PcOther     *int   `gorm:"column:pc_other"`
+	PcTotal     *int   `gorm:"column:pc_total"`
+	Front       *int   `gorm:"column:front"`
+	Color       string `gorm:"column:color"`
+	Enabled     bool   `gorm:"column:enabled"`
+	SortOrder   int    `gorm:"column:sort_order"`
 }
 
 func (portsModel) TableName() string { return "ports" }
@@ -125,6 +136,9 @@ func (r *DirectoryRepository) LoadPorts(ctx context.Context) ([]domain.Ports, er
 		out[i] = domain.Ports{
 			Okpo: m.Okpo, Location: m.Location, Organisation: m.Organisation,
 			NameS: m.NameS, Name: m.Name, Code: m.Code,
+			PlanCode: m.PlanCode, StationCode: m.StationCode,
+			PcCoal: m.PcCoal, PcMetal: m.PcMetal, PcOther: m.PcOther, PcTotal: m.PcTotal,
+			Front: m.Front, Color: m.Color, Enabled: m.Enabled, SortOrder: m.SortOrder,
 		}
 	}
 	return out, nil
