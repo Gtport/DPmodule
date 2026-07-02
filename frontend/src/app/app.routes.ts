@@ -1,6 +1,20 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
 import { ShellComponent } from './layout/shell/shell.component';
+import { PlaceholderComponent } from './features/placeholder/placeholder.component';
+import { DISPATCHER_NAV } from './layout/shell/nav.config';
+
+// Разделы диспетчера — генерируем из реестра навигации: каждый пункт (кроме
+// external, напр. home) → маршрут на общую заглушку с title/icon и RBAC по ролям.
+// При переносе раздела из GTport заменяем PlaceholderComponent на реальный.
+const dispatcherRoutes: Routes = DISPATCHER_NAV
+  .filter((i) => !i.external)
+  .map((i) => ({
+    path: i.path,
+    component: PlaceholderComponent,
+    canActivate: [authGuard],
+    data: { title: i.label, icon: i.icon, roles: i.roles },
+  }));
 
 export const routes: Routes = [
   {
@@ -19,13 +33,7 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/home/home.component').then((m) => m.HomeComponent),
       },
-      // Пример роута с RBAC — открыт только роли admin:
-      // {
-      //   path: 'admin',
-      //   canActivate: [authGuard],
-      //   data: { roles: ['admin'] },
-      //   loadComponent: () => import('./features/admin/admin.component').then(m => m.AdminComponent),
-      // },
+      ...dispatcherRoutes,
       {
         path: 'forbidden',
         loadComponent: () =>

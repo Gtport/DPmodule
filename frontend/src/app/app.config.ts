@@ -17,9 +17,13 @@ import {
   MenuOutline, UserOutline, LockOutline, LogoutOutline, SettingOutline, AppstoreOutline,
   DashboardOutline, CalendarOutline, ScheduleOutline, DeploymentUnitOutline,
   FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
+  SwapOutline, GlobalOutline, BarChartOutline, LineChartOutline,
+  // Сплошные (fill) — как в GTport; сайдбар диспетчера использует именно их.
+  HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
 } from '@ant-design/icons-angular/icons';
 
 import { routes } from './app.routes';
+import { CUSTOM_ICONS } from './core/config/custom-icons';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { AuthService } from './core/auth/auth.service';
 
@@ -31,6 +35,9 @@ const icons = [
   MenuOutline, UserOutline, LockOutline, LogoutOutline, SettingOutline, AppstoreOutline,
   DashboardOutline, CalendarOutline, ScheduleOutline, DeploymentUnitOutline,
   FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
+  SwapOutline, GlobalOutline, BarChartOutline, LineChartOutline,
+  HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
+  ...CUSTOM_ICONS,
 ];
 
 export const appConfig: ApplicationConfig = {
