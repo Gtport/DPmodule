@@ -34,7 +34,6 @@ func sampleConfig() *stubConfigRepo {
 					Detect:         []string{"Личный кабинет"},
 					AllowedExt:     []string{"xlsx", "xls"},
 					MaxMB:          10,
-					OkpoMap:        map[string]string{"10230304": "AT", "1126022": "NMTP"},
 					HeaderMarker:   "Номер вагона",
 					DateCutoffHour: 18,
 				},
@@ -84,16 +83,6 @@ func TestConfigCache_LoadAndLookup(t *testing.T) {
 
 		plans := c.EnabledByCategory(domain.CategoryPlan)
 		assert.Empty(t, plans) // plan_ma выключен
-	})
-
-	t.Run("okpo → port + ожидаемые порты", func(t *testing.T) {
-		ds, _ := c.DataSource("lk")
-		port, ok := ds.Config.PortByOkpo("10230304")
-		require.True(t, ok)
-		assert.Equal(t, "AT", port)
-		_, ok = ds.Config.PortByOkpo("000")
-		assert.False(t, ok)
-		assert.ElementsMatch(t, []string{"AT", "NMTP"}, ds.Config.ExpectedPorts())
 	})
 
 	t.Run("пороги приёма", func(t *testing.T) {

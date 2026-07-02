@@ -63,7 +63,9 @@ func (h *lkUploadHandler) upload(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"port":         res.Port,
+		"okpo":         res.Okpo,
+		"organisation": res.Organisation,
+		"terminals":    res.Terminals,
 		"formation_ts": res.FormationTS,
 		"filename":     res.Filename,
 		"replaced":     res.Replaced,
