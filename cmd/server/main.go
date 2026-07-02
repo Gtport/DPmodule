@@ -110,6 +110,19 @@ func run() error {
 			zap.Int("marka", markaN),
 			zap.Int("ports", portsN),
 		)
+
+		// Настроечная таблица (data_source, client_settings) — в RAM при старте.
+		// Слой приёма (загрузка/обработка ЛК) читает контроль отсюда.
+		cfgCache := service.NewConfigCache(gormrepo.NewConfigRepository(db))
+		if err := cfgCache.Load(context.Background()); err != nil {
+			return fmt.Errorf("config cache: %w", err)
+		}
+		srcTotal, srcEnabled := cfgCache.Counts()
+		log.Info("config cache loaded",
+			zap.Int("data_sources", srcTotal),
+			zap.Int("enabled", srcEnabled),
+			zap.String("client", cfgCache.Settings().ClientName),
+		)
 	}
 
 	// -- auth middleware (optional) --
