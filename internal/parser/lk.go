@@ -11,6 +11,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
@@ -309,7 +310,7 @@ func (p *LKParser) parseRow(row []string, colIndexes map[string]int) domain.Disl
 	// Поля, которых нет в выгрузке ЛК (заполняются из JSON/эндпоинта):
 	//   FreightExactName, GtdNumber, Zayavka (ГУ-12), CarOwnerName/Okpo, CarTenantName/Okpo.
 
-	now := domain.LocalTime(time.Now())
+	now := clock.Now() // московское naive-время (§3.11), не time.Now()
 	r.CreatedAt = now
 	r.UpdatedAt = now
 
