@@ -91,14 +91,6 @@
   --layout-navbar-height: 64px;
   --layout-icon-size: 16px;
   --layout-avatar-size: 32px;
-
-  /* --- Компактный сайдбар (фирменная гамма GTport) --- */
-  --color-sidebar-bg: #0971d6;                        /* фирменный синий GTport */
-  --color-sidebar-active-bg: #4f5155;                 /* активный пункт */
-  --color-sidebar-item: rgba(255, 255, 255, 0.8);     /* иконка в покое */
-  --color-sidebar-item-hover-bg: rgba(255, 255, 255, 0.15);
-  --color-sidebar-accent-bg: rgba(255, 255, 255, 0.1); /* лого / бейдж роли */
-  --color-sidebar-border: rgba(255, 255, 255, 0.1);
 }
 
 /* --- Тёмная тема (§11). Черновой набор — прогнать через WCAG AA до прода.
