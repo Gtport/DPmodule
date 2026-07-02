@@ -12,6 +12,7 @@ import (
 
 	"github.com/Gtport/DPmodule/internal/config"
 	"github.com/Gtport/DPmodule/internal/handler"
+	"github.com/Gtport/DPmodule/internal/service"
 	"github.com/Gtport/DPmodule/pkg/metrics"
 	"github.com/Gtport/DPmodule/pkg/middleware"
 )
@@ -22,6 +23,7 @@ import (
 func Build(
 	cfg *config.Config,
 	db *sql.DB,
+	cfgCache *service.ConfigCache,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -57,6 +59,13 @@ func Build(
 		api.Use(jwtMW.Middleware())
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
+
+	// Приём файлов ЛК (шаг 1) — только если настроечная таблица загружена
+	// (требует БД). Контроль приёма читается из ConfigCache.
+	if cfgCache != nil {
+		lkIntake := service.NewLKIntake(cfgCache, cfg.Storage.BaseDir)
+		handler.NewLKUploadHandler(lkIntake).RegisterRoutes(api)
+	}
 
 	return &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.HTTP.Host, cfg.HTTP.Port),
