@@ -179,6 +179,25 @@ func (c *DirectoryCache) PortsByOkpo(okpo int64) ([]domain.Ports, bool) {
 	return p, ok
 }
 
+// EnabledOkpos возвращает отсортированное множество ОКПО, у которых есть хотя бы
+// один активный терминал. Для контроля приёма ЛК: какие грузополучатели ожидаются
+// (пока единственный канал 'lk' питает всех; при связке port→data_source сузим).
+func (c *DirectoryCache) EnabledOkpos() []int64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]int64, 0, len(c.portsByOkpo))
+	for okpo, ports := range c.portsByOkpo {
+		for _, p := range ports {
+			if p.Enabled {
+				out = append(out, okpo)
+				break
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
 // GetRouteSpeed возвращает участки скоростного профиля (по убыванию FromKm) для
 // станции отправления: сначала точный профиль (stationNach, isBam), при отсутствии —
 // профиль по умолчанию (DefaultRouteProfile, isBam). Это data-driven аналог

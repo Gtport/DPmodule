@@ -17,13 +17,14 @@ import (
 // ──────────────────────────────────────────────────────────────────────────
 
 type dataSourceModel struct {
-	ID        string `gorm:"column:id;primaryKey"`
-	Name      string `gorm:"column:name"`
-	Enabled   bool   `gorm:"column:enabled"`
-	Ingest    string `gorm:"column:ingest"`
-	Category  string `gorm:"column:category"`
-	Config    string `gorm:"column:config"` // jsonb → text
-	SortOrder int    `gorm:"column:sort_order"`
+	ID             string `gorm:"column:id;primaryKey"`
+	Name           string `gorm:"column:name"`
+	Enabled        bool   `gorm:"column:enabled"`
+	Ingest         string `gorm:"column:ingest"`
+	Category       string `gorm:"column:category"`
+	Config         string `gorm:"column:config"` // jsonb → text
+	CoArrivalGroup string `gorm:"column:co_arrival_group"`
+	SortOrder      int    `gorm:"column:sort_order"`
 }
 
 func (dataSourceModel) TableName() string { return "data_source" }
@@ -64,7 +65,7 @@ func (r *ConfigRepository) LoadDataSources(ctx context.Context) ([]domain.DataSo
 		out[i] = domain.DataSource{
 			ID: m.ID, Name: m.Name, Enabled: m.Enabled,
 			Ingest: m.Ingest, Category: m.Category,
-			Config: cfg, SortOrder: m.SortOrder,
+			Config: cfg, CoArrivalGroup: m.CoArrivalGroup, SortOrder: m.SortOrder,
 		}
 	}
 	return out, nil

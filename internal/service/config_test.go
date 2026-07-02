@@ -30,6 +30,7 @@ func sampleConfig() *stubConfigRepo {
 			{
 				ID: "lk", Name: "Дислокация из ЛК РЖД", Enabled: true,
 				Ingest: domain.IngestUpload, Category: domain.CategoryDislocation,
+				CoArrivalGroup: "dislocation",
 				Config: domain.DataSourceConfig{
 					Detect:         []string{"Личный кабинет"},
 					AllowedExt:     []string{"xlsx", "xls"},

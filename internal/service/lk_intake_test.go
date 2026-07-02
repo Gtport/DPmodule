@@ -44,9 +44,9 @@ func newIntake(t *testing.T) (*service.LKIntake, string) {
 	// Справочник ports для идентификации «чей файл» по ОКПО (окпо не уникален:
 	// 1126022 → два терминала). 10230304 → один (АЭ).
 	dc := service.NewDirectoryCache(&stubDirRepo{ports: []domain.Ports{
-		{Okpo: 10230304, Location: "МЫС АСТАФЬЕВА", Organisation: `ООО КОМПАНИЯ "АТТИС ЭНТЕРПРАЙС"`, NameS: "АЭ"},
-		{Okpo: 1126022, Location: "МЫС АСТАФЬЕВА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "ГУТ-2"},
-		{Okpo: 1126022, Location: "НАХОДКА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "УТ-1"},
+		{Okpo: 10230304, Location: "МЫС АСТАФЬЕВА", Organisation: `ООО КОМПАНИЯ "АТТИС ЭНТЕРПРАЙС"`, NameS: "АЭ", Enabled: true},
+		{Okpo: 1126022, Location: "МЫС АСТАФЬЕВА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "ГУТ-2", Enabled: true},
+		{Okpo: 1126022, Location: "НАХОДКА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "УТ-1", Enabled: true},
 	}})
 	require.NoError(t, dc.Load(context.Background()))
 
