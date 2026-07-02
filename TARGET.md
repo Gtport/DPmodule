@@ -67,6 +67,8 @@
 | `cargo_split_profiles` + `cargo_split_buckets` | 2.1, 2.3, 6.2 (уголь/металл/чугун) | новые |
 | `report_column_mappings` | 3.2, 4.3 (раскладка отчётов) | новая |
 | `parser_profiles` (+ дочерние) | 5.1, 5.2 (форматы файлов) | новые, поздний этап |
+| `data_source` | число/природа входных потоков (2 JSON + ЛК/ВГ + планы) | новая (§3.10) |
+| `data_source_state` | «последняя загрузка» (была файлами на диске) | новая (§3.10) |
 | `sms_plan_cache` (строковая модель) | 2.4 (колонки port_at/ut/gut) | миграция |
 
 Нигде нет `enterprise_id` — все справочники принадлежат единственному клиенту БД.
@@ -84,8 +86,10 @@
 CREATE TABLE client_settings (
     id                  INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1), -- синглтон
     client_name         TEXT NOT NULL,            -- 'GTport (3 порта)'
-    timezone_offset     INTEGER DEFAULT 7,        -- сейчас зашито (+7 МСК, timeOffset)
-    json_files_count    INTEGER DEFAULT 2,        -- «сколько файлов парсим»
+    -- timezone_offset УПРАЗДНЁН: часовых поясов нет (§3.11). Всё время — Московское
+    --   naive; «сейчас» даёт единый clock-хелпер. Никаких смещений в БД.
+    -- json_files_count УПРАЗДНЁН: производное от data_source (§3.10),
+    --   = count(*) WHERE category='dislocation' AND ingest='api_pull' AND enabled
     sync_enabled        BOOLEAN DEFAULT true,     -- было DISABLE_FILE_SYNC (инверсно)
     sync_schedule       TEXT,                     -- было FILE_SYNC_SCHEDULE
     data_loss_threshold NUMERIC DEFAULT 30,       -- сейчас зашитые 30%
@@ -101,8 +105,9 @@ CREATE TABLE client_settings (
   токены/ключи (ESAT, Telegram, MAX, Yandex, SMTP-пароль), сертификаты.
   Секретам не место в БД.
 - **`client_settings` (бизнес-параметры, админ меняет без редеплоя):** имя
-  клиента, число файлов, расписание синка, флаги интеграций, пороги, смещение
-  часового пояса, набор фич.
+  клиента, расписание синка, флаги интеграций, пороги приёма (`ingest_policy`),
+  набор фич. (Смещения часового пояса нет — §3.11; число файлов — производное
+  от `data_source`, §3.10.)
 
 Сейчас многое из второй категории сидит в `_env` (`FILE_SYNC_SCHEDULE`,
 `DISABLE_FILE_SYNC`, `AUTO_EXPORT_*`) — это кандидаты на переезд в таблицу.
@@ -282,6 +287,193 @@ CREATE TABLE parser_synonyms (     -- синонимы станций (NK)
 > **Реализуется в последнюю очередь** — после проверки модели на новом наборе
 > портов.
 
+### 3.9. Пороги приёма (temporal guardrails) — перенести с фронта на бэк
+
+⚠️ **Важно при переносе фронта.** В GTport проверки временной согласованности
+при загрузке дислокации живут во **фронтенде** (`client/src/components/`), а не в
+бэке. Раз фронт переписываем заново — эти бизнес-правила легко потерять. Бэк
+сейчас стережёт только наличие файлов, их парсинг и свежесть по каждому источнику
+(remote новее local); **проверки «разрыва по времени» между файлами на бэке нет**,
+а `parse_lk.go` при нескольких файлах — просто конкатенация без сверки окна.
+
+Правила «как есть» (все — во фронте; жёсткая только про откат на старое):
+
+| Правило | Порог | Источник в GTport | Тип |
+|---|---|---|---|
+| Разрыв между файлами (спред max−min времени формирования при 2+ файлах) | **15 мин** | `LKManager2.tsx:463` | мягкая (подтверждение) |
+| Устаревание относительно времени сервера | **60 мин** | `LKManager2.tsx:502` | мягкая |
+| Файл старше текущей дислокации (сравнение по терминалу: AT↔`d_attis`, NMTP↔`d_nmtp`) | — | `LKManager2.tsx:221,375` | **жёсткая** (не-админ); админу предупреждение |
+| Дислокация слишком стара для плана (план позже самой старой из двух дислокаций) | **1 час** | `FileUploader.tsx:247` | жёсткая (только планы ma/nk/rb) |
+
+**Целевое решение:** перенести эти проверки в **бэкенд, в слой приёма** (перед
+слиянием в `ProcessDislocation`), а пороги сделать данными — полями профиля
+источника/приёма (`data_source`/`parser_profiles.settings` JSONB), не хардкодом:
+
+```jsonc
+// settings профиля приёма
+{
+  "max_gap_minutes": 15,          // макс. разрыв между файлами одной загрузки
+  "max_staleness_minutes": 60,    // устаревание относительно "сейчас"
+  "reject_older_than_current": true,   // запрет отката на старую дислокацию…
+  "reject_older_role_exempt": "administrator",  // …кроме этой роли (предупреждение)
+  "plan_max_lag_hours": 1         // для плановых файлов
+}
+```
+
+Плюс это чинит текущую дыру: жёсткие проверки, что живут только в UI, сейчас
+обходятся запросом мимо фронта. Реализуется вместе со слоем приёма (после
+`data_source`), не в парсере.
+
+### 3.10. `data_source` — реестр каналов ввода (ключевая для универсальности)
+
+Сейчас в GTport число и природа входных потоков **зашиты** (два JSON `at`/`nmtp`
+из ESAT, Excel ЛК/ВГ, три плана). Чтобы предприятие настраивалось «под себя»
+(один поток или несколько) **без правок кода**, каждый поток описывается строкой
+`data_source`. Движок приёма читает таблицу и не содержит ни одного зашитого
+`at`/`ma`/«Личный кабинет».
+
+**Три слоя (не путать и не дублировать):**
+
+```
+data_source     → КАНАЛ:        откуда берём, когда, чем валидируем   (транспорт/приём)
+   ├─ parser_profile_id → ФОРМАТ:      как читать байты (колонки, header, variant)  [§3.8]
+   └─ (записи → порт)   → ИДЕНТИЧНОСТЬ: station/ОКПО → порт через справочники       [§3.2/§4]
+```
+
+`data_source` **ссылается** на `parser_profiles` (§3.8), а не поглощает его: один
+формат («lk_new») может переиспользоваться несколькими каналами. Привязка записи
+к порту — не здесь, а по данным (код станции, ОКПО) через реестр портов.
+
+```sql
+CREATE TABLE data_source (
+    id                TEXT PRIMARY KEY,            -- 'json_at', 'lk', 'plan_ma'
+    name              TEXT NOT NULL,               -- 'Аттис (JSON, ESAT)'
+    enabled           BOOLEAN NOT NULL DEFAULT true,
+    ingest            TEXT NOT NULL,               -- 'api_pull' | 'upload' (расширяемо: sftp, folder_watch)
+    category          TEXT NOT NULL,               -- 'dislocation' | 'plan' | 'tech_state' | 'operation'
+    parser_profile_id INTEGER REFERENCES parser_profiles(id),  -- формат (§3.8); profiles.kind = тип парсера
+    config            JSONB NOT NULL DEFAULT '{}', -- транспорт + пер-файловая валидация
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    created_at        TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMP NOT NULL DEFAULT now()
+);
+```
+
+> Смещения времени (`tz_offset_min`/`timezone_offset`) в модели **нет намеренно**:
+> часовые пояса запрещены (§3.11). Данные приходят в Московском времени и хранятся
+> как есть; «свежесть» считается против «сейчас по Москве» из clock-хелпера.
+
+**`config` JSONB — контракт по типу приёма** (секреты только ссылками в env):
+
+```jsonc
+// api_pull v2 — HTTP-ручка на порт; метка формирования и count в ЗАГОЛОВКАХ ответа
+{ "provider":"esat",
+  "endpoint_ref":"env:ESAT_AT_URL",                 // своя ручка на каждый порт (Аттис/НМТП/любой)
+  "auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},
+  "success_field":"status", "success_value":"success",
+  "headers":{ "count":"X-Count", "formation_ts":"X-Timestamp" }, // имена реальных заголовков — уточнить по API
+  "min_body_kb":200, "max_body_mb":30 }
+
+// upload (ЛК)
+{ "detect":["Личный кабинет"],
+  "subtype_marker":{"Дислокация вагонов":"lk","Техническое состояние":"vg"},
+  "allowed_ext":["xlsx","xls"], "max_mb":10 }
+```
+
+> Переход с файлов на HTTP: `filename_regex`, `require_newer_than_local` и вся
+> механика скачивания/rename **уходят**. Метка «когда сформировано» и `count`
+> берутся из **HTTP-заголовков** ответа (`headers`), а не из имени файла и не из
+> тела — значит свежесть и потерю данных можно проверить **до** парсинга тела, а
+> число распарсенных записей сверить с `count` (integrity-check). «Разные ручки для
+> разных портов» = разные строки `data_source`, код общий.
+
+**Память о предыдущей выгрузке — `data_source_state`.** Раньше «что уже загружено»
+помнили файлы на диске (`findNewestLocalFile`). Файлов нет → нужна явная память
+последней принятой выгрузки на источник. Храним **метаданные** (метка + count), а не
+сам прошлый JSON: сама предыдущая дислокация лежит снимком в `disl_actual`.
+
+```sql
+CREATE TABLE data_source_state (
+    data_source_id    TEXT PRIMARY KEY REFERENCES data_source(id) ON DELETE CASCADE,
+    last_formation_ts TIMESTAMP,   -- метка из заголовка последней ПРИНЯТОЙ выгрузки (Московское naive)
+    last_count        INTEGER,     -- count из заголовка последней принятой
+    last_success_at   TIMESTAMP,   -- когда приняли (clock.Now())
+    last_status       TEXT,        -- 'ok' | 'skipped' | 'error'
+    last_error        TEXT
+);
+```
+
+> Отдельно от `data_source` намеренно: `data_source` — декларативный конфиг
+> (сидируется, правит админ, идёт в git-сид), а это — изменчивое runtime-состояние
+> (пишется каждую синхронизацию). Смешивать нельзя — сид затрёт состояние.
+>
+> Как используется (замена файловой логики): «новее?» = `header.ts >
+> last_formation_ts` иначе `skipped`; потеря данных = падение `header.count` vs
+> `last_count` ≥ `max_data_loss_pct` (до парсинга); разрыв/устаревание — из
+> `ingest_policy` против «сейчас по Москве» (§3.11).
+
+**Связь с существующими сущностями:**
+
+- `client_settings.json_files_count` становится **производным** = число `enabled`
+  источников `category='dislocation' AND ingest='api_pull'` (сейчас 2: at+nmtp).
+  Как хранимое поле — упраздняем (см. правку §3.1).
+- `ports.file_code` ('AT'/'NMTP') сейчас смешивает «имя файла» и «идентичность
+  порта»: regex/имя файла уходит в `data_source`, `ports.file_code` остаётся лишь
+  для сопоставления «данные → порт».
+- Профиль парсера ЛК из кода (`parser.SourceProfile`: `HeaderMarker`,
+  `DateCutoffHour`) ложится в **`parser_profiles`** (`header_marker` +
+  `settings.date_cutoff_hour`), а `data_source` на него ссылается. То есть уже
+  реализованный `SourceProfile` — это прото-строка `parser_profiles`, не
+  `data_source`.
+
+**Пороги приёма (§3.9) — разделение по природе:**
+
+- пер-файловые (размер, устаревание файла, «старше текущей дислокации своего
+  терминала») → `data_source.config`;
+- межфайловые/на загрузку целиком (разрыв 15 мин между файлами одной загрузки,
+  «план на 1ч позже дислокации») → **`client_settings`** (JSONB `ingest_policy`
+  по категориям) — это про отношение источников, одному каналу не принадлежит.
+
+```jsonc
+// client_settings.extra.ingest_policy
+{ "dislocation": { "max_gap_minutes":15, "max_staleness_minutes":60,
+                   "reject_older_than_current":true, "reject_older_role_exempt":"administrator",
+                   "max_data_loss_pct":30 },   // порог потери данных (был хардкод 30 в 3 местах)
+  "plan":        { "plan_max_lag_hours":1 } }
+```
+
+> `max_data_loss_pct` — глобальный порог: обновление отклоняется, если новый набор
+> меньше текущего снимка на ≥ N%. В GTport зашито `30` (продублировано в Stage 0/3/4).
+
+Сид текущего клиента — в разделе 5.
+
+### 3.11. Время: Московское naive, без часовых поясов (жёсткий инвариант)
+
+**Правило (не нарушать):** всё время — в Excel, JSON, в БД, в API — трактуется как
+**Московское без указания часового пояса**. Приложение **не использует часовые
+пояса** и **не корректирует** время: отдаём ровно так, как пришло. Тип — наш
+`LocalTime` (без `Z`, `timestamp without time zone`).
+
+- **«Сейчас» — только по Москве.** Любое сравнение с текущим временем (свежесть,
+  устаревание, «сегодня», окна) берёт «сейчас» из **единого clock-хелпера**
+  `clock.Now()`. Это **единственное** место, где допустим `LoadLocation("Europe/Moscow")`;
+  хелпер возвращает `LocalTime` (naive). Весь остальной код — TZ-free и не зависит
+  от часового пояса сервера (VPS во Франкфурте ≠ Москва).
+- **Запрещено в бизнес-коде:** `time.LoadLocation`, `time.FixedZone`, `.In(...)`,
+  `time.Now().UTC()`, сдвиги-«корректировки» (`Add(±7h/±10h)`), `gocron` не в MSK.
+  В GTport этого много (`GetVladivostokTime`=UTC+10, `+7`/`+10`, `Asia/Vladivostok`) —
+  для нас это **список «не переносить»**, а не образец.
+- **`CreatedAt/UpdatedAt`** и прочие «сейчас»-штампы — через `clock.Now()`, не
+  через голый `time.Now()` (иначе получим время сервера).
+- **Метка формирования выгрузки** — из тела ответа (`data_source.config.formation_ts_path`),
+  как есть, без сдвигов; не из имени файла.
+- **Бизнес-правило «час ≥ 18 → +1 сутки»** (дата рейса `DateNach`, стабильность ID) —
+  это **не** часовой пояс, а операционные сутки; **остаётся** (допустимо хардкодом,
+  сейчас — `DateCutoffHour` в профиле парсера). Единственное сохраняемое «правило дня».
+
+Наш greenfield уже соответствует (LocalTime без `Z`; `+7`/`+10`/`LoadLocation` не
+переносились). Остаётся ввести `clock.Now()` и провести через него штампы времени.
+
 ---
 
 ## 4. Слой доступа: реестр портов (ключевой для рефакторинга)
@@ -336,9 +528,29 @@ naznach := pc.Naznach
 `enterprise_id`):
 
 ```sql
--- настроечный синглтон
-INSERT INTO client_settings (id, client_name, timezone_offset, json_files_count)
-VALUES (1, 'GTport (3 порта)', 7, 2)
+-- настроечный синглтон (пороги приёма §3.9/§3.10; без timezone — §3.11)
+INSERT INTO client_settings (id, client_name, extra)
+VALUES (1, 'GTport (3 порта)',
+  '{"ingest_policy":{"dislocation":{"max_gap_minutes":15,"max_staleness_minutes":60,
+    "reject_older_than_current":true,"reject_older_role_exempt":"administrator",
+    "max_data_loss_pct":30},
+    "plan":{"plan_max_lag_hours":1}}}')
+ON CONFLICT (id) DO NOTHING;
+
+-- каналы ввода (§3.10). parser_profile_id проставляется на этапе парсеров.
+-- Без смещений времени (§3.11); JSON — HTTP-ручка на порт, метка формирования в теле.
+INSERT INTO data_source (id, name, ingest, category, config) VALUES
+ ('json_at',  'Аттис (JSON, ESAT)',         'api_pull','dislocation',
+   '{"provider":"esat","endpoint_ref":"env:ESAT_AT_URL","auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},"success_field":"status","success_value":"success","headers":{"count":"X-Count","formation_ts":"X-Timestamp"},"min_body_kb":200,"max_body_mb":30}'),
+ ('json_nmtp','НМТП (JSON, ESAT)',          'api_pull','dislocation',
+   '{"provider":"esat","endpoint_ref":"env:ESAT_NMTP_URL","auth":{"header":"X-API-Key","key_ref":"env:ESAT_API_KEY"},"success_field":"status","success_value":"success","headers":{"count":"X-Count","formation_ts":"X-Timestamp"},"min_body_kb":200,"max_body_mb":30}'),
+ ('lk',       'Дислокация из ЛК РЖД',        'upload',  'dislocation',
+   '{"detect":["Личный кабинет"],"subtype_marker":{"Дислокация вагонов":"lk"},"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('vg',       'Техническое состояние (ЛК)',  'upload',  'tech_state',
+   '{"detect":["Техническое состояние"],"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('plan_ma',  'План подвода — Мыс Астафьева','upload',  'plan', '{"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('plan_nk',  'План подвода — Находка',      'upload',  'plan', '{"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('plan_rb',  'План подвода — Рыбники',      'upload',  'plan', '{"allowed_ext":["xlsx","xls"],"max_mb":10}')
 ON CONFLICT (id) DO NOTHING;
 
 -- проставить новые атрибуты существующим портам
@@ -414,6 +626,9 @@ INSERT INTO port_view_members (view_id, port_id) VALUES
   портов, или достаточно SQL-наполнения на этапе прототипа.
 - **Версионирование форматов парсеров.** Как сосуществуют `old`/`new` варианты в
   `parser_profiles` (поле `variant` + правило выбора).
+- **`data_source` vs `ports.file_code`.** Финально развести «имя/regex файла»
+  (в `data_source.config`) и «сопоставление данные→порт» (в `ports`), чтобы не
+  осталось дублирующего источника правды по имени файла (§3.10).
 - **Граница env / `client_settings`.** Финально утвердить, какие параметры из
   `_env` переезжают в таблицу, а какие остаются в env как секреты/per-deploy.
 
