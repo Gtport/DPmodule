@@ -67,6 +67,7 @@
 | `cargo_split_profiles` + `cargo_split_buckets` | 2.1, 2.3, 6.2 (уголь/металл/чугун) | новые |
 | `report_column_mappings` | 3.2, 4.3 (раскладка отчётов) | новая |
 | `parser_profiles` (+ дочерние) | 5.1, 5.2 (форматы файлов) | новые, поздний этап |
+| `data_source` | число/природа входных потоков (2 JSON + ЛК/ВГ + планы) | новая (§3.10) |
 | `sms_plan_cache` (строковая модель) | 2.4 (колонки port_at/ut/gut) | миграция |
 
 Нигде нет `enterprise_id` — все справочники принадлежат единственному клиенту БД.
@@ -84,8 +85,9 @@
 CREATE TABLE client_settings (
     id                  INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1), -- синглтон
     client_name         TEXT NOT NULL,            -- 'GTport (3 порта)'
-    timezone_offset     INTEGER DEFAULT 7,        -- сейчас зашито (+7 МСК, timeOffset)
-    json_files_count    INTEGER DEFAULT 2,        -- «сколько файлов парсим»
+    timezone_offset     INTEGER DEFAULT 7,        -- baseline; смещение per-канал — в data_source.tz_offset_min (§3.10)
+    -- json_files_count УПРАЗДНЁН: производное от data_source (§3.10),
+    --   = count(*) WHERE category='dislocation' AND ingest='api_pull' AND enabled
     sync_enabled        BOOLEAN DEFAULT true,     -- было DISABLE_FILE_SYNC (инверсно)
     sync_schedule       TEXT,                     -- было FILE_SYNC_SCHEDULE
     data_loss_threshold NUMERIC DEFAULT 30,       -- сейчас зашитые 30%
@@ -319,6 +321,92 @@ CREATE TABLE parser_synonyms (     -- синонимы станций (NK)
 обходятся запросом мимо фронта. Реализуется вместе со слоем приёма (после
 `data_source`), не в парсере.
 
+### 3.10. `data_source` — реестр каналов ввода (ключевая для универсальности)
+
+Сейчас в GTport число и природа входных потоков **зашиты** (два JSON `at`/`nmtp`
+из ESAT, Excel ЛК/ВГ, три плана). Чтобы предприятие настраивалось «под себя»
+(один поток или несколько) **без правок кода**, каждый поток описывается строкой
+`data_source`. Движок приёма читает таблицу и не содержит ни одного зашитого
+`at`/`ma`/«Личный кабинет».
+
+**Три слоя (не путать и не дублировать):**
+
+```
+data_source     → КАНАЛ:        откуда берём, когда, чем валидируем   (транспорт/приём)
+   ├─ parser_profile_id → ФОРМАТ:      как читать байты (колонки, header, variant)  [§3.8]
+   └─ (записи → порт)   → ИДЕНТИЧНОСТЬ: station/ОКПО → порт через справочники       [§3.2/§4]
+```
+
+`data_source` **ссылается** на `parser_profiles` (§3.8), а не поглощает его: один
+формат («lk_new») может переиспользоваться несколькими каналами. Привязка записи
+к порту — не здесь, а по данным (код станции, ОКПО) через реестр портов.
+
+```sql
+CREATE TABLE data_source (
+    id                TEXT PRIMARY KEY,            -- 'json_at', 'lk', 'plan_ma'
+    name              TEXT NOT NULL,               -- 'Аттис (JSON, ESAT)'
+    enabled           BOOLEAN NOT NULL DEFAULT true,
+    ingest            TEXT NOT NULL,               -- 'api_pull' | 'upload' (расширяемо: sftp, folder_watch)
+    category          TEXT NOT NULL,               -- 'dislocation' | 'plan' | 'tech_state' | 'operation'
+    parser_profile_id INTEGER REFERENCES parser_profiles(id),  -- формат (§3.8); profiles.kind = тип парсера
+    tz_offset_min     INTEGER,                     -- смещение времени источника; NULL → client_settings.timezone_offset
+    config            JSONB NOT NULL DEFAULT '{}', -- транспорт + пер-файловая валидация
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    created_at        TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMP NOT NULL DEFAULT now()
+);
+```
+
+> `tz_offset_min` — отдельной колонкой, потому что в GTport смещения **разные по
+> источнику**: ESAT-JSON `+10ч` (600), ЛК/планы `+7ч` (420). Это свойство канала,
+> а не глобальный `client_settings.timezone_offset`.
+
+**`config` JSONB — контракт по типу приёма** (секреты только ссылками в env):
+
+```jsonc
+// api_pull (ESAT)
+{ "provider":"esat", "remote_type":"at",
+  "api_key_ref":"env:ESAT_API_KEY", "base_url_ref":"env:ESAT_BASE_URL",
+  "filename_regex":"^at_dis_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})\\.json$",
+  "min_size_kb":200, "max_size_mb":30, "require_newer_than_local":true }
+
+// upload (ЛК)
+{ "detect":["Личный кабинет"],
+  "subtype_marker":{"Дислокация вагонов":"lk","Техническое состояние":"vg"},
+  "allowed_ext":["xlsx","xls"], "max_mb":10 }
+```
+
+**Связь с существующими сущностями:**
+
+- `client_settings.json_files_count` становится **производным** = число `enabled`
+  источников `category='dislocation' AND ingest='api_pull'` (сейчас 2: at+nmtp).
+  Как хранимое поле — упраздняем (см. правку §3.1).
+- `ports.file_code` ('AT'/'NMTP') сейчас смешивает «имя файла» и «идентичность
+  порта»: regex/имя файла уходит в `data_source`, `ports.file_code` остаётся лишь
+  для сопоставления «данные → порт».
+- Профиль парсера ЛК из кода (`parser.SourceProfile`: `HeaderMarker`,
+  `DateCutoffHour`) ложится в **`parser_profiles`** (`header_marker` +
+  `settings.date_cutoff_hour`), а `data_source` на него ссылается. То есть уже
+  реализованный `SourceProfile` — это прото-строка `parser_profiles`, не
+  `data_source`.
+
+**Пороги приёма (§3.9) — разделение по природе:**
+
+- пер-файловые (размер, устаревание файла, «старше текущей дислокации своего
+  терминала») → `data_source.config`;
+- межфайловые/на загрузку целиком (разрыв 15 мин между файлами одной загрузки,
+  «план на 1ч позже дислокации») → **`client_settings`** (JSONB `ingest_policy`
+  по категориям) — это про отношение источников, одному каналу не принадлежит.
+
+```jsonc
+// client_settings.extra.ingest_policy
+{ "dislocation": { "max_gap_minutes":15, "max_staleness_minutes":60,
+                   "reject_older_than_current":true, "reject_older_role_exempt":"administrator" },
+  "plan":        { "plan_max_lag_hours":1 } }
+```
+
+Сид текущего клиента — в разделе 5.
+
 ---
 
 ## 4. Слой доступа: реестр портов (ключевой для рефакторинга)
@@ -373,9 +461,27 @@ naznach := pc.Naznach
 `enterprise_id`):
 
 ```sql
--- настроечный синглтон
-INSERT INTO client_settings (id, client_name, timezone_offset, json_files_count)
-VALUES (1, 'GTport (3 порта)', 7, 2)
+-- настроечный синглтон (+ межфайловые пороги приёма §3.9/§3.10)
+INSERT INTO client_settings (id, client_name, timezone_offset, extra)
+VALUES (1, 'GTport (3 порта)', 7,
+  '{"ingest_policy":{"dislocation":{"max_gap_minutes":15,"max_staleness_minutes":60,
+    "reject_older_than_current":true,"reject_older_role_exempt":"administrator"},
+    "plan":{"plan_max_lag_hours":1}}}')
+ON CONFLICT (id) DO NOTHING;
+
+-- каналы ввода (§3.10). parser_profile_id проставляется на этапе парсеров.
+INSERT INTO data_source (id, name, ingest, category, tz_offset_min, config) VALUES
+ ('json_at',  'Аттис (JSON, ESAT)',         'api_pull','dislocation',600,
+   '{"provider":"esat","remote_type":"at","api_key_ref":"env:ESAT_API_KEY","base_url_ref":"env:ESAT_BASE_URL","filename_regex":"^at_dis_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})\\.json$","min_size_kb":200,"max_size_mb":30,"require_newer_than_local":true}'),
+ ('json_nmtp','НМТП (JSON, ESAT)',          'api_pull','dislocation',600,
+   '{"provider":"esat","remote_type":"nmtp","api_key_ref":"env:ESAT_API_KEY","base_url_ref":"env:ESAT_BASE_URL","filename_regex":"^nmtp_dis_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})\\.json$","min_size_kb":200,"max_size_mb":30,"require_newer_than_local":true}'),
+ ('lk',       'Дислокация из ЛК РЖД',        'upload',  'dislocation',420,
+   '{"detect":["Личный кабинет"],"subtype_marker":{"Дислокация вагонов":"lk"},"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('vg',       'Техническое состояние (ЛК)',  'upload',  'tech_state', 420,
+   '{"detect":["Техническое состояние"],"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('plan_ma',  'План подвода — Мыс Астафьева','upload',  'plan',       420, '{"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('plan_nk',  'План подвода — Находка',      'upload',  'plan',       420, '{"allowed_ext":["xlsx","xls"],"max_mb":10}'),
+ ('plan_rb',  'План подвода — Рыбники',      'upload',  'plan',       420, '{"allowed_ext":["xlsx","xls"],"max_mb":10}')
 ON CONFLICT (id) DO NOTHING;
 
 -- проставить новые атрибуты существующим портам
@@ -451,6 +557,9 @@ INSERT INTO port_view_members (view_id, port_id) VALUES
   портов, или достаточно SQL-наполнения на этапе прототипа.
 - **Версионирование форматов парсеров.** Как сосуществуют `old`/`new` варианты в
   `parser_profiles` (поле `variant` + правило выбора).
+- **`data_source` vs `ports.file_code`.** Финально развести «имя/regex файла»
+  (в `data_source.config`) и «сопоставление данные→порт» (в `ports`), чтобы не
+  осталось дублирующего источника правды по имени файла (§3.10).
 - **Граница env / `client_settings`.** Финально утвердить, какие параметры из
   `_env` переезжают в таблицу, а какие остаются в env как секреты/per-deploy.
 
