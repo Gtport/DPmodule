@@ -32,6 +32,25 @@ type jsonResponse struct {
 	} `json:"data"`
 }
 
+// jsonEnvelope — новый формат ответа АСУ: метка формирования и count в теле,
+// массив вагонов под ключом "wagons" (не "vagons"). Count — interface{}, т.к.
+// источник шлёт его то числом (264), то строкой ("264").
+type jsonEnvelope struct {
+	Count     interface{} `json:"count"`
+	Timestamp string      `json:"timestamp"`
+	Wagons    []jsonVagon `json:"wagons"`
+}
+
+// ParseResult — записи + метаданные конверта нового формата: метка формирования
+// (тело.timestamp) и заявленный count (тело.count). Для форматов без метаданных
+// FormationTS/DeclaredCount = nil. Слой приёма использует их для проверки свежести
+// и целостности (len(Records) против DeclaredCount).
+type ParseResult struct {
+	Records       []domain.Dislocation
+	FormationTS   *domain.LocalTime
+	DeclaredCount *int
+}
+
 // jsonVagon — только поля источника, которые реально маппятся в Dislocation.
 type jsonVagon struct {
 	NOM_VAG     string `json:"NOM_VAG"`
@@ -90,15 +109,25 @@ type jsonVagon struct {
 // без побочных эффектов) — они пропускаются, а счётчик пропусков вернуть отдельно
 // незачем: формат стабилен, ошибка конвертации возможна лишь при пустом vagon.
 func (p *JSONParser) ParseBytes(raw []byte) ([]domain.Dislocation, error) {
-	vagons, err := extractVagons(raw)
+	r, err := p.Parse(raw)
+	return r.Records, err
+}
+
+// Parse разбирает сырой JSON в записи + метаданные конверта. Поддерживает три
+// формата: плоский массив вагонов; обёртку SPV4664
+// (data.getReferenceSPV4664Response.vagons); новый конверт {count, timestamp,
+// wagons}. Метаданные (метка формирования, count) заполняются только для нового
+// формата — из тела ответа.
+func (p *JSONParser) Parse(raw []byte) (ParseResult, error) {
+	vagons, ts, count, err := extractEnvelope(raw)
 	if err != nil {
-		return nil, err
+		return ParseResult{}, err
 	}
 	records := make([]domain.Dislocation, 0, len(vagons))
 	for _, v := range vagons {
 		records = append(records, p.convert(v))
 	}
-	return records, nil
+	return ParseResult{Records: records, FormationTS: ts, DeclaredCount: count}, nil
 }
 
 // ParseFile читает и разбирает один JSON-файл.
@@ -138,34 +167,58 @@ func (p *JSONParser) ProcessDirectory(dirPath string) ([]domain.Dislocation, err
 	return all, firstErr
 }
 
-// extractVagons поддерживает два формата: плоский массив верхнего уровня и обёртку
-// JSONResponse. Формат определяется по первому непробельному символу.
-func extractVagons(raw []byte) ([]jsonVagon, error) {
-	var first byte
+// extractEnvelope определяет формат по содержимому и возвращает вагоны + метаданные
+// конверта (метка формирования, заявленный count) там, где они есть:
+//   - плоский массив верхнего уровня → без метаданных;
+//   - новый конверт {count, timestamp, wagons} → с метаданными из тела;
+//   - обёртка SPV4664 (data.getReferenceSPV4664Response.vagons) → без метаданных.
+func extractEnvelope(raw []byte) ([]jsonVagon, *domain.LocalTime, *int, error) {
+	if firstNonSpace(raw) == '[' {
+		var vagons []jsonVagon
+		if err := json.Unmarshal(raw, &vagons); err != nil {
+			return nil, nil, nil, fmt.Errorf("парсинг плоского JSON-массива: %w", err)
+		}
+		return vagons, nil, nil, nil
+	}
+
+	// Новый формат: распознаём по наличию его полей (count/timestamp/wagons).
+	// Обёртка SPV4664 в эту структуру распарсится «пустой» → guard отсечёт её.
+	var env jsonEnvelope
+	if err := json.Unmarshal(raw, &env); err == nil &&
+		(len(env.Wagons) > 0 || env.Count != nil || env.Timestamp != "") {
+		return env.Wagons, parseLocalDateTime(env.Timestamp), parseIntPtrFromAny(env.Count), nil
+	}
+
+	// Старая обёртка SPV4664.
+	var resp jsonResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, nil, nil, fmt.Errorf("парсинг JSON: %w", err)
+	}
+	if resp.Status != "" && resp.Status != "success" {
+		return nil, nil, nil, fmt.Errorf("JSON response status is not success: %s", resp.Status)
+	}
+	return resp.Data.GetReferenceSPV4664Response.Vagons, nil, nil, nil
+}
+
+// firstNonSpace возвращает первый непробельный байт (0, если такого нет).
+func firstNonSpace(raw []byte) byte {
 	for _, b := range raw {
 		if b == ' ' || b == '\n' || b == '\r' || b == '\t' {
 			continue
 		}
-		first = b
-		break
+		return b
 	}
+	return 0
+}
 
-	if first == '[' {
-		var vagons []jsonVagon
-		if err := json.Unmarshal(raw, &vagons); err != nil {
-			return nil, fmt.Errorf("парсинг плоского JSON-массива: %w", err)
-		}
-		return vagons, nil
+// cleanNone обрезает пробелы и трактует строковый null-сентинел "None"/"null"
+// (встречается в новом формате) как пустую строку.
+func cleanNone(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "None" || s == "null" {
+		return ""
 	}
-
-	var resp jsonResponse
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, fmt.Errorf("парсинг JSON: %w", err)
-	}
-	if resp.Status != "" && resp.Status != "success" {
-		return nil, fmt.Errorf("JSON response status is not success: %s", resp.Status)
-	}
-	return resp.Data.GetReferenceSPV4664Response.Vagons, nil
+	return s
 }
 
 // convert конвертирует одну запись выгрузки в domain.Dislocation.
@@ -173,26 +226,26 @@ func (p *JSONParser) convert(v jsonVagon) domain.Dislocation {
 	var r domain.Dislocation
 
 	// Идентификаторы
-	r.Vagon = strings.TrimSpace(v.NOM_VAG)
-	r.Invoice = normalizeCyrillic(strings.TrimSpace(v.NOM_NAK))
+	r.Vagon = cleanNone(v.NOM_VAG)
+	r.Invoice = normalizeCyrillic(cleanNone(v.NOM_NAK))
 
 	// Станции / коды (имена станций и дорог даст обогащение)
-	r.CodeStationNach = strings.TrimSpace(v.STAN_NACH)
-	r.CodeStanNazn = strings.TrimSpace(v.STAN_NAZN)
-	r.CodeStationOper = strings.TrimSpace(v.STAN_OP)
-	r.StrNach = strings.TrimSpace(v.STR_NACH)
-	r.DorogaNazn = strings.TrimSpace(v.DOR_NAZN)
-	r.StrNazn = strings.TrimSpace(v.STR_NAZN)
+	r.CodeStationNach = cleanNone(v.STAN_NACH)
+	r.CodeStanNazn = cleanNone(v.STAN_NAZN)
+	r.CodeStationOper = cleanNone(v.STAN_OP)
+	r.StrNach = cleanNone(v.STR_NACH)
+	r.DorogaNazn = cleanNone(v.DOR_NAZN)
+	r.StrNazn = cleanNone(v.STR_NAZN)
 
 	// ОКПО (имена проставит обогащение)
-	r.GruzotprOkpo = strings.TrimSpace(v.GRUZOTPR_OKPO)
-	r.GruzpolOkpo = strings.TrimSpace(v.GRUZPOL_OKPO)
+	r.GruzotprOkpo = cleanNone(v.GRUZOTPR_OKPO)
+	r.GruzpolOkpo = cleanNone(v.GRUZPOL_OKPO)
 
 	// Груз
-	r.CodeCargo = strings.TrimSpace(v.KOD_GRZ_UCH)
-	r.CodeCargoGng = strings.TrimSpace(v.KOD_GRZ_GNG)
-	r.CodeCargoVygr = strings.TrimSpace(v.KOD_GRZ_VYGR)
-	r.PorozhPriznak = strings.TrimSpace(v.PPV_POR)
+	r.CodeCargo = cleanNone(v.KOD_GRZ_UCH)
+	r.CodeCargoGng = cleanNone(v.KOD_GRZ_GNG)
+	r.CodeCargoVygr = cleanNone(v.KOD_GRZ_VYGR)
+	r.PorozhPriznak = cleanNone(v.PPV_POR)
 	if w, err := parseWeight(v.VES_GRZ); err == nil && w > 0 {
 		t := w / 1000.0 // источник в килограммах
 		r.Ves = &t
@@ -201,14 +254,14 @@ func (p *JSONParser) convert(v jsonVagon) domain.Dislocation {
 	// Операция
 	r.TimeOp = parseLocalDateTime(v.DATE_OP)
 	r.DateOp = r.TimeOp
-	r.CodeOper = strings.TrimSpace(v.KOP_VMD)
+	r.CodeOper = cleanNone(v.KOP_VMD)
 
 	// Индекс (IndexMain заполнит обогащение)
 	r.Index = parseJSONIndex(v.INDEX_POEZD, r.CodeStationNach, r.CodeStationOper)
 
 	// Идентификаторы отправки / порядок
-	r.IdOtprk = strings.TrimSpace(v.ID_OTPRK)
-	r.Uno = strings.TrimSpace(v.UNO)
+	r.IdOtprk = cleanNone(v.ID_OTPRK)
+	r.Uno = cleanNone(v.UNO)
 	if npp, err := parseIntFromAny(v.NPP_VAG); err == nil && npp > 0 {
 		r.NppVag = &npp
 	}
@@ -235,16 +288,16 @@ func (p *JSONParser) convert(v jsonVagon) domain.Dislocation {
 	r.DateDostav = parseLocalDate(v.DATE_DOSTAV)
 
 	// Род вагона (код)
-	r.RodVagUch = strings.TrimSpace(v.ROD_VAG_UCH)
+	r.RodVagUch = cleanNone(v.ROD_VAG_UCH)
 
 	// Новые поля эндпоинта
-	r.Zayavka = strings.TrimSpace(v.INV_CLAIM_NUMBER) // заявка ГУ-12
-	r.FreightExactName = strings.TrimSpace(v.FREIGHT_EXACT_NAME)
-	r.GtdNumber = strings.TrimSpace(v.FREIGHT_GTD_NUMBER)
-	r.CarOwnerName = strings.TrimSpace(v.CAR_OWNER_NAME)
-	r.CarOwnerOkpo = strings.TrimSpace(v.CAR_OWNER_OKPO)
-	r.CarTenantName = strings.TrimSpace(v.CAR_TENANT_NAME)
-	r.CarTenantOkpo = strings.TrimSpace(v.CAR_TENANT_OKPO)
+	r.Zayavka = cleanNone(v.INV_CLAIM_NUMBER) // заявка ГУ-12
+	r.FreightExactName = cleanNone(v.FREIGHT_EXACT_NAME)
+	r.GtdNumber = cleanNone(v.FREIGHT_GTD_NUMBER)
+	r.CarOwnerName = cleanNone(v.CAR_OWNER_NAME)
+	r.CarOwnerOkpo = cleanNone(v.CAR_OWNER_OKPO)
+	r.CarTenantName = cleanNone(v.CAR_TENANT_NAME)
+	r.CarTenantOkpo = cleanNone(v.CAR_TENANT_OKPO)
 
 	// Служебное
 	r.ID = generateDeterministicID(r.Vagon, r.CodeStationNach, dateNachT)
