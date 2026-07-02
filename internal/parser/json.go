@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
@@ -247,7 +248,7 @@ func (p *JSONParser) convert(v jsonVagon) domain.Dislocation {
 
 	// Служебное
 	r.ID = generateDeterministicID(r.Vagon, r.CodeStationNach, dateNachT)
-	now := domain.LocalTime(time.Now())
+	now := clock.Now() // московское naive-время (§3.11), не time.Now()
 	r.CreatedAt = now
 	r.UpdatedAt = now
 
