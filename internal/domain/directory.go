@@ -15,6 +15,17 @@ type Station struct {
 	IsBam     bool     // признак БАМ (Байкало-Амурская магистраль)
 }
 
+// RouteSpeed — один участок скоростного профиля (Stage 2, миграция 000005,
+// TARGET.md §3.12). Профиль = набор участков с общим ключом (StationNach, IsBam);
+// StationNach == "*" — профиль по умолчанию. Заменяет switch по станции из gtlogic
+// enrich_stage2.go. Участок для остатка расстояния — с наибольшим FromKm ≤ остаток.
+type RouteSpeed struct {
+	StationNach string  // станция отправления; "*" = по умолчанию
+	IsBam       bool    // альтернативный маршрут (БАМ)
+	FromKm      int     // нижняя граница участка (км до назначения)
+	Speed       float64 // км/ч
+}
+
 // CargoOperation — справочник операций груза (Stage 1). Ключ: Kod.
 type CargoOperation struct {
 	Kod   int

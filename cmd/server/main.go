@@ -104,12 +104,13 @@ func run() error {
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
 		}
-		stationsN, cargoOpsN, markaN, portsN := dirCache.Counts()
+		stationsN, cargoOpsN, markaN, portsN, routeSpeedN := dirCache.Counts()
 		log.Info("directory cache loaded",
 			zap.Int("stations", stationsN),
 			zap.Int("cargo_operations", cargoOpsN),
 			zap.Int("marka", markaN),
 			zap.Int("ports", portsN),
+			zap.Int("route_speed", routeSpeedN),
 		)
 
 		// Настроечная таблица (data_source, client_settings) — в RAM при старте.

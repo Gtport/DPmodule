@@ -3,11 +3,16 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
 )
+
+// DefaultRouteProfile — ключ station_nach профиля скоростей «по умолчанию»
+// (аналог ветки default из switch в gtlogic). См. GetRouteSpeed.
+const DefaultRouteProfile = "*"
 
 // DirectoryCache — справочники обогащения в оперативной памяти. Грузятся один раз
 // при старте (Load), читаются обогащением (Stage 1–2). Доступ под RWMutex — задел
@@ -19,8 +24,9 @@ type DirectoryCache struct {
 	stations        map[int]domain.Station
 	stationsByKod4  map[int]domain.Station
 	cargoOperations map[int]domain.CargoOperation
-	marka           map[string][]domain.Marka // ключ MarkaKey (неуникален → срез)
-	ports           map[string][]domain.Ports // ключ PortKey (неуникален → срез)
+	marka           map[string][]domain.Marka      // ключ MarkaKey (неуникален → срез)
+	ports           map[string][]domain.Ports      // ключ PortKey (неуникален → срез)
+	routeSpeed      map[string][]domain.RouteSpeed // ключ RouteSpeedKey; участки по убыванию FromKm
 }
 
 func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
@@ -31,6 +37,7 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		cargoOperations: map[int]domain.CargoOperation{},
 		marka:           map[string][]domain.Marka{},
 		ports:           map[string][]domain.Ports{},
+		routeSpeed:      map[string][]domain.RouteSpeed{},
 	}
 }
 
@@ -41,6 +48,10 @@ func MarkaKey(okpo, stationKod, cargoKod int64) string {
 
 func PortKey(okpo int64, location string) string {
 	return fmt.Sprintf("%d:%s", okpo, location)
+}
+
+func RouteSpeedKey(stationNach string, isBam bool) string {
+	return fmt.Sprintf("%s:%t", stationNach, isBam)
 }
 
 // Load загружает все справочники из хранилища и атомарно заменяет содержимое кэша.
@@ -61,6 +72,10 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	ports, err := c.repo.LoadPorts(ctx)
 	if err != nil {
 		return fmt.Errorf("load ports: %w", err)
+	}
+	routeSpeed, err := c.repo.LoadRouteSpeed(ctx)
+	if err != nil {
+		return fmt.Errorf("load route_speed: %w", err)
 	}
 
 	st := make(map[int]domain.Station, len(stations))
@@ -83,6 +98,16 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 		k := PortKey(p.Okpo, p.Location)
 		pr[k] = append(pr[k], p)
 	}
+	rs := make(map[string][]domain.RouteSpeed)
+	for _, r := range routeSpeed {
+		k := RouteSpeedKey(r.StationNach, r.IsBam)
+		rs[k] = append(rs[k], r)
+	}
+	// Участки — по убыванию FromKm: потребитель (Stage 2) идёт от дальнего к ближнему.
+	for k := range rs {
+		segs := rs[k]
+		sort.Slice(segs, func(i, j int) bool { return segs[i].FromKm > segs[j].FromKm })
+	}
 
 	c.mu.Lock()
 	c.stations = st
@@ -90,15 +115,16 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	c.cargoOperations = co
 	c.marka = mk
 	c.ports = pr
+	c.routeSpeed = rs
 	c.mu.Unlock()
 	return nil
 }
 
 // Counts — сводка по числу ключей (для логов после загрузки).
-func (c *DirectoryCache) Counts() (stations, cargoOps, marka, ports int) {
+func (c *DirectoryCache) Counts() (stations, cargoOps, marka, ports, routeSpeed int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return len(c.stations), len(c.cargoOperations), len(c.marka), len(c.ports)
+	return len(c.stations), len(c.cargoOperations), len(c.marka), len(c.ports), len(c.routeSpeed)
 }
 
 // ──────────────────────────────── lookup ────────────────────────────────
@@ -136,4 +162,18 @@ func (c *DirectoryCache) GetPortByCompositeKey(okpo int64, location string) ([]d
 	defer c.mu.RUnlock()
 	p, ok := c.ports[PortKey(okpo, location)]
 	return p, ok
+}
+
+// GetRouteSpeed возвращает участки скоростного профиля (по убыванию FromKm) для
+// станции отправления: сначала точный профиль (stationNach, isBam), при отсутствии —
+// профиль по умолчанию (DefaultRouteProfile, isBam). Это data-driven аналог
+// switch/default из gtlogic. Второе значение — найден ли профиль вообще.
+func (c *DirectoryCache) GetRouteSpeed(stationNach string, isBam bool) ([]domain.RouteSpeed, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if segs, ok := c.routeSpeed[RouteSpeedKey(stationNach, isBam)]; ok {
+		return segs, true
+	}
+	segs, ok := c.routeSpeed[RouteSpeedKey(DefaultRouteProfile, isBam)]
+	return segs, ok
 }

@@ -71,6 +71,16 @@ type portsModel struct {
 
 func (portsModel) TableName() string { return "ports" }
 
+type routeSpeedModel struct {
+	ID          int64   `gorm:"column:id;primaryKey"`
+	StationNach string  `gorm:"column:station_nach"`
+	IsBam       bool    `gorm:"column:is_bam"`
+	FromKm      int     `gorm:"column:from_km"`
+	Speed       float64 `gorm:"column:speed"`
+}
+
+func (routeSpeedModel) TableName() string { return "route_speed" }
+
 // ──────────────────────────────────────────────────────────────────────────
 //  Адаптер: реализует port.DirectoryRepository, маппит ORM-модели в domain.*.
 // ──────────────────────────────────────────────────────────────────────────
@@ -139,6 +149,20 @@ func (r *DirectoryRepository) LoadPorts(ctx context.Context) ([]domain.Ports, er
 			PlanCode: m.PlanCode, StationCode: m.StationCode,
 			PcCoal: m.PcCoal, PcMetal: m.PcMetal, PcOther: m.PcOther, PcTotal: m.PcTotal,
 			Front: m.Front, Color: m.Color, Enabled: m.Enabled, SortOrder: m.SortOrder,
+		}
+	}
+	return out, nil
+}
+
+func (r *DirectoryRepository) LoadRouteSpeed(ctx context.Context) ([]domain.RouteSpeed, error) {
+	var ms []routeSpeedModel
+	if err := r.db.WithContext(ctx).Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.RouteSpeed, len(ms))
+	for i, m := range ms {
+		out[i] = domain.RouteSpeed{
+			StationNach: m.StationNach, IsBam: m.IsBam, FromKm: m.FromKm, Speed: m.Speed,
 		}
 	}
 	return out, nil
