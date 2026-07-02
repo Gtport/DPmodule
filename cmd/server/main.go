@@ -98,9 +98,12 @@ func run() error {
 	// Справочники обогащения грузятся в RAM при старте; Stage 1–2 будут читать их
 	// отсюда. Пока — прогрев и валидация цепочки (схема → seed → загрузка); ссылку
 	// получит движок дислокации при переносе обогащения.
-	var cfgCache *service.ConfigCache
+	var (
+		cfgCache *service.ConfigCache
+		dirCache *service.DirectoryCache
+	)
 	if db != nil {
-		dirCache := service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
+		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
 		}
@@ -138,7 +141,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv := server.Build(cfg, sqlDB, cfgCache, jwtMW, log, metricsOnMain)
+	srv := server.Build(cfg, sqlDB, cfgCache, dirCache, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {

@@ -24,6 +24,7 @@ func Build(
 	cfg *config.Config,
 	db *sql.DB,
 	cfgCache *service.ConfigCache,
+	dirCache *service.DirectoryCache,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -60,10 +61,11 @@ func Build(
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
 
-	// Приём файлов ЛК (шаг 1) — только если настроечная таблица загружена
-	// (требует БД). Контроль приёма читается из ConfigCache.
-	if cfgCache != nil {
-		lkIntake := service.NewLKIntake(cfgCache, cfg.Storage.BaseDir)
+	// Приём файлов ЛК (шаг 1) — только если справочники и настроечная таблица
+	// загружены (требует БД). Формат — из ConfigCache, «чей файл» (ОКПО→терминалы)
+	// — из DirectoryCache (ports).
+	if cfgCache != nil && dirCache != nil {
+		lkIntake := service.NewLKIntake(cfgCache, dirCache, cfg.Storage.BaseDir)
 		handler.NewLKUploadHandler(lkIntake).RegisterRoutes(api)
 	}
 

@@ -26,6 +26,7 @@ type DirectoryCache struct {
 	cargoOperations map[int]domain.CargoOperation
 	marka           map[string][]domain.Marka      // ключ MarkaKey (неуникален → срез)
 	ports           map[string][]domain.Ports      // ключ PortKey (неуникален → срез)
+	portsByOkpo     map[int64][]domain.Ports       // ОКПО → терминалы (для приёма ЛК: «чей файл»)
 	routeSpeed      map[string][]domain.RouteSpeed // ключ RouteSpeedKey; участки по убыванию FromKm
 }
 
@@ -37,6 +38,7 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		cargoOperations: map[int]domain.CargoOperation{},
 		marka:           map[string][]domain.Marka{},
 		ports:           map[string][]domain.Ports{},
+		portsByOkpo:     map[int64][]domain.Ports{},
 		routeSpeed:      map[string][]domain.RouteSpeed{},
 	}
 }
@@ -94,9 +96,11 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 		mk[k] = append(mk[k], m)
 	}
 	pr := make(map[string][]domain.Ports)
+	pbo := make(map[int64][]domain.Ports)
 	for _, p := range ports {
 		k := PortKey(p.Okpo, p.Location)
 		pr[k] = append(pr[k], p)
+		pbo[p.Okpo] = append(pbo[p.Okpo], p)
 	}
 	rs := make(map[string][]domain.RouteSpeed)
 	for _, r := range routeSpeed {
@@ -115,6 +119,7 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	c.cargoOperations = co
 	c.marka = mk
 	c.ports = pr
+	c.portsByOkpo = pbo
 	c.routeSpeed = rs
 	c.mu.Unlock()
 	return nil
@@ -161,6 +166,16 @@ func (c *DirectoryCache) GetPortByCompositeKey(okpo int64, location string) ([]d
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	p, ok := c.ports[PortKey(okpo, location)]
+	return p, ok
+}
+
+// PortsByOkpo возвращает все терминалы юр.лица по ОКПО грузополучателя (окпо не
+// уникален: у одного ОКПО может быть несколько терминалов на разных станциях).
+// Используется приёмом ЛК для контроля «чей файл» (файл ЛК — на юр.лицо/ОКПО).
+func (c *DirectoryCache) PortsByOkpo(okpo int64) ([]domain.Ports, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	p, ok := c.portsByOkpo[okpo]
 	return p, ok
 }
 

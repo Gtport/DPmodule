@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,17 +16,19 @@ import (
 )
 
 // LKIntake — шаг 1 двухшаговой загрузки ЛК: приём xlsx-файла, лёгкая инспекция
-// (тип/порт/метка формирования) и сохранение в локальную папку <baseDir>/lk/.
+// (тип/ОКПО/метка формирования) и сохранение в локальную папку <baseDir>/lk/.
 // Дислокацию НЕ трогает (её перестраивает отдельный шаг «обработка»). Настройки
-// (расширения, лимит, ОКПО-мэппинг, маркеры) читаются из ConfigCache (источник
-// 'lk'). Время — Московское naive, без сдвигов (§3.11).
+// формата (расширения, лимит, маркеры) читаются из ConfigCache (источник 'lk');
+// «чей файл» определяется по ОКПО грузополучателя через справочник ports
+// (DirectoryCache) — окпо не уникален, см. §3.12. Время — Московское naive (§3.11).
 type LKIntake struct {
 	cfg     *ConfigCache
+	dir     *DirectoryCache
 	baseDir string
 }
 
-func NewLKIntake(cfg *ConfigCache, baseDir string) *LKIntake {
-	return &LKIntake{cfg: cfg, baseDir: baseDir}
+func NewLKIntake(cfg *ConfigCache, dir *DirectoryCache, baseDir string) *LKIntake {
+	return &LKIntake{cfg: cfg, dir: dir, baseDir: baseDir}
 }
 
 // Ошибки приёма (хендлер маппит их в HTTP-коды).
@@ -41,16 +44,20 @@ var (
 
 const defaultOkpoColumn = "Грузополучатель (ОКПО)"
 
-// LKStored — результат сохранения.
+// LKStored — результат сохранения. Okpo — юр.лицо-грузополучатель (ключ приёма);
+// Organisation — его имя для отображения; Terminals — краткие имена терминалов
+// этого ОКПО (name_s), для контроля «чей файл» на шаге обработки.
 type LKStored struct {
-	Port        string
-	FormationTS domain.LocalTime
-	Filename    string
-	Replaced    bool // заменил более старую версию того же порта
+	Okpo         string
+	Organisation string
+	Terminals    []string
+	FormationTS  domain.LocalTime
+	Filename     string
+	Replaced     bool // заменил более старую версию того же ОКПО
 }
 
 // Store принимает файл (origName — для расширения, data — содержимое), валидирует,
-// инспектирует и сохраняет в <baseDir>/lk/<PORT>_<ДДММГГ-ЧЧММ>.xlsx.
+// инспектирует и сохраняет в <baseDir>/lk/<ОКПО>_<ДДММГГ-ЧЧММ>.xlsx.
 func (s *LKIntake) Store(origName string, data []byte) (LKStored, error) {
 	ds, ok := s.cfg.DataSource("lk")
 	if !ok || !ds.Enabled {
@@ -66,22 +73,42 @@ func (s *LKIntake) Store(origName string, data []byte) (LKStored, error) {
 		return LKStored{}, fmt.Errorf("%w: > %d МБ", ErrTooLarge, cfg.MaxMB)
 	}
 
-	port, ft, err := inspectLK(data, cfg)
+	okpo, ft, err := inspectLK(data, cfg)
 	if err != nil {
 		return LKStored{}, err
 	}
 
-	filename, replaced, err := s.save(port, ft, data)
+	// «Чей файл»: ОКПО грузополучателя должен присутствовать в справочнике ports.
+	// Один ОКПО → одно юр.лицо → 1..N терминалов (окпо не уникален, §3.12).
+	okpoNum, convErr := strconv.ParseInt(okpo, 10, 64)
+	if convErr != nil {
+		return LKStored{}, fmt.Errorf("%w: %s", ErrUnknownOkpo, okpo)
+	}
+	terminals, ok := s.dir.PortsByOkpo(okpoNum)
+	if !ok || len(terminals) == 0 {
+		return LKStored{}, fmt.Errorf("%w: %s", ErrUnknownOkpo, okpo)
+	}
+	org := terminals[0].Organisation
+	names := make([]string, 0, len(terminals))
+	for _, t := range terminals {
+		names = append(names, t.NameS)
+	}
+
+	filename, replaced, err := s.save(okpo, ft, data)
 	if err != nil {
 		return LKStored{}, err
 	}
-	return LKStored{Port: port, FormationTS: ft, Filename: filename, Replaced: replaced}, nil
+	return LKStored{
+		Okpo: okpo, Organisation: org, Terminals: names,
+		FormationTS: ft, Filename: filename, Replaced: replaced,
+	}, nil
 }
 
-// inspectLK — лёгкое чтение: маркер «Личный кабинет», ОКПО→порт, дата формирования.
-// Повторяет раскладку GTport: маркер найден сканированием первых ячеек последнего
-// листа; дата — в ячейке (col-1, row+1) относительно маркера; ОКПО — в колонке
-// okpo_column ниже строки заголовка. Без сдвигов времени.
+// inspectLK — лёгкое чтение: маркер «Личный кабинет», ОКПО грузополучателя, дата
+// формирования. Повторяет раскладку GTport: маркер найден сканированием первых
+// ячеек последнего листа; дата — в ячейке (col-1, row+1) относительно маркера;
+// ОКПО — в колонке okpo_column ниже строки заголовка. Возвращает сырой ОКПО
+// (валидация против ports — в Store). Без сдвигов времени.
 func inspectLK(data []byte, cfg domain.DataSourceConfig) (string, domain.LocalTime, error) {
 	var zero domain.LocalTime
 	f, err := excelize.OpenReader(bytes.NewReader(data))
@@ -135,26 +162,21 @@ func inspectLK(data []byte, cfg domain.DataSourceConfig) (string, domain.LocalTi
 	if okpo == "" {
 		return "", zero, fmt.Errorf("%w: пустая колонка ОКПО", ErrInspect)
 	}
-
-	port, ok := cfg.PortByOkpo(okpo)
-	if !ok {
-		return "", zero, fmt.Errorf("%w: %s", ErrUnknownOkpo, okpo)
-	}
-	return port, ft, nil
+	return okpo, ft, nil
 }
 
-// save кладёт файл в <baseDir>/lk/, оставляя одну актуальную версию на порт:
-// если существующая версия того же порта НОВЕЕ — отказ; иначе старую заменяем.
-func (s *LKIntake) save(port string, ft domain.LocalTime, data []byte) (string, bool, error) {
+// save кладёт файл в <baseDir>/lk/, оставляя одну актуальную версию на ОКПО:
+// если существующая версия того же ОКПО НОВЕЕ — отказ; иначе старую заменяем.
+func (s *LKIntake) save(okpo string, ft domain.LocalTime, data []byte) (string, bool, error) {
 	dir := filepath.Join(s.baseDir, "lk")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", false, err
 	}
-	filename := port + "_" + time.Time(ft).Format("020106-1504") + ".xlsx"
+	filename := okpo + "_" + time.Time(ft).Format("020106-1504") + ".xlsx"
 
-	matches, _ := filepath.Glob(filepath.Join(dir, port+"_*.xlsx"))
+	matches, _ := filepath.Glob(filepath.Join(dir, okpo+"_*.xlsx"))
 	for _, m := range matches {
-		if ets, ok := tsFromFilename(filepath.Base(m), port); ok && time.Time(ft).Before(ets) {
+		if ets, ok := tsFromFilename(filepath.Base(m), okpo); ok && time.Time(ft).Before(ets) {
 			return "", false, fmt.Errorf("%w: %s", ErrOlderThanExisting, filepath.Base(m))
 		}
 	}
@@ -179,8 +201,8 @@ func parseFormationTS(s string) (domain.LocalTime, bool) {
 	return domain.LocalTime{}, false
 }
 
-func tsFromFilename(name, port string) (time.Time, bool) {
-	s := strings.TrimSuffix(strings.TrimPrefix(name, port+"_"), ".xlsx")
+func tsFromFilename(name, okpo string) (time.Time, bool) {
+	s := strings.TrimSuffix(strings.TrimPrefix(name, okpo+"_"), ".xlsx")
 	if t, err := time.Parse("020106-1504", s); err == nil {
 		return t, true
 	}

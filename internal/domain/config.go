@@ -36,35 +36,15 @@ type DataSourceConfig struct {
 	SubtypeMarker  map[string]string `json:"subtype_marker,omitempty"` // «Дислокация вагонов»→lk и т.п.
 	AllowedExt     []string          `json:"allowed_ext,omitempty"`    // ["xlsx","xls"]
 	MaxMB          int               `json:"max_mb,omitempty"`         // лимит размера файла
-	OkpoMap        map[string]string `json:"okpo_map,omitempty"`       // ОКПО грузополучателя → код порта (AT/NMTP)
 	OkpoColumn     string            `json:"okpo_column,omitempty"`    // заголовок колонки ОКПО грузополучателя
 	HeaderMarker   string            `json:"header_marker,omitempty"`  // текст строки заголовка таблицы
 	DateCutoffHour int               `json:"date_cutoff_hour,omitempty"`
 }
 
-// PortByOkpo возвращает код порта по ОКПО грузополучателя (из okpo_map).
-func (c DataSourceConfig) PortByOkpo(okpo string) (string, bool) {
-	p, ok := c.OkpoMap[okpo]
-	return p, ok
-}
-
-// ExpectedPorts — множество кодов портов, ожидаемых у этого источника (значения
-// okpo_map). Порядок не гарантирован. Используется для контроля «сколько файлов».
-func (c DataSourceConfig) ExpectedPorts() []string {
-	if len(c.OkpoMap) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(c.OkpoMap))
-	out := make([]string, 0, len(c.OkpoMap))
-	for _, port := range c.OkpoMap {
-		if _, dup := seen[port]; dup {
-			continue
-		}
-		seen[port] = struct{}{}
-		out = append(out, port)
-	}
-	return out
-}
+// Идентификация «чей файл»/терминала — НЕ здесь: ОКПО грузополучателя проверяется
+// против справочника ports (окпо не уникален — один ОКПО может иметь несколько
+// терминалов), см. DirectoryCache.PortsByOkpo и TARGET.md §3.12. Прежний okpo_map
+// (ОКПО→код порта) упразднён как тупиковый.
 
 // ClientSettings — синглтон клиентских параметров.
 type ClientSettings struct {

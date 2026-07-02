@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xuri/excelize/v2"
 
+	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/service"
 )
 
@@ -39,8 +40,18 @@ func newIntake(t *testing.T) (*service.LKIntake, string) {
 	t.Helper()
 	c := service.NewConfigCache(sampleConfig())
 	require.NoError(t, c.Load(context.Background()))
+
+	// Справочник ports для идентификации «чей файл» по ОКПО (окпо не уникален:
+	// 1126022 → два терминала). 10230304 → один (АЭ).
+	dc := service.NewDirectoryCache(&stubDirRepo{ports: []domain.Ports{
+		{Okpo: 10230304, Location: "МЫС АСТАФЬЕВА", Organisation: `ООО КОМПАНИЯ "АТТИС ЭНТЕРПРАЙС"`, NameS: "АЭ"},
+		{Okpo: 1126022, Location: "МЫС АСТАФЬЕВА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "ГУТ-2"},
+		{Okpo: 1126022, Location: "НАХОДКА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "УТ-1"},
+	}})
+	require.NoError(t, dc.Load(context.Background()))
+
 	dir := t.TempDir()
-	return service.NewLKIntake(c, dir), dir
+	return service.NewLKIntake(c, dc, dir), dir
 }
 
 func TestLKIntake_Store_OK(t *testing.T) {
@@ -49,14 +60,30 @@ func TestLKIntake_Store_OK(t *testing.T) {
 	res, err := intake.Store("attis.xlsx", buildLKWorkbook(t, "Личный кабинет", "02.07.2026 06:04", "10230304"))
 	require.NoError(t, err)
 
-	assert.Equal(t, "AT", res.Port)
+	assert.Equal(t, "10230304", res.Okpo)
+	assert.Contains(t, res.Organisation, "АТТИС")
+	assert.Equal(t, []string{"АЭ"}, res.Terminals)
 	assert.Equal(t, "2026-07-02T06:04:00", res.FormationTS.String()) // московское naive, без Z/сдвига
-	assert.Equal(t, "AT_020726-0604.xlsx", res.Filename)
+	assert.Equal(t, "10230304_020726-0604.xlsx", res.Filename)
 	assert.False(t, res.Replaced)
 
 	// файл действительно лежит в <dir>/lk/
 	_, statErr := os.Stat(filepath.Join(dir, "lk", res.Filename))
 	require.NoError(t, statErr)
+}
+
+// Мульти-терминальный ОКПО: файл НМТП (1126022) относится к двум терминалам —
+// приём привязывает файл к ОКПО (юр.лицу), а терминалы отдаёт списком (§3.12).
+func TestLKIntake_Store_MultiTerminalOkpo(t *testing.T) {
+	intake, _ := newIntake(t)
+
+	res, err := intake.Store("nmtp.xlsx", buildLKWorkbook(t, "Личный кабинет", "02.07.2026 06:04", "1126022"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "1126022", res.Okpo)
+	assert.Contains(t, res.Organisation, "НАХОДКИНСКИЙ")
+	assert.ElementsMatch(t, []string{"ГУТ-2", "УТ-1"}, res.Terminals)
+	assert.Equal(t, "1126022_020726-0604.xlsx", res.Filename)
 }
 
 func TestLKIntake_Store_Versioning(t *testing.T) {
@@ -74,10 +101,10 @@ func TestLKIntake_Store_Versioning(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, res.Replaced)
 
-	// осталась одна актуальная версия порта
-	matches, _ := filepath.Glob(filepath.Join(dir, "lk", "AT_*.xlsx"))
+	// осталась одна актуальная версия по ОКПО
+	matches, _ := filepath.Glob(filepath.Join(dir, "lk", "10230304_*.xlsx"))
 	assert.Len(t, matches, 1)
-	assert.Equal(t, "AT_020726-0700.xlsx", filepath.Base(matches[0]))
+	assert.Equal(t, "10230304_020726-0700.xlsx", filepath.Base(matches[0]))
 }
 
 func TestLKIntake_Store_NotLK(t *testing.T) {
