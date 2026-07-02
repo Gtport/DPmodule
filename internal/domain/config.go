@@ -20,13 +20,14 @@ const (
 // DataSource — один канал ввода. Config — разобранный JSONB (транспорт и
 // пер-файловая валидация). Пороги, общие для категории, живут в ClientSettings.
 type DataSource struct {
-	ID        string
-	Name      string
-	Enabled   bool
-	Ingest    string // IngestUpload | IngestAPIPull
-	Category  string // CategoryDislocation | CategoryPlan | CategoryTechState
-	Config    DataSourceConfig
-	SortOrder int
+	ID             string
+	Name           string
+	Enabled        bool
+	Ingest         string // IngestUpload | IngestAPIPull
+	Category       string // CategoryDislocation | CategoryPlan | CategoryTechState
+	Config         DataSourceConfig
+	CoArrivalGroup string // метка совместного среза (§3.12); пустая = вне группы
+	SortOrder      int
 }
 
 // DataSourceConfig — разобранный config источника. Здесь поля upload-приёма ЛК;

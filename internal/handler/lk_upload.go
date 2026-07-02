@@ -21,6 +21,22 @@ func NewLKUploadHandler(intake *service.LKIntake) *lkUploadHandler {
 
 func (h *lkUploadHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.POST("/dislocation/lk/upload", h.upload)
+	g.GET("/dislocation/lk/files", h.files)
+}
+
+// files godoc
+// @Summary  Список загруженных файлов ЛК + контроль приёма (шаг между загрузкой и обработкой)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Success  200 {object} object
+// @Router   /api/v1/dislocation/lk/files [get]
+func (h *lkUploadHandler) files(c *gin.Context) {
+	st, err := h.intake.Status()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, st)
 }
 
 // upload godoc
