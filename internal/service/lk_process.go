@@ -39,6 +39,7 @@ type LKProcessResult struct {
 	NaznEnriched     int            `json:"nazn_enriched"`      // записей с заполненной станцией назначения (Stage 1)
 	StationsNotFound []int          `json:"stations_not_found"` // коды станций вне справочника
 	OpsNotFound      []int          `json:"ops_not_found"`      // коды операций вне справочника
+	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
 // Process проверяет готовность приёма, парсит все принятые файлы ЛК и заменяет
@@ -75,8 +76,16 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		all = append(all, recs...)
 	}
 
-	// Stage 1: обогащение имён станций/операций из справочников (до подмены).
+	// Stage 1: имена станций/операций (a) + производные поля и статусы (b).
 	enr := p.enricher.Stage1(all)
+	var cutoff int
+	if ds, ok := p.intake.cfg.DataSource("lk"); ok {
+		cutoff = ds.Config.DateCutoffHour
+	}
+	sp := p.intake.cfg.Settings().Status
+	statusDist := p.enricher.Stage1b(all, Stage1bConfig{
+		CutoffHour: cutoff, ProstDnMin: sp.ProstDnMin, ProstChMin: sp.ProstChMin,
+	})
 
 	// Контроль потери данных относительно текущего снимка (до подмены).
 	current, err := p.repo.LoadActual(ctx)
@@ -95,6 +104,7 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 	return LKProcessResult{
 		Count: len(all), Files: len(st.Files), PrevSnapshot: len(current), PerFile: perFile,
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
+		StatusDist: statusDist,
 	}, nil
 }
 
