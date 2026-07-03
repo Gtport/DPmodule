@@ -18,11 +18,13 @@ import (
 type LKProcessor struct {
 	intake   *LKIntake
 	repo     port.DislocationRepository
+	actual   *ActualCache
+	status9  port.Status9Repository
 	enricher *Enricher
 }
 
-func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository) *LKProcessor {
-	return &LKProcessor{intake: intake, repo: repo, enricher: NewEnricher(intake.dir)}
+func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *ActualCache, status9 port.Status9Repository) *LKProcessor {
+	return &LKProcessor{intake: intake, repo: repo, actual: actual, status9: status9, enricher: NewEnricher(intake.dir)}
 }
 
 var (
@@ -41,6 +43,8 @@ type LKProcessResult struct {
 	OpsNotFound      []int          `json:"ops_not_found"`      // коды операций вне справочника
 	PortUnresolved   int            `json:"port_unresolved"`    // отброшено: (ОКПО+станция) не резолвится (Stage 2)
 	PortDisabled     int            `json:"port_disabled"`      // отброшено: порт выключен (Stage 2)
+	Status9Inserted  int            `json:"status9_inserted"`   // новых кандидатов статуса 9 (S2-1a)
+	Status9Removed   int            `json:"status9_removed"`    // снято кандидатов (вернулись в поток)
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -101,13 +105,29 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 			ErrDataLoss, lost, len(current), len(all), pol.MaxDataLossPct)
 	}
 
+	// Stage 2 (S2-1a): наполнение таблицы кандидатов статусом 9 из живого батча —
+	// ДО подмены снимка (actual = прежний снимок для сравнения «первого появления»).
+	var s9 Status9Stats
+	if p.actual != nil && p.status9 != nil {
+		if s9, err = applyStatus9Live(ctx, all, p.actual, p.status9); err != nil {
+			return LKProcessResult{}, fmt.Errorf("status9: %w", err)
+		}
+	}
+
 	if err := p.repo.ReplaceActual(ctx, all); err != nil {
 		return LKProcessResult{}, fmt.Errorf("замена снимка: %w", err)
+	}
+	// Актуальная мапа сменилась — перечитываем (для следующего цикла).
+	if p.actual != nil {
+		if err := p.actual.Load(ctx); err != nil {
+			return LKProcessResult{}, fmt.Errorf("перечитывание актуальной мапы: %w", err)
+		}
 	}
 	return LKProcessResult{
 		Count: len(all), Files: len(st.Files), PrevSnapshot: len(current), PerFile: perFile,
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
+		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed,
 	}, nil
 }
 

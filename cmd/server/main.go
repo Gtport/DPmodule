@@ -104,9 +104,11 @@ func run() error {
 		dirCache    *service.DirectoryCache
 		actualCache *service.ActualCache
 		dislRepo    port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
+		status9Repo port.Status9Repository
 	)
 	if db != nil {
 		dislRepo = gormrepo.NewDislocationRepository(db)
+		status9Repo = gormrepo.NewStatus9Repository(db)
 		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
@@ -141,7 +143,6 @@ func run() error {
 		}
 		log.Info("actual cache loaded", zap.Int("vagons", actualCache.Count()))
 	}
-	_ = actualCache // потребитель — Stage 2 (следующие слайсы)
 
 	// -- auth middleware (optional) --
 	var jwtMW *middleware.KeycloakJWT
@@ -154,7 +155,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, jwtMW, log, metricsOnMain)
+	srv := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Repo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
