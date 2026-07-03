@@ -33,6 +33,7 @@ type clientSettingsModel struct {
 	ID           int    `gorm:"column:id;primaryKey"`
 	ClientName   string `gorm:"column:client_name"`
 	IngestPolicy string `gorm:"column:ingest_policy"` // jsonb → text
+	Extra        string `gorm:"column:extra"`         // jsonb → text (status-пороги и пр.)
 }
 
 func (clientSettingsModel) TableName() string { return "client_settings" }
@@ -86,5 +87,13 @@ func (r *ConfigRepository) LoadClientSettings(ctx context.Context) (domain.Clien
 			return domain.ClientSettings{}, fmt.Errorf("client_settings ingest_policy: %w", err)
 		}
 	}
-	return domain.ClientSettings{ClientName: m.ClientName, IngestPolicy: pol}, nil
+	var extra struct {
+		Status domain.StatusPolicy `json:"status"`
+	}
+	if m.Extra != "" {
+		if err := json.Unmarshal([]byte(m.Extra), &extra); err != nil {
+			return domain.ClientSettings{}, fmt.Errorf("client_settings extra: %w", err)
+		}
+	}
+	return domain.ClientSettings{ClientName: m.ClientName, IngestPolicy: pol, Status: extra.Status}, nil
 }

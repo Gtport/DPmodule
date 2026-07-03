@@ -562,6 +562,44 @@ CREATE TABLE dpport.route_speed (
 (`prost_dn≥1`/`prost_ch≥12`). Правило **«час ≥ 18 → +1 сутки»** остаётся в профиле
 парсера (`date_cutoff_hour`, §3.10/§3.11) — это операционные сутки, не TZ; **не** переносим.
 
+### 3.13. Статусы дислокации (Stage 1b) — ревизия правил gtlogic
+
+Обогащение Stage 1 (перенос gtlogic `calculateDerivedFields`): после имён станций
+(Stage 1a) на каждой записи считаются производные поля. Правила статусов **изменены**
+относительно gtlogic (добавлены 6/9/12, у 10 — условие `date_prib`). Порядок — первое
+совпадение выигрывает; **порожний признак проверяется первым**:
+
+```
+порожний (porozh_priznak == "1"):
+    station_oper == stan_nazn (оба непусты)   → 12   порожний в порту (date_kon = nil)
+    иначе                                     →  6   порожний в пути (ВЫШЕ 0/1/4/5)
+гружёный:
+    station_oper == stan_nazn (оба непусты):
+        date_prib непусто                     → 10   прибыл (date_kon = date_op_jd)
+        иначе                                 →  9   кандидат в прибывшие → отд. таблица (отд. слайс)
+    иначе:
+        code_station_nach == code_station_oper:
+            index == "Б/И"                    →  0
+            иначе                             →  1
+        code_oper == "92"                     →  5   брошен (id_status5 = ключ агрегации)
+        station_oper ∉ {назн, отпр} и code_oper≠92
+            и (prost_dn ≥ prost_dn_min  или  prost_ch ≥ prost_ch_min) → 4  (id_status4 = ключ)
+        иначе                                 →  2   в пути
+```
+
+Прочие производные поля:
+- `date_op` = дата из `time_op`; `date_op_jd` = `time_op` (+1 сутки если час ≥ `date_cutoff_hour`).
+- `date_kon`: `10 → date_op_jd`; `12 → nil`; иначе `→ time_op`.
+- `delay` = просрочка по `date_dostav` в сутках (по «сейчас» МСК из `clock.Now()`).
+- `id_disl` = `index / code_station_oper / oper_s / date_op(ДД.ММ.ГГГГ)` (непустые).
+- **`id_status5`/`id_status4`** = ключ агрегации `index|code_station_oper|time_op`
+  (перенос gtlogic `createBrosKey`/`Param_1`): `id_status5` для статуса 5, `id_status4`
+  для статуса 4. Пусто, если нет любого компонента. Сами подсистемы учёта (таблица
+  `bros`-аналог для 4/5, таблица кандидатов для 9) — **отдельными слайсами**.
+
+Пороги `prost_dn_min=1`, `prost_ch_min=12` — в `client_settings.extra.status`.
+`is_bam`/`AlternativeMove` на статус **не** влияет (только на скорости, Stage 2/4).
+
 ---
 
 ## 4. Слой доступа: реестр портов (ключевой для рефакторинга)

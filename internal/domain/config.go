@@ -51,6 +51,14 @@ type DataSourceConfig struct {
 type ClientSettings struct {
 	ClientName   string
 	IngestPolicy IngestPolicy
+	Status       StatusPolicy // пороги расчёта статусов (из client_settings.extra.status)
+}
+
+// StatusPolicy — общепрограмные пороги расчёта статусов дислокации (§3.12/§3.13).
+// Живёт в client_settings.extra.status. Значения GTport: 1 сутки / 12 часов.
+type StatusPolicy struct {
+	ProstDnMin int `json:"prost_dn_min"` // порог простоя в сутках → статус 4
+	ProstChMin int `json:"prost_ch_min"` // порог простоя в часах → статус 4
 }
 
 // IngestPolicy — пороги приёма по категориям (§3.9). Межфайловые/на загрузку
