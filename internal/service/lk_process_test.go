@@ -2,8 +2,10 @@ package service_test
 
 import (
 	"context"
+	"encoding/csv"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -89,25 +91,69 @@ func TestLKProcess_DataLossBlocks(t *testing.T) {
 	assert.Equal(t, 0, repo.calls)
 }
 
-// Реальные выгрузки ЛК (НМТП + Аттис) — если файлы доступны локально.
+// Реальные выгрузки ЛК (НМТП + Аттис) сквозь весь конвейер 1a→2→1b — если локально
+// доступны и файлы фикстур, и seed-справочник станций (нужен для обогащения имён и
+// идентификации порта). 4816 записей полностью резолвятся во включённые порты.
 func TestLKProcess_RealFixtures(t *testing.T) {
 	nmtp := "/home/alex/projects/new_go/114_03.07.2026 01_20.xlsx"
 	attis := "/home/alex/projects/new_go/114_03.07.2026 01_21.xlsx"
-	if _, err := os.Stat(nmtp); err != nil {
-		t.Skip("реальные фикстуры недоступны")
+	stations, okSeed := loadSeedStations(t)
+	if _, err := os.Stat(nmtp); err != nil || !okSeed {
+		t.Skip("реальные фикстуры/seed недоступны")
 	}
 	restore := clock.SetForTest(time.Date(2026, 7, 3, 1, 30, 0, 0, time.UTC))
 	defer restore()
 
+	cc := service.NewConfigCache(sampleConfig())
+	require.NoError(t, cc.Load(context.Background()))
+	dc := service.NewDirectoryCache(&stubDirRepo{stations: stations, ports: realPorts()})
+	require.NoError(t, dc.Load(context.Background()))
+
 	repo := &fakeDislRepo{}
-	proc, dir := newProcessor(t, repo)
+	dir := t.TempDir()
+	proc := service.NewLKProcessor(service.NewLKIntake(cc, dc, dir), repo)
 	copyAsStaged(t, dir, "1126022", "03.07.2026 01:20", nmtp)
 	copyAsStaged(t, dir, "10230304", "03.07.2026 01:21", attis)
 
 	res, err := proc.Process(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, 2, res.Files)
-	assert.Equal(t, 4437+379, res.Count) // 4437 НМТП + 379 Аттис
+	assert.Equal(t, 4437+379, res.Count) // все 4816 резолвятся во включённые порты
+	assert.Equal(t, 0, res.PortDisabled)
+	// gruzpol_s заполнен идентификацией
+	for _, r := range repo.replaced {
+		require.Contains(t, []string{"ГУТ-2", "УТ-1", "АЭ"}, r.GruzpolS)
+	}
+}
+
+func realPorts() []domain.Ports {
+	return []domain.Ports{
+		{Okpo: 10230304, Location: "МЫС АСТАФЬЕВА", Organisation: `ООО КОМПАНИЯ "АТТИС ЭНТЕРПРАЙС"`, NameS: "АЭ", Enabled: true},
+		{Okpo: 1126022, Location: "МЫС АСТАФЬЕВА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "ГУТ-2", Enabled: true},
+		{Okpo: 1126022, Location: "НАХОДКА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "УТ-1", Enabled: true},
+	}
+}
+
+// loadSeedStations читает _reference/seed/stations.csv (вне git). false, если нет.
+func loadSeedStations(t *testing.T) ([]domain.Station, bool) {
+	t.Helper()
+	f, err := os.Open("../../_reference/seed/stations.csv")
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+	rows, err := csv.NewReader(f).ReadAll()
+	require.NoError(t, err)
+	out := make([]domain.Station, 0, len(rows))
+	for i, row := range rows {
+		if i == 0 || len(row) < 3 {
+			continue
+		}
+		kod, _ := strconv.Atoi(row[0])
+		kod4, _ := strconv.Atoi(row[1])
+		out = append(out, domain.Station{Kod: kod, Kod4: kod4, Name: row[2], Road: row[3]})
+	}
+	return out, true
 }
 
 // stageWorkbook кладёт синтетическую книгу ЛК под именем приёма <ОКПО>_<метка>.xlsx.

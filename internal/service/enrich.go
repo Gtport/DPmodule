@@ -11,44 +11,125 @@ import (
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
-// Enricher — обогащение записей дислокации из справочников (перенос Stage 1–2 из
-// gtlogic). Stage 1: имена станций и операций из stations/cargo_operations. Мутирует
-// записи на месте, читает справочники из DirectoryCache. Без БД и сети.
+// Enricher — построчное обогащение батча дислокации из справочников. Stage 1
+// целиком: станции → идентификация порта + фильтр → операции → статусы/производные.
+// НЕ обращается к предыдущему снимку (это Stage 2). Читает справочники из
+// DirectoryCache, без БД и сети. Порядок и квирки — как в gtlogic (см. §3.13).
 type Enricher struct {
 	dir *DirectoryCache
 }
 
 func NewEnricher(dir *DirectoryCache) *Enricher { return &Enricher{dir: dir} }
 
-// Stage1Stats — диагностика прогона Stage 1 («падать громко» на целостности:
-// коды справочников, которых не хватило). Not-found — уникальные коды.
-type Stage1Stats struct {
-	Records            int   // всего записей
-	NaznEnriched       int   // записей с заполненной станцией назначения
-	StationsNotFound   []int // коды станций, отсутствующие в справочнике
-	OperationsNotFound []int // коды операций, отсутствующие в справочнике
+// Stage1Config — настроечные пороги производных расчётов (не хардкод).
+type Stage1Config struct {
+	CutoffHour int // порог часа для date_op_jd (date_cutoff_hour профиля); ≤0 → 18
+	ProstDnMin int // порог простоя в сутках → статус 4 (client_settings)
+	ProstChMin int // порог простоя в часах → статус 4 (client_settings)
 }
 
-// Stage1 обогащает имена станций (отправления/назначения/операции) и операций.
-// Порядок и квирки — как в gtlogic FirstEnrichmentBatch: отсутствие станции
-// ОТПРАВЛЕНИЯ прерывает обогащение станций этой записи (назначение/операция не
-// заполняются) — сохранено для паритета поведения.
-func (e *Enricher) Stage1(records []domain.Dislocation) Stage1Stats {
+// Stage1Stats — диагностика прогона Stage 1.
+type Stage1Stats struct {
+	Input              int         // записей на входе
+	Kept               int         // осталось после фильтра включённых портов
+	NaznEnriched       int         // с заполненной станцией назначения
+	PortUnresolved     int         // отброшено: (ОКПО+станция) не резолвится
+	PortDisabled       int         // отброшено: порт выключен
+	StationsNotFound   []int       // коды станций вне справочника
+	OperationsNotFound []int       // коды операций вне справочника
+	StatusDist         map[int]int // распределение статусов
+}
+
+// Stage1 — вся построчная обработка нового батча, по порядку:
+//  1. станции (коды → имена; отсутствие станции ОТПРАВЛЕНИЯ прерывает обогащение
+//     записи — квирк gtlogic для паритета);
+//  2. идентификация порта (ОКПО+StanNazn → GruzpolS) и ФИЛЬТР: остаются только
+//     вагоны включённых портов;
+//  3. операции (Oper/OperS) — только на оставшихся;
+//  4. статусы и производные (status, date_op/date_op_jd, date_kon, delay, id_disl,
+//     id_status4/5).
+//
+// Возвращает отфильтрованный обогащённый набор («новую мапу») и статистику. «Сейчас»
+// для delay — по Москве (clock.Now()). Stage 2 (сравнение с актуальным снимком,
+// carry-over, marka для новых вагонов, очереди) — отдельная фаза.
+func (e *Enricher) Stage1(records []domain.Dislocation, cfg Stage1Config) ([]domain.Dislocation, Stage1Stats) {
+	if cfg.CutoffHour <= 0 {
+		cfg.CutoffHour = 18
+	}
+	now := time.Time(clock.Now())
 	stationsNF := map[int]struct{}{}
 	opsNF := map[int]struct{}{}
-	st := Stage1Stats{Records: len(records)}
+	st := Stage1Stats{Input: len(records), StatusDist: map[int]int{}}
+	kept := make([]domain.Dislocation, 0, len(records))
 
 	for i := range records {
-		e.enrichStations(&records[i], stationsNF)
-		e.enrichOperation(&records[i], opsNF)
-		if records[i].StanNazn != "" {
+		r := records[i]
+
+		// 1. Станции.
+		e.enrichStations(&r, stationsNF)
+		if r.StanNazn != "" {
 			st.NaznEnriched++
 		}
+
+		// 2. Идентификация порта + фильтр.
+		if !e.identifyPort(&r, &st) {
+			continue
+		}
+
+		// 3. Операции (только на оставшихся).
+		e.enrichOperation(&r, opsNF)
+
+		// 4. Статусы и производные.
+		deriveDates(&r, cfg.CutoffHour)
+		status := computeStatus(&r, cfg.ProstDnMin, cfg.ProstChMin)
+		r.Status = &status
+		st.StatusDist[status]++
+		switch status {
+		case 5:
+			r.IdStatus5 = brosKey(&r)
+		case 4:
+			r.IdStatus4 = brosKey(&r)
+		}
+		r.DateKon = computeDateKon(&r, status)
+		r.Delay = computeDelay(r.DateDostav, now)
+		r.IdDisl = computeIdDisl(&r)
+
+		kept = append(kept, r)
 	}
 
+	st.Kept = len(kept)
 	st.StationsNotFound = sortedKeys(stationsNF)
 	st.OperationsNotFound = sortedKeys(opsNF)
-	return st
+	return kept, st
+}
+
+// identifyPort идентифицирует порт по составному ключу (ОКПО грузополучателя +
+// StanNazn) и фильтрует: true, если резолвится во ВКЛЮЧЁННЫЙ порт (заполняет
+// Gruzpol/GruzpolS); false → запись отбрасывается (учтено в статистике). Требует
+// заполненного StanNazn (шаг 1).
+func (e *Enricher) identifyPort(r *domain.Dislocation, st *Stage1Stats) bool {
+	if r.GruzpolOkpo == "" || r.StanNazn == "" {
+		st.PortUnresolved++
+		return false
+	}
+	okpo, err := strconv.ParseInt(r.GruzpolOkpo, 10, 64)
+	if err != nil {
+		st.PortUnresolved++
+		return false
+	}
+	ports, ok := e.dir.GetPortByCompositeKey(okpo, r.StanNazn)
+	if !ok || len(ports) == 0 {
+		st.PortUnresolved++
+		return false
+	}
+	p := ports[0]
+	if !p.Enabled {
+		st.PortDisabled++
+		return false
+	}
+	r.Gruzpol = p.Organisation
+	r.GruzpolS = p.NameS
+	return true
 }
 
 // enrichStations заполняет станции отправления/назначения/операции. Ранний выход
@@ -116,42 +197,6 @@ func (e *Enricher) enrichOperation(r *domain.Dislocation, notFound map[int]struc
 	}
 	r.Oper = op.Oper
 	r.OperS = op.OperS
-}
-
-// Stage1bConfig — параметры производных расчётов (из настроек, не хардкод).
-type Stage1bConfig struct {
-	CutoffHour int // порог часа для date_op_jd (date_cutoff_hour профиля); ≤0 → 18
-	ProstDnMin int // порог простоя в сутках → статус 4 (client_settings)
-	ProstChMin int // порог простоя в часах → статус 4 (client_settings)
-}
-
-// Stage1b вычисляет производные поля дислокации (перенос gtlogic
-// calculateDerivedFields, ревизия статусов — TARGET.md §3.13): date_op, date_op_jd,
-// status, id_status4/5, date_kon, delay, id_disl. Мутирует записи на месте.
-// «Сейчас» для delay — по Москве (clock.Now()). Возвращает распределение статусов.
-func (e *Enricher) Stage1b(records []domain.Dislocation, cfg Stage1bConfig) map[int]int {
-	if cfg.CutoffHour <= 0 {
-		cfg.CutoffHour = 18
-	}
-	now := time.Time(clock.Now())
-	dist := map[int]int{}
-	for i := range records {
-		r := &records[i]
-		deriveDates(r, cfg.CutoffHour)
-		status := computeStatus(r, cfg.ProstDnMin, cfg.ProstChMin)
-		r.Status = &status
-		dist[status]++
-		switch status {
-		case 5:
-			r.IdStatus5 = brosKey(r)
-		case 4:
-			r.IdStatus4 = brosKey(r)
-		}
-		r.DateKon = computeDateKon(r, status)
-		r.Delay = computeDelay(r.DateDostav, now)
-		r.IdDisl = computeIdDisl(r)
-	}
-	return dist
 }
 
 // deriveDates: date_op = дата из time_op; date_op_jd = time_op (+1 сутки если

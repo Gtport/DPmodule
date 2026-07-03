@@ -28,8 +28,10 @@ func buildLKWorkbook(t *testing.T, marker, formation, okpo string) []byte {
 	require.NoError(t, f.SetCellValue(sh, "B2", "Дислокация вагонов"))
 	require.NoError(t, f.SetCellValue(sh, "A4", "Номер вагона")) // строка заголовка
 	require.NoError(t, f.SetCellValue(sh, "B4", "Грузополучатель (ОКПО)"))
+	require.NoError(t, f.SetCellValue(sh, "C4", "Станция назначения"))
 	require.NoError(t, f.SetCellValue(sh, "A5", "52275476")) // данные
 	require.NoError(t, f.SetCellValue(sh, "B5", okpo))
+	require.NoError(t, f.SetCellValue(sh, "C5", "МЫС АСТАФЬЕВА (985702)")) // код в скобках для парсера
 
 	buf, err := f.WriteToBuffer()
 	require.NoError(t, err)
@@ -43,11 +45,17 @@ func newIntake(t *testing.T) (*service.LKIntake, string) {
 
 	// Справочник ports для идентификации «чей файл» по ОКПО (окпо не уникален:
 	// 1126022 → два терминала). 10230304 → один (АЭ).
-	dc := service.NewDirectoryCache(&stubDirRepo{ports: []domain.Ports{
-		{Okpo: 10230304, Location: "МЫС АСТАФЬЕВА", Organisation: `ООО КОМПАНИЯ "АТТИС ЭНТЕРПРАЙС"`, NameS: "АЭ", Enabled: true},
-		{Okpo: 1126022, Location: "МЫС АСТАФЬЕВА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "ГУТ-2", Enabled: true},
-		{Okpo: 1126022, Location: "НАХОДКА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "УТ-1", Enabled: true},
-	}})
+	dc := service.NewDirectoryCache(&stubDirRepo{
+		stations: []domain.Station{
+			{Kod: 985702, Kod4: 9857, Name: "МЫС АСТАФЬЕВА"},
+			{Kod: 984700, Kod4: 9847, Name: "НАХОДКА"},
+		},
+		ports: []domain.Ports{
+			{Okpo: 10230304, Location: "МЫС АСТАФЬЕВА", Organisation: `ООО КОМПАНИЯ "АТТИС ЭНТЕРПРАЙС"`, NameS: "АЭ", Enabled: true},
+			{Okpo: 1126022, Location: "МЫС АСТАФЬЕВА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "ГУТ-2", Enabled: true},
+			{Okpo: 1126022, Location: "НАХОДКА", Organisation: `АО "НАХОДКИНСКИЙ МТП"`, NameS: "УТ-1", Enabled: true},
+		},
+	})
 	require.NoError(t, dc.Load(context.Background()))
 
 	dir := t.TempDir()
