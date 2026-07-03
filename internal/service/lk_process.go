@@ -16,12 +16,13 @@ import (
 // атомарно заменяет снимок (ReplaceActual, «вариант B»). Обогащение Stage 1–4 —
 // отдельными слоями (пока снимок «сырой»: коды без имён станций/портов).
 type LKProcessor struct {
-	intake *LKIntake
-	repo   port.DislocationRepository
+	intake   *LKIntake
+	repo     port.DislocationRepository
+	enricher *Enricher
 }
 
 func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository) *LKProcessor {
-	return &LKProcessor{intake: intake, repo: repo}
+	return &LKProcessor{intake: intake, repo: repo, enricher: NewEnricher(intake.dir)}
 }
 
 var (
@@ -31,10 +32,13 @@ var (
 
 // LKProcessResult — итог обработки.
 type LKProcessResult struct {
-	Count        int            `json:"count"`         // записей в новом снимке
-	Files        int            `json:"files"`         // обработано файлов
-	PrevSnapshot int            `json:"prev_snapshot"` // размер прежнего снимка
-	PerFile      map[string]int `json:"per_file"`      // имя файла → число записей
+	Count            int            `json:"count"`              // записей в новом снимке
+	Files            int            `json:"files"`              // обработано файлов
+	PrevSnapshot     int            `json:"prev_snapshot"`      // размер прежнего снимка
+	PerFile          map[string]int `json:"per_file"`           // имя файла → число записей
+	NaznEnriched     int            `json:"nazn_enriched"`      // записей с заполненной станцией назначения (Stage 1)
+	StationsNotFound []int          `json:"stations_not_found"` // коды станций вне справочника
+	OpsNotFound      []int          `json:"ops_not_found"`      // коды операций вне справочника
 }
 
 // Process проверяет готовность приёма, парсит все принятые файлы ЛК и заменяет
@@ -71,6 +75,9 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		all = append(all, recs...)
 	}
 
+	// Stage 1: обогащение имён станций/операций из справочников (до подмены).
+	enr := p.enricher.Stage1(all)
+
 	// Контроль потери данных относительно текущего снимка (до подмены).
 	current, err := p.repo.LoadActual(ctx)
 	if err != nil {
@@ -87,6 +94,7 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 	}
 	return LKProcessResult{
 		Count: len(all), Files: len(st.Files), PrevSnapshot: len(current), PerFile: perFile,
+		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
 	}, nil
 }
 
