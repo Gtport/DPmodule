@@ -33,12 +33,55 @@ func (f *fakeDislRepo) ReplaceActual(_ context.Context, items []domain.Dislocati
 	return nil
 }
 
+// fakeStatus9Repo — in-memory port.Status9Repository.
+type fakeStatus9Repo struct {
+	vagons   map[string]struct{}
+	inserted []domain.Dislocation
+	deleted  []string
+}
+
+func newFakeStatus9() *fakeStatus9Repo { return &fakeStatus9Repo{vagons: map[string]struct{}{}} }
+
+func (f *fakeStatus9Repo) Vagons(context.Context) (map[string]struct{}, error) {
+	out := make(map[string]struct{}, len(f.vagons))
+	for k := range f.vagons {
+		out[k] = struct{}{}
+	}
+	return out, nil
+}
+func (f *fakeStatus9Repo) InsertNew(_ context.Context, items []domain.Dislocation) (int, error) {
+	n := 0
+	for _, it := range items {
+		if _, ok := f.vagons[it.Vagon]; ok {
+			continue // конфликт по vagon → DoNothing
+		}
+		f.vagons[it.Vagon] = struct{}{}
+		f.inserted = append(f.inserted, it)
+		n++
+	}
+	return n, nil
+}
+func (f *fakeStatus9Repo) DeleteByVagons(_ context.Context, vagons []string) (int, error) {
+	n := 0
+	for _, v := range vagons {
+		if _, ok := f.vagons[v]; ok {
+			delete(f.vagons, v)
+			f.deleted = append(f.deleted, v)
+			n++
+		}
+	}
+	return n, nil
+}
+
 // newProcessor собирает процессор поверх newIntake (тот же ConfigCache/DirectoryCache
-// с активными портами 10230304 и 1126022) и fake-репозитория.
+// с активными портами 10230304 и 1126022), fake-репозитория снимка, ActualCache
+// (пустой) и fake-таблицы кандидатов.
 func newProcessor(t *testing.T, repo *fakeDislRepo) (*service.LKProcessor, string) {
 	t.Helper()
 	intake, dir := newIntake(t)
-	return service.NewLKProcessor(intake, repo), dir
+	actual := service.NewActualCache(repo)
+	require.NoError(t, actual.Load(context.Background()))
+	return service.NewLKProcessor(intake, repo, actual, newFakeStatus9()), dir
 }
 
 // Оба ожидаемых файла на месте, метки близки → снимок заменяется, обе записи в нём.
@@ -110,8 +153,10 @@ func TestLKProcess_RealFixtures(t *testing.T) {
 	require.NoError(t, dc.Load(context.Background()))
 
 	repo := &fakeDislRepo{}
+	actual := service.NewActualCache(repo)
+	require.NoError(t, actual.Load(context.Background()))
 	dir := t.TempDir()
-	proc := service.NewLKProcessor(service.NewLKIntake(cc, dc, dir), repo)
+	proc := service.NewLKProcessor(service.NewLKIntake(cc, dc, dir), repo, actual, newFakeStatus9())
 	copyAsStaged(t, dir, "1126022", "03.07.2026 01:20", nmtp)
 	copyAsStaged(t, dir, "10230304", "03.07.2026 01:21", attis)
 
