@@ -39,6 +39,8 @@ type LKProcessResult struct {
 	NaznEnriched     int            `json:"nazn_enriched"`      // записей с заполненной станцией назначения (Stage 1)
 	StationsNotFound []int          `json:"stations_not_found"` // коды станций вне справочника
 	OpsNotFound      []int          `json:"ops_not_found"`      // коды операций вне справочника
+	PortUnresolved   int            `json:"port_unresolved"`    // отброшено: (ОКПО+станция) не резолвится (Stage 2)
+	PortDisabled     int            `json:"port_disabled"`      // отброшено: порт выключен (Stage 2)
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -76,14 +78,15 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		all = append(all, recs...)
 	}
 
-	// Stage 1: имена станций/операций (a) + производные поля и статусы (b).
-	enr := p.enricher.Stage1(all)
+	// Stage 1: станции → идентификация порта + фильтр → операции → статусы.
+	// Возвращает отфильтрованный обогащённый набор (только включённые порты).
 	var cutoff int
 	if ds, ok := p.intake.cfg.DataSource("lk"); ok {
 		cutoff = ds.Config.DateCutoffHour
 	}
 	sp := p.intake.cfg.Settings().Status
-	statusDist := p.enricher.Stage1b(all, Stage1bConfig{
+	var enr Stage1Stats
+	all, enr = p.enricher.Stage1(all, Stage1Config{
 		CutoffHour: cutoff, ProstDnMin: sp.ProstDnMin, ProstChMin: sp.ProstChMin,
 	})
 
@@ -104,7 +107,7 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 	return LKProcessResult{
 		Count: len(all), Files: len(st.Files), PrevSnapshot: len(current), PerFile: perFile,
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
-		StatusDist: statusDist,
+		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
 	}, nil
 }
 
