@@ -26,16 +26,23 @@ func NewStatus9Repository(db *gorm.DB) *Status9Repository {
 	return &Status9Repository{db: db}
 }
 
-func (r *Status9Repository) Vagons(ctx context.Context) (map[string]struct{}, error) {
-	var vagons []string
-	if err := r.db.WithContext(ctx).Model(&status9Model{}).Pluck("vagon", &vagons).Error; err != nil {
+func (r *Status9Repository) VagonStatuses(ctx context.Context) (map[string]int, error) {
+	var rows []struct {
+		Vagon  string
+		Status *int
+	}
+	if err := r.db.WithContext(ctx).Model(&status9Model{}).Select("vagon, status").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	set := make(map[string]struct{}, len(vagons))
-	for _, v := range vagons {
-		set[v] = struct{}{}
+	m := make(map[string]int, len(rows))
+	for _, x := range rows {
+		s := 0
+		if x.Status != nil {
+			s = *x.Status
+		}
+		m[x.Vagon] = s
 	}
-	return set, nil
+	return m, nil
 }
 
 func (r *Status9Repository) InsertNew(ctx context.Context, items []domain.Dislocation) (int, error) {
@@ -50,6 +57,29 @@ func (r *Status9Repository) InsertNew(ctx context.Context, items []domain.Disloc
 	// и created_at сохраняются). RowsAffected = число реально вставленных.
 	res := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "vagon"}}, DoNothing: true}).
+		CreateInBatches(models, batchSize)
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return int(res.RowsAffected), nil
+}
+
+func (r *Status9Repository) UpsertMissing(ctx context.Context, items []domain.Dislocation) (int, error) {
+	if len(items) == 0 {
+		return 0, nil
+	}
+	models := make([]status9Model, len(items))
+	for i, d := range items {
+		models[i] = status9Model(dislocationModel(d))
+	}
+	// При конфликте по vagon обновляем только status и updated_at (EXCLUDED —
+	// значения из вставляемой строки: сервис проставил status=8 и updated_at).
+	// Остальные поля (правки прибытия оператора) сохраняются.
+	res := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "vagon"}},
+			DoUpdates: clause.AssignmentColumns([]string{"status", "updated_at"}),
+		}).
 		CreateInBatches(models, batchSize)
 	if res.Error != nil {
 		return 0, res.Error

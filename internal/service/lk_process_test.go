@@ -33,19 +33,19 @@ func (f *fakeDislRepo) ReplaceActual(_ context.Context, items []domain.Dislocati
 	return nil
 }
 
-// fakeStatus9Repo — in-memory port.Status9Repository.
+// fakeStatus9Repo — in-memory port.Status9Repository (vagon → статус).
 type fakeStatus9Repo struct {
-	vagons   map[string]struct{}
+	vagons   map[string]int
 	inserted []domain.Dislocation
 	deleted  []string
 }
 
-func newFakeStatus9() *fakeStatus9Repo { return &fakeStatus9Repo{vagons: map[string]struct{}{}} }
+func newFakeStatus9() *fakeStatus9Repo { return &fakeStatus9Repo{vagons: map[string]int{}} }
 
-func (f *fakeStatus9Repo) Vagons(context.Context) (map[string]struct{}, error) {
-	out := make(map[string]struct{}, len(f.vagons))
-	for k := range f.vagons {
-		out[k] = struct{}{}
+func (f *fakeStatus9Repo) VagonStatuses(context.Context) (map[string]int, error) {
+	out := make(map[string]int, len(f.vagons))
+	for k, v := range f.vagons {
+		out[k] = v
 	}
 	return out, nil
 }
@@ -55,11 +55,25 @@ func (f *fakeStatus9Repo) InsertNew(_ context.Context, items []domain.Dislocatio
 		if _, ok := f.vagons[it.Vagon]; ok {
 			continue // конфликт по vagon → DoNothing
 		}
-		f.vagons[it.Vagon] = struct{}{}
+		st := 0
+		if it.Status != nil {
+			st = *it.Status
+		}
+		f.vagons[it.Vagon] = st
 		f.inserted = append(f.inserted, it)
 		n++
 	}
 	return n, nil
+}
+func (f *fakeStatus9Repo) UpsertMissing(_ context.Context, items []domain.Dislocation) (int, error) {
+	for _, it := range items {
+		st := 0
+		if it.Status != nil {
+			st = *it.Status
+		}
+		f.vagons[it.Vagon] = st
+	}
+	return len(items), nil
 }
 func (f *fakeStatus9Repo) DeleteByVagons(_ context.Context, vagons []string) (int, error) {
 	n := 0
