@@ -100,9 +100,10 @@ func run() error {
 	// отсюда. Пока — прогрев и валидация цепочки (схема → seed → загрузка); ссылку
 	// получит движок дислокации при переносе обогащения.
 	var (
-		cfgCache *service.ConfigCache
-		dirCache *service.DirectoryCache
-		dislRepo port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
+		cfgCache    *service.ConfigCache
+		dirCache    *service.DirectoryCache
+		actualCache *service.ActualCache
+		dislRepo    port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
 	)
 	if db != nil {
 		dislRepo = gormrepo.NewDislocationRepository(db)
@@ -131,7 +132,16 @@ func run() error {
 			zap.Int("enabled", srcEnabled),
 			zap.String("client", cfgCache.Settings().ClientName),
 		)
+
+		// Актуальная мапа дислокации (текущий снимок) — в RAM при старте. Основа
+		// Stage 2 (сравнение нового батча с актуальным). Пока — прогрев.
+		actualCache = service.NewActualCache(dislRepo)
+		if err := actualCache.Load(context.Background()); err != nil {
+			return fmt.Errorf("actual cache: %w", err)
+		}
+		log.Info("actual cache loaded", zap.Int("vagons", actualCache.Count()))
 	}
+	_ = actualCache // потребитель — Stage 2 (следующие слайсы)
 
 	// -- auth middleware (optional) --
 	var jwtMW *middleware.KeycloakJWT
