@@ -43,8 +43,9 @@ type LKProcessResult struct {
 	OpsNotFound      []int          `json:"ops_not_found"`      // коды операций вне справочника
 	PortUnresolved   int            `json:"port_unresolved"`    // отброшено: (ОКПО+станция) не резолвится (Stage 2)
 	PortDisabled     int            `json:"port_disabled"`      // отброшено: порт выключен (Stage 2)
-	Status9Inserted  int            `json:"status9_inserted"`   // новых кандидатов статуса 9 (S2-1a)
+	Status9Inserted  int            `json:"status9_inserted"`   // новых кандидатов статуса 9 (S2-1)
 	Status9Removed   int            `json:"status9_removed"`    // снято кандидатов (вернулись в поток)
+	Status8Missing   int            `json:"status8_missing"`    // пропавших → статус 8 (S2-1b)
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -105,11 +106,11 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 			ErrDataLoss, lost, len(current), len(all), pol.MaxDataLossPct)
 	}
 
-	// Stage 2 (S2-1a): наполнение таблицы кандидатов статусом 9 из живого батча —
-	// ДО подмены снимка (actual = прежний снимок для сравнения «первого появления»).
+	// Stage 2 (S2-1): согласование таблицы кандидатов (статус 9 из живого батча +
+	// статус 8 для пропавших) — ДО подмены снимка (actual = прежний снимок).
 	var s9 Status9Stats
 	if p.actual != nil && p.status9 != nil {
-		if s9, err = applyStatus9Live(ctx, all, p.actual, p.status9); err != nil {
+		if s9, err = reconcileCandidates(ctx, all, p.actual, p.status9); err != nil {
 			return LKProcessResult{}, fmt.Errorf("status9: %w", err)
 		}
 	}
@@ -127,7 +128,7 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		Count: len(all), Files: len(st.Files), PrevSnapshot: len(current), PerFile: perFile,
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
-		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed,
+		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
 	}, nil
 }
 
