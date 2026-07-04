@@ -46,6 +46,9 @@ type LKProcessResult struct {
 	Status9Inserted  int            `json:"status9_inserted"`   // новых кандидатов статуса 9 (S2-1)
 	Status9Removed   int            `json:"status9_removed"`    // снято кандидатов (вернулись в поток)
 	Status8Missing   int            `json:"status8_missing"`    // пропавших → статус 8 (S2-1b)
+	CarryMatched     int            `json:"carry_matched"`      // вагонов с carry-over из актуальной (S2-2)
+	CarryNew         int            `json:"carry_new"`          // новых вагонов (S2-2)
+	CarrySticky      int            `json:"carry_sticky"`       // статус удержан 4/5 (S2-2)
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -106,6 +109,14 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 			ErrDataLoss, lost, len(current), len(all), pol.MaxDataLossPct)
 	}
 
+	// Stage 2 (S2-2): carry-over из актуального снимка для существующих вагонов +
+	// первичная установка index/invoice для новых. ДО reconcileCandidates (может
+	// держать статус 4/5) и ДО подмены снимка (actual = прежний снимок).
+	var co CarryOverStats
+	if p.actual != nil {
+		co = applyCarryOver(all, p.actual)
+	}
+
 	// Stage 2 (S2-1): согласование таблицы кандидатов (статус 9 из живого батча +
 	// статус 8 для пропавших) — ДО подмены снимка (actual = прежний снимок).
 	var s9 Status9Stats
@@ -129,6 +140,7 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
+		CarryMatched: co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
 	}, nil
 }
 
