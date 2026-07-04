@@ -202,7 +202,8 @@ func TestStage1_DateKon(t *testing.T) {
 
 	r12 := statusOf(t, domain.Dislocation{PorozhPriznak: "1", StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА", TimeOp: lt(2026, 7, 2, 20, 0)})
 	require.Equal(t, 12, *r12.Status)
-	assert.Nil(t, r12.DateKon)
+	require.NotNil(t, r12.DateKon)
+	assert.Equal(t, "2026-07-02T20:00:00", r12.DateKon.String()) // 12 → time_op (выгружен)
 
 	r2 := statusOf(t, domain.Dislocation{StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА", StationNach: "СМЫЧКА", TimeOp: lt(2026, 7, 2, 10, 0)})
 	require.Equal(t, 2, *r2.Status)
