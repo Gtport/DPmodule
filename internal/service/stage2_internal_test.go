@@ -69,6 +69,89 @@ func derefStatus(p *int) int {
 	return *p
 }
 
+// s6StubRepo — in-memory port.Status6Repository.
+type s6StubRepo struct {
+	stored   map[string]domain.Dislocation
+	upserted []domain.Dislocation
+}
+
+func newS6Stub() *s6StubRepo { return &s6StubRepo{stored: map[string]domain.Dislocation{}} }
+
+func (r *s6StubRepo) LoadAll(context.Context) ([]domain.Dislocation, error) {
+	out := make([]domain.Dislocation, 0, len(r.stored))
+	for _, d := range r.stored {
+		out = append(out, d)
+	}
+	return out, nil
+}
+func (r *s6StubRepo) Upsert(_ context.Context, items []domain.Dislocation) (int, error) {
+	for _, it := range items {
+		r.stored[it.Vagon] = it
+	}
+	r.upserted = append(r.upserted, items...)
+	return len(items), nil
+}
+func (r *s6StubRepo) DeleteByVagons(_ context.Context, vagons []string) (int, error) {
+	n := 0
+	for _, v := range vagons {
+		if _, ok := r.stored[v]; ok {
+			delete(r.stored, v)
+			n++
+		}
+	}
+	return n, nil
+}
+
+// s9cache/s6cache — кэши поверх stub-репозиториев (прогреты).
+func s9cache(t *testing.T, repo *s9StubRepo) *Status9Cache {
+	t.Helper()
+	c := NewStatus9Cache(repo)
+	require.NoError(t, c.Load(context.Background()))
+	return c
+}
+func s6cache(t *testing.T, repo *s6StubRepo) *Status6Cache {
+	t.Helper()
+	c := NewStatus6Cache(repo)
+	require.NoError(t, c.Load(context.Background()))
+	return c
+}
+
+// Переход на статус 6 (был ≠6) → донор в status6, gruzpol_s/naznach обнулены и в
+// снимке, и в доноре. Новый сразу 6 и «уже был 6» — не фиксируются.
+func TestApplyStatus6Transition(t *testing.T) {
+	ctx := context.Background()
+	actual := NewActualCache(s9StubDisl{items: []domain.Dislocation{
+		{Vagon: "T1", Status: ip(2)}, // ехал гружёным
+		{Vagon: "T2", Status: ip(6)}, // уже был порожним
+	}})
+	require.NoError(t, actual.Load(ctx))
+	repo := newS6Stub()
+
+	kept := []domain.Dislocation{
+		{Vagon: "T1", Status: ip(6), GruzpolS: "ГУТ-2", Naznach: "ГУТ-2", CargoS: "УГОЛЬ"}, // 2→6: переход, донор
+		{Vagon: "T2", Status: ip(6), GruzpolS: "УТ-1"},                                     // 6→6: не переход
+		{Vagon: "T3", Status: ip(6), GruzpolS: "АЭ"},                                       // новый сразу 6: не фиксируем
+		{Vagon: "T4", Status: ip(2), GruzpolS: "ГУТ-2"},                                    // не 6
+	}
+
+	n, err := applyStatus6Transition(ctx, kept, actual, s6cache(t, repo))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, n) // только T1
+	require.Len(t, repo.upserted, 1)
+	d := repo.upserted[0]
+	assert.Equal(t, "T1", d.Vagon)
+	assert.Equal(t, "0", d.GruzpolS) // донор обнулён
+	assert.Equal(t, "0", d.Naznach)
+	assert.Equal(t, "УГОЛЬ", d.CargoS) // груз сохранён для передачи
+	// в снимке T1 тоже обнулён
+	assert.Equal(t, "0", kept[0].GruzpolS)
+	assert.Equal(t, "0", kept[0].Naznach)
+	// T2/T3/T4 в снимке не тронуты
+	assert.Equal(t, "УТ-1", kept[1].GruzpolS)
+	assert.Equal(t, "АЭ", kept[2].GruzpolS)
+}
+
 func ip(v int) *int { return &v }
 
 // Живой статус 9: первое появление / повторный / возврат в поток.
@@ -89,7 +172,7 @@ func TestReconcile_Status9Live(t *testing.T) {
 		{Vagon: "V5", Status: ip(9)}, // новый сразу 9 → insert
 	}
 
-	st, err := reconcileCandidates(ctx, batch, actual, repo)
+	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo))
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, st.Inserted) // V1, V5
@@ -116,7 +199,7 @@ func TestReconcile_Missing8(t *testing.T) {
 	// В батче только P (остальные пропали).
 	batch := []domain.Dislocation{{Vagon: "P", Status: ip(2)}}
 
-	st, err := reconcileCandidates(ctx, batch, actual, repo)
+	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo))
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, st.Missing8) // M1 (новый 8) + M3 (перевод 9→8); M2 выбыл
@@ -135,7 +218,7 @@ func TestReconcile_Return8AsLive9(t *testing.T) {
 
 	batch := []domain.Dislocation{{Vagon: "W", Status: ip(9)}} // вернулся, сразу на ст.назн
 
-	st, err := reconcileCandidates(ctx, batch, actual, repo)
+	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo))
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, st.Removed)  // старый 8 снят
@@ -153,7 +236,7 @@ func TestReconcile_Return8ToStream(t *testing.T) {
 
 	batch := []domain.Dislocation{{Vagon: "W", Status: ip(2)}}
 
-	st, err := reconcileCandidates(ctx, batch, actual, repo)
+	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo))
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, st.Removed)
@@ -167,7 +250,7 @@ func TestReconcile_SkipEmptyVagon(t *testing.T) {
 	require.NoError(t, actual.Load(ctx))
 	repo := &s9StubRepo{vagons: map[string]int{}}
 
-	st, err := reconcileCandidates(ctx, []domain.Dislocation{{Vagon: "", Status: ip(9)}}, actual, repo)
+	st, err := reconcileCandidates(ctx, []domain.Dislocation{{Vagon: "", Status: ip(9)}}, actual, s9cache(t, repo))
 	require.NoError(t, err)
 	assert.Equal(t, 0, st.Inserted)
 }

@@ -87,6 +87,55 @@ func (f *fakeStatus9Repo) DeleteByVagons(_ context.Context, vagons []string) (in
 	return n, nil
 }
 
+// fakeStatus6Repo — in-memory port.Status6Repository.
+type fakeStatus6Repo struct {
+	stored   map[string]domain.Dislocation
+	upserted []domain.Dislocation
+}
+
+func newFakeStatus6() *fakeStatus6Repo {
+	return &fakeStatus6Repo{stored: map[string]domain.Dislocation{}}
+}
+
+func (f *fakeStatus6Repo) LoadAll(context.Context) ([]domain.Dislocation, error) {
+	out := make([]domain.Dislocation, 0, len(f.stored))
+	for _, d := range f.stored {
+		out = append(out, d)
+	}
+	return out, nil
+}
+func (f *fakeStatus6Repo) Upsert(_ context.Context, items []domain.Dislocation) (int, error) {
+	for _, it := range items {
+		f.stored[it.Vagon] = it
+	}
+	f.upserted = append(f.upserted, items...)
+	return len(items), nil
+}
+func (f *fakeStatus6Repo) DeleteByVagons(_ context.Context, vagons []string) (int, error) {
+	n := 0
+	for _, v := range vagons {
+		if _, ok := f.stored[v]; ok {
+			delete(f.stored, v)
+			n++
+		}
+	}
+	return n, nil
+}
+
+// s9c/s6c — прогретые кэши поверх fake-репозиториев (для NewLKProcessor).
+func s9c(t *testing.T, repo *fakeStatus9Repo) *service.Status9Cache {
+	t.Helper()
+	c := service.NewStatus9Cache(repo)
+	require.NoError(t, c.Load(context.Background()))
+	return c
+}
+func s6c(t *testing.T, repo *fakeStatus6Repo) *service.Status6Cache {
+	t.Helper()
+	c := service.NewStatus6Cache(repo)
+	require.NoError(t, c.Load(context.Background()))
+	return c
+}
+
 // newProcessor собирает процессор поверх newIntake (тот же ConfigCache/DirectoryCache
 // с активными портами 10230304 и 1126022), fake-репозитория снимка, ActualCache
 // (пустой) и fake-таблицы кандидатов.
@@ -95,7 +144,7 @@ func newProcessor(t *testing.T, repo *fakeDislRepo) (*service.LKProcessor, strin
 	intake, dir := newIntake(t)
 	actual := service.NewActualCache(repo)
 	require.NoError(t, actual.Load(context.Background()))
-	return service.NewLKProcessor(intake, repo, actual, newFakeStatus9()), dir
+	return service.NewLKProcessor(intake, repo, actual, s9c(t, newFakeStatus9()), s6c(t, newFakeStatus6())), dir
 }
 
 // Оба ожидаемых файла на месте, метки близки → снимок заменяется, обе записи в нём.
@@ -137,8 +186,12 @@ func TestLKProcess_DataLossBlocks(t *testing.T) {
 	restore := clock.SetForTest(time.Date(2026, 7, 2, 6, 10, 0, 0, time.UTC))
 	defer restore()
 
-	// текущий снимок — 100 записей; новый будет 2 → потеря 98% ≥ 30%
-	repo := &fakeDislRepo{current: make([]domain.Dislocation, 100)}
+	// текущий снимок — 100 записей (с непустыми vagon); новый будет 2 → потеря 98% ≥ 30%
+	current := make([]domain.Dislocation, 100)
+	for i := range current {
+		current[i].Vagon = "V" + strconv.Itoa(i)
+	}
+	repo := &fakeDislRepo{current: current}
 	proc, dir := newProcessor(t, repo)
 	stageWorkbook(t, dir, "1126022", "02.07.2026 06:05")
 	stageWorkbook(t, dir, "10230304", "02.07.2026 06:00")
@@ -170,7 +223,7 @@ func TestLKProcess_RealFixtures(t *testing.T) {
 	actual := service.NewActualCache(repo)
 	require.NoError(t, actual.Load(context.Background()))
 	dir := t.TempDir()
-	proc := service.NewLKProcessor(service.NewLKIntake(cc, dc, dir), repo, actual, newFakeStatus9())
+	proc := service.NewLKProcessor(service.NewLKIntake(cc, dc, dir), repo, actual, s9c(t, newFakeStatus9()), s6c(t, newFakeStatus6()))
 	copyAsStaged(t, dir, "1126022", "03.07.2026 01:20", nmtp)
 	copyAsStaged(t, dir, "10230304", "03.07.2026 01:21", attis)
 

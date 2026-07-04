@@ -103,12 +103,16 @@ func run() error {
 		cfgCache    *service.ConfigCache
 		dirCache    *service.DirectoryCache
 		actualCache *service.ActualCache
-		dislRepo    port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
-		status9Repo port.Status9Repository
+		dislRepo     port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
+		status9Repo  port.Status9Repository
+		status6Repo  port.Status6Repository
+		status9Cache *service.Status9Cache
+		status6Cache *service.Status6Cache
 	)
 	if db != nil {
 		dislRepo = gormrepo.NewDislocationRepository(db)
 		status9Repo = gormrepo.NewStatus9Repository(db)
+		status6Repo = gormrepo.NewStatus6Repository(db)
 		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
@@ -142,6 +146,19 @@ func run() error {
 			return fmt.Errorf("actual cache: %w", err)
 		}
 		log.Info("actual cache loaded", zap.Int("vagons", actualCache.Count()))
+
+		// Write-through RAM-кэши таблиц состояния (кандидаты status9, доноры status6):
+		// чтение/сопоставление — из RAM, запись — в БД+RAM. Прогрев на старте.
+		status9Cache = service.NewStatus9Cache(status9Repo)
+		if err := status9Cache.Load(context.Background()); err != nil {
+			return fmt.Errorf("status9 cache: %w", err)
+		}
+		status6Cache = service.NewStatus6Cache(status6Repo)
+		if err := status6Cache.Load(context.Background()); err != nil {
+			return fmt.Errorf("status6 cache: %w", err)
+		}
+		log.Info("state caches loaded",
+			zap.Int("status9", status9Cache.Count()), zap.Int("status6", status6Cache.Count()))
 	}
 
 	// -- auth middleware (optional) --
@@ -155,7 +172,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Repo, jwtMW, log, metricsOnMain)
+	srv := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
