@@ -5,8 +5,35 @@ import (
 
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
-	"github.com/Gtport/DPmodule/internal/port"
 )
+
+// applyStatus6Transition — Stage 2 (§3.16): при ПЕРЕХОДЕ вагона на статус 6 (в новом
+// батче 6, в актуальной вагон есть и его статус ≠ 6) фиксируем донора перегруза.
+// Донор хранит полную запись (для матча по станции операции + вес + срок и передачи
+// груза в S2-3), но gruzpol_s/naznach обнуляются («0») — к нам он не доедет и в
+// выборки попадать не должен. Обнуление — и в снимке (kept), и в копии-доноре.
+// Вызывается ПОСЛЕ carry-over (у записи полные данные) и ДО подмены снимка.
+func applyStatus6Transition(ctx context.Context, kept []domain.Dislocation, actual *ActualCache, cache *Status6Cache) (int, error) {
+	var donors []domain.Dislocation
+	for i := range kept {
+		r := &kept[i]
+		if r.Vagon == "" || r.Status == nil || *r.Status != 6 {
+			continue
+		}
+		ex, ok := actual.FindVagonInActual(r.Vagon)
+		if !ok || (ex.Status != nil && *ex.Status == 6) {
+			continue // нет в актуальной (новый сразу 6) или уже был 6 — не переход
+		}
+		donor := *r // после carry-over — полные данные груза
+		donor.GruzpolS = "0"
+		donor.Naznach = "0"
+		donors = append(donors, donor)
+		// обнуляем и в снимке — к нам не доедет
+		r.GruzpolS = "0"
+		r.Naznach = "0"
+	}
+	return cache.Upsert(ctx, donors)
+}
 
 // Status9Stats — диагностика согласования таблицы кандидатов (S2-1).
 type Status9Stats struct {
@@ -33,12 +60,10 @@ func reconcileCandidates(
 	ctx context.Context,
 	kept []domain.Dislocation,
 	actual *ActualCache,
-	repo port.Status9Repository,
+	cache *Status9Cache,
 ) (Status9Stats, error) {
-	inTable, err := repo.VagonStatuses(ctx)
-	if err != nil {
-		return Status9Stats{}, err
-	}
+	inTable := cache.Statuses() // из RAM
+	var err error
 
 	seen := make(map[string]struct{}, len(kept))
 	var toInsert9 []domain.Dislocation
@@ -92,13 +117,13 @@ func reconcileCandidates(
 	}
 
 	var st Status9Stats
-	if st.Removed, err = repo.DeleteByVagons(ctx, toDelete); err != nil {
+	if st.Removed, err = cache.DeleteByVagons(ctx, toDelete); err != nil {
 		return Status9Stats{}, err
 	}
-	if st.Inserted, err = repo.InsertNew(ctx, toInsert9); err != nil {
+	if st.Inserted, err = cache.InsertNew(ctx, toInsert9); err != nil {
 		return Status9Stats{}, err
 	}
-	if st.Missing8, err = repo.UpsertMissing(ctx, toMissing8); err != nil {
+	if st.Missing8, err = cache.UpsertMissing(ctx, toMissing8); err != nil {
 		return Status9Stats{}, err
 	}
 	return st, nil

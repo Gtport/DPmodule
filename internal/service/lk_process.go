@@ -19,12 +19,13 @@ type LKProcessor struct {
 	intake   *LKIntake
 	repo     port.DislocationRepository
 	actual   *ActualCache
-	status9  port.Status9Repository
+	status9  *Status9Cache
+	status6  *Status6Cache
 	enricher *Enricher
 }
 
-func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *ActualCache, status9 port.Status9Repository) *LKProcessor {
-	return &LKProcessor{intake: intake, repo: repo, actual: actual, status9: status9, enricher: NewEnricher(intake.dir)}
+func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *ActualCache, status9 *Status9Cache, status6 *Status6Cache) *LKProcessor {
+	return &LKProcessor{intake: intake, repo: repo, actual: actual, status9: status9, status6: status6, enricher: NewEnricher(intake.dir)}
 }
 
 var (
@@ -49,6 +50,7 @@ type LKProcessResult struct {
 	CarryMatched     int            `json:"carry_matched"`      // вагонов с carry-over из актуальной (S2-2)
 	CarryNew         int            `json:"carry_new"`          // новых вагонов (S2-2)
 	CarrySticky      int            `json:"carry_sticky"`       // статус удержан 4/5 (S2-2)
+	Status6Donors    int            `json:"status6_donors"`     // переходов на статус 6 → доноры перегруза (§3.16)
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -98,15 +100,16 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		CutoffHour: cutoff, ProstDnMin: sp.ProstDnMin, ProstChMin: sp.ProstChMin,
 	})
 
-	// Контроль потери данных относительно текущего снимка (до подмены).
-	current, err := p.repo.LoadActual(ctx)
-	if err != nil {
-		return LKProcessResult{}, fmt.Errorf("чтение текущего снимка: %w", err)
+	// Контроль потери данных относительно текущего снимка (размер — из RAM ActualCache,
+	// в БД за этим не ходим).
+	prevSize := 0
+	if p.actual != nil {
+		prevSize = p.actual.Count()
 	}
 	pol := p.intake.cfg.Settings().IngestPolicy.Dislocation
-	if lost := dataLossPct(len(current), len(all)); pol.MaxDataLossPct > 0 && lost >= pol.MaxDataLossPct {
+	if lost := dataLossPct(prevSize, len(all)); pol.MaxDataLossPct > 0 && lost >= pol.MaxDataLossPct {
 		return LKProcessResult{}, fmt.Errorf("%w: −%d%% (%d → %d) ≥ %d%%",
-			ErrDataLoss, lost, len(current), len(all), pol.MaxDataLossPct)
+			ErrDataLoss, lost, prevSize, len(all), pol.MaxDataLossPct)
 	}
 
 	// Stage 2 (S2-2): carry-over из актуального снимка для существующих вагонов +
@@ -115,6 +118,15 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 	var co CarryOverStats
 	if p.actual != nil {
 		co = applyCarryOver(all, p.actual)
+	}
+
+	// Stage 2 (§3.16): доноры перегруза — при переходе на статус 6 (после carry-over,
+	// у записи полные данные груза).
+	var donors int
+	if p.actual != nil && p.status6 != nil {
+		if donors, err = applyStatus6Transition(ctx, all, p.actual, p.status6); err != nil {
+			return LKProcessResult{}, fmt.Errorf("status6: %w", err)
+		}
 	}
 
 	// Stage 2 (S2-1): согласование таблицы кандидатов (статус 9 из живого батча +
@@ -136,11 +148,12 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		}
 	}
 	return LKProcessResult{
-		Count: len(all), Files: len(st.Files), PrevSnapshot: len(current), PerFile: perFile,
+		Count: len(all), Files: len(st.Files), PrevSnapshot: prevSize, PerFile: perFile,
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
 		CarryMatched: co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
+		Status6Donors: donors,
 	}, nil
 }
 
