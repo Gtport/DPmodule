@@ -571,7 +571,7 @@ CREATE TABLE dpport.route_speed (
 
 ```
 порожний (porozh_priznak == "1"):
-    station_oper == stan_nazn (оба непусты)   → 12   порожний в порту (date_kon = nil)
+    station_oper == stan_nazn (оба непусты)   → 12   порожний в порту (date_kon = time_op)
     иначе                                     →  6   порожний в пути (ВЫШЕ 0/1/4/5)
 гружёный:
     station_oper == stan_nazn (оба непусты):
@@ -589,7 +589,7 @@ CREATE TABLE dpport.route_speed (
 
 Прочие производные поля:
 - `date_op` = дата из `time_op`; `date_op_jd` = `time_op` (+1 сутки если час ≥ `date_cutoff_hour`).
-- `date_kon`: `10 → date_op_jd`; `12 → nil`; иначе `→ time_op`.
+- `date_kon`: `10 → date_op_jd`; иначе (включая 12 — выгружен в порту) `→ time_op`.
 - `delay` = просрочка по `date_dostav` в сутках (по «сейчас» МСК из `clock.Now()`).
 - `id_disl` = `index / code_station_oper / oper_s / date_op(ДД.ММ.ГГГГ)` (непустые).
 - **`id_status5`/`id_status4`** = ключ агрегации `index|code_station_oper|time_op`

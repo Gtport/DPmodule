@@ -262,16 +262,12 @@ func computeStatus(r *domain.Dislocation, prostDnMin, prostChMin int) int {
 	return 2 // в пути
 }
 
-// computeDateKon: 10 → date_op_jd; 12 → nil (порожний, закрывать нечего); иначе time_op.
+// computeDateKon: 10 (прибыл) → date_op_jd; иначе (включая 12 — выгружен в порту) → time_op.
 func computeDateKon(r *domain.Dislocation, status int) *domain.LocalTime {
-	switch status {
-	case 10:
+	if status == 10 {
 		return r.DateOpJd
-	case 12:
-		return nil
-	default:
-		return r.TimeOp
 	}
+	return r.TimeOp
 }
 
 // computeDelay: просрочка в сутках, если норматив доставки в прошлом (по «сейчас» МСК).
