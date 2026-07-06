@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -33,6 +34,104 @@ func applyStatus6Transition(ctx context.Context, kept []domain.Dislocation, actu
 		r.Naznach = "0"
 	}
 	return cache.Upsert(ctx, donors)
+}
+
+// applyStatus6Donorship — Stage 2 (S2-3c, §3.17): для новых вагонов, которым marka не
+// дала груз (Gruzotpr пусто), ищем донора перегруза в status6 по трём параметрам:
+// станция операции донора == станция погрузки нового (code_station_oper == code_station_nach),
+// вес ±0.1 т, точный срок доставки. При совпадении приёмник НАСЛЕДУЕТ груз/назначение
+// донора, оставаясь собой физически (номер, позиция, операция, время, индексы — свои);
+// номер донора пишется в peregruz, донор удаляется из status6. Один донор — одному
+// приёмнику. Идёт ПОСЛЕ applyStatus6Transition (свежие доноры этого батча доступны) и
+// ДО подмены снимка.
+func applyStatus6Donorship(ctx context.Context, kept []domain.Dislocation, cache *Status6Cache) (int, error) {
+	donors := cache.Donors()
+	if len(donors) == 0 {
+		return 0, nil
+	}
+	used := make(map[string]struct{}, len(donors))
+	var usedVagons []string
+	for i := range kept {
+		r := &kept[i]
+		if r.Vagon == "" || r.Gruzotpr != "" {
+			continue // нет номера или груз уже есть (marka заполнила / перенёсся)
+		}
+		for j := range donors {
+			d := &donors[j]
+			if d.Vagon == "" {
+				continue
+			}
+			if _, taken := used[d.Vagon]; taken {
+				continue
+			}
+			if donorMatches(d, r) {
+				transferFromDonor(r, d)
+				r.Peregruz = d.Vagon
+				used[d.Vagon] = struct{}{}
+				usedVagons = append(usedVagons, d.Vagon)
+				break
+			}
+		}
+	}
+	if len(usedVagons) == 0 {
+		return 0, nil
+	}
+	return cache.DeleteByVagons(ctx, usedVagons)
+}
+
+// donorMatches — три параметра совпадения донора и приёмника (§3.17): станция операции
+// донора == станция погрузки/отправления нового; вес ±0.1 т; точный срок доставки (по
+// дате). Отсутствие любого из сравниваемых значений → не совпадает.
+func donorMatches(d, r *domain.Dislocation) bool {
+	if d.CodeStationOper == "" || d.CodeStationOper != r.CodeStationNach {
+		return false
+	}
+	if d.Ves == nil || r.Ves == nil {
+		return false
+	}
+	if diff := *d.Ves - *r.Ves; diff > 0.1 || diff < -0.1 {
+		return false
+	}
+	if d.DateDostav == nil || r.DateDostav == nil {
+		return false
+	}
+	dd, rd := time.Time(*d.DateDostav), time.Time(*r.DateDostav)
+	return dd.Year() == rd.Year() && dd.YearDay() == rd.YearDay()
+}
+
+// transferFromDonor переносит на приёмника груз, назначение и станцию отправления донора
+// (§3.17, п.4a). НЕ трогает физическую идентичность приёмника: номер, позицию, операцию,
+// время, статус, индексы, накладные, таймстемпы.
+func transferFromDonor(r, d *domain.Dislocation) {
+	// груз
+	r.Gruzotpr = d.Gruzotpr
+	r.GruzotprOkpo = d.GruzotprOkpo
+	r.CodeCargo = d.CodeCargo
+	r.CargoS = d.CargoS
+	r.CargoSms = d.CargoSms
+	r.CargoGroup = d.CargoGroup
+	r.Ves = d.Ves
+	r.Client = d.Client
+	r.Sms1 = d.Sms1
+	r.Sms2 = d.Sms2
+	r.Sms3 = d.Sms3
+	r.Sprav1 = d.Sprav1
+	r.Sprav2 = d.Sprav2
+	r.Sprav3 = d.Sprav3
+	r.Color = d.Color
+	// назначение
+	r.Gruzpol = d.Gruzpol
+	r.GruzpolS = d.GruzpolS
+	r.Naznach = d.Naznach
+	r.CodeStanNazn = d.CodeStanNazn
+	r.Code4StanNazn = d.Code4StanNazn
+	r.StanNazn = d.StanNazn
+	// станция отправления (груз изначально ехал со станции донора)
+	r.CodeStationNach = d.CodeStationNach
+	r.StationNach = d.StationNach
+	r.DorogaNach = d.DorogaNach
+	// срок доставки (совпал при матче — фиксируем донорский)
+	r.DateDostav = d.DateDostav
 }
 
 // Status9Stats — диагностика согласования таблицы кандидатов (S2-1).

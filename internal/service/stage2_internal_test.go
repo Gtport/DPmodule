@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -153,7 +154,63 @@ func TestApplyStatus6Transition(t *testing.T) {
 	assert.Equal(t, "АЭ", kept[2].GruzpolS)
 }
 
-func ip(v int) *int { return &v }
+func ip(v int) *int         { return &v }
+func fp(v float64) *float64 { return &v }
+func ld(y, mo, d int) *domain.LocalTime {
+	v := domain.LocalTime(time.Date(y, time.Month(mo), d, 0, 0, 0, 0, time.UTC))
+	return &v
+}
+
+// Донорство перегруза (S2-3c): новый вагон без груза, совпавший с донором по станции
+// операции + вес ±0.1 + срок доставки, наследует груз/назначение/отправление донора,
+// оставаясь собой физически; номер донора → peregruz; донор удаляется. §3.17.
+func TestApplyStatus6Donorship(t *testing.T) {
+	ctx := context.Background()
+	repo := newS6Stub()
+	repo.stored["D1"] = domain.Dislocation{
+		Vagon: "D1", CodeStationOper: "100", Ves: fp(68.0), DateDostav: ld(2026, 7, 10),
+		Gruzotpr: "ОТПР", GruzotprOkpo: "555", CodeCargo: "16021", CargoS: "УГОЛЬ",
+		CargoGroup: "УГ", Client: "КЛ", GruzpolS: "ГУТ-2", Naznach: "ГУТ-2",
+		StanNazn: "МЫС АСТАФЬЕВА", CodeStationNach: "200", StationNach: "СТ-ДОНОРА", DorogaNach: "ЗСЖД",
+	}
+	cache := s6cache(t, repo)
+
+	kept := []domain.Dislocation{
+		// приёмник: новый, без груза; станция погрузки(отправления)=100 == станция операции донора;
+		// вес 68.05 (в пределах ±0.1), срок совпал.
+		{Vagon: "R1", CodeStationNach: "100", Ves: fp(68.05), DateDostav: ld(2026, 7, 10),
+			CodeStationOper: "777", StationOper: "ГДЕ-ТО", Status: ip(2), Index: "IDX-R1"},
+		{Vagon: "R2", CodeStationNach: "100", Ves: fp(90.0), DateDostav: ld(2026, 7, 10)},                   // вес далеко
+		{Vagon: "R3", CodeStationNach: "100", Ves: fp(68.0), DateDostav: ld(2026, 7, 11)},                   // срок иной
+		{Vagon: "R4", Gruzotpr: "СВОЙ", CodeStationNach: "100", Ves: fp(68.0), DateDostav: ld(2026, 7, 10)}, // груз есть
+	}
+
+	n, err := applyStatus6Donorship(ctx, kept, cache)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n) // только R1
+
+	// R1 наследовал груз/назначение/отправление донора
+	assert.Equal(t, "ОТПР", kept[0].Gruzotpr)
+	assert.Equal(t, "УГОЛЬ", kept[0].CargoS)
+	assert.Equal(t, "ГУТ-2", kept[0].GruzpolS)
+	assert.Equal(t, "МЫС АСТАФЬЕВА", kept[0].StanNazn)
+	assert.Equal(t, "200", kept[0].CodeStationNach) // станция отправления — донора
+	assert.Equal(t, "СТ-ДОНОРА", kept[0].StationNach)
+	assert.Equal(t, "D1", kept[0].Peregruz) // номер донора
+	// физика приёмника не тронута
+	assert.Equal(t, "777", kept[0].CodeStationOper)
+	assert.Equal(t, "IDX-R1", kept[0].Index)
+	assert.Equal(t, 2, *kept[0].Status)
+
+	// прочие не тронуты
+	assert.Empty(t, kept[1].Gruzotpr)
+	assert.Empty(t, kept[2].Gruzotpr)
+	assert.Equal(t, "СВОЙ", kept[3].Gruzotpr)
+	assert.Empty(t, kept[1].Peregruz)
+
+	// донор использован и удалён
+	assert.Equal(t, 0, cache.Count())
+}
 
 // Живой статус 9: первое появление / повторный / возврат в поток.
 func TestReconcile_Status9Live(t *testing.T) {
