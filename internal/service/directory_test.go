@@ -18,6 +18,7 @@ type stubDirRepo struct {
 	marka      []domain.Marka
 	ports      []domain.Ports
 	routeSpeed []domain.RouteSpeed
+	naznach    []domain.NaznachStation
 }
 
 func (s *stubDirRepo) LoadStations(context.Context) ([]domain.Station, error) {
@@ -30,6 +31,9 @@ func (s *stubDirRepo) LoadMarka(context.Context) ([]domain.Marka, error) { retur
 func (s *stubDirRepo) LoadPorts(context.Context) ([]domain.Ports, error) { return s.ports, nil }
 func (s *stubDirRepo) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {
 	return s.routeSpeed, nil
+}
+func (s *stubDirRepo) LoadNaznachStation(context.Context) ([]domain.NaznachStation, error) {
+	return s.naznach, nil
 }
 
 func TestDirectoryCache_LoadAndLookup(t *testing.T) {
@@ -54,12 +58,13 @@ func TestDirectoryCache_LoadAndLookup(t *testing.T) {
 	c := service.NewDirectoryCache(repo)
 	require.NoError(t, c.Load(context.Background()))
 
-	st, cargoOps, marka, ports, routeSpeed := c.Counts()
+	st, cargoOps, marka, ports, routeSpeed, naznach := c.Counts()
 	assert.Equal(t, 1, st)
 	assert.Equal(t, 1, cargoOps)
 	assert.Equal(t, 1, marka) // 1 ключ (две записи под ним)
 	assert.Equal(t, 1, ports)
 	assert.Equal(t, 2, routeSpeed) // 2 профиля: '*' и 'УЛАК'
+	assert.Equal(t, 0, naznach)    // перестановок не задано
 
 	t.Run("station by kod / kod4", func(t *testing.T) {
 		s, ok := c.GetStationByKod(63710)

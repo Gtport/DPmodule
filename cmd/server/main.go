@@ -100,9 +100,9 @@ func run() error {
 	// отсюда. Пока — прогрев и валидация цепочки (схема → seed → загрузка); ссылку
 	// получит движок дислокации при переносе обогащения.
 	var (
-		cfgCache    *service.ConfigCache
-		dirCache    *service.DirectoryCache
-		actualCache *service.ActualCache
+		cfgCache     *service.ConfigCache
+		dirCache     *service.DirectoryCache
+		actualCache  *service.ActualCache
 		dislRepo     port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
 		status9Repo  port.Status9Repository
 		status6Repo  port.Status6Repository
@@ -117,13 +117,14 @@ func run() error {
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
 		}
-		stationsN, cargoOpsN, markaN, portsN, routeSpeedN := dirCache.Counts()
+		stationsN, cargoOpsN, markaN, portsN, routeSpeedN, naznachN := dirCache.Counts()
 		log.Info("directory cache loaded",
 			zap.Int("stations", stationsN),
 			zap.Int("cargo_operations", cargoOpsN),
 			zap.Int("marka", markaN),
 			zap.Int("ports", portsN),
 			zap.Int("route_speed", routeSpeedN),
+			zap.Int("naznach_station", naznachN),
 		)
 
 		// Настроечная таблица (data_source, client_settings) — в RAM при старте.

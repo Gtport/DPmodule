@@ -72,3 +72,16 @@ type Ports struct {
 	Enabled     bool   // at_work
 	SortOrder   int
 }
+
+// NaznachStation — настроечная таблица «перестановок назначения» (Stage 2, §3.17).
+// Для вагона, физически идущего на станцию назначения DestStation, «фактическое
+// назначение» (Naznach — площадка внутри порта) определяется по станции отправления
+// OriginStation. Обобщает хардкод «МЫС АСТАФЬЕВА» из gtlogic: у каждой станции
+// назначения свой список. Ключ поиска — имена станций (DestStation, OriginStation).
+type NaznachStation struct {
+	DestStation   string // станция назначения-триггер (= StanNazn)
+	OriginStation string // станция отправления (= StationNach)
+	Naznach       string // площадка назначения (результат)
+	Univers       bool   // признак «универсальный»
+	Enabled       bool   // включена ли перестановка
+}

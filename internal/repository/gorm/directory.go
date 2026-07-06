@@ -81,6 +81,17 @@ type routeSpeedModel struct {
 
 func (routeSpeedModel) TableName() string { return "route_speed" }
 
+type naznachStationModel struct {
+	ID            int64  `gorm:"column:id;primaryKey"`
+	DestStation   string `gorm:"column:dest_station"`
+	OriginStation string `gorm:"column:origin_station"`
+	Naznach       string `gorm:"column:naznach"`
+	Univers       bool   `gorm:"column:univers"`
+	Enabled       bool   `gorm:"column:enabled"`
+}
+
+func (naznachStationModel) TableName() string { return "naznach_station" }
+
 // ──────────────────────────────────────────────────────────────────────────
 //  Адаптер: реализует port.DirectoryRepository, маппит ORM-модели в domain.*.
 // ──────────────────────────────────────────────────────────────────────────
@@ -163,6 +174,21 @@ func (r *DirectoryRepository) LoadRouteSpeed(ctx context.Context) ([]domain.Rout
 	for i, m := range ms {
 		out[i] = domain.RouteSpeed{
 			StationNach: m.StationNach, IsBam: m.IsBam, FromKm: m.FromKm, Speed: m.Speed,
+		}
+	}
+	return out, nil
+}
+
+func (r *DirectoryRepository) LoadNaznachStation(ctx context.Context) ([]domain.NaznachStation, error) {
+	var ms []naznachStationModel
+	if err := r.db.WithContext(ctx).Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.NaznachStation, len(ms))
+	for i, m := range ms {
+		out[i] = domain.NaznachStation{
+			DestStation: m.DestStation, OriginStation: m.OriginStation,
+			Naznach: m.Naznach, Univers: m.Univers, Enabled: m.Enabled,
 		}
 	}
 	return out, nil

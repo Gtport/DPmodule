@@ -24,10 +24,13 @@ type DirectoryCache struct {
 	stations        map[int]domain.Station
 	stationsByKod4  map[int]domain.Station
 	cargoOperations map[int]domain.CargoOperation
-	marka           map[string][]domain.Marka      // ключ MarkaKey (неуникален → срез)
-	ports           map[string][]domain.Ports      // ключ PortKey (неуникален → срез)
-	portsByOkpo     map[int64][]domain.Ports       // ОКПО → терминалы (для приёма ЛК: «чей файл»)
-	routeSpeed      map[string][]domain.RouteSpeed // ключ RouteSpeedKey; участки по убыванию FromKm
+	marka           map[string][]domain.Marka        // ключ MarkaKey (неуникален → срез)
+	markaByStation  map[int64][]domain.Marka         // код станции отправления → записи (частичный матч S2-3)
+	markaOkpos      map[int64]struct{}               // множество ОКПО в marka (проверка «ОКПО известен»)
+	ports           map[string][]domain.Ports        // ключ PortKey (неуникален → срез)
+	portsByOkpo     map[int64][]domain.Ports         // ОКПО → терминалы (для приёма ЛК: «чей файл»)
+	routeSpeed      map[string][]domain.RouteSpeed   // ключ RouteSpeedKey; участки по убыванию FromKm
+	naznachStation  map[string]domain.NaznachStation // ключ NaznachKey; только enabled + непустой naznach (§3.17)
 }
 
 func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
@@ -37,10 +40,19 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		stationsByKod4:  map[int]domain.Station{},
 		cargoOperations: map[int]domain.CargoOperation{},
 		marka:           map[string][]domain.Marka{},
+		markaByStation:  map[int64][]domain.Marka{},
+		markaOkpos:      map[int64]struct{}{},
 		ports:           map[string][]domain.Ports{},
 		portsByOkpo:     map[int64][]domain.Ports{},
 		routeSpeed:      map[string][]domain.RouteSpeed{},
+		naznachStation:  map[string]domain.NaznachStation{},
 	}
+}
+
+// NaznachKey — составной ключ перестановки назначения: (станция назначения, станция
+// отправления). Разделитель — управляющий символ, в именах станций не встречается.
+func NaznachKey(destStation, originStation string) string {
+	return destStation + "\x1f" + originStation
 }
 
 // MarkaKey / PortKey — составные ключи поиска (совпадают со схемой ключей gtlogic).
@@ -79,6 +91,10 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load route_speed: %w", err)
 	}
+	naznach, err := c.repo.LoadNaznachStation(ctx)
+	if err != nil {
+		return fmt.Errorf("load naznach_station: %w", err)
+	}
 
 	st := make(map[int]domain.Station, len(stations))
 	st4 := make(map[int]domain.Station, len(stations))
@@ -91,9 +107,22 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 		co[o.Kod] = o
 	}
 	mk := make(map[string][]domain.Marka)
+	mkByStation := make(map[int64][]domain.Marka)
+	mkOkpos := make(map[int64]struct{})
 	for _, m := range marka {
 		k := MarkaKey(m.Okpo, m.StationKod, m.CargoKod)
 		mk[k] = append(mk[k], m)
+		mkByStation[m.StationKod] = append(mkByStation[m.StationKod], m)
+		mkOkpos[m.Okpo] = struct{}{}
+	}
+	// Перестановки назначения: в кэш только включённые с непустым naznach — иначе
+	// поиск возвращает «не найдено», и enrichFromNaznachStation откатывается к GruzpolS.
+	nz := make(map[string]domain.NaznachStation, len(naznach))
+	for _, n := range naznach {
+		if !n.Enabled || n.Naznach == "" {
+			continue
+		}
+		nz[NaznachKey(n.DestStation, n.OriginStation)] = n
 	}
 	pr := make(map[string][]domain.Ports)
 	pbo := make(map[int64][]domain.Ports)
@@ -118,18 +147,21 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	c.stationsByKod4 = st4
 	c.cargoOperations = co
 	c.marka = mk
+	c.markaByStation = mkByStation
+	c.markaOkpos = mkOkpos
 	c.ports = pr
 	c.portsByOkpo = pbo
 	c.routeSpeed = rs
+	c.naznachStation = nz
 	c.mu.Unlock()
 	return nil
 }
 
 // Counts — сводка по числу ключей (для логов после загрузки).
-func (c *DirectoryCache) Counts() (stations, cargoOps, marka, ports, routeSpeed int) {
+func (c *DirectoryCache) Counts() (stations, cargoOps, marka, ports, routeSpeed, naznach int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return len(c.stations), len(c.cargoOperations), len(c.marka), len(c.ports), len(c.routeSpeed)
+	return len(c.stations), len(c.cargoOperations), len(c.marka), len(c.ports), len(c.routeSpeed), len(c.naznachStation)
 }
 
 // ──────────────────────────────── lookup ────────────────────────────────
@@ -160,6 +192,43 @@ func (c *DirectoryCache) GetMarkaByCompositeKey(okpo, stationKod, cargoKod int64
 	defer c.mu.RUnlock()
 	m, ok := c.marka[MarkaKey(okpo, stationKod, cargoKod)]
 	return m, ok
+}
+
+// GetMarkaByStationAndCargo — записи marka по (станция отправления + груз), любой ОКПО.
+// Для частичного матча S2-3, когда ОКПО грузоотправителя в marka не известен (§3.17).
+func (c *DirectoryCache) GetMarkaByStationAndCargo(stationKod, cargoKod int64) []domain.Marka {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var out []domain.Marka
+	for _, m := range c.markaByStation[stationKod] {
+		if m.CargoKod == cargoKod {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// MarkaHasOkpo — известен ли ОКПО грузоотправителя в marka вообще (в любом сочетании).
+// Частичный матч по станции+грузу допускается ТОЛЬКО когда ОКПО не известен (паритет
+// с gtlogic: для известного отправителя пробел в станции/грузе не домысливаем).
+func (c *DirectoryCache) MarkaHasOkpo(okpo int64) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.markaOkpos[okpo]
+	return ok
+}
+
+// GetNaznach — площадка назначения по (станция назначения, станция отправления).
+// Возвращает только включённые перестановки с непустым naznach; иначе (false)
+// вызывающий откатывается к GruzpolS (§3.17).
+func (c *DirectoryCache) GetNaznach(destStation, originStation string) (string, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	n, ok := c.naznachStation[NaznachKey(destStation, originStation)]
+	if !ok {
+		return "", false
+	}
+	return n.Naznach, true
 }
 
 func (c *DirectoryCache) GetPortByCompositeKey(okpo int64, location string) ([]domain.Ports, bool) {
