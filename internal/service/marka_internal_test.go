@@ -10,20 +10,25 @@ import (
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
-// markaStubRepo — минимальный DirectoryRepository для S2-3: только marka + перестановки.
+// markaStubRepo — минимальный DirectoryRepository для внутренних тестов Stage 2/3
+// (marka + перестановки + станции + профили скоростей).
 type markaStubRepo struct {
-	marka   []domain.Marka
-	naznach []domain.NaznachStation
+	marka      []domain.Marka
+	naznach    []domain.NaznachStation
+	stations   []domain.Station
+	routeSpeed []domain.RouteSpeed
 }
 
-func (markaStubRepo) LoadStations(context.Context) ([]domain.Station, error) { return nil, nil }
+func (s markaStubRepo) LoadStations(context.Context) ([]domain.Station, error) {
+	return s.stations, nil
+}
 func (markaStubRepo) LoadCargoOperations(context.Context) ([]domain.CargoOperation, error) {
 	return nil, nil
 }
 func (s markaStubRepo) LoadMarka(context.Context) ([]domain.Marka, error) { return s.marka, nil }
 func (markaStubRepo) LoadPorts(context.Context) ([]domain.Ports, error)   { return nil, nil }
-func (markaStubRepo) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {
-	return nil, nil
+func (s markaStubRepo) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {
+	return s.routeSpeed, nil
 }
 func (s markaStubRepo) LoadNaznachStation(context.Context) ([]domain.NaznachStation, error) {
 	return s.naznach, nil
