@@ -9,13 +9,18 @@
 --
 --  Идемпотентно: TRUNCATE + перезаливка. RESTART IDENTITY сбрасывает bigserial
 --  (id у marka/ports/naznach_station), чтобы повторный прогон не наращивал счётчики.
+--
+--  ВАЖНО: stations.csv включает колонку is_bam (признак БАМ, ставится по маршруту).
+--  Пометки БАМ-станций хранятся В САМОМ CSV, поэтому пересев их НЕ затирает. При ручной
+--  правке is_bam в БД — синхронизировать обратно в stations.csv (иначе следующий пересев
+--  вернёт значение из файла).
 -- ============================================================================
 
 SET search_path TO dpport;
 
 TRUNCATE stations, cargo_operations, marka, ports, route_speed, naznach_station RESTART IDENTITY;
 
-\copy stations(kod,kod_4,name,road,latitude,longitude) FROM '_reference/seed/stations.csv' WITH (FORMAT csv, HEADER true)
+\copy stations(kod,kod_4,name,road,latitude,longitude,is_bam) FROM '_reference/seed/stations.csv' WITH (FORMAT csv, HEADER true)
 \copy cargo_operations(kod,oper,oper_s) FROM '_reference/seed/cargo_operations.csv' WITH (FORMAT csv, HEADER true)
 \copy marka(okpo,station_kod,cargo_kod,shipper,cargo_s,client,cargo_group,sms_1) FROM '_reference/seed/marka.csv' WITH (FORMAT csv, HEADER true)
 \copy ports(okpo,location,organisation,name_s,name,code,plan_code,station_code,pc_coal,pc_metal,pc_other,pc_total,front,color,enabled) FROM '_reference/seed/ports.csv' WITH (FORMAT csv, HEADER true)
