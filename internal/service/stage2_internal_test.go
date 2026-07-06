@@ -116,8 +116,9 @@ func s6cache(t *testing.T, repo *s6StubRepo) *Status6Cache {
 	return c
 }
 
-// Переход на статус 6 (был ≠6) → донор в status6, gruzpol_s/naznach обнулены и в
-// снимке, и в доноре. Новый сразу 6 и «уже был 6» — не фиксируются.
+// Переход на статус 6 (был ≠6) → донор в status6. gruzpol_s/naznach обнулены ТОЛЬКО
+// в снимке; в записи-доноре они реальные (нужны для передачи приёмнику, §3.17). Новый
+// сразу 6 и «уже был 6» — не фиксируются.
 func TestApplyStatus6Transition(t *testing.T) {
 	ctx := context.Background()
 	actual := NewActualCache(s9StubDisl{items: []domain.Dislocation{
@@ -141,8 +142,8 @@ func TestApplyStatus6Transition(t *testing.T) {
 	require.Len(t, repo.upserted, 1)
 	d := repo.upserted[0]
 	assert.Equal(t, "T1", d.Vagon)
-	assert.Equal(t, "0", d.GruzpolS) // донор обнулён
-	assert.Equal(t, "0", d.Naznach)
+	assert.Equal(t, "ГУТ-2", d.GruzpolS) // в доноре реальные — для передачи приёмнику
+	assert.Equal(t, "ГУТ-2", d.Naznach)
 	assert.Equal(t, "УГОЛЬ", d.CargoS) // груз сохранён для передачи
 	// в снимке T1 тоже обнулён
 	assert.Equal(t, "0", kept[0].GruzpolS)

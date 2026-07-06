@@ -147,7 +147,7 @@ type Dislocation struct {
 	Frost     *int       `json:"frost"`      // признак заморозки
 	Info1     string     `json:"info_1"`     // свободные строки диспетчера
 	Info2     string     `json:"info_2"`
-	Info3     string     `json:"info_3"`
+	Peregruz  string     `json:"peregruz"`    // номер вагона-донора при перегрузе (S2-3, §3.17); пусто = обычная погрузка
 	Color     string     `json:"color"`       // цветовая метка для фронта
 	RodVagUch string     `json:"rod_vag_uch"` // код рода вагона (НЕ собственник)
 	Shipments string     `json:"shipments"`   // связанные отгрузки/партии
