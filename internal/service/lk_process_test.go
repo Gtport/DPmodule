@@ -122,6 +122,37 @@ func (f *fakeStatus6Repo) DeleteByVagons(_ context.Context, vagons []string) (in
 	return n, nil
 }
 
+// fakeHistoryRepo — in-memory port.HistoryRepository.
+type fakeHistoryRepo struct {
+	existing map[string]struct{}
+	inserted []domain.VagonHistory
+	updated  map[string]map[string]any
+}
+
+func newFakeHistory() *fakeHistoryRepo {
+	return &fakeHistoryRepo{existing: map[string]struct{}{}, updated: map[string]map[string]any{}}
+}
+func (f *fakeHistoryRepo) ExistingIDs(_ context.Context, ids []string) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	for _, id := range ids {
+		if _, ok := f.existing[id]; ok {
+			out[id] = struct{}{}
+		}
+	}
+	return out, nil
+}
+func (f *fakeHistoryRepo) Insert(_ context.Context, rows []domain.VagonHistory) error {
+	f.inserted = append(f.inserted, rows...)
+	for _, r := range rows {
+		f.existing[r.ID] = struct{}{}
+	}
+	return nil
+}
+func (f *fakeHistoryRepo) UpdateFields(_ context.Context, id string, fields map[string]any) error {
+	f.updated[id] = fields
+	return nil
+}
+
 // s9c/s6c — прогретые кэши поверх fake-репозиториев (для NewLKProcessor).
 func s9c(t *testing.T, repo *fakeStatus9Repo) *service.Status9Cache {
 	t.Helper()
@@ -144,7 +175,7 @@ func newProcessor(t *testing.T, repo *fakeDislRepo) (*service.LKProcessor, strin
 	intake, dir := newIntake(t)
 	actual := service.NewActualCache(repo)
 	require.NoError(t, actual.Load(context.Background()))
-	return service.NewLKProcessor(intake, repo, actual, s9c(t, newFakeStatus9()), s6c(t, newFakeStatus6())), dir
+	return service.NewLKProcessor(intake, repo, actual, s9c(t, newFakeStatus9()), s6c(t, newFakeStatus6()), newFakeHistory()), dir
 }
 
 // Оба ожидаемых файла на месте, метки близки → снимок заменяется, обе записи в нём.
@@ -223,7 +254,7 @@ func TestLKProcess_RealFixtures(t *testing.T) {
 	actual := service.NewActualCache(repo)
 	require.NoError(t, actual.Load(context.Background()))
 	dir := t.TempDir()
-	proc := service.NewLKProcessor(service.NewLKIntake(cc, dc, dir), repo, actual, s9c(t, newFakeStatus9()), s6c(t, newFakeStatus6()))
+	proc := service.NewLKProcessor(service.NewLKIntake(cc, dc, dir), repo, actual, s9c(t, newFakeStatus9()), s6c(t, newFakeStatus6()), newFakeHistory())
 	copyAsStaged(t, dir, "1126022", "03.07.2026 01:20", nmtp)
 	copyAsStaged(t, dir, "10230304", "03.07.2026 01:21", attis)
 

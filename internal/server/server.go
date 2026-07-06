@@ -30,6 +30,7 @@ func Build(
 	actualCache *service.ActualCache,
 	status9Cache *service.Status9Cache,
 	status6Cache *service.Status6Cache,
+	historyRepo port.HistoryRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -75,7 +76,7 @@ func Build(
 
 		// Шаг 2 (обработка в снимок) — требует репозиторий дислокации (БД).
 		if dislRepo != nil {
-			proc := service.NewLKProcessor(lkIntake, dislRepo, actualCache, status9Cache, status6Cache)
+			proc := service.NewLKProcessor(lkIntake, dislRepo, actualCache, status9Cache, status6Cache, historyRepo)
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
 		}
 	}
