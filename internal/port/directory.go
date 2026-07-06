@@ -15,4 +15,5 @@ type DirectoryRepository interface {
 	LoadMarka(ctx context.Context) ([]domain.Marka, error)
 	LoadPorts(ctx context.Context) ([]domain.Ports, error)
 	LoadRouteSpeed(ctx context.Context) ([]domain.RouteSpeed, error)
+	LoadNaznachStation(ctx context.Context) ([]domain.NaznachStation, error)
 }

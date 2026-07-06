@@ -51,6 +51,10 @@ type LKProcessResult struct {
 	CarryNew         int            `json:"carry_new"`          // новых вагонов (S2-2)
 	CarrySticky      int            `json:"carry_sticky"`       // статус удержан 4/5 (S2-2)
 	Status6Donors    int            `json:"status6_donors"`     // переходов на статус 6 → доноры перегруза (§3.16)
+	MarkaCandidates  int            `json:"marka_candidates"`   // записей без груза (нужна marka) (S2-3)
+	MarkaFilled      int            `json:"marka_filled"`       // груз заполнен из marka (полное + частичное)
+	MarkaMissed      int            `json:"marka_missed"`       // marka не нашла груз (кандидаты донорства S2-3c)
+	NaznachOverride  int            `json:"naznach_override"`   // назначение из перестановки naznach_station
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -120,6 +124,10 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		co = applyCarryOver(all, p.actual)
 	}
 
+	// Stage 2 (S2-3, §3.17): обогащение новых вагонов — груз из marka + перестановка
+	// назначения. ПОСЛЕ carry-over (новые/пустые) и ДО донорства status6.
+	mk := applyMarkaEnrichment(all, p.intake.dir)
+
 	// Stage 2 (§3.16): доноры перегруза — при переходе на статус 6 (после carry-over,
 	// у записи полные данные груза).
 	var donors int
@@ -153,7 +161,9 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
 		CarryMatched: co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
-		Status6Donors: donors,
+		Status6Donors:   donors,
+		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull + mk.FilledPartial,
+		MarkaMissed: mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
 	}, nil
 }
 
