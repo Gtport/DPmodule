@@ -97,6 +97,16 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		all = append(all, recs...)
 	}
 
+	return p.ProcessRecords(ctx, all, len(st.Files), perFile)
+}
+
+// ProcessRecords — общий конвейер для уже распарсенного батча: Stage 1 → Stage 2/3
+// (carry-over, marka, доноры, донорство, расчёт хода, vagon_history, кандидаты) →
+// подмена снимка → перечитывание. Переиспользуется приёмом ЛК и будущим JSON-ingest.
+// files/perFile — только для статистики результата.
+func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocation, files int, perFile map[string]int) (LKProcessResult, error) {
+	var err error
+
 	// Stage 1: станции → идентификация порта + фильтр → операции → статусы.
 	// Возвращает отфильтрованный обогащённый набор (только включённые порты).
 	var cutoff int
@@ -184,7 +194,7 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		}
 	}
 	return LKProcessResult{
-		Count: len(all), Files: len(st.Files), PrevSnapshot: prevSize, PerFile: perFile,
+		Count: len(all), Files: files, PrevSnapshot: prevSize, PerFile: perFile,
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
