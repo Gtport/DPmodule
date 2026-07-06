@@ -10,8 +10,8 @@ import (
 // applyStatus6Transition — Stage 2 (§3.16): при ПЕРЕХОДЕ вагона на статус 6 (в новом
 // батче 6, в актуальной вагон есть и его статус ≠ 6) фиксируем донора перегруза.
 // Донор хранит полную запись (для матча по станции операции + вес + срок и передачи
-// груза в S2-3), но gruzpol_s/naznach обнуляются («0») — к нам он не доедет и в
-// выборки попадать не должен. Обнуление — и в снимке (kept), и в копии-доноре.
+// груза/назначения в S2-3). gruzpol_s/naznach обнуляются («0») ТОЛЬКО в снимке (kept) —
+// вагон к нам не доедет, в выборки не попадает; в самой записи status6 они реальные.
 // Вызывается ПОСЛЕ carry-over (у записи полные данные) и ДО подмены снимка.
 func applyStatus6Transition(ctx context.Context, kept []domain.Dislocation, actual *ActualCache, cache *Status6Cache) (int, error) {
 	var donors []domain.Dislocation
@@ -24,11 +24,11 @@ func applyStatus6Transition(ctx context.Context, kept []domain.Dislocation, actu
 		if !ok || (ex.Status != nil && *ex.Status == 6) {
 			continue // нет в актуальной (новый сразу 6) или уже был 6 — не переход
 		}
-		donor := *r // после carry-over — полные данные груза
-		donor.GruzpolS = "0"
-		donor.Naznach = "0"
+		donor := *r // после carry-over — полные данные груза и назначения
 		donors = append(donors, donor)
-		// обнуляем и в снимке — к нам не доедет
+		// Обнуляем ТОЛЬКО в снимке — к нам не доедет, в выборки не попадает. В самой
+		// записи status6 gruzpol_s/naznach хранятся реальными: нужны при передаче
+		// приёмнику (S2-3 донорство, §3.17).
 		r.GruzpolS = "0"
 		r.Naznach = "0"
 	}

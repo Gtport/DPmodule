@@ -132,7 +132,7 @@ type dislocationModel struct {
 	Frost     *int              `gorm:"column:frost"`
 	Info1     string            `gorm:"column:info_1"`
 	Info2     string            `gorm:"column:info_2"`
-	Info3     string            `gorm:"column:info_3"`
+	Peregruz  string            `gorm:"column:peregruz"`
 	Color     string            `gorm:"column:color"`
 	RodVagUch string            `gorm:"column:rod_vag_uch"`
 	Shipments string            `gorm:"column:shipments"`
