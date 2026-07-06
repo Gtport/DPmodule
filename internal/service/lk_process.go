@@ -51,6 +51,7 @@ type LKProcessResult struct {
 	CarryNew         int            `json:"carry_new"`          // новых вагонов (S2-2)
 	CarrySticky      int            `json:"carry_sticky"`       // статус удержан 4/5 (S2-2)
 	Status6Donors    int            `json:"status6_donors"`     // переходов на статус 6 → доноры перегруза (§3.16)
+	Status6Matched   int            `json:"status6_matched"`    // приёмников, добравших груз у донора (S2-3c)
 	MarkaCandidates  int            `json:"marka_candidates"`   // записей без груза (нужна marka) (S2-3)
 	MarkaFilled      int            `json:"marka_filled"`       // груз заполнен из marka (полное + частичное)
 	MarkaMissed      int            `json:"marka_missed"`       // marka не нашла груз (кандидаты донорства S2-3c)
@@ -137,6 +138,16 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		}
 	}
 
+	// Stage 2 (S2-3c, §3.17): донорство перегруза — новым вагонам без груза (marka не
+	// нашла) переносим груз/назначение донора из status6 (матч по станции операции +
+	// вес + срок); ПОСЛЕ applyStatus6Transition (доноры этого батча уже в кэше).
+	var donorMatched int
+	if p.status6 != nil {
+		if donorMatched, err = applyStatus6Donorship(ctx, all, p.status6); err != nil {
+			return LKProcessResult{}, fmt.Errorf("status6 донорство: %w", err)
+		}
+	}
+
 	// Stage 2 (S2-1): согласование таблицы кандидатов (статус 9 из живого батча +
 	// статус 8 для пропавших) — ДО подмены снимка (actual = прежний снимок).
 	var s9 Status9Stats
@@ -161,7 +172,7 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
 		CarryMatched: co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
-		Status6Donors:   donors,
+		Status6Donors: donors, Status6Matched: donorMatched,
 		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull + mk.FilledPartial,
 		MarkaMissed: mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
 	}, nil
