@@ -56,6 +56,7 @@ type LKProcessResult struct {
 	MarkaFilled      int            `json:"marka_filled"`       // груз заполнен из marka (полное + частичное)
 	MarkaMissed      int            `json:"marka_missed"`       // marka не нашла груз (кандидаты донорства S2-3c)
 	NaznachOverride  int            `json:"naznach_override"`   // назначение из перестановки naznach_station
+	ForecastComputed int            `json:"forecast_computed"`  // записей с расчётным прибытием RaschMsk (S2-5)
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -148,6 +149,10 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		}
 	}
 
+	// Stage 3 (S2-5, §3.18): расчёт хода до порта (ToGo → RaschMsk → RaschJd) для
+	// вагонов в пути (статус < 9). ПОСЛЕ донорства (приёмник берёт станцию донора).
+	forecastN := applyForecast(all, p.intake.dir, cutoff)
+
 	// Stage 2 (S2-1): согласование таблицы кандидатов (статус 9 из живого батча +
 	// статус 8 для пропавших) — ДО подмены снимка (actual = прежний снимок).
 	var s9 Status9Stats
@@ -175,6 +180,7 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		Status6Donors: donors, Status6Matched: donorMatched,
 		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull + mk.FilledPartial,
 		MarkaMissed: mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
+		ForecastComputed: forecastN,
 	}, nil
 }
 

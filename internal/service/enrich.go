@@ -177,6 +177,11 @@ func (e *Enricher) enrichStations(r *domain.Dislocation, notFound map[int]struct
 			if station.Longitude != nil {
 				r.Longitude = fmt.Sprintf("%f", *station.Longitude)
 			}
+			// Маркер альтернативного пути (БАМ) — из станции операции (где вагон
+			// сейчас). Persistent (alternative_move); читается прогнозом (§3.18).
+			if station.IsBam {
+				r.AlternativeMove = 1
+			}
 		}
 	}
 }
