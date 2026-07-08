@@ -361,7 +361,8 @@ func (g *GridParser) buildNitka(row []string, cols gridCols, blockDate time.Time
 		return strings.TrimSpace(row[col])
 	}
 
-	planMsk := applyMskRule(combineDateTime(blockDate, get(cols.colPlan)))
+	planJd := combineDateTime(blockDate, get(cols.colPlan)) // ЖД-время, без сдвига
+	planMsk := applyMskRule(planJd)
 	factMsk := applyMskRule(combineDateTime(blockDate, get(cols.colFact)))
 
 	activ := 0
@@ -373,6 +374,7 @@ func (g *GridParser) buildNitka(row []string, cols gridCols, blockDate time.Time
 	return PlanNitka{
 		Index:   index,
 		IndexPp: index, // нормализация с.ф. — позже; для обычного поезда = Index
+		PlanJd:  planJd,
 		PlanMsk: planMsk,
 		FactMsk: factMsk,
 		Otkl:    formatOtkl(planMsk, factMsk),

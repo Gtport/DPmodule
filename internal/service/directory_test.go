@@ -36,6 +36,40 @@ func (s *stubDirRepo) LoadNaznachStation(context.Context) ([]domain.NaznachStati
 	return s.naznach, nil
 }
 
+func TestDirectoryCache_TargetNaznach(t *testing.T) {
+	repo := &stubDirRepo{
+		ports: []domain.Ports{
+			{Okpo: 1126022, Location: "МЫС АСТАФЬЕВА", NameS: "ГУТ-2", PlanCode: "ma"},
+			{Okpo: 10230304, Location: "МЫС АСТАФЬЕВА", NameS: "АЭ", PlanCode: "ma"},
+			{Okpo: 1126022, Location: "НАХОДКА", NameS: "УТ-1", PlanCode: "nk"},
+			{Okpo: 999, Location: "X", NameS: "БЕЗ_ПЛАНА"},        // пустой plan_code → пропуск
+			{Okpo: 998, Location: "Y", NameS: "", PlanCode: "ma"}, // пустой NameS → пропуск
+		},
+	}
+	c := service.NewDirectoryCache(repo)
+	require.NoError(t, c.Load(context.Background()))
+
+	ma := c.TargetNaznach("ma")
+	assert.Len(t, ma, 2)
+	_, hasGut := ma["ГУТ-2"]
+	_, hasAe := ma["АЭ"]
+	assert.True(t, hasGut)
+	assert.True(t, hasAe)
+
+	nk := c.TargetNaznach("nk")
+	assert.Len(t, nk, 1)
+	_, hasYt := nk["УТ-1"]
+	assert.True(t, hasYt)
+
+	// ТА в seed нет — набор ma его не содержит (чужой порт, решение владельца).
+	_, hasTa := ma["ТА"]
+	assert.False(t, hasTa)
+
+	// Неизвестный план → пустое множество (не nil-паника).
+	rb := c.TargetNaznach("rb")
+	assert.Empty(t, rb)
+}
+
 func TestDirectoryCache_LoadAndLookup(t *testing.T) {
 	repo := &stubDirRepo{
 		stations: []domain.Station{{Kod: 63710, Kod4: 6371, Name: "ХИМИЧЕСКАЯ", Road: "ВСЖД"}},

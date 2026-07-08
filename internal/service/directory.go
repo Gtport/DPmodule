@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -29,6 +30,7 @@ type DirectoryCache struct {
 	markaOkpos      map[int64]struct{}               // множество ОКПО в marka (проверка «ОКПО известен»)
 	ports           map[string][]domain.Ports        // ключ PortKey (неуникален → срез)
 	portsByOkpo     map[int64][]domain.Ports         // ОКПО → терминалы (для приёма ЛК: «чей файл»)
+	planTargets     map[string]map[string]struct{}   // plan_code → множество NameS (площадки плана)
 	routeSpeed      map[string][]domain.RouteSpeed   // ключ RouteSpeedKey; участки по убыванию FromKm
 	naznachStation  map[string]domain.NaznachStation // ключ NaznachKey; только enabled + непустой naznach (§3.17)
 }
@@ -44,6 +46,7 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		markaOkpos:      map[int64]struct{}{},
 		ports:           map[string][]domain.Ports{},
 		portsByOkpo:     map[int64][]domain.Ports{},
+		planTargets:     map[string]map[string]struct{}{},
 		routeSpeed:      map[string][]domain.RouteSpeed{},
 		naznachStation:  map[string]domain.NaznachStation{},
 	}
@@ -126,10 +129,24 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	}
 	pr := make(map[string][]domain.Ports)
 	pbo := make(map[int64][]domain.Ports)
+	// planTargets: plan_code → множество кратких имён причалов (NameS). Целевой набор
+	// площадок плана подвода строится из данных, а не хардкодом (замена
+	// isMaTargetNaznachOrGruzpolS эталона). Пустые plan_code/NameS пропускаем.
+	pt := make(map[string]map[string]struct{})
 	for _, p := range ports {
 		k := PortKey(p.Okpo, p.Location)
 		pr[k] = append(pr[k], p)
 		pbo[p.Okpo] = append(pbo[p.Okpo], p)
+
+		code := strings.TrimSpace(p.PlanCode)
+		name := strings.TrimSpace(p.NameS)
+		if code == "" || name == "" {
+			continue
+		}
+		if pt[code] == nil {
+			pt[code] = make(map[string]struct{})
+		}
+		pt[code][name] = struct{}{}
 	}
 	rs := make(map[string][]domain.RouteSpeed)
 	for _, r := range routeSpeed {
@@ -151,6 +168,7 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	c.markaOkpos = mkOkpos
 	c.ports = pr
 	c.portsByOkpo = pbo
+	c.planTargets = pt
 	c.routeSpeed = rs
 	c.naznachStation = nz
 	c.mu.Unlock()
@@ -165,6 +183,21 @@ func (c *DirectoryCache) Counts() (stations, cargoOps, marka, ports, routeSpeed,
 }
 
 // ──────────────────────────────── lookup ────────────────────────────────
+
+// TargetNaznach возвращает множество кратких имён причалов (NameS), относящихся к
+// плану подвода planCode — целевые площадки для фильтра дислокации и матча. Набор
+// строится из ports.plan_code (не хардкод). Возвращается копия (безопасно после
+// снятия блокировки). Для неизвестного plan_code — пустое непустое множество.
+func (c *DirectoryCache) TargetNaznach(planCode string) map[string]struct{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	src := c.planTargets[planCode]
+	out := make(map[string]struct{}, len(src))
+	for name := range src {
+		out[name] = struct{}{}
+	}
+	return out
+}
 
 func (c *DirectoryCache) GetStationByKod(kod int) (domain.Station, bool) {
 	c.mu.RLock()

@@ -24,6 +24,12 @@ type Profile struct {
 	//   MA: Activ = НМТП (уголь+металл+чугун) + АТТИС
 	//   NK: Activ = только НМТП
 	OurTerminals []string
+
+	// MatchRequiresNaznach — при записи результата матча (write-back) вагон
+	// обновляется только если его Naznach совпадает с подгруппой. Единственное
+	// поведенческое отличие между портами: NK=true (эталонный shouldUpdateWagonNK),
+	// MA=false (shouldUpdateWagon — сверяет только IdDisl+IndexMain).
+	MatchRequiresNaznach bool
 }
 
 // isOurTerminal сообщает, относится ли терминал с именем termName к «нашим»
@@ -45,8 +51,9 @@ var builtinProfiles = map[string]Profile{
 		OurTerminals: []string{"НАХОДКИНСКИЙ", "НМТП", "АТТИС"},
 	},
 	"nk": {
-		PlanCode:     "nk",
-		OurTerminals: []string{"НАХОДКИНСКИЙ", "НМТП"},
+		PlanCode:             "nk",
+		OurTerminals:         []string{"НАХОДКИНСКИЙ", "НМТП"},
+		MatchRequiresNaznach: true,
 	},
 }
 
