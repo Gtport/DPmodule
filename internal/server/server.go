@@ -78,6 +78,11 @@ func Build(
 		if dislRepo != nil {
 			proc := service.NewLKProcessor(lkIntake, dislRepo, actualCache, status9Cache, status6Cache, historyRepo)
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
+
+			// Приём плана подвода: разбор + матч + простановка PlanMsk в снимок.
+			// Целевые площадки — из DirectoryCache (ports.plan_code).
+			planProc := service.NewPlanProcessor(dirCache, dislRepo, actualCache, cfg.Storage.BaseDir)
+			handler.NewPlanUploadHandler(planProc).RegisterRoutes(api)
 		}
 	}
 
