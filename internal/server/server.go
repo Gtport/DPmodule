@@ -31,6 +31,7 @@ func Build(
 	status9Cache *service.Status9Cache,
 	status6Cache *service.Status6Cache,
 	historyRepo port.HistoryRepository,
+	planRepo port.PlanRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -81,7 +82,7 @@ func Build(
 
 			// Приём плана подвода: разбор + матч + простановка PlanMsk в снимок.
 			// Целевые площадки — из DirectoryCache (ports.plan_code).
-			planProc := service.NewPlanProcessor(dirCache, dislRepo, actualCache, cfg.Storage.BaseDir)
+			planProc := service.NewPlanProcessor(dirCache, dislRepo, actualCache, planRepo, cfg.Storage.BaseDir)
 			handler.NewPlanUploadHandler(planProc).RegisterRoutes(api)
 		}
 	}

@@ -21,6 +21,29 @@ func NewPlanUploadHandler(proc *service.PlanProcessor) *planUploadHandler {
 
 func (h *planUploadHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.POST("/dislocation/plan/upload", h.upload)
+	g.GET("/dislocation/plan/:code", h.get)
+}
+
+// get godoc
+// @Summary  Сетка загруженного плана подвода (заголовок + нитки) для фронта
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    code path string true "код станции плана: ma|nk"
+// @Success  200 {object} object
+// @Failure  404 {object} object
+// @Router   /api/v1/dislocation/plan/{code} [get]
+func (h *planUploadHandler) get(c *gin.Context) {
+	code := c.Param("code")
+	header, nitki, err := h.proc.GetPlan(c.Request.Context(), code)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if header.PlanCode == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "план не загружен для " + code})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"plan": header, "nitki": nitki})
 }
 
 // upload godoc
