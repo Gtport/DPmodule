@@ -67,7 +67,8 @@ func run() error {
 	fmt.Printf("прогрето: actual=%d, целевых площадок для %q=%d\n",
 		actualCache.Count(), code, len(dirCache.TargetNaznach(code)))
 
-	proc := service.NewPlanProcessor(dirCache, dislRepo, actualCache, cfg.Storage.BaseDir)
+	planRepo := gormrepo.NewPlanRepository(db)
+	proc := service.NewPlanProcessor(dirCache, dislRepo, actualCache, planRepo, cfg.Storage.BaseDir)
 	res, err := proc.ProcessFile(ctx, code, filepath.Base(path), data)
 	if err != nil {
 		return fmt.Errorf("обработка плана: %w", err)

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Gtport/DPmodule/internal/clock"
+	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser/plan"
 	"github.com/Gtport/DPmodule/internal/port"
 	"github.com/Gtport/DPmodule/internal/service/planmatch"
@@ -19,14 +21,15 @@ import (
 // накладывается на копию снимка ActualCache.All() → ReplaceActual → actual.Load.
 // Так снимок остаётся источником правды, а RAM-кэш перечитывается атомарно.
 type PlanProcessor struct {
-	dir     *DirectoryCache
-	repo    port.DislocationRepository
-	actual  *ActualCache
-	baseDir string
+	dir      *DirectoryCache
+	repo     port.DislocationRepository
+	actual   *ActualCache
+	planRepo port.PlanRepository // хранение сетки плана (для фронта); может быть nil
+	baseDir  string
 }
 
-func NewPlanProcessor(dir *DirectoryCache, repo port.DislocationRepository, actual *ActualCache, baseDir string) *PlanProcessor {
-	return &PlanProcessor{dir: dir, repo: repo, actual: actual, baseDir: baseDir}
+func NewPlanProcessor(dir *DirectoryCache, repo port.DislocationRepository, actual *ActualCache, planRepo port.PlanRepository, baseDir string) *PlanProcessor {
+	return &PlanProcessor{dir: dir, repo: repo, actual: actual, planRepo: planRepo, baseDir: baseDir}
 }
 
 // PlanProcessResult — сводка обработки плана.
@@ -82,6 +85,40 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 			matched++
 		}
 	}
+
+	// Сохраняем сетку плана для фронта (заголовок + нитки с результатом матча).
+	if p.planRepo != nil {
+		now := clock.Now()
+		header := domain.Plan{
+			PlanCode:   planCode,
+			SourceFile: filename,
+			LoadedAt:   &now,
+			Nitki:      len(doc.Nitki),
+			Matched:    matched,
+			Stamped:    stats.Stamped,
+		}
+		nitki := make([]domain.PlanNitka, len(doc.Nitki))
+		for i, n := range doc.Nitki {
+			nitki[i] = domain.PlanNitka{
+				PlanCode:      planCode,
+				Ord:           i,
+				Index:         n.Index,
+				IndexPp:       n.IndexPp,
+				PlanMsk:       localPtr(n.PlanMsk),
+				PlanJd:        localPtr(n.PlanJd),
+				FactMsk:       localPtr(n.FactMsk),
+				Otkl:          n.Otkl,
+				Wagons:        n.Wagons,
+				Activ:         n.Activ,
+				Matched:       matches[i].Matched,
+				MatchedWagons: len(matches[i].Vagons),
+			}
+		}
+		if err := p.planRepo.ReplacePlan(ctx, header, nitki); err != nil {
+			return PlanProcessResult{}, fmt.Errorf("сохранение сетки плана: %w", err)
+		}
+	}
+
 	return PlanProcessResult{
 		Filename: filename,
 		PlanCode: planCode,
@@ -90,6 +127,22 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 		Stamped:  stats.Stamped,
 		Cleared:  stats.Cleared,
 	}, nil
+}
+
+// GetPlan возвращает сохранённую сетку плана станции (заголовок + нитки) для фронта.
+func (p *PlanProcessor) GetPlan(ctx context.Context, planCode string) (domain.Plan, []domain.PlanNitka, error) {
+	if p.planRepo == nil {
+		return domain.Plan{}, nil, fmt.Errorf("хранение плана не подключено")
+	}
+	return p.planRepo.GetPlan(ctx, planCode)
+}
+
+// localPtr — naive time.Time → *domain.LocalTime (нулевое время → nil).
+func localPtr(t time.Time) *domain.LocalTime {
+	if t.IsZero() {
+		return nil
+	}
+	return domain.NewLocalTime(t)
 }
 
 // save кладёт файл плана в <baseDir>/plan/<planCode>.xlsx (один файл на план,
