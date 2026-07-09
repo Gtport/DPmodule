@@ -22,7 +22,7 @@ export interface NavItem {
 }
 
 /** Кому доступны рабочие разделы диспетчера (админ видит всё). */
-const DISP = ['dispatcher', 'administrator'];
+export const DISP = ['dispatcher', 'administrator'];
 
 // Иконки подобраны 1:1 с оригиналом GTport (CompactSidebar.tsx): сплошные (fill).
 // train / ship / warehouse — кастомные (см. core/config/custom-icons.ts), т.к. в
