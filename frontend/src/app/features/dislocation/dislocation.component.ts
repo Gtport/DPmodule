@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
@@ -32,17 +32,37 @@ import {
     <div class="page">
       <nz-card nzTitle="Загрузка ЛК" class="card">
         <p class="hint">
-          Загрузите xlsx-выгрузку дислокации из ЛК — по одному файлу на
-          грузополучателя. Файлы копятся здесь, пока не нажата «Обработать».
+          Загрузите xlsx-выгрузки дислокации из ЛК — можно сразу несколько файлов
+          (по одному на грузополучателя), выбором или перетаскиванием. Файлы копятся
+          здесь, пока не нажата «Обработать».
         </p>
-        <nz-upload nzAccept=".xlsx" [nzShowUploadList]="false" [nzBeforeUpload]="beforeUpload">
-          <button nz-button [nzLoading]="busyUpload()">
-            <span nz-icon nzType="upload"></span>
-            Выбрать файл ЛК
-          </button>
+        <nz-upload
+          nzType="drag"
+          nzAccept=".xlsx"
+          [nzMultiple]="true"
+          [nzShowUploadList]="false"
+          [nzBeforeUpload]="beforeUpload"
+        >
+          <p class="ant-upload-drag-icon"><span nz-icon nzType="inbox"></span></p>
+          <p class="ant-upload-text">Перетащите файлы сюда или нажмите для выбора</p>
+          <p class="ant-upload-hint">Можно выбрать несколько xlsx-файлов сразу</p>
         </nz-upload>
-        @if (uploadMsg()) {
-          <nz-alert class="msg" nzType="success" [nzMessage]="uploadMsg()!" nzShowIcon nzCloseable />
+
+        @if (busyUpload()) {
+          <p class="uploading">Загрузка файлов…</p>
+        }
+        @if (uploadResults().length) {
+          <div class="results">
+            @for (r of uploadResults(); track $index) {
+              <nz-alert
+                class="msg"
+                [nzType]="r.ok ? 'success' : 'error'"
+                [nzMessage]="r.message"
+                nzShowIcon
+                nzCloseable
+              />
+            }
+          </div>
         }
       </nz-card>
 
@@ -146,7 +166,9 @@ import {
     .page { display: flex; flex-direction: column; gap: var(--space-md); max-width: 960px; }
     .card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
     .hint { color: var(--color-text-secondary); font-size: var(--font-size-subtitle); margin: 0 0 var(--space-md); }
-    .msg { margin-top: var(--space-md); }
+    .uploading { margin: var(--space-md) 0 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .results { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-md); }
+    .msg { margin-top: 0; }
     .ready-row { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-md); }
     .muted { color: var(--color-text-muted); }
     .issue { margin-bottom: var(--space-sm); }
@@ -159,19 +181,36 @@ export class DislocationComponent implements OnInit {
 
   readonly status = signal<LKStatus | null>(null);
   readonly loadingStatus = signal(false);
-  readonly busyUpload = signal(false);
+  readonly pendingUploads = signal(0);
+  readonly busyUpload = computed(() => this.pendingUploads() > 0);
   readonly busyProcess = signal(false);
-  readonly uploadMsg = signal<string | null>(null);
+  readonly uploadResults = signal<{ ok: boolean; message: string }[]>([]);
   readonly processResult = signal<LKProcessResult | null>(null);
   readonly error = signal<string | null>(null);
+
+  /** Загрузки одного «выбора»/drop идут строго по очереди — на этой цепочке. */
+  private uploadChain: Promise<void> = Promise.resolve();
 
   ngOnInit(): void {
     this.loadStatus();
   }
 
-  /** Возврат false — сами шлём файл через API-сервис, штатный XHR nz-upload не нужен. */
-  readonly beforeUpload = (file: NzUploadFile): boolean => {
-    this.doUpload(file.originFileObj ?? (file as unknown as File));
+  /**
+   * Вызывается по разу на КАЖДЫЙ файл при multi-select/drag-drop. Возврат false —
+   * сами шлём файл через API-сервис, штатный XHR nz-upload не нужен; загрузки
+   * ставим в очередь (`uploadChain`), чтобы не бомбить бэкенд параллельно и не
+   * гонять `loadStatus()` внахлёст. `fileList` — весь пакет этого выбора/drop;
+   * на первом файле пакета чистим результаты прошлой загрузки.
+   */
+  readonly beforeUpload = (file: NzUploadFile, fileList: NzUploadFile[]): boolean => {
+    if (fileList.indexOf(file) === 0) {
+      this.uploadResults.set([]);
+    }
+    const raw = file.originFileObj ?? (file as unknown as File);
+    this.pendingUploads.update((n) => n + 1);
+    this.uploadChain = this.uploadChain
+      .then(() => this.doUpload(raw))
+      .finally(() => this.pendingUploads.update((n) => n - 1));
     return false;
   };
 
@@ -189,19 +228,22 @@ export class DislocationComponent implements OnInit {
   }
 
   private async doUpload(file: File): Promise<void> {
-    this.busyUpload.set(true);
     this.error.set(null);
-    this.uploadMsg.set(null);
     try {
       const res = await this.api.upload(file);
-      this.uploadMsg.set(
-        `${res.filename}: ${res.organisation || res.okpo}${res.replaced ? ' (заменён более старый файл)' : ''}`,
-      );
+      this.uploadResults.update((rs) => [
+        ...rs,
+        {
+          ok: true,
+          message: `${res.filename}: ${res.organisation || res.okpo}${res.replaced ? ' (заменён более старый файл)' : ''}`,
+        },
+      ]);
       await this.loadStatus();
     } catch (err) {
-      this.error.set(apiErrorMessage(err));
-    } finally {
-      this.busyUpload.set(false);
+      this.uploadResults.update((rs) => [
+        ...rs,
+        { ok: false, message: `${file.name}: ${apiErrorMessage(err)}` },
+      ]);
     }
   }
 
