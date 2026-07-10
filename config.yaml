@@ -3,6 +3,7 @@ app:
   env: dev
 
 http:
+  host: 127.0.0.1   # только loopback — наружу приложение отдаётся через nginx
   port: 8080
   read_timeout: 10s
   write_timeout: 30s
