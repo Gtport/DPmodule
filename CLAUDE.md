@@ -103,7 +103,7 @@ go build ./...
 `keycloak.clientId=iqport-dpport`, `apiBaseUrl=/api`. Стили — только через
 `src/styles/tokens.css`. Dev-сервер: systemd user-юнит `dpmodule-frontend`
 (`ng serve` на `127.0.0.1:4200`, `--allowed-hosts`, прокси `/api`→`:8080`);
-наружу — nginx `app.gtport.ru`→`:4200` с WebSocket-апгрейдом.
+наружу — nginx `95850.koara.live`→`:4200` с WebSocket-апгрейдом.
 `systemctl --user restart|status dpmodule-frontend`.
 
 ## Стиль
@@ -116,5 +116,5 @@ Backend, ранний этап. Сделано: seed из `TMPL_backend`; спр
 обогащения (stations, cargo_operations, marka, ports) + `DirectoryCache`
 (загрузка справочников в RAM на старте). Фронтенд: форк `TMPL_frontend` в
 `frontend/`, dev-окружение поднято (systemd user-юнит `dpmodule-frontend`,
-`ng serve` :4200 за nginx `app.gtport.ru`) — см. раздел «Фронтенд». Дальше —
+`ng serve` :4200 за nginx `95850.koara.live`) — см. раздел «Фронтенд». Дальше —
 первый перенос сущности (`Dislocation`) как образец слоёв. <обновляй по ходу>
