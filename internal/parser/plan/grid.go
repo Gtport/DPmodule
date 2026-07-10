@@ -22,16 +22,24 @@ type GridParser struct {
 // NewGridParser строит generic-парсер для профиля станции.
 func NewGridParser(p Profile) *GridParser { return &GridParser{prof: p} }
 
+// leafCol — листовой столбец терминала: индекс столбца, метка (терминал+груз) и
+// признак «наш» причал (для суммы Activ и фильтра «чужих» на фронте).
+type leafCol struct {
+	col   int
+	label string
+	isOur bool
+}
+
 // gridCols — найденные ключевые столбцы листа.
 type gridCols struct {
-	colIndex   int   // «Индекс» (индекс поезда)
-	colPlan    int   // «План» — время нитки HH:MM
-	colFact    int   // «Факт» — HH:MM или пусто
-	colKolVag  int   // «Кол. ваг.» — всего вагонов в поезде
-	colComment int   // «Комментарий»
-	colStation int   // «Станция текущей операции» (нужна для с.ф.; пока не используется)
-	rowHeader  int   // строка с «N п/п»
-	ourLeaves  []int // листовые столбцы «наших» терминалов → Activ
+	colIndex   int       // «Индекс» (индекс поезда)
+	colPlan    int       // «План» — время нитки HH:MM
+	colFact    int       // «Факт» — HH:MM или пусто
+	colKolVag  int       // «Кол. ваг.» — всего вагонов в поезде
+	colComment int       // «Комментарий»
+	colStation int       // «Станция текущей операции» (нужна для с.ф.; пока не используется)
+	rowHeader  int       // строка с «N п/п»
+	leaves     []leafCol // листовые столбцы ВСЕХ терминалов (для Ports); isOur → Activ
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,20 +162,21 @@ func (g *GridParser) findColumns(rows [][]string) (gridCols, error) {
 		}
 	}
 
-	// 3. Классификация листовых столбцов терминалов и отбор «наших».
-	cols.ourLeaves = g.findOurLeaves(rows, row1)
+	// 3. Классификация листовых столбцов терминалов (все, с метками и признаком «наш»).
+	cols.leaves = g.findLeaves(rows, row1)
 
 	return cols, nil
 }
 
-// findOurLeaves определяет столбцы, суммируемые в Activ: листовые (не агрегатные)
-// подстолбцы терминалов, чьё имя входит в profile.OurTerminals.
+// findLeaves определяет ВСЕ листовые (не агрегатные) подстолбцы терминалов с их
+// метками (терминал + груз) и признаком «наш» (имя терминала ∈ profile.OurTerminals).
+// «Наши» листья суммируются в Activ; полный список идёт в Ports нитки (столбцы
+// портов таблицы) и позволяет фронту фильтровать «чужие» строки.
 //
 // Терминалы задаёт строка row1+1; их подзаголовки-грузы — строки row1+2..row1+4.
 // «Листовой» столбец — самый глубокий непустой-не-ИТОГО подзаголовок без детей на
-// следующем уровне. Алгоритм дословно повторяет эталон GTport, но вместо жёсткой
-// таксономии терминалов решает единственный вопрос: «наш» ли это терминал.
-func (g *GridParser) findOurLeaves(rows [][]string, row1 int) []int {
+// следующем уровне. Алгоритм классификации листьев дословно повторяет эталон GTport.
+func (g *GridParser) findLeaves(rows [][]string, row1 int) []leafCol {
 	// Подзаголовочные строки для анализа листьев.
 	var subRows [][]string
 	for off := 2; off <= 4; off++ {
@@ -256,28 +265,37 @@ func (g *GridParser) findOurLeaves(rows [][]string, row1 int) []int {
 		}
 	}
 
-	var ourLeaves []int
+	var leaves []leafCol
 	for tIdx, term := range terminals {
-		if !g.prof.isOurTerminal(term.name) {
-			continue
-		}
+		isOur := g.prof.isOurTerminal(term.name)
 		termEnd := 1 << 30
 		if tIdx+1 < len(terminals) {
 			termEnd = terminals[tIdx+1].start
 		}
-		before := len(ourLeaves)
+		before := len(leaves)
 		for c := term.start + 1; c < termEnd; c++ {
 			if isLeafCol(c) {
-				ourLeaves = append(ourLeaves, c)
+				leaves = append(leaves, leafCol{col: c, label: leafLabel(term.name, getLeafName(c)), isOur: isOur})
 			}
 		}
 		// Фолбэк: терминал без детализации (единственный итоговый столбец) —
 		// берём сам заголовочный столбец как источник данных.
-		if len(ourLeaves) == before {
-			ourLeaves = append(ourLeaves, term.start)
+		if len(leaves) == before {
+			leaves = append(leaves, leafCol{col: term.start, label: term.name, isOur: isOur})
 		}
 	}
-	return ourLeaves
+	return leaves
+}
+
+// leafLabel строит метку столбца порта «терминал груз» без дублирования (если имя
+// листа пустое или совпадает с терминалом — только терминал).
+func leafLabel(terminal, leaf string) string {
+	terminal = strings.TrimSpace(terminal)
+	leaf = strings.TrimSpace(leaf)
+	if leaf == "" || leaf == terminal {
+		return terminal
+	}
+	return terminal + " " + leaf
 }
 
 // collect собирает нитки из строк листа. С.ф.-строки пока пропускаются (перенос
@@ -286,6 +304,8 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 	var nitki []PlanNitka
 	var blockDate time.Time
 	skippedSf := 0
+	trains := 0            // число реальных ниток поездов (для гарда «нет поездов»)
+	ostatokDone := false   // «Остаток на 18:00» эмитим один раз (первую строку)
 
 	getCell := func(row []string, col int) string {
 		if col < 0 || col >= len(row) {
@@ -308,8 +328,19 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 			}
 			continue
 		}
-		// Служебные/итоговые строки — пропускаем.
+		// «Остаток на 18:00» — служебная строка с числами по портам на момент 18:00.
+		// Эмитим первую как спец-строку таблицы (не нитка поезда); остальные пропускаем.
 		if isOstatokLabel(rows[r], cols.colIndex) {
+			if !ostatokDone {
+				ports, _ := buildPorts(rows[r], cols)
+				nitki = append(nitki, PlanNitka{
+					IndexPp:   ostatokMarker,
+					Wagons:    atoiSafe(getCell(rows[r], cols.colKolVag)),
+					Ports:     ports,
+					IsOstatok: true,
+				})
+				ostatokDone = true
+			}
 			continue
 		}
 		switch label {
@@ -341,12 +372,13 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 		}
 
 		nitki = append(nitki, g.buildNitka(rows[r], cols, blockDate))
+		trains++
 	}
 
 	if skippedSf > 0 {
 		fmt.Printf("[plan:%s] пропущено с.ф.-строк: %d (распределение с.ф. отложено)\n", g.prof.PlanCode, skippedSf)
 	}
-	if len(nitki) == 0 {
+	if trains == 0 {
 		return nil, fmt.Errorf("plan[%s]: не найдено строк поездов", g.prof.PlanCode)
 	}
 	return nitki, nil
@@ -365,10 +397,7 @@ func (g *GridParser) buildNitka(row []string, cols gridCols, blockDate time.Time
 	planMsk := applyMskRule(planJd)
 	factMsk := applyMskRule(combineDateTime(blockDate, get(cols.colFact)))
 
-	activ := 0
-	for _, c := range cols.ourLeaves {
-		activ += atoiSafe(get(c))
-	}
+	ports, activ := buildPorts(row, cols)
 
 	index := get(cols.colIndex)
 	return PlanNitka{
@@ -380,7 +409,30 @@ func (g *GridParser) buildNitka(row []string, cols gridCols, blockDate time.Time
 		Otkl:    formatOtkl(planMsk, factMsk),
 		Wagons:  atoiSafe(get(cols.colKolVag)),
 		Activ:   activ,
+		Ports:   ports,
+		Comment: get(cols.colComment),
 	}
+}
+
+// buildPorts собирает ячейки портов строки по листовым столбцам (в порядке
+// столбцов файла) и сумму «наших» (Activ). Общий для нитки и строки «Остаток».
+func buildPorts(row []string, cols gridCols) ([]PortCell, int) {
+	get := func(col int) string {
+		if col < 0 || col >= len(row) {
+			return ""
+		}
+		return strings.TrimSpace(row[col])
+	}
+	ports := make([]PortCell, 0, len(cols.leaves))
+	activ := 0
+	for _, lf := range cols.leaves {
+		n := atoiSafe(get(lf.col))
+		ports = append(ports, PortCell{Label: lf.label, Count: n})
+		if lf.isOur {
+			activ += n
+		}
+	}
+	return ports, activ
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -473,14 +525,16 @@ func isSfIndex(index string) bool {
 	return collapsed == "сф" || norm == "0000-000-0000"
 }
 
+// ostatokMarker — метка служебной строки «Остаток на 18:00» (числа по портам на 18:00).
+const ostatokMarker = "Остаток на 18:00"
+
 // isOstatokLabel — строка «Остаток на 18:00» (в colIndex либо в первых столбцах).
 func isOstatokLabel(row []string, colIndex int) bool {
-	const marker = "Остаток на 18:00"
-	if colIndex >= 0 && colIndex < len(row) && strings.TrimSpace(row[colIndex]) == marker {
+	if colIndex >= 0 && colIndex < len(row) && strings.TrimSpace(row[colIndex]) == ostatokMarker {
 		return true
 	}
 	for _, c := range []int{0, 1, 2} {
-		if c != colIndex && c < len(row) && strings.TrimSpace(row[c]) == marker {
+		if c != colIndex && c < len(row) && strings.TrimSpace(row[c]) == ostatokMarker {
 			return true
 		}
 	}

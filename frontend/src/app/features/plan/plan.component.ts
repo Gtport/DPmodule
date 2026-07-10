@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -7,18 +7,16 @@ import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzSelectModule } from 'ng-zorro-antd/select';
+import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
 import { NzUploadModule, NzUploadFile } from 'ng-zorro-antd/upload';
 import { NzIconModule } from 'ng-zorro-antd/icon';
-import { NzDescriptionsModule } from 'ng-zorro-antd/descriptions';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { PlanApiService, PlanGrid, PlanUploadResult } from './plan-api.service';
+import { PlanApiService, PlanGrid, PlanNitka, PlanSummary } from './plan-api.service';
 
 /**
- * Станции плана подвода со встроенным профилем на бэке (см.
- * internal/parser/plan/profile.go, ResolveProfile). Список статичный —
- * эндпоинта «перечислить коды плана» нет; появится профиль из БД — добавить
- * сюда строку.
+ * Станции плана подвода со встроенным профилем на бэке (internal/parser/plan/
+ * profile.go, ResolveProfile). Появится профиль из БД — добавить строку.
  */
 const STATION_OPTIONS: { code: string; label: string }[] = [
   { code: 'ma', label: 'Мыс Астафьева' },
@@ -26,99 +24,116 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
 ];
 
 /**
- * Раздел «План подвода»: загрузка xlsx-расписания ниток для выбранной станции
- * (разбор + матч с вагонами дислокации + простановка PlanMsk — одним шагом на
- * бэке), затем отображение сохранённой сетки ниток.
+ * Раздел «План подвода»: загрузка xlsx-плана станции (разбор + матч вагонов +
+ * простановка PlanMsk) и таблица плана как в оригинале GTport — столбцы портов
+ * (по данным файла), «Состав» сматченных групп, строка «Остаток на 18:00»,
+ * выбор загрузки из истории. Времена — МСК (правило «час ≥ 18 → −сутки» уже в БД).
  */
 @Component({
   selector: 'app-plan',
   imports: [
     FormsModule, NzButtonModule, NzCardModule, NzAlertModule, NzTagModule,
-    NzTableModule, NzSelectModule, NzUploadModule, NzIconModule,
-    NzDescriptionsModule, NzSpinModule,
+    NzTableModule, NzSelectModule, NzCheckboxModule, NzUploadModule, NzIconModule,
+    NzSpinModule,
   ],
   template: `
     <div class="page">
-      <nz-card nzTitle="Загрузка плана подвода" class="card">
-        <div class="row">
-          <span>Станция плана:</span>
-          <nz-select [ngModel]="selectedCode()" (ngModelChange)="onCodeChange($event)" style="width: 220px">
+      <nz-card class="card">
+        <div class="controls">
+          <span class="lbl">Станция:</span>
+          <nz-select [ngModel]="selectedCode()" (ngModelChange)="onCodeChange($event)" style="width: 200px">
             @for (o of stationOptions; track o.code) {
               <nz-option [nzValue]="o.code" [nzLabel]="o.label" />
+            }
+          </nz-select>
+
+          <span class="lbl">Загрузка:</span>
+          <nz-select
+            [ngModel]="selectedPlanId()"
+            (ngModelChange)="onPlanChange($event)"
+            [nzDisabled]="!plans().length"
+            nzPlaceHolder="—"
+            style="width: 260px"
+          >
+            @for (p of plans(); track p.id) {
+              <nz-option [nzValue]="p.id" [nzLabel]="planLabel(p)" />
             }
           </nz-select>
 
           <nz-upload nzAccept=".xlsx" [nzShowUploadList]="false" [nzBeforeUpload]="beforeUpload">
             <button nz-button [nzLoading]="busyUpload()">
               <span nz-icon nzType="upload"></span>
-              Выбрать файл плана
+              Загрузить план
             </button>
           </nz-upload>
+
+          <label nz-checkbox [ngModel]="showForeign()" (ngModelChange)="showForeign.set($event)">
+            Показать чужие
+          </label>
+
+          <span class="spacer"></span>
+          @if (grid(); as g) {
+            <span class="summary">
+              ниток {{ g.plan.nitki }} · сопоставлено {{ g.plan.matched }} · вагонов застолблено {{ g.plan.stamped }}
+            </span>
+          }
         </div>
 
-        @if (uploadResult(); as res) {
-          <nz-alert
-            class="msg" nzType="success" nzShowIcon nzCloseable
-            [nzMessage]="res.filename + ': ниток ' + res.nitki + ', сопоставлено ' + res.matched + ', вагонов застолблено ' + res.stamped + (res.cleared ? ', очищено ' + res.cleared : '')"
-          />
+        @if (uploadMsg()) {
+          <nz-alert class="msg" nzType="success" [nzMessage]="uploadMsg()!" nzShowIcon nzCloseable />
         }
         @if (error()) {
           <nz-alert class="msg" nzType="error" [nzMessage]="error()!" nzShowIcon nzCloseable />
         }
       </nz-card>
 
-      <nz-card [nzTitle]="'Сетка плана: ' + selectedLabel()" class="card">
-        <nz-spin [nzSpinning]="loadingGrid()">
+      <nz-card class="card">
+        <nz-spin [nzSpinning]="loading()">
           @if (grid(); as g) {
-            <nz-descriptions [nzColumn]="3" nzBordered nzSize="small" class="header">
-              <nz-descriptions-item nzTitle="Файл">{{ g.plan.source_file }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Загружен">{{ g.plan.loaded_at || '—' }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Ниток">{{ g.plan.nitki }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Сопоставлено">{{ g.plan.matched }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Вагонов застолблено">{{ g.plan.stamped }}</nz-descriptions-item>
-            </nz-descriptions>
-
-            <nz-table [nzData]="g.nitki" [nzShowPagination]="g.nitki.length > 20" [nzScroll]="{ x: '1100px' }">
+            <nz-table
+              #t
+              [nzData]="rows()"
+              [nzShowPagination]="false"
+              [nzScroll]="{ x: 'max-content' }"
+              nzSize="small"
+              nzBordered
+            >
               <thead>
                 <tr>
-                  <th>№</th>
-                  <th>Индекс</th>
-                  <th>Индекс ПП</th>
-                  <th>План МСК</th>
-                  <th>План ЖД</th>
-                  <th>Факт МСК</th>
-                  <th>Откл.</th>
-                  <th>Вагонов</th>
-                  <th>Activ</th>
-                  <th>Сопоставлена</th>
-                  <th>Застолблено</th>
+                  <th nzWidth="70px">Дата</th>
+                  <th nzWidth="110px">Индекс</th>
+                  <th nzWidth="150px">Дислокация</th>
+                  <th nzWidth="60px">План</th>
+                  <th nzWidth="60px">Факт</th>
+                  <th nzWidth="64px">Откл</th>
+                  @for (label of portLabels(); track label) {
+                    <th class="port-col">{{ label }}</th>
+                  }
+                  <th nzWidth="60px">Кол-во</th>
+                  <th nzWidth="280px">Состав</th>
+                  <th nzWidth="160px">Примечание</th>
                 </tr>
               </thead>
               <tbody>
-                @for (n of g.nitki; track n.ord) {
-                  <tr>
-                    <td>{{ n.ord }}</td>
-                    <td>{{ n.index }}</td>
-                    <td>{{ n.index_pp || '—' }}</td>
-                    <td>{{ n.plan_msk || '—' }}</td>
-                    <td>{{ n.plan_jd || '—' }}</td>
-                    <td>{{ n.fact_msk || '—' }}</td>
-                    <td>{{ n.otkl || '—' }}</td>
-                    <td>{{ n.wagons }}</td>
-                    <td>{{ n.activ }}</td>
-                    <td>
-                      @if (n.matched) {
-                        <nz-tag nzColor="success">да</nz-tag>
-                      } @else {
-                        <nz-tag>нет</nz-tag>
-                      }
-                    </td>
-                    <td>{{ n.matched_wagons }}</td>
+                @for (n of rows(); track n.ord) {
+                  <tr [class.ostatok]="n.is_ostatok">
+                    <td>{{ n.is_ostatok ? '' : dmDate(n.plan_msk) }}</td>
+                    <td class="idx">{{ n.index_pp || '—' }}</td>
+                    <td class="small">{{ n.station_oper }}</td>
+                    <td class="c">{{ hm(n.plan_msk) }}</td>
+                    <td class="c">{{ hm(n.fact_msk) }}</td>
+                    <td class="c">{{ n.otkl }}</td>
+                    @for (label of portLabels(); track label) {
+                      <td class="c">{{ portCount(n, label) }}</td>
+                    }
+                    <td class="c bold">{{ n.wagons || '' }}</td>
+                    <td class="small sostav">{{ n.sostav }}</td>
+                    <td class="small">{{ n.comment }}</td>
                   </tr>
                 }
               </tbody>
             </nz-table>
-          } @else if (!loadingGrid()) {
+          } @else if (!loading()) {
             <p class="muted">План для станции «{{ selectedLabel() }}» ещё не загружен.</p>
           }
         </nz-spin>
@@ -126,12 +141,21 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     </div>
   `,
   styles: [`
-    .page { display: flex; flex-direction: column; gap: var(--space-md); max-width: 1160px; }
+    .page { display: flex; flex-direction: column; gap: var(--space-md); width: 100%; }
     .card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
-    .row { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
+    .controls { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
+    .lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .spacer { flex: 1 1 auto; }
+    .summary { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .msg { margin-top: var(--space-md); }
-    .header { margin-bottom: var(--space-md); }
     .muted { color: var(--color-text-muted); }
+    .c { text-align: center; }
+    .bold { font-weight: 600; }
+    .idx { font-weight: 500; }
+    .small { font-size: var(--font-size-sm); }
+    .sostav { white-space: pre-line; }
+    .port-col { text-align: center; font-size: var(--font-size-sm); white-space: nowrap; }
+    tr.ostatok td { background: var(--color-bg-subtle); font-weight: 500; }
   `],
 })
 export class PlanComponent implements OnInit {
@@ -140,37 +164,95 @@ export class PlanComponent implements OnInit {
   readonly stationOptions = STATION_OPTIONS;
   readonly selectedCode = signal(STATION_OPTIONS[0].code);
   readonly selectedLabel = signal(STATION_OPTIONS[0].label);
+  readonly selectedPlanId = signal<number | null>(null);
 
+  readonly plans = signal<PlanSummary[]>([]);
   readonly grid = signal<PlanGrid | null>(null);
-  readonly loadingGrid = signal(false);
+  readonly loading = signal(false);
   readonly busyUpload = signal(false);
-  readonly uploadResult = signal<PlanUploadResult | null>(null);
+  readonly showForeign = signal(false);
+  readonly uploadMsg = signal<string | null>(null);
   readonly error = signal<string | null>(null);
 
+  /** Столбцы портов — объединение меток по всем строкам, в порядке первого появления. */
+  readonly portLabels = computed<string[]>(() => {
+    const g = this.grid();
+    if (!g) return [];
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const n of g.nitki) {
+      for (const p of n.ports ?? []) {
+        if (!seen.has(p.label)) {
+          seen.add(p.label);
+          labels.push(p.label);
+        }
+      }
+    }
+    return labels;
+  });
+
+  /** Строки таблицы: строка «Остаток» всегда; «чужие» (activ=0) скрыты, если не включено. */
+  readonly rows = computed<PlanNitka[]>(() => {
+    const g = this.grid();
+    if (!g) return [];
+    if (this.showForeign()) return g.nitki;
+    return g.nitki.filter((n) => n.is_ostatok || n.activ > 0);
+  });
+
   ngOnInit(): void {
-    this.loadGrid(this.selectedCode());
+    this.reload(this.selectedCode());
   }
 
   onCodeChange(code: string): void {
     this.selectedCode.set(code);
     this.selectedLabel.set(this.stationOptions.find((o) => o.code === code)?.label ?? code);
-    this.uploadResult.set(null);
-    this.loadGrid(code);
+    this.uploadMsg.set(null);
+    this.reload(code);
   }
 
-  /** Возврат false — сами шлём файл через API-сервис, штатный XHR nz-upload не нужен. */
+  onPlanChange(id: number | null): void {
+    if (id == null) return;
+    this.selectedPlanId.set(id);
+    this.loadGridById(id);
+  }
+
+  planLabel(p: PlanSummary): string {
+    const ts = p.loaded_at;
+    const when = ts && ts.length >= 16 ? `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}` : '—';
+    return `${when} · ${p.source_file}`;
+  }
+
+  /** Возврат false — сами шлём файл через сервис, штатный XHR nz-upload не нужен. */
   readonly beforeUpload = (file: NzUploadFile): boolean => {
     this.doUpload(file.originFileObj ?? (file as unknown as File));
     return false;
   };
 
+  dmDate(ts: string | null): string {
+    if (!ts || ts.length < 10) return '';
+    return `${ts.slice(8, 10)}.${ts.slice(5, 7)}`;
+  }
+
+  hm(ts: string | null): string {
+    if (!ts || ts.length < 16) return '';
+    return ts.slice(11, 16);
+  }
+
+  portCount(n: PlanNitka, label: string): string {
+    const c = n.ports?.find((p) => p.label === label)?.count ?? 0;
+    return c > 0 ? String(c) : '';
+  }
+
   private async doUpload(file: File): Promise<void> {
     this.busyUpload.set(true);
     this.error.set(null);
-    this.uploadResult.set(null);
+    this.uploadMsg.set(null);
     try {
-      this.uploadResult.set(await this.api.upload(this.selectedCode(), file));
-      await this.loadGrid(this.selectedCode());
+      const res = await this.api.upload(this.selectedCode(), file);
+      this.uploadMsg.set(
+        `${res.filename}: ниток ${res.nitki}, сопоставлено ${res.matched}, вагонов застолблено ${res.stamped}`,
+      );
+      await this.reload(this.selectedCode());
     } catch (err) {
       this.error.set(apiErrorMessage(err));
     } finally {
@@ -178,18 +260,40 @@ export class PlanComponent implements OnInit {
     }
   }
 
-  private async loadGrid(code: string): Promise<void> {
-    this.loadingGrid.set(true);
+  /** Перечитывает список загрузок станции и открывает самую свежую. */
+  private async reload(code: string): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
     try {
-      this.grid.set(await this.api.getPlan(code));
-    } catch (err) {
-      if (err instanceof HttpErrorResponse && err.status === 404) {
+      const plans = await this.api.listPlans(code);
+      this.plans.set(plans);
+      if (plans.length === 0) {
+        this.selectedPlanId.set(null);
         this.grid.set(null);
-      } else {
+        return;
+      }
+      const latest = plans[0];
+      this.selectedPlanId.set(latest.id);
+      this.grid.set(await this.api.getById(code, latest.id));
+    } catch (err) {
+      this.grid.set(null);
+      if (!(err instanceof HttpErrorResponse && err.status === 404)) {
         this.error.set(apiErrorMessage(err));
       }
     } finally {
-      this.loadingGrid.set(false);
+      this.loading.set(false);
+    }
+  }
+
+  private async loadGridById(id: number): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      this.grid.set(await this.api.getById(this.selectedCode(), id));
+    } catch (err) {
+      this.error.set(apiErrorMessage(err));
+    } finally {
+      this.loading.set(false);
     }
   }
 }

@@ -79,21 +79,26 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 		}
 	}
 
-	matched := 0
-	for _, m := range matches {
+	// Служебная строка «Остаток на 18:00» не считается ниткой поезда.
+	matched, trains := 0, 0
+	for i, m := range matches {
+		if !doc.Nitki[i].IsOstatok {
+			trains++
+		}
 		if m.Matched {
 			matched++
 		}
 	}
 
 	// Сохраняем сетку плана для фронта (заголовок + нитки с результатом матча).
+	// История: SavePlan добавляет новую загрузку, прежние на станцию не трогает.
 	if p.planRepo != nil {
 		now := clock.Now()
 		header := domain.Plan{
 			PlanCode:   planCode,
 			SourceFile: filename,
 			LoadedAt:   &now,
-			Nitki:      len(doc.Nitki),
+			Nitki:      trains,
 			Matched:    matched,
 			Stamped:    stats.Stamped,
 		}
@@ -104,17 +109,22 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 				Ord:           i,
 				Index:         n.Index,
 				IndexPp:       n.IndexPp,
+				StationOper:   planmatch.StationOperOf(matches[i].SubGroups),
 				PlanMsk:       localPtr(n.PlanMsk),
 				PlanJd:        localPtr(n.PlanJd),
 				FactMsk:       localPtr(n.FactMsk),
 				Otkl:          n.Otkl,
 				Wagons:        n.Wagons,
 				Activ:         n.Activ,
+				Ports:         toDomainPorts(n.Ports),
+				Sostav:        planmatch.FormatSostav(matches[i].SubGroups),
+				Comment:       n.Comment,
 				Matched:       matches[i].Matched,
 				MatchedWagons: len(matches[i].Vagons),
+				IsOstatok:     n.IsOstatok,
 			}
 		}
-		if err := p.planRepo.ReplacePlan(ctx, header, nitki); err != nil {
+		if _, err := p.planRepo.SavePlan(ctx, header, nitki); err != nil {
 			return PlanProcessResult{}, fmt.Errorf("сохранение сетки плана: %w", err)
 		}
 	}
@@ -122,19 +132,47 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 	return PlanProcessResult{
 		Filename: filename,
 		PlanCode: planCode,
-		Nitki:    len(doc.Nitki),
+		Nitki:    trains,
 		Matched:  matched,
 		Stamped:  stats.Stamped,
 		Cleared:  stats.Cleared,
 	}, nil
 }
 
-// GetPlan возвращает сохранённую сетку плана станции (заголовок + нитки) для фронта.
-func (p *PlanProcessor) GetPlan(ctx context.Context, planCode string) (domain.Plan, []domain.PlanNitka, error) {
+// GetLatestPlan возвращает самую свежую сохранённую сетку плана станции для фронта.
+func (p *PlanProcessor) GetLatestPlan(ctx context.Context, planCode string) (domain.Plan, []domain.PlanNitka, error) {
 	if p.planRepo == nil {
 		return domain.Plan{}, nil, fmt.Errorf("хранение плана не подключено")
 	}
-	return p.planRepo.GetPlan(ctx, planCode)
+	return p.planRepo.GetLatestPlan(ctx, planCode)
+}
+
+// ListPlans возвращает список загрузок плана станции (свежие первыми) для выбора на фронте.
+func (p *PlanProcessor) ListPlans(ctx context.Context, planCode string) ([]domain.PlanSummary, error) {
+	if p.planRepo == nil {
+		return nil, fmt.Errorf("хранение плана не подключено")
+	}
+	return p.planRepo.ListPlans(ctx, planCode)
+}
+
+// GetPlanByID возвращает конкретную загрузку плана по id (заголовок + нитки) для фронта.
+func (p *PlanProcessor) GetPlanByID(ctx context.Context, id int64) (domain.Plan, []domain.PlanNitka, error) {
+	if p.planRepo == nil {
+		return domain.Plan{}, nil, fmt.Errorf("хранение плана не подключено")
+	}
+	return p.planRepo.GetPlanByID(ctx, id)
+}
+
+// toDomainPorts переводит ячейки портов парсера в доменные (разные пакеты/типы).
+func toDomainPorts(cells []plan.PortCell) []domain.PortCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]domain.PortCell, len(cells))
+	for i, c := range cells {
+		out[i] = domain.PortCell{Label: c.Label, Count: c.Count}
+	}
+	return out
 }
 
 // localPtr — naive time.Time → *domain.LocalTime (нулевое время → nil).

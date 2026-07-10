@@ -1,29 +1,56 @@
 package domain
 
-// Plan — заголовок загруженного плана подвода (одна станция плана = один план).
-// Сводка последней загрузки для фронта. Время — МСК naive (без таймзоны).
+// Plan — заголовок одной загрузки плана подвода. История: на одну станцию (PlanCode)
+// может быть несколько загрузок; фронт показывает список и по умолчанию свежую.
+// Время — МСК naive (без таймзоны).
 type Plan struct {
+	ID         int64      `json:"id"`
 	PlanCode   string     `json:"plan_code"`
 	SourceFile string     `json:"source_file"`
 	LoadedAt   *LocalTime `json:"loaded_at"`
-	Nitki      int        `json:"nitki"`   // всего ниток
+	Nitki      int        `json:"nitki"`   // всего ниток (без служебных строк)
 	Matched    int        `json:"matched"` // сопоставлено с вагонами
 	Stamped    int        `json:"stamped"` // вагонов застолблено
 }
 
-// PlanNitka — одна нитка плана (строка расписания) для отображения на фронте.
-// Хранит и разобранные из файла поля, и результат сопоставления с дислокацией.
+// PlanSummary — краткая карточка загрузки для списка выбора плана на фронте.
+type PlanSummary struct {
+	ID         int64      `json:"id"`
+	PlanCode   string     `json:"plan_code"`
+	SourceFile string     `json:"source_file"`
+	LoadedAt   *LocalTime `json:"loaded_at"`
+	Nitki      int        `json:"nitki"`
+	Matched    int        `json:"matched"`
+	Stamped    int        `json:"stamped"`
+}
+
+// PortCell — обобщённая ячейка порта в строке плана: метка столбца (терминал/груз
+// из файла) и число вагонов. Набор столбцов — из данных файла (без хардкода портов),
+// фронт строит колонки из объединения меток по всем ниткам.
+type PortCell struct {
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
+// PlanNitka — одна строка плана (нитка или служебная строка «Остаток на 18:00»)
+// для таблицы плана подвода. Хранит разобранные из файла поля, результат
+// сопоставления с дислокацией и данные под столбцы таблицы оригинала.
 type PlanNitka struct {
 	PlanCode      string     `json:"plan_code"`
 	Ord           int        `json:"ord"` // порядок следования в файле
 	Index         string     `json:"index"`
 	IndexPp       string     `json:"index_pp"`
-	PlanMsk       *LocalTime `json:"plan_msk"` // плановое прибытие (МСК, правило ≥18)
-	PlanJd        *LocalTime `json:"plan_jd"`  // плановое время как в плане (без сдвига)
+	StationOper   string     `json:"station_oper"` // станция текущей операции («Дислокация»)
+	PlanMsk       *LocalTime `json:"plan_msk"`     // плановое прибытие (МСК, правило ≥18)
+	PlanJd        *LocalTime `json:"plan_jd"`      // плановое время как в плане (без сдвига)
 	FactMsk       *LocalTime `json:"fact_msk"`
 	Otkl          string     `json:"otkl"`
-	Wagons        int        `json:"wagons"` // всего вагонов поезда
-	Activ         int        `json:"activ"`  // вагонов «наших» причалов
+	Wagons        int        `json:"wagons"`         // всего вагонов поезда
+	Activ         int        `json:"activ"`          // вагонов «наших» причалов
+	Ports         []PortCell `json:"ports"`          // ячейки портов (обобщённо, из файла)
+	Sostav        string     `json:"sostav"`         // сматченные группы вагонов («Состав»)
+	Comment       string     `json:"comment"`        // «Примечание» (столбец «Комментарий»)
 	Matched       bool       `json:"matched"`
 	MatchedWagons int        `json:"matched_wagons"` // вагонов застолблено этой ниткой
+	IsOstatok     bool       `json:"is_ostatok"`     // служебная строка «Остаток на 18:00»
 }
