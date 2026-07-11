@@ -60,6 +60,43 @@ export interface PlanGrid {
   nitki: PlanNitka[];
 }
 
+/** Группа-кандидат вагонов для с.ф. (диалог выбора). */
+export interface SFCandidate {
+  id_disl: string;
+  station: string;
+  index: string;
+  date: string;
+  quantity: number;
+  vagons: string[];
+}
+
+/** Одна с.ф.-нитка плана с её кандидатами. */
+export interface SFRow {
+  ord: number;
+  index_pp: string;
+  plan_msk: string | null;
+  candidates: SFCandidate[];
+}
+
+/** Ответ prepare: токен + с.ф.-строки с кандидатами + превью. */
+export interface PreparePlanResult {
+  token: string;
+  plan_code: string;
+  filename: string;
+  sf: SFRow[];
+  nitki: number;
+  matched: number;
+}
+
+/** Результат применения плана (upload/confirm). */
+export interface PlanApplyResult {
+  filename: string;
+  nitki: number;
+  matched: number;
+  stamped: number;
+  cleared: number;
+}
+
 /** Клиент подсистемы «план подвода» (история загрузок + таблица нитей). */
 @Injectable({ providedIn: 'root' })
 export class PlanApiService {
@@ -84,10 +121,23 @@ export class PlanApiService {
     return res.plans ?? [];
   }
 
-  upload(code: string, file: File): Promise<{ filename: string; nitki: number; matched: number; stamped: number; cleared: number }> {
+  upload(code: string, file: File): Promise<PlanApplyResult> {
     const form = new FormData();
     form.set('code', code);
     form.set('file', file);
-    return firstValueFrom(this.http.post<{ filename: string; nitki: number; matched: number; stamped: number; cleared: number }>(`${this.base}/upload`, form));
+    return firstValueFrom(this.http.post<PlanApplyResult>(`${this.base}/upload`, form));
+  }
+
+  /** Фаза A: разбор плана + кандидаты для с.ф. Снимок не изменяется. */
+  prepare(code: string, file: File): Promise<PreparePlanResult> {
+    const form = new FormData();
+    form.set('code', code);
+    form.set('file', file);
+    return firstValueFrom(this.http.post<PreparePlanResult>(`${this.base}/prepare`, form));
+  }
+
+  /** Фаза B: применить план с выбранными группами с.ф. (selections: ord → id_disl[]). */
+  confirm(token: string, selections: Record<number, string[]>): Promise<PlanApplyResult> {
+    return firstValueFrom(this.http.post<PlanApplyResult>(`${this.base}/confirm`, { token, selections }));
   }
 }

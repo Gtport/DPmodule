@@ -13,8 +13,9 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
+import { NzModalModule } from 'ng-zorro-antd/modal';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { PlanApiService, PlanGrid, PlanNitka, PlanSummary } from './plan-api.service';
+import { PlanApiService, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult } from './plan-api.service';
 
 /**
  * Станции плана подвода со встроенным профилем на бэке (internal/parser/plan/
@@ -36,7 +37,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
   imports: [
     FormsModule, NzButtonModule, NzCardModule, NzAlertModule, NzTagModule,
     NzTableModule, NzSelectModule, NzCheckboxModule, NzUploadModule, NzIconModule,
-    NzSpinModule, NzTabsModule, NzTooltipModule,
+    NzSpinModule, NzTabsModule, NzTooltipModule, NzModalModule,
   ],
   template: `
     <div class="page">
@@ -158,6 +159,48 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
           }
         </nz-spin>
       </nz-card>
+
+      <!-- Диалог выбора групп вагонов для с.ф. (один на все с.ф. плана) -->
+      <nz-modal
+        [nzVisible]="sfPrepare() !== null"
+        nzTitle="Выберите группы вагонов для сборных формирований (с.ф.)"
+        [nzWidth]="760"
+        [nzMaskClosable]="false"
+        (nzOnCancel)="sfCancel()"
+        [nzFooter]="sfFooter"
+      >
+        <div *nzModalContent>
+          @if (sfPrepare(); as prep) {
+            @for (row of prep.sf; track row.ord) {
+              <div class="sf-block">
+                <div class="sf-head">
+                  {{ row.index_pp }} · {{ dmDate(row.plan_msk) }} {{ hm(row.plan_msk) }}
+                  <span class="sf-cnt">выбрано {{ (sfSel()[row.ord] || []).length }}</span>
+                </div>
+                @if (row.candidates.length === 0) {
+                  <div class="muted">Нет групп-кандидатов на станции формирования.</div>
+                } @else {
+                  @for (c of row.candidates; track c.id_disl) {
+                    <label
+                      nz-checkbox
+                      class="sf-cand"
+                      [nzChecked]="isChecked(row.ord, c.id_disl)"
+                      [nzDisabled]="isTaken(row.ord, c.id_disl)"
+                      (nzCheckedChange)="toggleCandidate(row.ord, c.id_disl)"
+                    >
+                      {{ c.station }} · {{ c.index }} · {{ c.date }} · <b>{{ c.quantity }}</b> ваг.
+                    </label>
+                  }
+                }
+              </div>
+            }
+          }
+        </div>
+      </nz-modal>
+      <ng-template #sfFooter>
+        <button nz-button (click)="sfCancel()" [nzLoading]="sfBusy()">Отмена (без с.ф.)</button>
+        <button nz-button nzType="primary" (click)="sfApply()" [nzLoading]="sfBusy()">Применить</button>
+      </ng-template>
     </div>
   `,
   styles: [`
@@ -180,6 +223,11 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     /* Разделитель-блок между сутками. */
     tr.divider td { padding: 0; height: 3px; background: var(--color-primary-bg, #e8f4fd); border-left: none; border-right: none; }
     tr.ostatok td { background: var(--color-bg-subtle); font-weight: 500; }
+    /* Диалог с.ф. */
+    .sf-block { margin-bottom: var(--space-md); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-border, #eee); }
+    .sf-head { font-weight: 600; margin-bottom: var(--space-xs); display: flex; align-items: center; gap: var(--space-sm); }
+    .sf-cnt { color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: 400; }
+    .sf-cand { display: block; margin: 2px 0; }
   `],
 })
 export class PlanComponent implements OnInit {
@@ -373,20 +421,80 @@ export class PlanComponent implements OnInit {
     return cargo ? `${term} ${cargo}` : term;
   }
 
+  // ── Загрузка плана с выбором групп с.ф. (двухфазный prepare/confirm) ──────
+  readonly sfPrepare = signal<PreparePlanResult | null>(null);
+  readonly sfSel = signal<Record<number, string[]>>({}); // ord с.ф.-нитки → выбранные id_disl
+  readonly sfBusy = signal(false);
+
+  /** Группа отмечена в этой с.ф.-строке. */
+  isChecked(ord: number, id: string): boolean {
+    return (this.sfSel()[ord] ?? []).includes(id);
+  }
+
+  /** Группа занята другой с.ф.-строкой (без двойного назначения). */
+  isTaken(ord: number, id: string): boolean {
+    const sel = this.sfSel();
+    for (const k of Object.keys(sel)) {
+      const o = Number(k);
+      if (o !== ord && sel[o].includes(id)) return true;
+    }
+    return false;
+  }
+
+  toggleCandidate(ord: number, id: string): void {
+    const sel = { ...this.sfSel() };
+    const cur = new Set(sel[ord] ?? []);
+    if (cur.has(id)) cur.delete(id);
+    else cur.add(id);
+    sel[ord] = [...cur];
+    this.sfSel.set(sel);
+  }
+
+  /** «Применить» — confirm с выбранными группами. */
+  sfApply(): void {
+    const prep = this.sfPrepare();
+    if (prep) void this.applyConfirm(prep.token, this.sfSel());
+  }
+
+  /** «Отмена» / закрытие — применить план без с.ф. (решение владельца). */
+  sfCancel(): void {
+    const prep = this.sfPrepare();
+    if (prep) void this.applyConfirm(prep.token, {});
+  }
+
   private async doUpload(file: File): Promise<void> {
     this.busyUpload.set(true);
     this.error.set(null);
     this.uploadMsg.set(null);
     try {
-      const res = await this.api.upload(this.selectedCode(), file);
-      this.uploadMsg.set(
-        `${res.filename}: ниток ${res.nitki}, сопоставлено ${res.matched}, вагонов застолблено ${res.stamped}`,
-      );
-      await this.reload(this.selectedCode());
+      const prep = await this.api.prepare(this.selectedCode(), file);
+      if (!prep.sf || prep.sf.length === 0) {
+        await this.applyConfirm(prep.token, {}); // с.ф. нет — применяем сразу, без диалога
+      } else {
+        this.sfSel.set({});
+        this.sfPrepare.set(prep); // открыть диалог выбора групп
+      }
     } catch (err) {
       this.error.set(apiErrorMessage(err));
     } finally {
       this.busyUpload.set(false);
+    }
+  }
+
+  private async applyConfirm(token: string, selections: Record<number, string[]>): Promise<void> {
+    this.sfBusy.set(true);
+    this.error.set(null);
+    try {
+      const res = await this.api.confirm(token, selections);
+      this.uploadMsg.set(
+        `${res.filename}: ниток ${res.nitki}, сопоставлено ${res.matched}, вагонов застолблено ${res.stamped}`,
+      );
+      this.sfPrepare.set(null);
+      await this.reload(this.selectedCode());
+    } catch (err) {
+      this.error.set(apiErrorMessage(err));
+    } finally {
+      this.sfBusy.set(false);
     }
   }
 
