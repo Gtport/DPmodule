@@ -85,6 +85,7 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 	if err != nil {
 		return PreparePlanResult{}, err
 	}
+	orgByName := p.dir.TargetNames(planCode) // причал (NameS) → организация терминала
 
 	var sfRows []SFRowDTO
 	for i, n := range doc.Nitki {
@@ -96,7 +97,7 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 			Ord:        i,
 			IndexPp:    n.IndexPp,
 			PlanMsk:    localPtr(n.PlanMsk),
-			Candidates: toCandidateDTO(cands, target),
+			Candidates: toCandidateDTO(cands, target, orgByName),
 		})
 	}
 
@@ -277,7 +278,7 @@ func synonymOf(indexPp string) string {
 }
 
 // toCandidateDTO переводит группы-кандидаты в DTO ответа prepare.
-func toCandidateDTO(gs []planmatch.SFGroup, target map[string]struct{}) []SFCandidateDTO {
+func toCandidateDTO(gs []planmatch.SFGroup, target map[string]struct{}, orgByName map[string]string) []SFCandidateDTO {
 	out := make([]SFCandidateDTO, len(gs))
 	for i, g := range gs {
 		date := ""
@@ -287,16 +288,17 @@ func toCandidateDTO(gs []planmatch.SFGroup, target map[string]struct{}) []SFCand
 		out[i] = SFCandidateDTO{
 			IdDisl: g.IdDisl, Station: g.StationOper, Index: g.Index,
 			Date: date, Quantity: g.Quantity, Sostav: planmatch.FormatSostav(g.SubGroups),
-			Ports: sfPorts(g.SubGroups, target), Vagons: g.Vagons,
+			Ports: sfPorts(g.SubGroups, target, orgByName), Vagons: g.Vagons,
 		}
 	}
 	return out
 }
 
 // sfPorts разбивает вагоны группы по нашим терминалам: у каждой подгруппы берём тот
-// её адрес (Naznach или GruzpolS), что входит в целевые площадки плана. Так в диалоге
-// видно, сколько вагонов группы придёт на какой наш терминал.
-func sfPorts(sgs []planmatch.SubGroup, target map[string]struct{}) []SFPortDTO {
+// её адрес (Naznach или GruzpolS), что входит в целевые площадки плана, и приводим
+// причал (АЭ/ГУТ-2) к организации терминала (Аттис/Находкинский МТП) через orgByName.
+// Так в диалоге видно, сколько вагонов группы придёт на какой наш терминал.
+func sfPorts(sgs []planmatch.SubGroup, target map[string]struct{}, orgByName map[string]string) []SFPortDTO {
 	counts := map[string]int{}
 	for _, sg := range sgs {
 		naz, grz := strings.TrimSpace(sg.Naznach), strings.TrimSpace(sg.GruzpolS)
@@ -305,6 +307,9 @@ func sfPorts(sgs []planmatch.SubGroup, target map[string]struct{}) []SFPortDTO {
 			if _, ok := target[grz]; ok {
 				term = grz
 			}
+		}
+		if org := orgByName[term]; org != "" {
+			term = org // причал → организация (НМТП/АТТИС), короткое имя строит фронт
 		}
 		counts[term] += sg.Quantity
 	}

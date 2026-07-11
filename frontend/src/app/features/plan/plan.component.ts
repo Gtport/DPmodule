@@ -15,7 +15,7 @@ import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { PlanApiService, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult } from './plan-api.service';
+import { PlanApiService, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFRow } from './plan-api.service';
 
 /**
  * Станции плана подвода со встроенным профилем на бэке (internal/parser/plan/
@@ -175,7 +175,10 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
             @for (row of prep.sf; track row.ord) {
               <div class="sf-block">
                 <div class="sf-head">
-                  {{ row.index_pp }} · {{ dmDate(row.plan_msk) }} {{ hm(row.plan_msk) }}
+                  <span>{{ row.index_pp }} · {{ dmDate(row.plan_msk) }} {{ hm(row.plan_msk) }}</span>
+                  @if (sfHeadPorts(row); as terms) {
+                    <span class="sf-terms">{{ terms }}</span>
+                  }
                   <span class="sf-cnt">выбрано {{ (sfSel()[row.ord] || []).length }}</span>
                 </div>
                 @if (row.candidates.length === 0) {
@@ -189,11 +192,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                       [nzDisabled]="isTaken(row.ord, c.id_disl)"
                       (nzCheckedChange)="toggleCandidate(row.ord, c.id_disl)"
                     >
-                      {{ c.date }} · <b>{{ c.quantity }}</b> ваг
-                      @for (p of c.ports; track p.terminal) {
-                        <span class="sf-port">{{ p.terminal }}&nbsp;{{ p.count }}</span>
-                      }
-                      · {{ c.sostav }}
+                      <span class="sf-body">{{ c.date }} · <b>{{ c.quantity }}</b> ваг · {{ c.sostav }}</span>
                     </label>
                   }
                 }
@@ -239,11 +238,14 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     .plan-tabs ::ng-deep .ant-tabs-tab { font-size: 1rem; font-weight: 500; padding: 6px 12px; }
     /* Диалог с.ф. */
     .sf-block { margin-bottom: var(--space-md); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-border, #eee); }
-    .sf-head { font-weight: 600; margin-bottom: var(--space-xs); display: flex; align-items: center; gap: var(--space-sm); }
+    .sf-head { font-weight: 600; margin-bottom: var(--space-xs); display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
     .sf-cnt { color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: 400; }
-    .sf-cand { display: block; margin: 2px 0; }
-    .sf-port { display: inline-block; margin: 0 2px; padding: 0 5px; border-radius: 3px;
-      background: #f0f7ff; color: #1677ff; font-size: var(--font-size-sm); font-weight: 500; }
+    /* Количество вагонов по нашим терминалам (НМТП-21, АТТИС-15) в заголовке с.ф. */
+    .sf-terms { padding: 0 6px; border-radius: 3px; background: #f0f7ff; color: #1677ff; font-weight: 500; }
+    /* Чекбокс и его (возможно многострочный) текст — в одну строку, чекбокс сверху слева. */
+    .sf-cand { display: flex; align-items: flex-start; margin: 3px 0; }
+    .sf-cand ::ng-deep .ant-checkbox { top: 0.15em; }
+    .sf-body { display: inline-block; }
   `],
 })
 export class PlanComponent implements OnInit {
@@ -435,6 +437,35 @@ export class PlanComponent implements OnInit {
       term = s.split(/\s+/).map((w) => (w.length > 4 ? w.slice(0, 3) : w)).join(' ');
     }
     return cargo ? `${term} ${cargo}` : term;
+  }
+
+  /**
+   * Суммарное количество вагонов по нашим терминалам для с.ф.-строки (все кандидаты):
+   * «НМТП-21, АТТИС-15». Имя терминала приходит с бэка как организация (Находкинский
+   * МТП / Аттис), сокращаем тем же правилом, что и столбцы таблицы (shortTerminal).
+   */
+  sfHeadPorts(row: SFRow): string {
+    const totals = new Map<string, number>();
+    for (const c of row.candidates) {
+      for (const p of c.ports ?? []) {
+        totals.set(p.terminal, (totals.get(p.terminal) ?? 0) + p.count);
+      }
+    }
+    return [...totals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([t, n]) => `${this.shortTerminal(t)}-${n}`)
+      .join(', ');
+  }
+
+  /** Короткое имя терминала из организации: убираем орг-форму/кавычки + TERM_ABBR. */
+  shortTerminal(name: string): string {
+    const s = name
+      .replace(/["«»„“”'']/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w && !PlanComponent.ORG_FORMS.has(w.toUpperCase()))
+      .join(' ')
+      .trim();
+    return PlanComponent.TERM_ABBR[s.toUpperCase()] ?? s;
   }
 
   // ── Загрузка плана с выбором групп с.ф. (двухфазный prepare/confirm) ──────
