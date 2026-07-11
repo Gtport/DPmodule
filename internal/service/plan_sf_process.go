@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/Gtport/DPmodule/internal/clock"
@@ -26,30 +25,25 @@ var ErrPendingNotFound = errors.New("токен подготовки не най
 // заполняем выбранные группы с.ф., применяем всё одним свопом. Так окно
 // рассогласования (снимок мог пересобраться между фазами) закрывается на confirm.
 
-// SFPortDTO — сколько вагонов группы идёт на наш терминал (по назначению/грузополуч.).
-type SFPortDTO struct {
-	Terminal string `json:"terminal"`
-	Count    int    `json:"count"`
-}
-
 // SFCandidateDTO — группа-кандидат вагонов для с.ф. (для диалога выбора на фронте).
 type SFCandidateDTO struct {
-	Key      string      `json:"key"`     // уникальный идентификатор группы для выбора (id_disl не уникален)
-	IdDisl   string      `json:"id_disl"` // справочно
-	Station  string      `json:"station"`
-	Index    string      `json:"index"`
-	Date     string      `json:"date"`
-	Quantity int         `json:"quantity"`
-	Sostav   string      `json:"sostav"` // «Состав» группы — как у обычных ниток (FormatSostav)
-	Ports    []SFPortDTO `json:"ports"`  // разбивка вагонов группы по нашим терминалам
-	Vagons   []string    `json:"vagons"`
+	Key      string   `json:"key"`     // уникальный идентификатор группы для выбора (id_disl не уникален)
+	IdDisl   string   `json:"id_disl"` // справочно
+	Station  string   `json:"station"`
+	Index    string   `json:"index"`
+	Date     string   `json:"date"`
+	Quantity int      `json:"quantity"`
+	Sostav   string   `json:"sostav"` // «Состав» группы — как у обычных ниток (FormatSostav)
+	Vagons   []string `json:"vagons"`
 }
 
-// SFRowDTO — одна с.ф.-нитка плана с её кандидатами.
+// SFRowDTO — одна с.ф.-нитка плана с её кандидатами. Ports — столбцы терминалов из
+// строки плана (сколько вагонов запланировано на наши причалы) для заголовка диалога.
 type SFRowDTO struct {
 	Ord        int               `json:"ord"`
 	IndexPp    string            `json:"index_pp"`
 	PlanMsk    *domain.LocalTime `json:"plan_msk"`
+	Ports      []domain.PortCell `json:"ports"`
 	Candidates []SFCandidateDTO  `json:"candidates"`
 }
 
@@ -92,7 +86,6 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 	if err != nil {
 		return PreparePlanResult{}, err
 	}
-	orgByName := p.dir.TargetNames(planCode) // причал (NameS) → организация терминала
 
 	var sfRows []SFRowDTO
 	for i, n := range doc.Nitki {
@@ -104,7 +97,8 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 			Ord:        i,
 			IndexPp:    n.IndexPp,
 			PlanMsk:    localPtr(n.PlanMsk),
-			Candidates: toCandidateDTO(cands, target, orgByName),
+			Ports:      toDomainPorts(n.Ports), // столбцы терминалов из строки плана
+			Candidates: toCandidateDTO(cands),
 		})
 	}
 
@@ -293,7 +287,7 @@ func synonymOf(indexPp string) string {
 }
 
 // toCandidateDTO переводит группы-кандидаты в DTO ответа prepare.
-func toCandidateDTO(gs []planmatch.SFGroup, target map[string]struct{}, orgByName map[string]string) []SFCandidateDTO {
+func toCandidateDTO(gs []planmatch.SFGroup) []SFCandidateDTO {
 	out := make([]SFCandidateDTO, len(gs))
 	for i, g := range gs {
 		date := ""
@@ -303,40 +297,8 @@ func toCandidateDTO(gs []planmatch.SFGroup, target map[string]struct{}, orgByNam
 		out[i] = SFCandidateDTO{
 			Key: g.Key, IdDisl: g.IdDisl, Station: g.StationOper, Index: g.Index,
 			Date: date, Quantity: g.Quantity, Sostav: planmatch.FormatSostav(g.SubGroups),
-			Ports: sfPorts(g.SubGroups, target, orgByName), Vagons: g.Vagons,
+			Vagons: g.Vagons,
 		}
 	}
-	return out
-}
-
-// sfPorts разбивает вагоны группы по нашим терминалам: у каждой подгруппы берём тот
-// её адрес (Naznach или GruzpolS), что входит в целевые площадки плана, и приводим
-// причал (АЭ/ГУТ-2) к организации терминала (Аттис/Находкинский МТП) через orgByName.
-// Так в диалоге видно, сколько вагонов группы придёт на какой наш терминал.
-func sfPorts(sgs []planmatch.SubGroup, target map[string]struct{}, orgByName map[string]string) []SFPortDTO {
-	counts := map[string]int{}
-	for _, sg := range sgs {
-		naz, grz := strings.TrimSpace(sg.Naznach), strings.TrimSpace(sg.GruzpolS)
-		term := naz
-		if _, ok := target[naz]; !ok {
-			if _, ok := target[grz]; ok {
-				term = grz
-			}
-		}
-		if org := orgByName[term]; org != "" {
-			term = org // причал → организация (НМТП/АТТИС), короткое имя строит фронт
-		}
-		counts[term] += sg.Quantity
-	}
-	out := make([]SFPortDTO, 0, len(counts))
-	for t, c := range counts {
-		out = append(out, SFPortDTO{Terminal: t, Count: c})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Count != out[j].Count {
-			return out[i].Count > out[j].Count // крупные площадки первыми
-		}
-		return out[i].Terminal < out[j].Terminal
-	})
 	return out
 }

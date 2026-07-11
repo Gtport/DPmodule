@@ -31,7 +31,6 @@ type DirectoryCache struct {
 	ports           map[string][]domain.Ports        // ключ PortKey (неуникален → срез)
 	portsByOkpo     map[int64][]domain.Ports         // ОКПО → терминалы (для приёма ЛК: «чей файл»)
 	planTargets     map[string]map[string]struct{}   // plan_code → множество NameS (площадки плана)
-	planTargetOrg   map[string]map[string]string     // plan_code → NameS → организация терминала (для UI с.ф.)
 	routeSpeed      map[string][]domain.RouteSpeed   // ключ RouteSpeedKey; участки по убыванию FromKm
 	naznachStation  map[string]domain.NaznachStation // ключ NaznachKey; только enabled + непустой naznach (§3.17)
 }
@@ -48,7 +47,6 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		ports:           map[string][]domain.Ports{},
 		portsByOkpo:     map[int64][]domain.Ports{},
 		planTargets:     map[string]map[string]struct{}{},
-		planTargetOrg:   map[string]map[string]string{},
 		routeSpeed:      map[string][]domain.RouteSpeed{},
 		naznachStation:  map[string]domain.NaznachStation{},
 	}
@@ -135,7 +133,6 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	// площадок плана подвода строится из данных, а не хардкодом (замена
 	// isMaTargetNaznachOrGruzpolS эталона). Пустые plan_code/NameS пропускаем.
 	pt := make(map[string]map[string]struct{})
-	pto := make(map[string]map[string]string)
 	for _, p := range ports {
 		k := PortKey(p.Okpo, p.Location)
 		pr[k] = append(pr[k], p)
@@ -148,14 +145,8 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 		}
 		if pt[code] == nil {
 			pt[code] = make(map[string]struct{})
-			pto[code] = make(map[string]string)
 		}
 		pt[code][name] = struct{}{}
-		// Причал (NameS) → организация терминала: для UI с.ф. показываем НМТП/АТТИС,
-		// а не причалы АЭ/ГУТ-2. Короткое имя из организации строит фронт.
-		if org := strings.TrimSpace(p.Organisation); org != "" {
-			pto[code][name] = org
-		}
 	}
 	rs := make(map[string][]domain.RouteSpeed)
 	for _, r := range routeSpeed {
@@ -178,7 +169,6 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	c.ports = pr
 	c.portsByOkpo = pbo
 	c.planTargets = pt
-	c.planTargetOrg = pto
 	c.routeSpeed = rs
 	c.naznachStation = nz
 	c.mu.Unlock()
@@ -205,19 +195,6 @@ func (c *DirectoryCache) TargetNaznach(planCode string) map[string]struct{} {
 	out := make(map[string]struct{}, len(src))
 	for name := range src {
 		out[name] = struct{}{}
-	}
-	return out
-}
-
-// TargetNames возвращает отображение «причал (NameS) → организация терминала» для
-// плана planCode (для UI с.ф.: показываем НМТП/АТТИС вместо АЭ/ГУТ-2). Копия.
-func (c *DirectoryCache) TargetNames(planCode string) map[string]string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	src := c.planTargetOrg[planCode]
-	out := make(map[string]string, len(src))
-	for name, org := range src {
-		out[name] = org
 	}
 	return out
 }

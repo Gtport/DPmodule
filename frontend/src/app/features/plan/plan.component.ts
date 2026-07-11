@@ -176,7 +176,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
               <div class="sf-block">
                 <div class="sf-head">
                   <span>{{ row.index_pp }} · {{ dmDate(row.plan_msk) }} {{ hm(row.plan_msk) }}</span>
-                  @if (sfHeadPorts(row); as terms) {
+                  @if (sfPlanPorts(row); as terms) {
                     <span class="sf-terms">{{ terms }}</span>
                   }
                   <span class="sf-cnt">выбрано {{ sfSelectedWagons(row) }} ваг</span>
@@ -417,8 +417,9 @@ export class PlanComponent implements OnInit, OnDestroy {
     'НАХОДКИНСКИЙ МТП': 'НМТП',
     'АТТИС ЭНТЕРПРАЙС': 'АТТИС',
   };
-  shortLabel(label: string): string {
-    let s = label
+  /** Разбирает метку столбца на «база» (терминал без орг-формы/кавычек) и аббревиатуру груза. */
+  private splitTermCargo(label: string): { base: string; cargo: string } {
+    let base = label
       .replace(/["«»„“”'']/g, ' ')
       .split(/\s+/)
       .filter((w) => w && !PlanComponent.ORG_FORMS.has(w.toUpperCase()))
@@ -426,38 +427,44 @@ export class PlanComponent implements OnInit, OnDestroy {
       .trim();
     let cargo = '';
     for (const c of PlanComponent.CARGO_ABBR) {
-      if (c.re.test(s)) {
-        s = s.replace(c.re, '').trim();
+      if (c.re.test(base)) {
+        base = base.replace(c.re, '').trim();
         cargo = c.ab;
         break;
       }
     }
-    let term: string;
-    if (this.ourLabels().has(label)) {
-      // «наш» терминал — краткое имя из TERM_ABBR (или как есть).
-      term = PlanComponent.TERM_ABBR[s.toUpperCase()] ?? s;
-    } else {
-      // «чужой» терминал — каждое слово длиннее 4 символов сокращаем до 3.
-      term = s.split(/\s+/).map((w) => (w.length > 4 ? w.slice(0, 3) : w)).join(' ');
-    }
+    return { base, cargo };
+  }
+
+  /** Имя «нашего» терминала без груза (для агрегации в заголовке с.ф.): база + TERM_ABBR. */
+  private ourTerminalName(label: string): string {
+    const { base } = this.splitTermCargo(label);
+    return PlanComponent.TERM_ABBR[base.toUpperCase()] ?? base;
+  }
+
+  shortLabel(label: string): string {
+    const { base, cargo } = this.splitTermCargo(label);
+    const term = this.ourLabels().has(label)
+      ? PlanComponent.TERM_ABBR[base.toUpperCase()] ?? base // «наш» — краткое имя
+      : base.split(/\s+/).map((w) => (w.length > 4 ? w.slice(0, 3) : w)).join(' '); // «чужой» — слова >4 → 3
     return cargo ? `${term} ${cargo}` : term;
   }
 
   /**
-   * Суммарное количество вагонов по нашим терминалам для с.ф.-строки (все кандидаты):
-   * «НМТП-21, АТТИС-15». Имя терминала приходит с бэка как организация (Находкинский
-   * МТП / Аттис), сокращаем тем же правилом, что и столбцы таблицы (shortTerminal).
+   * Плановое количество вагонов по нашим терминалам для с.ф.-строки: «НМТП-13, АТТИС-10».
+   * Источник — столбцы «наших» причалов из СТРОКИ ПЛАНА (сколько запланировано), а не
+   * сумма кандидатов. Агрегируем по терминалу (без груза), крупные первыми.
    */
-  sfHeadPorts(row: SFRow): string {
+  sfPlanPorts(row: SFRow): string {
     const totals = new Map<string, number>();
-    for (const c of row.candidates) {
-      for (const p of c.ports ?? []) {
-        totals.set(p.terminal, (totals.get(p.terminal) ?? 0) + p.count);
-      }
+    for (const p of row.ports ?? []) {
+      if (!p.is_our || p.count <= 0) continue;
+      const name = this.ourTerminalName(p.label);
+      totals.set(name, (totals.get(name) ?? 0) + p.count);
     }
     return [...totals.entries()]
       .sort((a, b) => b[1] - a[1])
-      .map(([t, n]) => `${this.shortTerminal(t)}-${n}`)
+      .map(([t, n]) => `${t}-${n}`)
       .join(', ');
   }
 
@@ -469,17 +476,6 @@ export class PlanComponent implements OnInit, OnDestroy {
       if (sel.has(c.key)) n += c.quantity;
     }
     return n;
-  }
-
-  /** Короткое имя терминала из организации: убираем орг-форму/кавычки + TERM_ABBR. */
-  shortTerminal(name: string): string {
-    const s = name
-      .replace(/["«»„“”'']/g, ' ')
-      .split(/\s+/)
-      .filter((w) => w && !PlanComponent.ORG_FORMS.has(w.toUpperCase()))
-      .join(' ')
-      .trim();
-    return PlanComponent.TERM_ABBR[s.toUpperCase()] ?? s;
   }
 
   // ── Загрузка плана с выбором групп с.ф. (двухфазный prepare/confirm) ──────

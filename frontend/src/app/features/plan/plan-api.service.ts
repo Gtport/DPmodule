@@ -60,12 +60,6 @@ export interface PlanGrid {
   nitki: PlanNitka[];
 }
 
-/** Сколько вагонов группы придёт на наш терминал. */
-export interface SFPort {
-  terminal: string;
-  count: number;
-}
-
 /** Группа-кандидат вагонов для с.ф. (диалог выбора). */
 export interface SFCandidate {
   key: string;     // уникальный идентификатор группы для выбора (id_disl не уникален!)
@@ -75,15 +69,15 @@ export interface SFCandidate {
   date: string;
   quantity: number;
   sostav: string;
-  ports: SFPort[];
   vagons: string[];
 }
 
-/** Одна с.ф.-нитка плана с её кандидатами. */
+/** Одна с.ф.-нитка плана с её кандидатами. ports — столбцы терминалов из строки плана. */
 export interface SFRow {
   ord: number;
   index_pp: string;
   plan_msk: string | null;
+  ports: PortCell[] | null;
   candidates: SFCandidate[];
 }
 
