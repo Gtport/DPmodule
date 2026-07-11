@@ -275,10 +275,23 @@ func (g *GridParser) findLeaves(rows [][]string, row1 int) []leafCol {
 		}
 	}
 
+	// Правая граница поиска листьев у ПОСЛЕДНЕГО терминала — реальная ширина
+	// заголовочных строк, а не 1<<30: столбца-листа за пределами заголовков быть не
+	// может (getLeafName пуст → не лист), а холостой добег до ~1e9 давал ~6 с на разбор.
+	width := 0
+	if row1+1 < len(rows) {
+		width = len(rows[row1+1])
+	}
+	for _, sr := range subRows {
+		if len(sr) > width {
+			width = len(sr)
+		}
+	}
+
 	var leaves []leafCol
 	for tIdx, term := range terminals {
 		isOur := g.prof.isOurTerminal(term.name)
-		termEnd := 1 << 30
+		termEnd := width
 		if tIdx+1 < len(terminals) {
 			termEnd = terminals[tIdx+1].start
 		}
