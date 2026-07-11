@@ -342,10 +342,11 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 		// Эмитим первую как спец-строку таблицы (не нитка поезда); остальные пропускаем.
 		if isOstatokLabel(rows[r], cols.colIndex) {
 			if !ostatokDone {
-				ports, _ := buildPorts(rows[r], cols)
+				ports, activ := buildPorts(rows[r], cols)
 				nitki = append(nitki, PlanNitka{
 					IndexPp:   ostatokMarker,
 					Wagons:    atoiSafe(getCell(rows[r], cols.colKolVag)),
+					Activ:     activ,
 					Ports:     ports,
 					IsOstatok: true,
 				})

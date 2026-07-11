@@ -42,7 +42,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
   template: `
     <div class="page">
       <nz-card class="card">
-        <nz-tabs nzSize="small" [nzSelectedIndex]="selectedIndex()" (nzSelectedIndexChange)="onTabChange($event)">
+        <nz-tabs class="plan-tabs" [nzSelectedIndex]="selectedIndex()" (nzSelectedIndexChange)="onTabChange($event)">
           @for (o of stationOptions; track o.code) {
             <nz-tab [nzTitle]="o.label"></nz-tab>
           }
@@ -110,6 +110,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
           @if (grid(); as g) {
             <nz-table
               #t
+              class="plan-tbl"
               [nzData]="rows()"
               [nzShowPagination]="false"
               [nzScroll]="{ x: 'max-content' }"
@@ -147,7 +148,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                     @for (label of portLabels(); track label) {
                       <td class="c">{{ portCount(n, label) }}</td>
                     }
-                    <td class="c bold">{{ n.wagons || '' }}</td>
+                    <td class="c bold">{{ n.activ || '' }}</td>
                     <td class="small sostav">{{ n.sostav }}</td>
                     <td class="small">{{ n.comment }}</td>
                   </tr>
@@ -188,7 +189,11 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                       [nzDisabled]="isTaken(row.ord, c.id_disl)"
                       (nzCheckedChange)="toggleCandidate(row.ord, c.id_disl)"
                     >
-                      {{ c.date }} · <b>{{ c.quantity }}</b> ваг · {{ c.sostav }}
+                      {{ c.date }} · <b>{{ c.quantity }}</b> ваг
+                      @for (p of c.ports; track p.terminal) {
+                        <span class="sf-port">{{ p.terminal }}&nbsp;{{ p.count }}</span>
+                      }
+                      · {{ c.sostav }}
                     </label>
                   }
                 }
@@ -220,14 +225,25 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     /* Вертикальные заголовки терминалов (как в оригинале); ширину задаёт nzWidth, шрифт — как у «План/Факт». */
     .port-col, .qty { text-align: center; }
     .vert { writing-mode: vertical-lr; text-orientation: mixed; display: inline-block; white-space: nowrap; line-height: 1; }
-    /* Разделитель-блок между сутками. */
-    tr.divider td { padding: 0; height: 3px; background: var(--color-primary-bg, #e8f4fd); border-left: none; border-right: none; }
+    /* ── Компактная таблица как в оригинале gtport ──────────────────────────
+       Плотные строки (высота), серая заливка шапки (#f5f5f5), голубой разделитель. */
+    .plan-tbl ::ng-deep table { font-size: 0.96rem; }
+    .plan-tbl ::ng-deep .ant-table-thead > tr > th {
+      padding: 2px 6px; background: #f5f5f5; font-weight: 600; line-height: 1.2; text-align: center;
+    }
+    .plan-tbl ::ng-deep .ant-table-tbody > tr > td { padding: 1px 6px; line-height: 1.25; }
+    /* Разделитель-блок между сутками (как в оригинале: голубой, тонкий). */
+    tr.divider td { padding: 0; height: 2px; background: #e8f4fd; border-left: none; border-right: none; }
     tr.ostatok td { background: var(--color-bg-subtle); font-weight: 500; }
+    /* Переключатель станций — крупнее (как в gtport): 1rem, высота вкладки ~36px. */
+    .plan-tabs ::ng-deep .ant-tabs-tab { font-size: 1rem; font-weight: 500; padding: 6px 12px; }
     /* Диалог с.ф. */
     .sf-block { margin-bottom: var(--space-md); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-border, #eee); }
     .sf-head { font-weight: 600; margin-bottom: var(--space-xs); display: flex; align-items: center; gap: var(--space-sm); }
     .sf-cnt { color: var(--color-text-secondary); font-size: var(--font-size-sm); font-weight: 400; }
     .sf-cand { display: block; margin: 2px 0; }
+    .sf-port { display: inline-block; margin: 0 2px; padding: 0 5px; border-radius: 3px;
+      background: #f0f7ff; color: #1677ff; font-size: var(--font-size-sm); font-weight: 500; }
   `],
 })
 export class PlanComponent implements OnInit {
