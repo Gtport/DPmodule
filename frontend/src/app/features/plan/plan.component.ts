@@ -188,7 +188,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                       [nzDisabled]="isTaken(row.ord, c.id_disl)"
                       (nzCheckedChange)="toggleCandidate(row.ord, c.id_disl)"
                     >
-                      {{ c.station }} · {{ c.index }} · {{ c.date }} · <b>{{ c.quantity }}</b> ваг.
+                      {{ c.date }} · <b>{{ c.quantity }}</b> ваг · {{ c.sostav }}
                     </label>
                   }
                 }

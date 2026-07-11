@@ -26,6 +26,7 @@ type SFCandidateDTO struct {
 	Index    string   `json:"index"`
 	Date     string   `json:"date"`
 	Quantity int      `json:"quantity"`
+	Sostav   string   `json:"sostav"` // «Состав» группы — как у обычных ниток (FormatSostav)
 	Vagons   []string `json:"vagons"`
 }
 
@@ -147,17 +148,20 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, selections ma
 			byID[g.IdDisl] = g
 		}
 		var vagons []string
+		var subs []planmatch.SubGroup
 		for _, id := range sel {
 			g, ok := byID[id]
 			if !ok {
 				continue // группа исчезла/занята — пропускаем (окно рассогласования)
 			}
 			vagons = append(vagons, g.Vagons...)
+			subs = append(subs, g.SubGroups...)
 			used[id] = struct{}{} // без двойного назначения между с.ф.
 		}
 		if len(vagons) > 0 {
 			matches[i].Matched = true
 			matches[i].Vagons = vagons
+			matches[i].SubGroups = subs // «Состав» и станция нитки с.ф. в сетке
 		}
 	}
 
@@ -281,7 +285,7 @@ func toCandidateDTO(gs []planmatch.SFGroup) []SFCandidateDTO {
 		}
 		out[i] = SFCandidateDTO{
 			IdDisl: g.IdDisl, Station: g.StationOper, Index: g.Index,
-			Date: date, Quantity: g.Quantity, Vagons: g.Vagons,
+			Date: date, Quantity: g.Quantity, Sostav: planmatch.FormatSostav(g.SubGroups), Vagons: g.Vagons,
 		}
 	}
 	return out

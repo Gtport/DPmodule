@@ -1,6 +1,7 @@
 package planmatch
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -26,6 +27,7 @@ type SFGroup struct {
 	IdDisl      string            // id операции — стабильный идентификатор группы
 	Quantity    int               // число вагонов в группе
 	Vagons      []string          // номера вагонов (для простановки на confirm)
+	SubGroups   []SubGroup        // подгруппы (IndexMain|Naznach|Sms1|GruzpolS) — для «Состава»
 }
 
 // SFStations возвращает станции формирования для синонима из справочника sf.
@@ -59,6 +61,7 @@ func SFCandidates(
 	}
 
 	groups := map[string]*SFGroup{}
+	subIdx := map[string]map[string]int{} // ключ группы → sgKey → индекс подгруппы в g.SubGroups
 	for i := range records {
 		r := &records[i]
 		if _, ok := stations[strings.TrimSpace(r.StationOper)]; !ok {
@@ -89,9 +92,27 @@ func SFCandidates(
 				IdDisl:      r.IdDisl,
 			}
 			groups[key] = g
+			subIdx[key] = map[string]int{}
 		}
 		g.Quantity++
 		g.Vagons = append(g.Vagons, r.Vagon)
+
+		// Подгруппы (как в addToAggregation) — для «Состава» и станции нитки.
+		sgKey := fmt.Sprintf("%s|%s|%s|%s",
+			emptyToDefault(r.IndexMain, unknownFallback),
+			emptyToDefault(r.Naznach, unknownFallback),
+			emptyToDefault(r.Sms1, unknownFallback),
+			emptyToDefault(r.GruzpolS, unknownFallback))
+		if idx, ok := subIdx[key][sgKey]; ok {
+			g.SubGroups[idx].Quantity++
+		} else {
+			g.SubGroups = append(g.SubGroups, SubGroup{
+				Key: sgKey, IndexMain: r.IndexMain, Naznach: r.Naznach, Sms1: r.Sms1,
+				GruzpolS: r.GruzpolS, Quantity: 1, StationOper: r.StationOper,
+				DateOp: r.DateOp, IdDisl: r.IdDisl,
+			})
+			subIdx[key][sgKey] = len(g.SubGroups) - 1
+		}
 	}
 
 	out := make([]SFGroup, 0, len(groups))

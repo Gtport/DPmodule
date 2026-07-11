@@ -67,6 +67,7 @@ export interface SFCandidate {
   index: string;
   date: string;
   quantity: number;
+  sostav: string;
   vagons: string[];
 }
 
