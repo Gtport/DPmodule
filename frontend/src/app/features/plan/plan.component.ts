@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -15,7 +15,7 @@ import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { PlanApiService, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFRow } from './plan-api.service';
+import { PlanApiService, PlanApplyResult, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFRow } from './plan-api.service';
 
 /**
  * Станции плана подвода со встроенным профилем на бэке (internal/parser/plan/
@@ -248,7 +248,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     .sf-body { display: inline-block; }
   `],
 })
-export class PlanComponent implements OnInit {
+export class PlanComponent implements OnInit, OnDestroy {
   private readonly api = inject(PlanApiService);
 
   readonly stationOptions = STATION_OPTIONS;
@@ -314,6 +314,10 @@ export class PlanComponent implements OnInit {
 
   ngOnInit(): void {
     this.reload(this.selectedCode());
+  }
+
+  ngOnDestroy(): void {
+    this.stopSfHeartbeat();
   }
 
   onCodeChange(code: string): void {
@@ -472,6 +476,30 @@ export class PlanComponent implements OnInit {
   readonly sfPrepare = signal<PreparePlanResult | null>(null);
   readonly sfSel = signal<Record<number, string[]>>({}); // ord с.ф.-нитки → выбранные id_disl
   readonly sfBusy = signal(false);
+  private sfFile: File | null = null;                    // файл для прозрачного восстановления
+  private sfBeat: ReturnType<typeof setInterval> | null = null; // heartbeat продления токена
+
+  /** Пока открыт диалог с.ф., каждые 5 мин продлеваем токен (TTL на бэке 30 мин). */
+  private startSfHeartbeat(): void {
+    this.stopSfHeartbeat();
+    this.sfBeat = setInterval(() => {
+      const prep = this.sfPrepare();
+      if (!prep) { this.stopSfHeartbeat(); return; }
+      // Ошибку (410) не гасим здесь — обработается при «Применить»/«Отмена» восстановлением.
+      this.api.touch(prep.token).catch(() => {});
+    }, 5 * 60 * 1000);
+  }
+
+  private stopSfHeartbeat(): void {
+    if (this.sfBeat) { clearInterval(this.sfBeat); this.sfBeat = null; }
+  }
+
+  /** Закрыть диалог с.ф. — всегда доступно, не запирает пользователя. */
+  private closeSfDialog(): void {
+    this.stopSfHeartbeat();
+    this.sfPrepare.set(null);
+    this.sfFile = null;
+  }
 
   /** Группа отмечена в этой с.ф.-строке. */
   isChecked(ord: number, id: string): boolean {
@@ -513,16 +541,19 @@ export class PlanComponent implements OnInit {
     this.busyUpload.set(true);
     this.error.set(null);
     this.uploadMsg.set(null);
+    this.sfFile = file; // понадобится для восстановления, если токен истечёт
     try {
       const prep = await this.api.prepare(this.selectedCode(), file);
       if (!prep.sf || prep.sf.length === 0) {
         await this.applyConfirm(prep.token, {}); // с.ф. нет — применяем сразу, без диалога
       } else {
         this.sfSel.set({});
-        this.sfPrepare.set(prep); // открыть диалог выбора групп
+        this.sfPrepare.set(prep);  // открыть диалог выбора групп
+        this.startSfHeartbeat();   // продлевать токен, пока окно открыто
       }
     } catch (err) {
       this.error.set(apiErrorMessage(err));
+      this.sfFile = null;
     } finally {
       this.busyUpload.set(false);
     }
@@ -532,14 +563,27 @@ export class PlanComponent implements OnInit {
     this.sfBusy.set(true);
     this.error.set(null);
     try {
-      const res = await this.api.confirm(token, selections);
+      let res: PlanApplyResult;
+      try {
+        res = await this.api.confirm(token, selections);
+      } catch (err) {
+        // Токен истёк/потерян (диалог висел дольше TTL или бэкенд перезапускался):
+        // прозрачно пере-подготавливаем тот же файл и повторяем один раз.
+        if (this.sfFile && err instanceof HttpErrorResponse && err.status === 410) {
+          const prep = await this.api.prepare(this.selectedCode(), this.sfFile);
+          res = await this.api.confirm(prep.token, selections);
+        } else {
+          throw err;
+        }
+      }
       this.uploadMsg.set(
         `${res.filename}: ниток ${res.nitki}, сопоставлено ${res.matched}, вагонов застолблено ${res.stamped}`,
       );
-      this.sfPrepare.set(null);
+      this.closeSfDialog();
       await this.reload(this.selectedCode());
     } catch (err) {
       this.error.set(apiErrorMessage(err));
+      this.closeSfDialog(); // не запираем пользователя: окно закрывается даже при ошибке
     } finally {
       this.sfBusy.set(false);
     }

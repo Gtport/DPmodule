@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,6 +12,11 @@ import (
 	"github.com/Gtport/DPmodule/internal/parser/plan"
 	"github.com/Gtport/DPmodule/internal/service/planmatch"
 )
+
+// ErrPendingNotFound — токен подготовки неизвестен/просрочен (диалог висел дольше TTL,
+// либо бэкенд перезапускался — pending в памяти). Хендлер отдаёт по нему 410 Gone,
+// фронт закрывает окно и прозрачно перезагружает план.
+var ErrPendingNotFound = errors.New("токен подготовки не найден или истёк — перезагрузите план")
 
 // ── Двухфазная обработка плана с выбором групп с.ф. пользователем ───────────
 //
@@ -109,13 +115,19 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 	}, nil
 }
 
+// Touch продлевает TTL токена подготовки, пока открыт диалог выбора с.ф. (heartbeat
+// с фронта). Возвращает false, если токен уже неизвестен/просрочен.
+func (p *PlanProcessor) Touch(token string) bool {
+	return p.pending.touch(token)
+}
+
 // Confirm — фаза B. selections: ord с.ф.-нитки → выбранные id_disl. Пустой выбор для
 // с.ф. → остаётся пустой (решение A). Ре-валидация против текущего снимка; исчезнувшие
 // группы пропускаются; один id_disl не уходит в две с.ф.
 func (p *PlanProcessor) Confirm(ctx context.Context, token string, selections map[int][]string) (PlanProcessResult, error) {
 	pend, ok := p.pending.take(token)
 	if !ok {
-		return PlanProcessResult{}, fmt.Errorf("токен подготовки не найден или истёк — перезагрузите план")
+		return PlanProcessResult{}, ErrPendingNotFound
 	}
 	planCode := pend.planCode
 	prof, err := plan.ResolveProfile(planCode)

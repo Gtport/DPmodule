@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -24,6 +25,7 @@ func (h *planUploadHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.POST("/dislocation/plan/upload", h.upload)            // одношаговая загрузка (без выбора с.ф.)
 	g.POST("/dislocation/plan/prepare", h.prepare)          // фаза A: разбор + кандидаты с.ф. (снимок не трогаем)
 	g.POST("/dislocation/plan/confirm", h.confirm)          // фаза B: применить с выбранными группами с.ф.
+	g.POST("/dislocation/plan/touch", h.touch)              // heartbeat: продлить токен, пока открыт диалог с.ф.
 	g.GET("/dislocation/plan/:code", h.get)                 // ?id=N — конкретная загрузка, иначе свежая
 	g.GET("/dislocation/plan/:code/history", h.history)     // список загрузок станции
 }
@@ -203,8 +205,32 @@ func (h *planUploadHandler) confirm(c *gin.Context) {
 
 	res, err := h.proc.Confirm(c.Request.Context(), req.Token, selections)
 	if err != nil {
+		if errors.Is(err, service.ErrPendingNotFound) {
+			c.JSON(http.StatusGone, gin.H{"error": err.Error()}) // 410 — фронт перезагрузит план
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, res)
+}
+
+// touchRequest — тело heartbeat: токен подготовки.
+type touchRequest struct {
+	Token string `json:"token"`
+}
+
+// touch продлевает TTL токена, пока открыт диалог выбора с.ф. 200 — продлён,
+// 410 Gone — токен уже истёк/неизвестен (фронт закроет окно и попросит перезагрузить).
+func (h *planUploadHandler) touch(c *gin.Context) {
+	var req touchRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "не передан токен"})
+		return
+	}
+	if !h.proc.Touch(req.Token) {
+		c.JSON(http.StatusGone, gin.H{"error": "токен истёк"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

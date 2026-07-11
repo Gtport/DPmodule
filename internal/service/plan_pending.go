@@ -45,6 +45,22 @@ func (s *pendingStore) put(p pendingPlan) string {
 	return tok
 }
 
+// touch продлевает TTL токена (сбрасывает created в «сейчас»), пока открыт диалог
+// выбора с.ф. Возвращает false, если токен уже неизвестен/просрочен. Так окно с.ф.
+// может висеть сколько угодно, пока фронт шлёт heartbeat.
+func (s *pendingStore) touch(tok string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gcLocked()
+	p, ok := s.items[tok]
+	if !ok {
+		return false
+	}
+	p.created = time.Now()
+	s.items[tok] = p
+	return true
+}
+
 // take забирает и удаляет отложенный план по токену (ok=false — нет или просрочен).
 func (s *pendingStore) take(tok string) (pendingPlan, bool) {
 	s.mu.Lock()

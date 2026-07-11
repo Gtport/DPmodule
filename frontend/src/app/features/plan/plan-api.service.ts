@@ -148,4 +148,9 @@ export class PlanApiService {
   confirm(token: string, selections: Record<number, string[]>): Promise<PlanApplyResult> {
     return firstValueFrom(this.http.post<PlanApplyResult>(`${this.base}/confirm`, { token, selections }));
   }
+
+  /** Heartbeat: продлить токен подготовки, пока открыт диалог с.ф. (204 — ок, 410 — истёк). */
+  touch(token: string): Promise<void> {
+    return firstValueFrom(this.http.post<void>(`${this.base}/touch`, { token }));
+  }
 }

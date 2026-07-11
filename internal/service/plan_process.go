@@ -32,7 +32,7 @@ type PlanProcessor struct {
 func NewPlanProcessor(dir *DirectoryCache, repo port.DislocationRepository, actual *ActualCache, planRepo port.PlanRepository, baseDir string) *PlanProcessor {
 	return &PlanProcessor{
 		dir: dir, repo: repo, actual: actual, planRepo: planRepo, baseDir: baseDir,
-		pending: newPendingStore(15 * time.Minute),
+		pending: newPendingStore(30 * time.Minute), // фронт продлевает heartbeat'ом, пока открыт диалог с.ф.
 	}
 }
 
