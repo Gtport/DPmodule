@@ -170,7 +170,7 @@ func toDomainPorts(cells []plan.PortCell) []domain.PortCell {
 	}
 	out := make([]domain.PortCell, len(cells))
 	for i, c := range cells {
-		out[i] = domain.PortCell{Label: c.Label, Count: c.Count}
+		out[i] = domain.PortCell{Label: c.Label, Count: c.Count, IsOur: c.IsOur}
 	}
 	return out
 }

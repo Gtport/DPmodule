@@ -24,6 +24,7 @@ type PlanDoc struct {
 type PortCell struct {
 	Label string
 	Count int
+	IsOur bool // «наш» причал (входит в Activ)
 }
 
 // PlanNitka — одна строка плана: планово прибывающий поезд, строка с.ф. или

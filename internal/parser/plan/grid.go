@@ -427,7 +427,7 @@ func buildPorts(row []string, cols gridCols) ([]PortCell, int) {
 	activ := 0
 	for _, lf := range cols.leaves {
 		n := atoiSafe(get(lf.col))
-		ports = append(ports, PortCell{Label: lf.label, Count: n})
+		ports = append(ports, PortCell{Label: lf.label, Count: n, IsOur: lf.isOur})
 		if lf.isOur {
 			activ += n
 		}

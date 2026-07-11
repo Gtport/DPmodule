@@ -7,6 +7,7 @@ import { environment } from '../../../environments/environment';
 export interface PortCell {
   label: string;
   count: number;
+  is_our: boolean;
 }
 
 /** Заголовок одной загрузки плана (история: несколько на станцию). */

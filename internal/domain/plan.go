@@ -30,6 +30,7 @@ type PlanSummary struct {
 type PortCell struct {
 	Label string `json:"label"`
 	Count int    `json:"count"`
+	IsOur bool   `json:"is_our"` // причал «наш» (входит в Activ) — фронт показывает только такие столбцы
 }
 
 // PlanNitka — одна строка плана (нитка или служебная строка «Остаток на 18:00»)

@@ -101,13 +101,13 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
               <thead>
                 <tr>
                   <th nzWidth="70px">Дата</th>
-                  <th nzWidth="110px">Индекс</th>
+                  <th nzWidth="135px">Индекс</th>
                   <th nzWidth="150px">Дислокация</th>
                   <th nzWidth="60px">План</th>
                   <th nzWidth="60px">Факт</th>
                   <th nzWidth="64px">Откл</th>
                   @for (label of portLabels(); track label) {
-                    <th class="port-col">{{ label }}</th>
+                    <th class="port-col" [title]="label">{{ shortLabel(label) }}</th>
                   }
                   <th nzWidth="60px">Кол-во</th>
                   <th nzWidth="280px">Состав</th>
@@ -154,7 +154,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     .idx { font-weight: 500; }
     .small { font-size: var(--font-size-sm); }
     .sostav { white-space: pre-line; }
-    .port-col { text-align: center; font-size: var(--font-size-sm); white-space: nowrap; }
+    .port-col { text-align: center; font-size: var(--font-size-sm); width: 56px; min-width: 56px; white-space: normal; overflow-wrap: anywhere; line-height: 1.15; vertical-align: bottom; }
     tr.ostatok td { background: var(--color-bg-subtle); font-weight: 500; }
   `],
 })
@@ -174,15 +174,21 @@ export class PlanComponent implements OnInit {
   readonly uploadMsg = signal<string | null>(null);
   readonly error = signal<string | null>(null);
 
-  /** Столбцы портов — объединение меток по всем строкам, в порядке первого появления. */
+  /**
+   * Столбцы портов в порядке первого появления. По умолчанию — только «наши» причалы
+   * (`is_our`, входящие в Activ); при включённом «Показать чужие» разворачиваются и
+   * столбцы чужих терминалов. Признак `is_our` приходит с бэка (PortCell); планы,
+   * загруженные до появления поля, столбцов не покажут — перезалить план.
+   */
   readonly portLabels = computed<string[]>(() => {
     const g = this.grid();
     if (!g) return [];
+    const showAll = this.showForeign();
     const seen = new Set<string>();
     const labels: string[] = [];
     for (const n of g.nitki) {
       for (const p of n.ports ?? []) {
-        if (!seen.has(p.label)) {
+        if ((p.is_our || showAll) && !seen.has(p.label)) {
           seen.add(p.label);
           labels.push(p.label);
         }
@@ -241,6 +247,46 @@ export class PlanComponent implements OnInit {
   portCount(n: PlanNitka, label: string): string {
     const c = n.ports?.find((p) => p.label === label)?.count ?? 0;
     return c > 0 ? String(c) : '';
+  }
+
+  /**
+   * Короткая метка столбца терминала для узкой шапки. Полное имя — в подсказке (title).
+   * (1) убирает организационно-правовые формы и кавычки (generic, без хардкода портов);
+   * (2) сокращает род груза в хвосте: уголь → без пометки, чугун→Ч, металлы→М, прочие→ПР;
+   * (3) аббревиатура терминала из TERM_ABBR (НАХОДКИНСКИЙ МТП→НМТП) — временно на фронте,
+   *     до настроечной таблицы с «кратким именем» терминала.
+   * Пример: «АО "НАХОДКИНСКИЙ МТП" Каменный уголь» → «НМТП».
+   */
+  private static readonly ORG_FORMS = new Set([
+    'ОАО', 'ПАО', 'ЗАО', 'АО', 'ООО', 'КГУП', 'ФГУП', 'ГУП', 'МУП', 'ИП', 'АК', 'КОМПАНИЯ',
+  ]);
+  private static readonly CARGO_ABBR: { re: RegExp; ab: string }[] = [
+    { re: /\s*(каменный\s+)?уголь\s*$/i, ab: '' }, // уголь — груз не указываем (только терминал)
+    { re: /\s*чугун[а-яё]*\s*$/i, ab: 'Ч' },
+    { re: /\s*(чёрные|черные|цветные)?\s*металл[а-яё]*\s*$/i, ab: 'М' },
+    { re: /\s*прочие(\s+грузы)?\s*$/i, ab: 'ПР' },
+  ];
+  /** Краткие имена терминалов (порт-специфика; временно тут, позже — в настроечной таблице). */
+  private static readonly TERM_ABBR: Record<string, string> = {
+    'НАХОДКИНСКИЙ МТП': 'НМТП',
+  };
+  shortLabel(label: string): string {
+    let s = label
+      .replace(/["«»„“”'']/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w && !PlanComponent.ORG_FORMS.has(w.toUpperCase()))
+      .join(' ')
+      .trim();
+    let cargo = '';
+    for (const c of PlanComponent.CARGO_ABBR) {
+      if (c.re.test(s)) {
+        s = s.replace(c.re, '').trim();
+        cargo = c.ab;
+        break;
+      }
+    }
+    const term = PlanComponent.TERM_ABBR[s.toUpperCase()] ?? s;
+    return cargo ? `${term} ${cargo}` : term;
   }
 
   private async doUpload(file: File): Promise<void> {
