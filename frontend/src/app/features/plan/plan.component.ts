@@ -11,6 +11,8 @@ import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
 import { NzUploadModule, NzUploadFile } from 'ng-zorro-antd/upload';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
+import { NzTabsModule } from 'ng-zorro-antd/tabs';
+import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { PlanApiService, PlanGrid, PlanNitka, PlanSummary } from './plan-api.service';
 
@@ -34,20 +36,19 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
   imports: [
     FormsModule, NzButtonModule, NzCardModule, NzAlertModule, NzTagModule,
     NzTableModule, NzSelectModule, NzCheckboxModule, NzUploadModule, NzIconModule,
-    NzSpinModule,
+    NzSpinModule, NzTabsModule, NzTooltipModule,
   ],
   template: `
     <div class="page">
       <nz-card class="card">
-        <div class="controls">
-          <span class="lbl">Станция:</span>
-          <nz-select [ngModel]="selectedCode()" (ngModelChange)="onCodeChange($event)" style="width: 200px">
-            @for (o of stationOptions; track o.code) {
-              <nz-option [nzValue]="o.code" [nzLabel]="o.label" />
-            }
-          </nz-select>
+        <nz-tabs nzSize="small" [nzSelectedIndex]="selectedIndex()" (nzSelectedIndexChange)="onTabChange($event)">
+          @for (o of stationOptions; track o.code) {
+            <nz-tab [nzTitle]="o.label"></nz-tab>
+          }
+        </nz-tabs>
 
-          <span class="lbl">Загрузка:</span>
+        <div class="controls">
+          <span class="lbl">План:</span>
           <nz-select
             [ngModel]="selectedPlanId()"
             (ngModelChange)="onPlanChange($event)"
@@ -61,11 +62,27 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
           </nz-select>
 
           <nz-upload nzAccept=".xlsx" [nzShowUploadList]="false" [nzBeforeUpload]="beforeUpload">
-            <button nz-button [nzLoading]="busyUpload()">
+            <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Загрузить план" [nzLoading]="busyUpload()">
               <span nz-icon nzType="upload"></span>
-              Загрузить план
             </button>
           </nz-upload>
+
+          <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Обновить" (click)="refresh()">
+            <span nz-icon nzType="reload"></span>
+          </button>
+
+          <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Печать" [disabled]="!grid()" (click)="printTable()">
+            <span nz-icon nzType="printer"></span>
+          </button>
+
+          <button
+            nz-button
+            nzType="text"
+            nz-tooltip
+            nzTooltipTitle="План подвода: вкладки — станции, «План» — выбор загрузки из истории, «Показать чужие» — строки и столбцы не наших терминалов. Времена — МСК."
+          >
+            <span nz-icon nzType="info-circle"></span>
+          </button>
 
           <label nz-checkbox [ngModel]="showForeign()" (ngModelChange)="showForeign.set($event)">
             Показать чужие
@@ -107,15 +124,18 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                   <th nzWidth="60px">Факт</th>
                   <th nzWidth="64px">Откл</th>
                   @for (label of portLabels(); track label) {
-                    <th class="port-col" [title]="label">{{ shortLabel(label) }}</th>
+                    <th class="port-col" nzWidth="60px" [title]="label"><span class="vert">{{ shortLabel(label) }}</span></th>
                   }
-                  <th nzWidth="60px">Кол-во</th>
-                  <th nzWidth="280px">Состав</th>
+                  <th class="qty" nzWidth="44px"><span class="vert">Кол-во</span></th>
+                  <th nzWidth="440px">Состав</th>
                   <th nzWidth="160px">Примечание</th>
                 </tr>
               </thead>
               <tbody>
-                @for (n of rows(); track n.ord) {
+                @for (n of rows(); track n.ord; let i = $index) {
+                  @if (showDivider(i)) {
+                    <tr class="divider"><td [attr.colspan]="colCount()"></td></tr>
+                  }
                   <tr [class.ostatok]="n.is_ostatok">
                     <td>{{ n.is_ostatok ? '' : dmDate(n.plan_msk) }}</td>
                     <td class="idx">{{ n.index_pp || '—' }}</td>
@@ -154,7 +174,11 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     .idx { font-weight: 500; }
     .small { font-size: var(--font-size-sm); }
     .sostav { white-space: pre-line; }
-    .port-col { text-align: center; font-size: var(--font-size-sm); width: 56px; min-width: 56px; white-space: normal; overflow-wrap: anywhere; line-height: 1.15; vertical-align: bottom; }
+    /* Вертикальные заголовки терминалов (как в оригинале); ширину задаёт nzWidth, шрифт — как у «План/Факт». */
+    .port-col, .qty { text-align: center; }
+    .vert { writing-mode: vertical-lr; text-orientation: mixed; display: inline-block; white-space: nowrap; line-height: 1; }
+    /* Разделитель-блок между сутками. */
+    tr.divider td { padding: 0; height: 3px; background: var(--color-primary-bg, #e8f4fd); border-left: none; border-right: none; }
     tr.ostatok td { background: var(--color-bg-subtle); font-weight: 500; }
   `],
 })
@@ -165,6 +189,9 @@ export class PlanComponent implements OnInit {
   readonly selectedCode = signal(STATION_OPTIONS[0].code);
   readonly selectedLabel = signal(STATION_OPTIONS[0].label);
   readonly selectedPlanId = signal<number | null>(null);
+  readonly selectedIndex = computed(() =>
+    this.stationOptions.findIndex((o) => o.code === this.selectedCode()),
+  );
 
   readonly plans = signal<PlanSummary[]>([]);
   readonly grid = signal<PlanGrid | null>(null);
@@ -197,6 +224,20 @@ export class PlanComponent implements OnInit {
     return labels;
   });
 
+  /** Метки столбцов «наших» причалов — для выбора правила сокращения имени. */
+  private readonly ourLabels = computed<Set<string>>(() => {
+    const g = this.grid();
+    const s = new Set<string>();
+    if (g) {
+      for (const n of g.nitki) {
+        for (const p of n.ports ?? []) {
+          if (p.is_our) s.add(p.label);
+        }
+      }
+    }
+    return s;
+  });
+
   /** Строки таблицы: строка «Остаток» всегда; «чужие» (activ=0) скрыты, если не включено. */
   readonly rows = computed<PlanNitka[]>(() => {
     const g = this.grid();
@@ -214,6 +255,22 @@ export class PlanComponent implements OnInit {
     this.selectedLabel.set(this.stationOptions.find((o) => o.code === code)?.label ?? code);
     this.uploadMsg.set(null);
     this.reload(code);
+  }
+
+  /** Переключение станции вкладкой. */
+  onTabChange(index: number): void {
+    const code = this.stationOptions[index]?.code;
+    if (code) this.onCodeChange(code);
+  }
+
+  /** Обновить список загрузок текущей станции. */
+  refresh(): void {
+    this.reload(this.selectedCode());
+  }
+
+  /** Печать таблицы штатным диалогом браузера. */
+  printTable(): void {
+    window.print();
   }
 
   onPlanChange(id: number | null): void {
@@ -249,12 +306,30 @@ export class PlanComponent implements OnInit {
     return c > 0 ? String(c) : '';
   }
 
+  /** Число столбцов таблицы — для colspan строки-разделителя. */
+  colCount(): number {
+    return 9 + this.portLabels().length; // 6 базовых + порты + Кол-во/Состав/Примечание
+  }
+
+  /** Ключ «блока суток»: у «Остатка» — отдельный, у нитки — дата плана. */
+  private dateKey(n: PlanNitka): string {
+    return n.is_ostatok ? 'ostatok' : this.dmDate(n.plan_msk);
+  }
+
+  /** Разделитель-блок перед строкой i при смене суток (как в оригинале gtport). */
+  showDivider(i: number): boolean {
+    if (i <= 0) return false;
+    const r = this.rows();
+    return this.dateKey(r[i]) !== this.dateKey(r[i - 1]);
+  }
+
   /**
    * Короткая метка столбца терминала для узкой шапки. Полное имя — в подсказке (title).
    * (1) убирает организационно-правовые формы и кавычки (generic, без хардкода портов);
    * (2) сокращает род груза в хвосте: уголь → без пометки, чугун→Ч, металлы→М, прочие→ПР;
-   * (3) аббревиатура терминала из TERM_ABBR (НАХОДКИНСКИЙ МТП→НМТП) — временно на фронте,
-   *     до настроечной таблицы с «кратким именем» терминала.
+   * (3) «наш» терминал — краткое имя из TERM_ABBR (НАХОДКИНСКИЙ МТП→НМТП; временно на
+   *     фронте, до настроечной таблицы); «чужой» — каждое слово длиннее 4 символов
+   *     сокращаем до 3 (напр. «ЛЕСНОЙ ТЕРМИНАЛ» → «ЛЕС ТЕР»).
    * Пример: «АО "НАХОДКИНСКИЙ МТП" Каменный уголь» → «НМТП».
    */
   private static readonly ORG_FORMS = new Set([
@@ -263,12 +338,14 @@ export class PlanComponent implements OnInit {
   private static readonly CARGO_ABBR: { re: RegExp; ab: string }[] = [
     { re: /\s*(каменный\s+)?уголь\s*$/i, ab: '' }, // уголь — груз не указываем (только терминал)
     { re: /\s*чугун[а-яё]*\s*$/i, ab: 'Ч' },
+    { re: /\s*слябы?\s*$/i, ab: 'СЛ' },
     { re: /\s*(чёрные|черные|цветные)?\s*металл[а-яё]*\s*$/i, ab: 'М' },
     { re: /\s*прочие(\s+грузы)?\s*$/i, ab: 'ПР' },
   ];
   /** Краткие имена терминалов (порт-специфика; временно тут, позже — в настроечной таблице). */
   private static readonly TERM_ABBR: Record<string, string> = {
     'НАХОДКИНСКИЙ МТП': 'НМТП',
+    'АТТИС ЭНТЕРПРАЙС': 'АТТИС',
   };
   shortLabel(label: string): string {
     let s = label
@@ -285,7 +362,14 @@ export class PlanComponent implements OnInit {
         break;
       }
     }
-    const term = PlanComponent.TERM_ABBR[s.toUpperCase()] ?? s;
+    let term: string;
+    if (this.ourLabels().has(label)) {
+      // «наш» терминал — краткое имя из TERM_ABBR (или как есть).
+      term = PlanComponent.TERM_ABBR[s.toUpperCase()] ?? s;
+    } else {
+      // «чужой» терминал — каждое слово длиннее 4 символов сокращаем до 3.
+      term = s.split(/\s+/).map((w) => (w.length > 4 ? w.slice(0, 3) : w)).join(' ');
+    }
     return cargo ? `${term} ${cargo}` : term;
   }
 
