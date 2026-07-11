@@ -7,9 +7,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/xuri/excelize/v2"
 )
+
+// hasLetter — есть ли в строке хоть одна буква. Имя столбца-листа (терминал/груз) —
+// текст; строки перерабатывающей способности и «Остатка на 18:00» содержат только
+// числа, и их НЕ надо принимать за имя листа (иначе метка получается «НМТП 160»).
+func hasLetter(s string) bool {
+	return strings.IndexFunc(s, unicode.IsLetter) >= 0
+}
 
 // GridParser — универсальный парсер «новой формы» плана подвода. Формат один для
 // всех станций: шапка с «N п/п», блоки «План на DD-MM-YYYY», строки поездов
@@ -190,14 +198,16 @@ func (g *GridParser) findLeaves(rows [][]string, row1 int) []leafCol {
 		return strings.Contains(u, "ИТОГО") || strings.Contains(u, "TOTAL")
 	}
 
-	// getLeafName: самый глубокий непустой-не-ИТОГО подзаголовок столбца col.
+	// getLeafName: самый глубокий текстовый (не пустой, не «ИТОГО», не чисто числовой)
+	// подзаголовок столбца col. Числовые строки (перераб. способность, остаток) —
+	// не имена листьев, пропускаем, иначе метка «НМТП 160» вместо «НМТП Каменный уголь».
 	getLeafName := func(col int) string {
 		for i := len(subRows) - 1; i >= 0; i-- {
 			if col >= len(subRows[i]) {
 				continue
 			}
 			v := strings.TrimSpace(subRows[i][col])
-			if v != "" && !isTotal(v) {
+			if v != "" && !isTotal(v) && hasLetter(v) {
 				return v
 			}
 		}
@@ -223,7 +233,7 @@ func (g *GridParser) findLeaves(rows [][]string, row1 int) []leafCol {
 				break
 			}
 			v1 := strings.TrimSpace(level1[c2])
-			if v1 != "" && !isTotal(v1) {
+			if v1 != "" && !isTotal(v1) && hasLetter(v1) {
 				return true
 			}
 		}
