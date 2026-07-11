@@ -202,3 +202,25 @@ func (r *PlanRepository) loadNitki(ctx context.Context, h planModel) (domain.Pla
 	}
 	return h.toDomain(), nitki, nil
 }
+
+// sfModel — ORM-раскладка справочника sf (синонимы станций формирования).
+type sfModel struct {
+	Sinonim  string `gorm:"column:sinonim"`
+	Station  string `gorm:"column:station"`
+	Quantity int    `gorm:"column:quantity"`
+}
+
+func (sfModel) TableName() string { return "sf" }
+
+// ListSF возвращает включённые записи справочника sf.
+func (r *PlanRepository) ListSF(ctx context.Context) ([]domain.SFRecord, error) {
+	var rows []sfModel
+	if err := r.db.WithContext(ctx).Where("enabled = ?", true).Order("sinonim").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.SFRecord, len(rows))
+	for i, m := range rows {
+		out[i] = domain.SFRecord{Sinonim: m.Sinonim, Station: m.Station, Quantity: m.Quantity}
+	}
+	return out, nil
+}

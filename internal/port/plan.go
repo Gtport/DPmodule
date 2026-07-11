@@ -22,4 +22,6 @@ type PlanRepository interface {
 	// GetPlanByID возвращает конкретную загрузку по id (заголовок + нитки).
 	// Нет такой → header.PlanCode == "" и пустой срез (без ошибки).
 	GetPlanByID(ctx context.Context, id int64) (domain.Plan, []domain.PlanNitka, error)
+	// ListSF возвращает справочник sf (синонимы станций формирования) для подбора с.ф.
+	ListSF(ctx context.Context) ([]domain.SFRecord, error)
 }

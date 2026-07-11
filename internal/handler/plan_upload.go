@@ -21,7 +21,9 @@ func NewPlanUploadHandler(proc *service.PlanProcessor) *planUploadHandler {
 }
 
 func (h *planUploadHandler) RegisterRoutes(g *gin.RouterGroup) {
-	g.POST("/dislocation/plan/upload", h.upload)
+	g.POST("/dislocation/plan/upload", h.upload)            // одношаговая загрузка (без выбора с.ф.)
+	g.POST("/dislocation/plan/prepare", h.prepare)          // фаза A: разбор + кандидаты с.ф. (снимок не трогаем)
+	g.POST("/dislocation/plan/confirm", h.confirm)          // фаза B: применить с выбранными группами с.ф.
 	g.GET("/dislocation/plan/:code", h.get)                 // ?id=N — конкретная загрузка, иначе свежая
 	g.GET("/dislocation/plan/:code/history", h.history)     // список загрузок станции
 }
@@ -132,5 +134,77 @@ func (h *planUploadHandler) upload(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, res)
+}
+
+// prepare — фаза A: разбор плана + кандидаты для с.ф.; снимок НЕ изменяется.
+// Возвращает токен (для confirm) и с.ф.-строки с группами-кандидатами.
+func (h *planUploadHandler) prepare(c *gin.Context) {
+	code := c.PostForm("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "не передан код станции (поле 'code': ma|nk)"})
+		return
+	}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "файл не передан (поле 'file')"})
+		return
+	}
+	if fh.Size == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "пустой файл"})
+		return
+	}
+	f, err := fh.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "не удалось открыть файл"})
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "не удалось прочитать файл"})
+		return
+	}
+
+	res, err := h.proc.Prepare(c.Request.Context(), code, fh.Filename, data)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// confirmRequest — тело confirm: токен + выбор групп по ord с.ф.-нитки.
+type confirmRequest struct {
+	Token      string              `json:"token"`
+	Selections map[string][]string `json:"selections"` // ключ — ord нитки (строкой), значение — id_disl
+}
+
+// confirm — фаза B: применить план с выбранными пользователем группами с.ф.
+func (h *planUploadHandler) confirm(c *gin.Context) {
+	var req confirmRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса"})
+		return
+	}
+	if req.Token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "не передан токен подготовки"})
+		return
+	}
+	selections := make(map[int][]string, len(req.Selections))
+	for k, v := range req.Selections {
+		ord, err := strconv.Atoi(k)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "некорректный ключ выбора (ожидался ord нитки): " + k})
+			return
+		}
+		selections[ord] = v
+	}
+
+	res, err := h.proc.Confirm(c.Request.Context(), req.Token, selections)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, res)
 }

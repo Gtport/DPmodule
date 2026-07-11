@@ -56,3 +56,11 @@ type PlanNitka struct {
 	IsOstatok     bool       `json:"is_ostatok"`     // служебная строка «Остаток на 18:00»
 	IsSf          bool       `json:"is_sf"`          // строка сборного формирования (с.ф.); синоним — в IndexPp
 }
+
+// SFRecord — строка справочника sf (dpport.sf): вариант написания синонима станции
+// формирования → каноническая станция + потолок вагонов. Для подбора групп с.ф.
+type SFRecord struct {
+	Sinonim  string
+	Station  string
+	Quantity int
+}

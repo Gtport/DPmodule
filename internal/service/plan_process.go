@@ -26,10 +26,14 @@ type PlanProcessor struct {
 	actual   *ActualCache
 	planRepo port.PlanRepository // хранение сетки плана (для фронта); может быть nil
 	baseDir  string
+	pending  *pendingStore // отложенные загрузки между prepare и confirm (с.ф.)
 }
 
 func NewPlanProcessor(dir *DirectoryCache, repo port.DislocationRepository, actual *ActualCache, planRepo port.PlanRepository, baseDir string) *PlanProcessor {
-	return &PlanProcessor{dir: dir, repo: repo, actual: actual, planRepo: planRepo, baseDir: baseDir}
+	return &PlanProcessor{
+		dir: dir, repo: repo, actual: actual, planRepo: planRepo, baseDir: baseDir,
+		pending: newPendingStore(15 * time.Minute),
+	}
 }
 
 // PlanProcessResult — сводка обработки плана.
@@ -79,55 +83,9 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 		}
 	}
 
-	// Служебная строка «Остаток на 18:00» не считается ниткой поезда.
-	matched, trains := 0, 0
-	for i, m := range matches {
-		if !doc.Nitki[i].IsOstatok {
-			trains++
-		}
-		if m.Matched {
-			matched++
-		}
-	}
-
-	// Сохраняем сетку плана для фронта (заголовок + нитки с результатом матча).
-	// История: SavePlan добавляет новую загрузку, прежние на станцию не трогает.
-	if p.planRepo != nil {
-		now := clock.Now()
-		header := domain.Plan{
-			PlanCode:   planCode,
-			SourceFile: filename,
-			LoadedAt:   &now,
-			Nitki:      trains,
-			Matched:    matched,
-			Stamped:    stats.Stamped,
-		}
-		nitki := make([]domain.PlanNitka, len(doc.Nitki))
-		for i, n := range doc.Nitki {
-			nitki[i] = domain.PlanNitka{
-				PlanCode:      planCode,
-				Ord:           i,
-				Index:         n.Index,
-				IndexPp:       n.IndexPp,
-				StationOper:   planmatch.StationOperOf(matches[i].SubGroups),
-				PlanMsk:       localPtr(n.PlanMsk),
-				PlanJd:        localPtr(n.PlanJd),
-				FactMsk:       localPtr(n.FactMsk),
-				Otkl:          n.Otkl,
-				Wagons:        n.Wagons,
-				Activ:         n.Activ,
-				Ports:         toDomainPorts(n.Ports),
-				Sostav:        planmatch.FormatSostav(matches[i].SubGroups),
-				Comment:       n.Comment,
-				Matched:       matches[i].Matched,
-				MatchedWagons: len(matches[i].Vagons),
-				IsOstatok:     n.IsOstatok,
-				IsSf:          n.IsSf,
-			}
-		}
-		if _, err := p.planRepo.SavePlan(ctx, header, nitki); err != nil {
-			return PlanProcessResult{}, fmt.Errorf("сохранение сетки плана: %w", err)
-		}
+	matched, trains := countPlan(doc, matches)
+	if err := p.saveGrid(ctx, planCode, filename, doc, matches, stats.Stamped); err != nil {
+		return PlanProcessResult{}, err
 	}
 
 	return PlanProcessResult{
