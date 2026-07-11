@@ -101,7 +101,7 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 	}
 
 	matched, trains := countPlan(doc, matches)
-	tok := p.pending.put(pendingPlan{planCode: planCode, filename: filename, data: data})
+	tok := p.pending.put(pendingPlan{planCode: planCode, filename: filename, doc: doc})
 	return PreparePlanResult{
 		Token: tok, PlanCode: planCode, Filename: filename,
 		SF: sfRows, Nitki: trains, Matched: matched,
@@ -125,14 +125,7 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, selections ma
 	if len(target) == 0 {
 		return PlanProcessResult{}, fmt.Errorf("для плана %q нет целевых площадок", planCode)
 	}
-	path, err := p.save(planCode, pend.data)
-	if err != nil {
-		return PlanProcessResult{}, err
-	}
-	doc, err := plan.ParseFile(path, planCode)
-	if err != nil {
-		return PlanProcessResult{}, fmt.Errorf("разбор плана: %w", err)
-	}
+	doc := pend.doc // разобран на prepare; файл уже сохранён там же — повторно не разбираем
 
 	records := p.actual.All()
 	agg := planmatch.Aggregate(records, target)

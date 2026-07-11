@@ -5,15 +5,19 @@ import (
 	"encoding/hex"
 	"sync"
 	"time"
+
+	"github.com/Gtport/DPmodule/internal/parser/plan"
 )
 
 // pendingPlan — отложенная загрузка плана между prepare и confirm (в памяти).
-// Храним байты файла: на confirm заново разбираем и матчим против ТЕКУЩЕГО снимка,
-// чтобы закрыть окно рассогласования (снимок мог пересобраться LK/JSON/другим планом).
+// Храним УЖЕ РАЗОБРАННЫЙ план (doc): xlsx детерминирован, разбирать второй раз незачем.
+// На confirm заново матчим doc против ТЕКУЩЕГО снимка — этим закрывается окно
+// рассогласования (снимок мог пересобраться LK/JSON/другим планом), но без повторного
+// разбора файла (см. память plan-sf-human-in-the-loop, решение C).
 type pendingPlan struct {
 	planCode string
 	filename string
-	data     []byte
+	doc      *plan.PlanDoc
 	created  time.Time
 }
 
