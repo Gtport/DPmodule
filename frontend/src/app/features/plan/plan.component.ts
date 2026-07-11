@@ -179,18 +179,18 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                   @if (sfHeadPorts(row); as terms) {
                     <span class="sf-terms">{{ terms }}</span>
                   }
-                  <span class="sf-cnt">выбрано {{ (sfSel()[row.ord] || []).length }}</span>
+                  <span class="sf-cnt">выбрано {{ sfSelectedWagons(row) }} ваг</span>
                 </div>
                 @if (row.candidates.length === 0) {
                   <div class="muted">Нет групп-кандидатов на станции формирования.</div>
                 } @else {
-                  @for (c of row.candidates; track c.id_disl) {
+                  @for (c of row.candidates; track c.key) {
                     <label
                       nz-checkbox
                       class="sf-cand"
-                      [nzChecked]="isChecked(row.ord, c.id_disl)"
-                      [nzDisabled]="isTaken(row.ord, c.id_disl)"
-                      (nzCheckedChange)="toggleCandidate(row.ord, c.id_disl)"
+                      [nzChecked]="isChecked(row.ord, c.key)"
+                      [nzDisabled]="isTaken(row.ord, c.key)"
+                      (nzCheckedChange)="toggleCandidate(row.ord, c.key)"
                     >
                       <span class="sf-body">{{ c.date }} · <b>{{ c.quantity }}</b> ваг · {{ c.sostav }}</span>
                     </label>
@@ -461,6 +461,16 @@ export class PlanComponent implements OnInit, OnDestroy {
       .join(', ');
   }
 
+  /** Сумма вагонов выбранных групп с.ф.-строки (для «выбрано N ваг» в заголовке). */
+  sfSelectedWagons(row: SFRow): number {
+    const sel = new Set(this.sfSel()[row.ord] ?? []);
+    let n = 0;
+    for (const c of row.candidates) {
+      if (sel.has(c.key)) n += c.quantity;
+    }
+    return n;
+  }
+
   /** Короткое имя терминала из организации: убираем орг-форму/кавычки + TERM_ABBR. */
   shortTerminal(name: string): string {
     const s = name
@@ -501,26 +511,26 @@ export class PlanComponent implements OnInit, OnDestroy {
     this.sfFile = null;
   }
 
-  /** Группа отмечена в этой с.ф.-строке. */
-  isChecked(ord: number, id: string): boolean {
-    return (this.sfSel()[ord] ?? []).includes(id);
+  /** Группа отмечена в этой с.ф.-строке (по уникальному ключу группы). */
+  isChecked(ord: number, key: string): boolean {
+    return (this.sfSel()[ord] ?? []).includes(key);
   }
 
   /** Группа занята другой с.ф.-строкой (без двойного назначения). */
-  isTaken(ord: number, id: string): boolean {
+  isTaken(ord: number, key: string): boolean {
     const sel = this.sfSel();
     for (const k of Object.keys(sel)) {
       const o = Number(k);
-      if (o !== ord && sel[o].includes(id)) return true;
+      if (o !== ord && sel[o].includes(key)) return true;
     }
     return false;
   }
 
-  toggleCandidate(ord: number, id: string): void {
+  toggleCandidate(ord: number, key: string): void {
     const sel = { ...this.sfSel() };
     const cur = new Set(sel[ord] ?? []);
-    if (cur.has(id)) cur.delete(id);
-    else cur.add(id);
+    if (cur.has(key)) cur.delete(key);
+    else cur.add(key);
     sel[ord] = [...cur];
     this.sfSel.set(sel);
   }

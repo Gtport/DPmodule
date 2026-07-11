@@ -34,7 +34,8 @@ type SFPortDTO struct {
 
 // SFCandidateDTO — группа-кандидат вагонов для с.ф. (для диалога выбора на фронте).
 type SFCandidateDTO struct {
-	IdDisl   string      `json:"id_disl"`
+	Key      string      `json:"key"`     // уникальный идентификатор группы для выбора (id_disl не уникален)
+	IdDisl   string      `json:"id_disl"` // справочно
 	Station  string      `json:"station"`
 	Index    string      `json:"index"`
 	Date     string      `json:"date"`
@@ -157,20 +158,22 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, selections ma
 		if len(sel) == 0 {
 			continue // отмена/без выбора
 		}
-		byID := map[string]planmatch.SFGroup{}
+		byKey := map[string]planmatch.SFGroup{}
 		for _, g := range planmatch.SFCandidates(synonymOf(n.IndexPp), sf, records, target, used) {
-			byID[g.IdDisl] = g
+			byKey[g.Key] = g // ключ уникален; id_disl может совпадать у разных групп
 		}
 		var vagons []string
 		var subs []planmatch.SubGroup
-		for _, id := range sel {
-			g, ok := byID[id]
+		for _, key := range sel {
+			g, ok := byKey[key]
 			if !ok {
 				continue // группа исчезла/занята — пропускаем (окно рассогласования)
 			}
 			vagons = append(vagons, g.Vagons...)
 			subs = append(subs, g.SubGroups...)
-			used[id] = struct{}{} // без двойного назначения между с.ф.
+			if g.IdDisl != "" {
+				used[g.IdDisl] = struct{}{} // исключить операцию из кандидатов следующих с.ф.
+			}
 		}
 		if len(vagons) > 0 {
 			matches[i].Matched = true
@@ -298,7 +301,7 @@ func toCandidateDTO(gs []planmatch.SFGroup, target map[string]struct{}, orgByNam
 			date = g.DateOp.Time().Format("2006-01-02")
 		}
 		out[i] = SFCandidateDTO{
-			IdDisl: g.IdDisl, Station: g.StationOper, Index: g.Index,
+			Key: g.Key, IdDisl: g.IdDisl, Station: g.StationOper, Index: g.Index,
 			Date: date, Quantity: g.Quantity, Sostav: planmatch.FormatSostav(g.SubGroups),
 			Ports: sfPorts(g.SubGroups, target, orgByName), Vagons: g.Vagons,
 		}

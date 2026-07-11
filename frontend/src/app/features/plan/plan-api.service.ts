@@ -68,6 +68,7 @@ export interface SFPort {
 
 /** Группа-кандидат вагонов для с.ф. (диалог выбора). */
 export interface SFCandidate {
+  key: string;     // уникальный идентификатор группы для выбора (id_disl не уникален!)
   id_disl: string;
   station: string;
   index: string;

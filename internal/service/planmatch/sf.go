@@ -20,11 +20,12 @@ type SFRecord struct {
 // формирования. Показывается пользователю в диалоге; выбранные группы на confirm
 // проставляются как вагоны нитки с.ф.
 type SFGroup struct {
+	Key         string            // уникальный ключ группы (StationOper|index|date|IdDisl) — id_disl не уникален!
 	StationOper string            // станция текущей операции (= станция формирования синонима)
 	Index       string            // IndexMain если непуст, иначе Index (как в эталоне)
 	IndexMain   string            //
 	DateOp      *domain.LocalTime // дата операции группы
-	IdDisl      string            // id операции — стабильный идентификатор группы
+	IdDisl      string            // id операции (может совпадать у разных групп — не идентификатор!)
 	Quantity    int               // число вагонов в группе
 	Vagons      []string          // номера вагонов (для простановки на confirm)
 	SubGroups   []SubGroup        // подгруппы (IndexMain|Naznach|Sms1|GruzpolS) — для «Состава»
@@ -85,6 +86,7 @@ func SFCandidates(
 		g := groups[key]
 		if g == nil {
 			g = &SFGroup{
+				Key:         key,
 				StationOper: r.StationOper,
 				Index:       indexToUse,
 				IndexMain:   r.IndexMain,
