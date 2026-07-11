@@ -54,4 +54,5 @@ type PlanNitka struct {
 	Matched       bool       `json:"matched"`
 	MatchedWagons int        `json:"matched_wagons"` // вагонов застолблено этой ниткой
 	IsOstatok     bool       `json:"is_ostatok"`     // служебная строка «Остаток на 18:00»
+	IsSf          bool       `json:"is_sf"`          // строка сборного формирования (с.ф.); синоним — в IndexPp
 }

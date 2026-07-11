@@ -122,6 +122,7 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 				Matched:       matches[i].Matched,
 				MatchedWagons: len(matches[i].Vagons),
 				IsOstatok:     n.IsOstatok,
+				IsSf:          n.IsSf,
 			}
 		}
 		if _, err := p.planRepo.SavePlan(ctx, header, nitki); err != nil {

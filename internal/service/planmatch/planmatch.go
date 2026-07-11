@@ -254,6 +254,12 @@ func Match(nitki []plan.PlanNitka, agg AggResult, requiresNaznach bool) []NitkaM
 	out := make([]NitkaMatch, 0, len(nitki))
 	for _, n := range nitki {
 		m := NitkaMatch{Nitka: n}
+		if n.IsSf {
+			// с.ф. индексно не матчатся — группы выбирает пользователь (отдельный поток);
+			// пустой матч сохраняет соответствие 1:1 с nitki.
+			out = append(out, m)
+			continue
+		}
 
 		best, src := findBest(n.IndexPp, agg, n.Activ)
 		if best != nil {

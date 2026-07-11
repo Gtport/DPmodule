@@ -313,7 +313,7 @@ func leafLabel(terminal, leaf string) string {
 func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error) {
 	var nitki []PlanNitka
 	var blockDate time.Time
-	skippedSf := 0
+	sfEmitted, sfSkipped := 0, 0
 	trains := 0            // число реальных ниток поездов (для гарда «нет поездов»)
 	ostatokDone := false   // «Остаток на 18:00» эмитим один раз (первую строку)
 
@@ -358,10 +358,15 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 			continue
 		}
 
-		// С.ф.-строка (пустой col0, маркер «с.ф.» в «Индекс») — откладываем.
+		// С.ф.-строка с пустым порядковым номером (маркер «с.ф.» в «Индекс»).
 		if col0 == "" {
-			if isSfIndex(label) {
-				skippedSf++
+			if isSfRow(label) {
+				if n, ok := g.buildSfNitka(rows[r], cols, blockDate); ok {
+					nitki = append(nitki, n)
+					sfEmitted++
+				} else {
+					sfSkipped++
+				}
 			}
 			continue
 		}
@@ -376,8 +381,14 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 		if index == "" {
 			continue // свободная нитка без индекса — эталон её не эмитит
 		}
-		if isSfIndex(index) {
-			skippedSf++
+		// С.ф.-строка с порядковым номером («с.ф.БИКИН», «0000-000-0000»).
+		if isSfRow(index) {
+			if n, ok := g.buildSfNitka(rows[r], cols, blockDate); ok {
+				nitki = append(nitki, n)
+				sfEmitted++
+			} else {
+				sfSkipped++
+			}
 			continue
 		}
 
@@ -385,8 +396,8 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 		trains++
 	}
 
-	if skippedSf > 0 {
-		fmt.Printf("[plan:%s] пропущено с.ф.-строк: %d (распределение с.ф. отложено)\n", g.prof.PlanCode, skippedSf)
+	if sfEmitted > 0 || sfSkipped > 0 {
+		fmt.Printf("[plan:%s] с.ф.-строк: эмитировано %d, пропущено без станции %d\n", g.prof.PlanCode, sfEmitted, sfSkipped)
 	}
 	if trains == 0 {
 		return nil, fmt.Errorf("plan[%s]: не найдено строк поездов", g.prof.PlanCode)
@@ -422,6 +433,27 @@ func (g *GridParser) buildNitka(row []string, cols gridCols, blockDate time.Time
 		Ports:   ports,
 		Comment: get(cols.colComment),
 	}
+}
+
+// buildSfNitka строит нитку сборного формирования (с.ф.): как обычную, но с флагом
+// IsSf и нормализованным индексом «с.ф.<СИНОНИМ>». Синоним — из суффикса индекса или
+// «Станции текущей операции». Если синоним определить нельзя — (нулевая, false).
+func (g *GridParser) buildSfNitka(row []string, cols gridCols, blockDate time.Time) (PlanNitka, bool) {
+	get := func(col int) string {
+		if col < 0 || col >= len(row) {
+			return ""
+		}
+		return strings.TrimSpace(row[col])
+	}
+	syn := sfSynonym(get(cols.colIndex), get(cols.colStation))
+	if syn == "" {
+		return PlanNitka{}, false
+	}
+	n := g.buildNitka(row, cols, blockDate)
+	n.Index = ""
+	n.IndexPp = "с.ф." + syn
+	n.IsSf = true
+	return n, true
 }
 
 // buildPorts собирает ячейки портов строки по листовым столбцам (в порядке
@@ -526,13 +558,29 @@ func atoiSafe(s string) int {
 	return n
 }
 
-// isSfIndex — индекс является сборным формированием без станции (маркер «с.ф.»
-// без суффикса) или спецкодом «0000-000-0000». Перенос эталона GTport.
-func isSfIndex(index string) bool {
-	norm := strings.TrimSpace(index)
-	lower := strings.ToLower(norm)
-	collapsed := strings.ReplaceAll(strings.ReplaceAll(lower, ".", ""), " ", "")
-	return collapsed == "сф" || norm == "0000-000-0000"
+// isSfRow — строка является сборным формированием (с.ф.): индекс несёт маркер «с.ф.»/«сф»
+// (с суффиксом станции или без) либо спецкод «0000-000-0000». Перенос эталона GTport
+// (шире прежнего isSfIndex — ловит и «с.ф.БИКИН», иначе такая строка утекала в обычные).
+func isSfRow(index string) bool {
+	u := strings.ToUpper(strings.TrimSpace(index))
+	if u == "0000-000-0000" {
+		return true
+	}
+	collapsed := strings.ReplaceAll(strings.ReplaceAll(u, ".", ""), " ", "")
+	return strings.HasPrefix(collapsed, "СФ")
+}
+
+// sfSynonym извлекает синоним станции формирования (ВЕРХНИЙ регистр): из суффикса
+// индекса («с.ф.БИКИН» → «БИКИН») или, для бесстанционных («с.ф.»/«0000-000-0000»),
+// из «Станции текущей операции» (station). Пусто — если станцию определить нельзя.
+func sfSynonym(index, station string) string {
+	u := strings.ToUpper(strings.TrimSpace(index))
+	if u != "0000-000-0000" {
+		if suf := strings.TrimSpace(strings.TrimPrefix(strings.ReplaceAll(u, ".", ""), "СФ")); suf != "" {
+			return suf
+		}
+	}
+	return strings.ToUpper(strings.TrimSpace(station))
 }
 
 // ostatokMarker — метка служебной строки «Остаток на 18:00» (числа по портам на 18:00).

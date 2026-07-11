@@ -45,6 +45,7 @@ type planNitkaModel struct {
 	Matched       bool              `gorm:"column:matched"`
 	MatchedWagons int               `gorm:"column:matched_wagons"`
 	IsOstatok     bool              `gorm:"column:is_ostatok"`
+	IsSf          bool              `gorm:"column:is_sf"`
 }
 
 func (planNitkaModel) TableName() string { return "plan_nitka" }
@@ -101,7 +102,7 @@ func toPlanNitkaModel(planID int64, n domain.PlanNitka) planNitkaModel {
 		StationOper: n.StationOper, PlanMsk: n.PlanMsk, PlanJd: n.PlanJd, FactMsk: n.FactMsk,
 		Otkl: n.Otkl, Wagons: n.Wagons, Activ: n.Activ, Ports: marshalPorts(n.Ports),
 		Sostav: n.Sostav, Comment: n.Comment, Matched: n.Matched, MatchedWagons: n.MatchedWagons,
-		IsOstatok: n.IsOstatok,
+		IsOstatok: n.IsOstatok, IsSf: n.IsSf,
 	}
 }
 
@@ -111,7 +112,7 @@ func (m planNitkaModel) toDomain() domain.PlanNitka {
 		StationOper: m.StationOper, PlanMsk: m.PlanMsk, PlanJd: m.PlanJd, FactMsk: m.FactMsk,
 		Otkl: m.Otkl, Wagons: m.Wagons, Activ: m.Activ, Ports: unmarshalPorts(m.Ports),
 		Sostav: m.Sostav, Comment: m.Comment, Matched: m.Matched, MatchedWagons: m.MatchedWagons,
-		IsOstatok: m.IsOstatok,
+		IsOstatok: m.IsOstatok, IsSf: m.IsSf,
 	}
 }
 

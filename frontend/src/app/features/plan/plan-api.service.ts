@@ -51,6 +51,7 @@ export interface PlanNitka {
   matched: boolean;
   matched_wagons: number;
   is_ostatok: boolean;
+  is_sf: boolean;
 }
 
 /** Сетка загрузки плана: заголовок + строки. */
