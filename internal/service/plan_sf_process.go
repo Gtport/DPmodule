@@ -68,6 +68,9 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 	if len(target) == 0 {
 		return PreparePlanResult{}, fmt.Errorf("для плана %q нет целевых площадок в ports (plan_code)", planCode)
 	}
+	if err := p.ensureDislFresh(ctx); err != nil {
+		return PreparePlanResult{}, err
+	}
 	path, err := p.save(planCode, data)
 	if err != nil {
 		return PreparePlanResult{}, err
@@ -184,6 +187,9 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, selections ma
 	if err := p.saveGrid(ctx, planCode, pend.filename, doc, matches, stats.Stamped); err != nil {
 		return PlanProcessResult{}, err
 	}
+
+	p.journal.RecordPlanUpload(ctx, planCode, pend.filename, planDocDate(doc), trains, matched, stats.Stamped)
+
 	return PlanProcessResult{
 		Filename: pend.filename, PlanCode: planCode,
 		Nitki: trains, Matched: matched, Stamped: stats.Stamped, Cleared: stats.Cleared,

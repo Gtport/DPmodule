@@ -77,4 +77,5 @@ type CategoryPolicy struct {
 	RejectOlderRoleExempt  string `json:"reject_older_role_exempt,omitempty"`  // роль-исключение (предупреждение вместо запрета)
 	MaxDataLossPct         int    `json:"max_data_loss_pct,omitempty"`         // порог потери данных (%)
 	PlanMaxLagHours        int    `json:"plan_max_lag_hours,omitempty"`        // план не позже дислокации на N ч
+	PlanMaxDislAgeMinutes  int    `json:"plan_max_disl_age_minutes,omitempty"` // не грузить план, если дислокация старше N мин (0 — гард выключен)
 }

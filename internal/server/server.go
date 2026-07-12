@@ -32,6 +32,7 @@ func Build(
 	status6Cache *service.Status6Cache,
 	historyRepo port.HistoryRepository,
 	planRepo port.PlanRepository,
+	journalRepo port.JournalRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -77,12 +78,18 @@ func Build(
 
 		// Шаг 2 (обработка в снимок) — требует репозиторий дислокации (БД).
 		if dislRepo != nil {
+			// Единый журнал событий (обновления дислокации, загрузки планов).
+			journal := service.NewJournal(journalRepo, log)
+
 			proc := service.NewLKProcessor(lkIntake, dislRepo, actualCache, status9Cache, status6Cache, historyRepo)
+			proc.SetJournal(journal)
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
 
 			// Приём плана подвода: разбор + матч + простановка PlanMsk в снимок.
 			// Целевые площадки — из DirectoryCache (ports.plan_code).
 			planProc := service.NewPlanProcessor(dirCache, dislRepo, actualCache, planRepo, cfg.Storage.BaseDir)
+			planProc.SetJournal(journal)
+			planProc.SetConfig(cfgCache) // порог свежести дислокации для гарда загрузки плана
 			handler.NewPlanUploadHandler(planProc).RegisterRoutes(api)
 		}
 	}

@@ -23,11 +23,15 @@ type LKProcessor struct {
 	status6  *Status6Cache
 	history  port.HistoryRepository
 	enricher *Enricher
+	journal  *Journal // единый журнал событий (может быть nil — cmd-утилиты)
 }
 
 func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *ActualCache, status9 *Status9Cache, status6 *Status6Cache, history port.HistoryRepository) *LKProcessor {
 	return &LKProcessor{intake: intake, repo: repo, actual: actual, status9: status9, status6: status6, history: history, enricher: NewEnricher(intake.dir)}
 }
+
+// SetJournal подключает журнал событий (nil-safe: без него запись пропускается).
+func (p *LKProcessor) SetJournal(j *Journal) { p.journal = j }
 
 var (
 	ErrNotReady = errors.New("приём не готов к обработке")
@@ -97,7 +101,14 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 		all = append(all, recs...)
 	}
 
-	return p.ProcessRecords(ctx, all, len(st.Files), perFile)
+	res, err := p.ProcessRecords(ctx, all, len(st.Files), perFile)
+	if err != nil {
+		return res, err
+	}
+	// Журнал: снимок дислокации пересобран. doc_ts — самая старая метка формирования
+	// среди файлов (см. Journal.RecordDislUpdate). Best-effort — не роняет обработку.
+	p.journal.RecordDislUpdate(ctx, "lk", st.Files, res.Count)
+	return res, nil
 }
 
 // ProcessRecords — общий конвейер для уже распарсенного батча: Stage 1 → Stage 2/3

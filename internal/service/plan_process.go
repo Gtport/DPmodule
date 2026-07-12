@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,13 +28,70 @@ type PlanProcessor struct {
 	planRepo port.PlanRepository // хранение сетки плана (для фронта); может быть nil
 	baseDir  string
 	pending  *pendingStore // отложенные загрузки между prepare и confirm (с.ф.)
+	journal  *Journal      // единый журнал событий (может быть nil — cmd-утилиты)
+	cfg      *ConfigCache  // настройки (порог свежести дислокации); может быть nil
 }
+
+// ErrDislStale — снимок дислокации старше допустимого для загрузки плана. Хендлер
+// отдаёт по нему 409 Conflict; на устаревшей дислокации матч/простановка недостоверны.
+var ErrDislStale = errors.New("дислокация устарела — обновите ЛК/АСУ перед загрузкой плана")
 
 func NewPlanProcessor(dir *DirectoryCache, repo port.DislocationRepository, actual *ActualCache, planRepo port.PlanRepository, baseDir string) *PlanProcessor {
 	return &PlanProcessor{
 		dir: dir, repo: repo, actual: actual, planRepo: planRepo, baseDir: baseDir,
 		pending: newPendingStore(30 * time.Minute), // фронт продлевает heartbeat'ом, пока открыт диалог с.ф.
 	}
+}
+
+// SetJournal подключает журнал событий (nil-safe: без него запись пропускается).
+func (p *PlanProcessor) SetJournal(j *Journal) { p.journal = j }
+
+// SetConfig подключает настройки (порог свежести дислокации для гарда загрузки плана).
+func (p *PlanProcessor) SetConfig(cfg *ConfigCache) { p.cfg = cfg }
+
+// ensureDislFresh — гард загрузки плана: блокирует, если снимок дислокации (по метке
+// формирования из документа последнего обновления) старше plan_max_disl_age_minutes.
+// Порог ≤ 0 или отсутствие данных об обновлении → пропускаем (гард не ломает поток).
+func (p *PlanProcessor) ensureDislFresh(ctx context.Context) error {
+	if p.cfg == nil {
+		return nil
+	}
+	maxAge := p.cfg.Settings().IngestPolicy.Plan.PlanMaxDislAgeMinutes
+	if maxAge <= 0 {
+		return nil
+	}
+	ts, ok := p.journal.LastDislDocTS(ctx)
+	if !ok {
+		return nil // нет записей об обновлении — не блокируем (например, до первого приёма ЛК)
+	}
+	age := int(clock.Now().Time().Sub(ts.Time()).Minutes())
+	if age > maxAge {
+		return fmt.Errorf("%w: обновлена %s (%d мин назад > %d)",
+			ErrDislStale, ts.Time().Format("02.01 15:04"), age, maxAge)
+	}
+	return nil
+}
+
+// planDocDate — дата плана из документа (самая ранняя ЖД-метка нитки) для журнала.
+// doc_ts плана = дата «на что план», не время загрузки. Нулевой → nil.
+func planDocDate(doc *plan.PlanDoc) *domain.LocalTime {
+	var earliest time.Time
+	for _, n := range doc.Nitki {
+		t := n.PlanJd
+		if t.IsZero() {
+			t = n.PlanMsk
+		}
+		if t.IsZero() {
+			continue
+		}
+		if earliest.IsZero() || t.Before(earliest) {
+			earliest = t
+		}
+	}
+	if earliest.IsZero() {
+		return nil
+	}
+	return domain.NewLocalTime(earliest)
 }
 
 // PlanProcessResult — сводка обработки плана.
@@ -56,6 +114,9 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 	target := p.dir.TargetNaznach(planCode)
 	if len(target) == 0 {
 		return PlanProcessResult{}, fmt.Errorf("для плана %q нет целевых площадок в ports (plan_code)", planCode)
+	}
+	if err := p.ensureDislFresh(ctx); err != nil {
+		return PlanProcessResult{}, err
 	}
 
 	path, err := p.save(planCode, data)
@@ -87,6 +148,8 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 	if err := p.saveGrid(ctx, planCode, filename, doc, matches, stats.Stamped); err != nil {
 		return PlanProcessResult{}, err
 	}
+
+	p.journal.RecordPlanUpload(ctx, planCode, filename, planDocDate(doc), trains, matched, stats.Stamped)
 
 	return PlanProcessResult{
 		Filename: filename,

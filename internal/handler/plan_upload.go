@@ -132,6 +132,10 @@ func (h *planUploadHandler) upload(c *gin.Context) {
 
 	res, err := h.proc.ProcessFile(c.Request.Context(), code, fh.Filename, data)
 	if err != nil {
+		if errors.Is(err, service.ErrDislStale) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 — дислокация устарела
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -170,6 +174,10 @@ func (h *planUploadHandler) prepare(c *gin.Context) {
 
 	res, err := h.proc.Prepare(c.Request.Context(), code, fh.Filename, data)
 	if err != nil {
+		if errors.Is(err, service.ErrDislStale) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 — дислокация устарела
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
