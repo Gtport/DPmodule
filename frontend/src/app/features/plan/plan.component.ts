@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -16,6 +16,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { PlanApiService, PlanApplyResult, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFRow } from './plan-api.service';
+import { PlanStatusPanelComponent } from './plan-status-panel.component';
 
 /**
  * Станции плана подвода со встроенным профилем на бэке (internal/parser/plan/
@@ -38,9 +39,11 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     FormsModule, NzButtonModule, NzCardModule, NzAlertModule, NzTagModule,
     NzTableModule, NzSelectModule, NzCheckboxModule, NzUploadModule, NzIconModule,
     NzSpinModule, NzTabsModule, NzTooltipModule, NzModalModule,
+    PlanStatusPanelComponent,
   ],
   template: `
     <div class="page">
+      <app-plan-status-panel />
       <nz-card class="card">
         <nz-tabs class="plan-tabs" [nzSelectedIndex]="selectedIndex()" (nzSelectedIndexChange)="onTabChange($event)">
           @for (o of stationOptions; track o.code) {
@@ -250,6 +253,8 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
 })
 export class PlanComponent implements OnInit, OnDestroy {
   private readonly api = inject(PlanApiService);
+
+  @ViewChild(PlanStatusPanelComponent) private statusPanel?: PlanStatusPanelComponent;
 
   readonly stationOptions = STATION_OPTIONS;
   readonly selectedCode = signal(STATION_OPTIONS[0].code);
@@ -587,6 +592,7 @@ export class PlanComponent implements OnInit, OnDestroy {
       );
       this.closeSfDialog();
       await this.reload(this.selectedCode());
+      void this.statusPanel?.load(); // загрузка меняет актуальность плана — обновим панель сразу
     } catch (err) {
       this.error.set(apiErrorMessage(err));
       this.closeSfDialog(); // не запираем пользователя: окно закрывается даже при ошибке

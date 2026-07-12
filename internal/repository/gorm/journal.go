@@ -69,6 +69,21 @@ func (r *JournalRepository) LatestByType(ctx context.Context, eventType string) 
 	return m.toDomain(), true, nil
 }
 
+func (r *JournalRepository) LatestBySource(ctx context.Context, source string) (domain.JournalEvent, bool, error) {
+	var m eventJournalModel
+	err := r.db.WithContext(ctx).
+		Where("source = ?", source).
+		Order("created_at DESC, id DESC").
+		Limit(1).Take(&m).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return domain.JournalEvent{}, false, nil
+		}
+		return domain.JournalEvent{}, false, err
+	}
+	return m.toDomain(), true, nil
+}
+
 func (r *JournalRepository) Recent(ctx context.Context, limit int) ([]domain.JournalEvent, error) {
 	if limit <= 0 {
 		limit = 50

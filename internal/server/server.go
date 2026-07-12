@@ -91,6 +91,9 @@ func Build(
 			planProc.SetJournal(journal)
 			planProc.SetConfig(cfgCache) // порог свежести дислокации для гарда загрузки плана
 			handler.NewPlanUploadHandler(planProc).RegisterRoutes(api)
+
+			// Статус-панель: актуальность дислокации и планов из журнала.
+			handler.NewStatusHandler(service.NewStatusService(journal, dirCache)).RegisterRoutes(api)
 		}
 	}
 

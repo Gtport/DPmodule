@@ -199,6 +199,19 @@ func (c *DirectoryCache) TargetNaznach(planCode string) map[string]struct{} {
 	return out
 }
 
+// PlanCodes возвращает отсортированный список кодов планов подвода (ports.plan_code),
+// у которых есть целевые площадки — для перечисления в статус-панели (не хардкод).
+func (c *DirectoryCache) PlanCodes() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]string, 0, len(c.planTargets))
+	for code := range c.planTargets {
+		out = append(out, code)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (c *DirectoryCache) GetStationByKod(kod int) (domain.Station, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

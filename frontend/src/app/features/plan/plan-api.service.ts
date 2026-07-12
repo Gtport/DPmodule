@@ -100,6 +100,42 @@ export interface PlanApplyResult {
   cleared: number;
 }
 
+/** Актуальность одной ветки дислокации (файл ЛК грузополучателя): d_attis/d_nmtp. */
+export interface DislTermStatus {
+  organisation: string;
+  terminals: string[];
+  formation_ts: string | null;
+  age_minutes: number;
+}
+
+/** Актуальность снимка дислокации в целом. */
+export interface DislStatus {
+  source: string;               // способ обновления (lk/json)
+  doc_ts: string | null;        // общая метка формирования (самая старая)
+  updated_at: string | null;    // когда снимок пересобран
+  actor: string;                // кто обновил
+  age_minutes: number;          // возраст по doc_ts, мин
+  terminals: DislTermStatus[];
+}
+
+/** Актуальность загрузки плана подвода станции. */
+export interface PlanStatus {
+  plan_code: string;
+  loaded: boolean;
+  doc_ts: string | null;        // дата плана из документа
+  updated_at: string | null;    // когда загружен
+  actor: string;
+  filename: string;
+  age_minutes: number;          // с момента загрузки, мин
+}
+
+/** Статус-панель: актуальность дислокации и планов. */
+export interface SystemStatus {
+  now: string;
+  dislocation: DislStatus | null;
+  plans: PlanStatus[];
+}
+
 /** Клиент подсистемы «план подвода» (история загрузок + таблица нитей). */
 @Injectable({ providedIn: 'root' })
 export class PlanApiService {
@@ -147,5 +183,10 @@ export class PlanApiService {
   /** Heartbeat: продлить токен подготовки, пока открыт диалог с.ф. (204 — ок, 410 — истёк). */
   touch(token: string): Promise<void> {
     return firstValueFrom(this.http.post<void>(`${this.base}/touch`, { token }));
+  }
+
+  /** Статус-панель: актуальность дислокации (по терминалам) и планов подвода. */
+  getStatus(): Promise<SystemStatus> {
+    return firstValueFrom(this.http.get<SystemStatus>(`${this.base}/status`));
   }
 }

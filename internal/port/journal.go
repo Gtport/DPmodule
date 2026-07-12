@@ -14,6 +14,9 @@ type JournalRepository interface {
 	// LatestByType возвращает самое свежее событие заданного типа (по created_at).
 	// Нет события → ok=false (без ошибки). Для гарда актуальности и статус-панели.
 	LatestByType(ctx context.Context, eventType string) (domain.JournalEvent, bool, error)
+	// LatestBySource возвращает самое свежее событие заданного источника (source),
+	// например «plan_ma»/«plan_nk». Нет события → ok=false. Для статус-панели.
+	LatestBySource(ctx context.Context, source string) (domain.JournalEvent, bool, error)
 	// Recent возвращает последние N событий (свежие первыми) для панели/истории.
 	Recent(ctx context.Context, limit int) ([]domain.JournalEvent, error)
 }

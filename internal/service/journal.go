@@ -118,6 +118,30 @@ func (j *Journal) LastDislDocTS(ctx context.Context) (*domain.LocalTime, bool) {
 	return ev.DocTS, true
 }
 
+// LatestDislUpdate возвращает последнее событие обновления дислокации (для панели).
+func (j *Journal) LatestDislUpdate(ctx context.Context) (domain.JournalEvent, bool) {
+	if j == nil || j.repo == nil {
+		return domain.JournalEvent{}, false
+	}
+	ev, ok, err := j.repo.LatestByType(ctx, domain.EventDislUpdate)
+	if err != nil || !ok {
+		return domain.JournalEvent{}, false
+	}
+	return ev, true
+}
+
+// LatestPlanUpload возвращает последнюю загрузку плана данного кода (для панели).
+func (j *Journal) LatestPlanUpload(ctx context.Context, planCode string) (domain.JournalEvent, bool) {
+	if j == nil || j.repo == nil {
+		return domain.JournalEvent{}, false
+	}
+	ev, ok, err := j.repo.LatestBySource(ctx, "plan_"+planCode)
+	if err != nil || !ok {
+		return domain.JournalEvent{}, false
+	}
+	return ev, true
+}
+
 // actorFromContext извлекает «кто» из проверенного JWT: имя → email → subject.
 // Пусто, если контекст без claims (неаутентифицированный путь/cmd-утилиты).
 func actorFromContext(ctx context.Context) string {

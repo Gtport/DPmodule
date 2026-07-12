@@ -35,6 +35,14 @@ func (f *fakeJournalRepo) LatestByType(_ context.Context, t string) (domain.Jour
 	}
 	return domain.JournalEvent{}, false, nil
 }
+func (f *fakeJournalRepo) LatestBySource(_ context.Context, s string) (domain.JournalEvent, bool, error) {
+	for i := len(f.events) - 1; i >= 0; i-- {
+		if f.events[i].Source == s {
+			return f.events[i], true, nil
+		}
+	}
+	return domain.JournalEvent{}, false, nil
+}
 func (f *fakeJournalRepo) Recent(_ context.Context, limit int) ([]domain.JournalEvent, error) {
 	return f.events, nil
 }
