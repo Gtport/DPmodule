@@ -185,8 +185,10 @@ export class PlanApiService {
     return firstValueFrom(this.http.post<void>(`${this.base}/touch`, { token }));
   }
 
-  /** Статус-панель: актуальность дислокации (по терминалам) и планов подвода. */
+  /** Статус-панель: актуальность дислокации (по терминалам) и планов подвода.
+   *  Маршрут — /dislocation/status (НЕ под /plan), поэтому строим URL отдельно. */
   getStatus(): Promise<SystemStatus> {
-    return firstValueFrom(this.http.get<SystemStatus>(`${this.base}/status`));
+    const url = `${environment.apiBaseUrl}/v1/dislocation/status`;
+    return firstValueFrom(this.http.get<SystemStatus>(url));
   }
 }
