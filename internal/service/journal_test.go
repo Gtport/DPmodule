@@ -46,6 +46,18 @@ func (f *fakeJournalRepo) LatestBySource(_ context.Context, s string) (domain.Jo
 func (f *fakeJournalRepo) Recent(_ context.Context, limit int) ([]domain.JournalEvent, error) {
 	return f.events, nil
 }
+func (f *fakeJournalRepo) Range(_ context.Context, _, _ *domain.LocalTime, types []string, _ int) ([]domain.JournalEvent, error) {
+	var out []domain.JournalEvent
+	for _, e := range f.events {
+		for _, t := range types {
+			if e.EventType == t {
+				out = append(out, e)
+				break
+			}
+		}
+	}
+	return out, nil
+}
 
 func jlt(s string) domain.LocalTime {
 	t, err := time.Parse("2006-01-02T15:04:05", s)
@@ -64,12 +76,13 @@ func TestRecordDislUpdate_OldestFormationTS(t *testing.T) {
 		{Okpo: "111", Organisation: "НМТП", Terminals: []string{"АЭ"}, FormationTS: jlt("2026-07-12T08:30:00"), AgeMinutes: 40},
 		{Okpo: "222", Organisation: "АТТИС", Terminals: []string{"УТ-1"}, FormationTS: jlt("2026-07-12T08:10:00"), AgeMinutes: 60},
 	}
-	j.RecordDislUpdate(ctx, "lk", files, 1234)
+	j.RecordDislUpdate(ctx, "lk", domain.TriggerManual, files, 1234)
 
 	require.Len(t, repo.events, 1)
 	ev := repo.events[0]
 	assert.Equal(t, domain.EventDislUpdate, ev.EventType)
 	assert.Equal(t, "lk", ev.Source)
+	assert.Equal(t, domain.TriggerManual, ev.Trigger) // триггер записан
 	assert.Equal(t, "User2", ev.Actor)                 // «кто» — из JWT в контексте
 	require.NotNil(t, ev.DocTS)                         // doc_ts — самая старая метка
 	assert.Equal(t, "2026-07-12T08:10:00", ev.DocTS.String())
@@ -99,16 +112,48 @@ func TestRecordPlanUpload_SourceAndDate(t *testing.T) {
 	require.Len(t, repo.events, 1)
 	ev := repo.events[0]
 	assert.Equal(t, domain.EventPlanUpload, ev.EventType)
-	assert.Equal(t, "plan_ma", ev.Source) // источник = plan_<код>
+	assert.Equal(t, "plan_ma", ev.Source)             // источник = plan_<код>
+	assert.Equal(t, domain.TriggerPlan, ev.Trigger)   // загрузка плана = триггер plan
 	assert.Equal(t, "u@x", ev.Actor)
 	require.NotNil(t, ev.DocTS)
 	assert.Equal(t, "2026-07-12T00:00:00", ev.DocTS.String())
 }
 
+func TestDislocationJournal_Mapping(t *testing.T) {
+	repo := &fakeJournalRepo{}
+	j := service.NewJournal(repo, nil)
+	st := service.NewStatusService(j, nil)
+
+	ctxUser := auth.WithClaims(context.Background(), &auth.Claims{Username: "boss"})
+	j.RecordDislUpdate(ctxUser, "lk", domain.TriggerManual,
+		[]service.LKFileInfo{{FormationTS: jlt("2026-07-13T02:49:00")}}, 4631)
+	j.RecordPlanUpload(context.Background(), "ma", "ma.xlsx", nil, 30, 25, 410) // без claims → система
+
+	items, err := st.DislocationJournal(context.Background(), nil, nil, 0)
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+
+	byType := map[string]service.DislJournalEntry{}
+	for _, it := range items {
+		byType[it.EventType] = it
+	}
+	disl := byType[domain.EventDislUpdate]
+	assert.Equal(t, "lk", disl.Source)
+	assert.Equal(t, domain.TriggerManual, disl.Trigger)
+	assert.Equal(t, "user", disl.ActorType) // есть имя → пользователь
+	assert.Equal(t, "boss", disl.Actor)
+	assert.Equal(t, 4631, disl.Wagons) // ЛК → размер снимка
+
+	plan := byType[domain.EventPlanUpload]
+	assert.Equal(t, domain.TriggerPlan, plan.Trigger)
+	assert.Equal(t, "system", plan.ActorType) // нет имени → система
+	assert.Equal(t, 410, plan.Wagons)         // план → застолблено
+}
+
 func TestJournal_NilSafe(t *testing.T) {
 	var j *service.Journal // без репозитория/приёмника — no-op, без паники
 	assert.NotPanics(t, func() {
-		j.RecordDislUpdate(context.Background(), "lk", nil, 0)
+		j.RecordDislUpdate(context.Background(), "lk", domain.TriggerManual, nil, 0)
 		j.RecordPlanUpload(context.Background(), "ma", "f", nil, 0, 0, 0)
 	})
 }

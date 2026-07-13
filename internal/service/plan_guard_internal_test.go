@@ -30,6 +30,9 @@ func (r guardJournalRepo) LatestByType(_ context.Context, t string) (domain.Jour
 func (r guardJournalRepo) LatestBySource(context.Context, string) (domain.JournalEvent, bool, error) {
 	return domain.JournalEvent{}, false, nil
 }
+func (r guardJournalRepo) Range(context.Context, *domain.LocalTime, *domain.LocalTime, []string, int) ([]domain.JournalEvent, error) {
+	return nil, nil
+}
 func (r guardJournalRepo) Recent(context.Context, int) ([]domain.JournalEvent, error) {
 	return nil, nil
 }

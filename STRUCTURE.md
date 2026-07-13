@@ -131,7 +131,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `lk_upload.go` | Приём ЛК: список staged-файлов + загрузка xlsx (шаг 1). |
 | `lk_process.go` | Запуск шага 2 обработки ЛК (staged-файлы → снимок). |
 | `plan_upload.go` | План подвода: загрузка файла (upload/prepare/confirm/touch), получение свежего/по id, история загрузок; гард свежести → 409. |
-| `status.go` | `/dislocation/status`: статус-панель (актуальность дислокации по терминалам + планов) из журнала. |
+| `status.go` | `/dislocation/status` (актуальность из журнала) + `/dislocation/journal?from&to&limit` (журнал обновлений дислокации за период: источник, триггер, кто, когда, вагоны). |
 | `me.go` | `/me`: данные текущего пользователя из JWT-claims. |
 | `health.go` | `/health`, `/ready` — liveness/readiness с проверкой БД. |
 | `response.go` | Стандартный конверт ошибки (`ErrorResponse`) для всех не-2xx ответов. |
@@ -157,7 +157,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `pkg/metrics/service.go` | `ServiceMetrics`: счётчики операций/ошибок и гистограмма длительности для сервисного слоя. |
 
 ### `migrations/` — SQL-миграции (golang-migrate, `cmd/migrate`)
-Пары `up`/`down` с последовательной нумерацией `000001–000019`: инициализация схемы
+Пары `up`/`down` с последовательной нумерацией `000001–000020`: инициализация схемы
 `dpport`, справочников и конфигурации, расширения портов, скоростные профили, пороги
 статусов, таблицы `status9`/`status6`, назначения, план подвода. Миграции идемпотентные,
 как правило только добавляющие.
@@ -170,6 +170,8 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
   для гарда загрузки плана. Append-only.
 - `000019_plan_disl_age_guard.*.sql` — порог `ingest_policy.plan.plan_max_disl_age_minutes`
   (=60): не грузить план, если снимок дислокации старше N мин (гард в `PlanProcessor`).
+- `000020_event_journal_trigger.*.sql` — колонка `trigger` (manual/scheduled/actualization/plan):
+  что вызвало обновление снимка дислокации (для журнала `/dislocation/journal`).
 
 ---
 

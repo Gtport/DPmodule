@@ -19,4 +19,7 @@ type JournalRepository interface {
 	LatestBySource(ctx context.Context, source string) (domain.JournalEvent, bool, error)
 	// Recent возвращает последние N событий (свежие первыми) для панели/истории.
 	Recent(ctx context.Context, limit int) ([]domain.JournalEvent, error)
+	// Range возвращает события заданных типов за период [from, to] (nil — без границы),
+	// свежие первыми. Для журнала обновлений дислокации с фильтром по периоду.
+	Range(ctx context.Context, from, to *domain.LocalTime, eventTypes []string, limit int) ([]domain.JournalEvent, error)
 }

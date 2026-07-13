@@ -105,9 +105,10 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 	if err != nil {
 		return res, err
 	}
-	// Журнал: снимок дислокации пересобран. doc_ts — самая старая метка формирования
-	// среди файлов (см. Journal.RecordDislUpdate). Best-effort — не роняет обработку.
-	p.journal.RecordDislUpdate(ctx, "lk", st.Files, res.Count)
+	// Журнал: снимок дислокации пересобран. Триггер manual — обработка запущена
+	// пользователем через UI (появится фоновый воркер — передаст TriggerScheduled).
+	// doc_ts — самая старая метка формирования среди файлов. Best-effort.
+	p.journal.RecordDislUpdate(ctx, "lk", domain.TriggerManual, st.Files, res.Count)
 	return res, nil
 }
 

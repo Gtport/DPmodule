@@ -8,6 +8,14 @@ const (
 	EventPlanUpload = "plan_upload" // загружен план подвода (МА/НК)
 )
 
+// Триггеры обновления снимка дислокации (event_journal.trigger).
+const (
+	TriggerManual        = "manual"        // ручное обновление (пользователь запустил обработку ЛК)
+	TriggerScheduled     = "scheduled"     // по расписанию (фоновый воркер / приём АСУ) [задел]
+	TriggerActualization = "actualization" // пересчёт текущего снимка без новых данных [задел]
+	TriggerPlan          = "plan"          // загрузка плана подвода (перезапись снимка с PlanMsk)
+)
+
 // JournalEvent — одна запись единого журнала событий данных (append-only).
 //
 // DocTS — время ИЗ документа (метка формирования выгрузки ЛК / дата плана), НЕ
@@ -18,6 +26,7 @@ type JournalEvent struct {
 	ID        int64
 	EventType string
 	Source    string
+	Trigger   string // что вызвало обновление снимка (см. Trigger*); пусто для старых строк
 	Actor     string
 	DocTS     *LocalTime
 	Detail    json.RawMessage

@@ -52,9 +52,10 @@ type planJournalDetail struct {
 	PlanDate *domain.LocalTime `json:"plan_date,omitempty"`
 }
 
-// RecordDislUpdate фиксирует пересборку снимка дислокации. doc_ts — самая старая
-// метка формирования среди файлов (худшая свежесть снимка → на неё смотрит гард).
-func (j *Journal) RecordDislUpdate(ctx context.Context, source string, files []LKFileInfo, count int) {
+// RecordDislUpdate фиксирует пересборку снимка дислокации. trigger — что вызвало
+// обновление (см. domain.Trigger*). doc_ts — самая старая метка формирования среди
+// файлов (худшая свежесть снимка → на неё смотрит гард).
+func (j *Journal) RecordDislUpdate(ctx context.Context, source, trigger string, files []LKFileInfo, count int) {
 	if j == nil || j.repo == nil {
 		return
 	}
@@ -72,7 +73,7 @@ func (j *Journal) RecordDislUpdate(ctx context.Context, source string, files []L
 		}
 	}
 	j.append(ctx, domain.JournalEvent{
-		EventType: domain.EventDislUpdate, Source: source, DocTS: oldest,
+		EventType: domain.EventDislUpdate, Source: source, Trigger: trigger, DocTS: oldest,
 	}, det)
 }
 
@@ -86,8 +87,19 @@ func (j *Journal) RecordPlanUpload(ctx context.Context, planCode, filename strin
 		Nitki: nitki, Matched: matched, Stamped: stamped, PlanDate: planDate,
 	}
 	j.append(ctx, domain.JournalEvent{
-		EventType: domain.EventPlanUpload, Source: "plan_" + planCode, DocTS: planDate,
+		EventType: domain.EventPlanUpload, Source: "plan_" + planCode,
+		Trigger: domain.TriggerPlan, DocTS: planDate, // загрузка плана перезаписывает снимок
 	}, det)
+}
+
+// SnapshotUpdates возвращает события перестроения снимка дислокации (обновления ЛК/JSON
+// + загрузки планов) за период [from, to] — источник журнала обновлений дислокации.
+func (j *Journal) SnapshotUpdates(ctx context.Context, from, to *domain.LocalTime, limit int) ([]domain.JournalEvent, error) {
+	if j == nil || j.repo == nil {
+		return nil, nil
+	}
+	return j.repo.Range(ctx, from, to,
+		[]string{domain.EventDislUpdate, domain.EventPlanUpload}, limit)
 }
 
 // append дописывает событие: проставляет actor из контекста, created_at из clock.Now(),

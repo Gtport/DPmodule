@@ -106,6 +106,68 @@ func dislStatusFrom(ev domain.JournalEvent, now domain.LocalTime) *DislStatusDTO
 	return d
 }
 
+// DislJournalEntry — одна запись журнала обновлений дислокации (обновление снимка).
+type DislJournalEntry struct {
+	At        domain.LocalTime  `json:"at"`         // когда записано (МСК)
+	EventType string            `json:"event_type"` // disl_update | plan_upload (справочно)
+	Source    string            `json:"source"`     // lk | json | plan_ma | plan_nk
+	Trigger   string            `json:"trigger"`    // manual | scheduled | actualization | plan
+	ActorType string            `json:"actor_type"` // system | user
+	Actor     string            `json:"actor"`      // имя пользователя (пусто для system)
+	DocTS     *domain.LocalTime `json:"doc_ts"`     // метка формирования (ЛК) / дата плана
+	Wagons    int               `json:"wagons"`     // затронуто вагонов (снимок для ЛК, застолблено для плана)
+}
+
+// DislocationJournal возвращает журнал обновлений дислокации за период [from, to]
+// (nil — без границы). Включает и обновления ЛК/JSON, и загрузки планов (они тоже
+// перезаписывают снимок). Пусто — если журнал недоступен.
+func (s *StatusService) DislocationJournal(ctx context.Context, from, to *domain.LocalTime, limit int) ([]DislJournalEntry, error) {
+	events, err := s.journal.SnapshotUpdates(ctx, from, to, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DislJournalEntry, 0, len(events))
+	for _, ev := range events {
+		out = append(out, dislJournalEntryFrom(ev))
+	}
+	return out, nil
+}
+
+func dislJournalEntryFrom(ev domain.JournalEvent) DislJournalEntry {
+	e := DislJournalEntry{
+		At: ev.CreatedAt, EventType: ev.EventType, Source: ev.Source,
+		Trigger: ev.Trigger, Actor: ev.Actor, DocTS: ev.DocTS,
+	}
+	// «Кто»: есть имя → пользователь, иначе система (авто/расписание).
+	if ev.Actor != "" {
+		e.ActorType = "user"
+	} else {
+		e.ActorType = "system"
+	}
+	// Триггер старых строк (до колонки trigger) доопределяем по типу события.
+	if e.Trigger == "" {
+		if ev.EventType == domain.EventPlanUpload {
+			e.Trigger = domain.TriggerPlan
+		} else {
+			e.Trigger = domain.TriggerManual
+		}
+	}
+	// Кол-во вагонов: для обновления ЛК/JSON — размер снимка, для плана — застолблено.
+	switch ev.EventType {
+	case domain.EventPlanUpload:
+		var det planJournalDetail
+		if json.Unmarshal(ev.Detail, &det) == nil {
+			e.Wagons = det.Stamped
+		}
+	default:
+		var det dislJournalDetail
+		if json.Unmarshal(ev.Detail, &det) == nil {
+			e.Wagons = det.Count
+		}
+	}
+	return e
+}
+
 // minutesSince — целые минуты от t до now (МСК). Нулевое t → 0.
 func minutesSince(t, now domain.LocalTime) int {
 	if t.IsZero() {

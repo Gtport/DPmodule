@@ -14,6 +14,7 @@ type eventJournalModel struct {
 	ID        int64             `gorm:"column:id;primaryKey;autoIncrement"`
 	EventType string            `gorm:"column:event_type"`
 	Source    string            `gorm:"column:source"`
+	Trigger   string            `gorm:"column:trigger"`
 	Actor     string            `gorm:"column:actor"`
 	DocTS     *domain.LocalTime `gorm:"column:doc_ts"`
 	Detail    string            `gorm:"column:detail"` // jsonb → text
@@ -28,7 +29,7 @@ func (m eventJournalModel) toDomain() domain.JournalEvent {
 		detail = "{}"
 	}
 	return domain.JournalEvent{
-		ID: m.ID, EventType: m.EventType, Source: m.Source, Actor: m.Actor,
+		ID: m.ID, EventType: m.EventType, Source: m.Source, Trigger: m.Trigger, Actor: m.Actor,
 		DocTS: m.DocTS, Detail: []byte(detail), CreatedAt: m.CreatedAt,
 	}
 }
@@ -48,10 +49,37 @@ func (r *JournalRepository) Append(ctx context.Context, ev domain.JournalEvent) 
 		detail = "{}"
 	}
 	m := eventJournalModel{
-		EventType: ev.EventType, Source: ev.Source, Actor: ev.Actor,
+		EventType: ev.EventType, Source: ev.Source, Trigger: ev.Trigger, Actor: ev.Actor,
 		DocTS: ev.DocTS, Detail: detail, CreatedAt: ev.CreatedAt,
 	}
 	return r.db.WithContext(ctx).Create(&m).Error
+}
+
+// Range возвращает события заданных типов за период [from, to] (nil-границы — без
+// ограничения), свежие первыми. Для журнала обновлений дислокации с фильтром по периоду.
+func (r *JournalRepository) Range(ctx context.Context, from, to *domain.LocalTime, eventTypes []string, limit int) ([]domain.JournalEvent, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	q := r.db.WithContext(ctx).Model(&eventJournalModel{})
+	if len(eventTypes) > 0 {
+		q = q.Where("event_type IN ?", eventTypes)
+	}
+	if from != nil && !from.IsZero() {
+		q = q.Where("created_at >= ?", from.Time())
+	}
+	if to != nil && !to.IsZero() {
+		q = q.Where("created_at <= ?", to.Time())
+	}
+	var ms []eventJournalModel
+	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.JournalEvent, len(ms))
+	for i, m := range ms {
+		out[i] = m.toDomain()
+	}
+	return out, nil
 }
 
 func (r *JournalRepository) LatestByType(ctx context.Context, eventType string) (domain.JournalEvent, bool, error) {
