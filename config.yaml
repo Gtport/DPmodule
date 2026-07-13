@@ -26,7 +26,7 @@ postgres:
   conn_max_lifetime: 5m
 
 keycloak:
-  enabled: false   # false → /api отдаётся БЕЗ JWT-проверки (только для dev/шаблона)
+  enabled: true    # /api требует валидный JWT (issuer+audience+подпись); «кто» → в журнал
   jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs
   issuer: http://localhost:8180/realms/iqport
   audience: iqport-backend
