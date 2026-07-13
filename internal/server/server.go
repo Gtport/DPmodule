@@ -10,9 +10,12 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 
+	"github.com/Gtport/DPmodule/internal/adapter/asu"
 	"github.com/Gtport/DPmodule/internal/config"
+	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/handler"
 	"github.com/Gtport/DPmodule/internal/port"
+	"github.com/Gtport/DPmodule/internal/secret"
 	"github.com/Gtport/DPmodule/internal/service"
 	"github.com/Gtport/DPmodule/pkg/metrics"
 	"github.com/Gtport/DPmodule/pkg/middleware"
@@ -91,6 +94,15 @@ func Build(
 			planProc.SetJournal(journal)
 			planProc.SetConfig(cfgCache) // порог свежести дислокации для гарда загрузки плана
 			handler.NewPlanUploadHandler(planProc).RegisterRoutes(api)
+
+			// Автозагрузка дислокации из АСУ-АСУ (ingest=api_pull): забор всех клиентов,
+			// сверка меток формирования и пересборка снимка тем же конвейером (proc). Дёргается
+			// по cron с JWT сервис-аккаунта. Транспорт — HTTP-адаптер, токен к АСУ из env.
+			secrets := secret.NewEnvSource()
+			asuFactory := func(dc domain.DataSourceConfig) port.ASUClient { return asu.NewHTTPClient(dc, secrets) }
+			asuIngest := service.NewASUIngest(cfgCache, asuFactory, proc, log)
+			asuIngest.SetJournal(journal)
+			handler.NewASUPullHandler(asuIngest).RegisterRoutes(api)
 
 			// Статус-панель: актуальность дислокации и планов из журнала.
 			handler.NewStatusHandler(service.NewStatusService(journal, dirCache)).RegisterRoutes(api)

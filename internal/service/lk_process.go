@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser"
@@ -23,7 +24,8 @@ type LKProcessor struct {
 	status6  *Status6Cache
 	history  port.HistoryRepository
 	enricher *Enricher
-	journal  *Journal // единый журнал событий (может быть nil — cmd-утилиты)
+	journal  *Journal   // единый журнал событий (может быть nil — cmd-утилиты)
+	mu       sync.Mutex // сериализует пересборку снимка (ручной ЛК vs cron-АСУ идут через один proc)
 }
 
 func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *ActualCache, status9 *Status9Cache, status6 *Status6Cache, history port.HistoryRepository) *LKProcessor {
@@ -117,6 +119,11 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 // подмена снимка → перечитывание. Переиспользуется приёмом ЛК и будущим JSON-ingest.
 // files/perFile — только для статистики результата.
 func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocation, files int, perFile map[string]int) (LKProcessResult, error) {
+	// Пересборка снимка не должна пересекаться с другой пересборкой (ЛК ↔ АСУ):
+	// carry-over/донорство/история читают прежний снимок, затем идёт атомарная подмена.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	var err error
 
 	// Stage 1: станции → идентификация порта + фильтр → операции → статусы.

@@ -30,8 +30,8 @@ type DataSource struct {
 	SortOrder      int
 }
 
-// DataSourceConfig — разобранный config источника. Здесь поля upload-приёма ЛК;
-// поля api_pull (endpoint/headers/…) добавим в JSON-слайсе.
+// DataSourceConfig — разобранный config источника. Поля upload-приёма ЛК и
+// поля api_pull (АСУ-АСУ: базовый URL, коды клиентов провайдера, авторизация).
 type DataSourceConfig struct {
 	Detect         []string          `json:"detect,omitempty"`         // маркеры распознавания файла («Личный кабинет»)
 	SubtypeMarker  map[string]string `json:"subtype_marker,omitempty"` // «Дислокация вагонов»→lk и т.п.
@@ -40,6 +40,16 @@ type DataSourceConfig struct {
 	OkpoColumn     string            `json:"okpo_column,omitempty"`    // заголовок колонки ОКПО грузополучателя
 	HeaderMarker   string            `json:"header_marker,omitempty"`  // текст строки заголовка таблицы
 	DateCutoffHour int               `json:"date_cutoff_hour,omitempty"`
+
+	// api_pull (АСУ-АСУ). Провайдер отдаёт снимок по маршруту <base_url>/<client>/dislocation
+	// в формате {timestamp,count,wagons} (envelope, см. parser.JSONParser). Один источник
+	// перечисляет всех своих клиентов; ingest тянет их за один проход и сверяет метки.
+	BaseURL       string   `json:"base_url,omitempty"`        // базовый URL сервиса АСУ (без хвостового пути)
+	Clients       []string `json:"clients,omitempty"`         // коды клиентов провайдера: ["attis","nmtp"]
+	PathTemplate  string   `json:"path_template,omitempty"`   // шаблон пути, {client} → код; дефолт "/{client}/dislocation"
+	Method        string   `json:"method,omitempty"`          // HTTP-метод, дефолт GET
+	AuthSecretKey string   `json:"auth_secret_key,omitempty"` // ключ секрета (Bearer к АСУ) в SecretSource; пусто — без авторизации
+	TimeoutSecs   int      `json:"timeout_secs,omitempty"`    // таймаут одного запроса, дефолт 30
 }
 
 // Идентификация «чей файл»/терминала — НЕ здесь: ОКПО грузополучателя проверяется
@@ -76,6 +86,7 @@ type CategoryPolicy struct {
 	RejectOlderThanCurrent bool   `json:"reject_older_than_current,omitempty"` // запрет отката на старую дислокацию
 	RejectOlderRoleExempt  string `json:"reject_older_role_exempt,omitempty"`  // роль-исключение (предупреждение вместо запрета)
 	MaxDataLossPct         int    `json:"max_data_loss_pct,omitempty"`         // порог потери данных (%)
+	MaxSourceSkewMinutes   int    `json:"max_source_skew_minutes,omitempty"`   // макс. расхождение меток формирования между api_pull-источниками (АСУ); 0 — гард выключен
 	PlanMaxLagHours        int    `json:"plan_max_lag_hours,omitempty"`        // план не позже дислокации на N ч
 	PlanMaxDislAgeMinutes  int    `json:"plan_max_disl_age_minutes,omitempty"` // не грузить план, если дислокация старше N мин (0 — гард выключен)
 }
