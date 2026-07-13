@@ -81,12 +81,23 @@ export interface SFRow {
   candidates: SFCandidate[];
 }
 
-/** Ответ prepare: токен + с.ф.-строки с кандидатами + превью. */
+/** Проблемная обычная нитка: Activ>0, но матч не нашёл вагонов (вероятна опечатка в
+ *  индексе, поезд ещё не в дислокации либо уже прибыл). Оператор вписывает индекс. */
+export interface ProblemRow {
+  ord: number;
+  index_pp: string;
+  plan_msk: string | null;
+  activ: number;
+  ports: PortCell[] | null;
+}
+
+/** Ответ prepare/revalidate: токен + с.ф.-строки + проблемные нитки + превью. */
 export interface PreparePlanResult {
   token: string;
   plan_code: string;
   filename: string;
   sf: SFRow[];
+  problems: ProblemRow[];
   nitki: number;
   matched: number;
 }
@@ -167,7 +178,7 @@ export class PlanApiService {
     return firstValueFrom(this.http.post<PlanApplyResult>(`${this.base}/upload`, form));
   }
 
-  /** Фаза A: разбор плана + кандидаты для с.ф. Снимок не изменяется. */
+  /** Фаза A: разбор плана + кандидаты с.ф. + проблемные нитки. Снимок не изменяется. */
   prepare(code: string, file: File): Promise<PreparePlanResult> {
     const form = new FormData();
     form.set('code', code);
@@ -175,9 +186,24 @@ export class PlanApiService {
     return firstValueFrom(this.http.post<PreparePlanResult>(`${this.base}/prepare`, form));
   }
 
-  /** Фаза B: применить план с выбранными группами с.ф. (selections: ord → id_disl[]). */
-  confirm(token: string, selections: Record<number, string[]>): Promise<PlanApplyResult> {
-    return firstValueFrom(this.http.post<PlanApplyResult>(`${this.base}/confirm`, { token, selections }));
+  /** Сухой пересчёт превью с ручными правками индексов (overrides: ord → индекс 4-3-4).
+   *  Снимок не трогаем, токен не расходуем — для итеративной коррекции перед confirm. */
+  revalidate(token: string, overrides: Record<number, string>): Promise<PreparePlanResult> {
+    return firstValueFrom(
+      this.http.post<PreparePlanResult>(`${this.base}/revalidate`, { token, overrides }),
+    );
+  }
+
+  /** Фаза B: применить план с правками индексов (overrides: ord → индекс) и выбранными
+   *  группами с.ф. (selections: ord → id_disl[]). */
+  confirm(
+    token: string,
+    overrides: Record<number, string>,
+    selections: Record<number, string[]>,
+  ): Promise<PlanApplyResult> {
+    return firstValueFrom(
+      this.http.post<PlanApplyResult>(`${this.base}/confirm`, { token, overrides, selections }),
+    );
   }
 
   /** Heartbeat: продлить токен подготовки, пока открыт диалог с.ф. (204 — ок, 410 — истёк). */

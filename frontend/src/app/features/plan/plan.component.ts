@@ -17,6 +17,7 @@ import { NzModalModule } from 'ng-zorro-antd/modal';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { PlanApiService, PlanApplyResult, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFRow } from './plan-api.service';
 import { PlanStatusPanelComponent } from './plan-status-panel.component';
+import { IndexInputComponent } from './index-input.component';
 
 /**
  * Станции плана подвода со встроенным профилем на бэке (internal/parser/plan/
@@ -39,7 +40,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     FormsModule, NzButtonModule, NzCardModule, NzAlertModule, NzTagModule,
     NzTableModule, NzSelectModule, NzCheckboxModule, NzUploadModule, NzIconModule,
     NzSpinModule, NzTabsModule, NzTooltipModule, NzModalModule,
-    PlanStatusPanelComponent,
+    PlanStatusPanelComponent, IndexInputComponent,
   ],
   template: `
     <div class="page">
@@ -164,17 +165,21 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
         </nz-spin>
       </nz-card>
 
-      <!-- Диалог выбора групп вагонов для с.ф. (один на все с.ф. плана) -->
+      <!-- Диалог проверки плана: сборные формирования + нитки без вагонов (один на план) -->
       <nz-modal
         [nzVisible]="sfPrepare() !== null"
-        nzTitle="Выберите группы вагонов для сборных формирований (с.ф.)"
-        [nzWidth]="760"
+        nzTitle="Проверка плана подвода: с.ф. и нитки без вагонов"
+        [nzWidth]="820"
         [nzMaskClosable]="false"
         (nzOnCancel)="sfCancel()"
         [nzFooter]="sfFooter"
       >
         <div *nzModalContent>
           @if (sfPrepare(); as prep) {
+            <!-- Сборные формирования: выбрать группы ИЛИ вписать реальный индекс -->
+            @if (prep.sf.length) {
+              <div class="sec-title">Сборные формирования (с.ф.)</div>
+            }
             @for (row of prep.sf; track row.ord) {
               <div class="sf-block">
                 <div class="sf-head">
@@ -184,6 +189,12 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                   }
                   <span class="sf-cnt">выбрано {{ sfSelectedWagons(row) }} ваг</span>
                 </div>
+
+                <div class="ovr">
+                  <span class="ovr-lbl">Поезд уже сформирован? Впишите индекс:</span>
+                  <app-index-input (valueChange)="onOverride(row.ord, $event)" (completed)="revalidate()" />
+                </div>
+
                 @if (row.candidates.length === 0) {
                   <div class="muted">Нет групп-кандидатов на станции формирования.</div>
                 } @else {
@@ -201,11 +212,36 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                 }
               </div>
             }
+
+            <!-- Обычные нитки без вагонов: вероятна опечатка индекса -->
+            @if (prep.problems.length) {
+              <div class="sec-title">Нитки без вагонов — проверьте индекс</div>
+            }
+            @for (row of prep.problems; track row.ord) {
+              <div class="sf-block">
+                <div class="sf-head">
+                  <span class="idx">{{ row.index_pp || '—' }}</span>
+                  <span>· {{ dmDate(row.plan_msk) }} {{ hm(row.plan_msk) }}</span>
+                  <span class="sf-terms">план {{ row.activ }} ваг</span>
+                  <span class="sf-cnt">вагоны не найдены</span>
+                </div>
+                <div class="ovr">
+                  <span class="ovr-lbl">Исправьте индекс:</span>
+                  <app-index-input [value]="row.index_pp" (valueChange)="onOverride(row.ord, $event)" (completed)="revalidate()" />
+                </div>
+              </div>
+            }
+
+            @if (!prep.sf.length && !prep.problems.length) {
+              <div class="muted">Все нитки сопоставлены — можно применять.</div>
+            }
           }
         </div>
       </nz-modal>
       <ng-template #sfFooter>
-        <button nz-button (click)="sfCancel()" [nzLoading]="sfBusy()">Отмена (без с.ф.)</button>
+        <span class="foot-cnt">сопоставлено {{ sfPrepare()?.matched ?? 0 }} / {{ sfPrepare()?.nitki ?? 0 }}</span>
+        <button nz-button (click)="revalidate()" [nzLoading]="revalBusy()">Пересчитать</button>
+        <button nz-button (click)="sfCancel()" [nzLoading]="sfBusy()">Отмена (без правок)</button>
         <button nz-button nzType="primary" (click)="sfApply()" [nzLoading]="sfBusy()">Применить</button>
       </ng-template>
     </div>
@@ -249,6 +285,13 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     .sf-cand { display: flex; align-items: flex-start; margin: 3px 0; }
     .sf-cand ::ng-deep .ant-checkbox { top: 0.15em; }
     .sf-body { display: inline-block; }
+    /* Заголовок секции диалога (с.ф. / нитки без вагонов). */
+    .sec-title { font-weight: 600; margin: var(--space-sm) 0 var(--space-xs); color: var(--color-text-secondary); }
+    /* Строка ручного ввода индекса (переопределение с.ф./исправление опечатки). */
+    .ovr { display: flex; align-items: center; gap: var(--space-sm); margin: var(--space-xs) 0; flex-wrap: wrap; }
+    .ovr-lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    /* Счётчик «сопоставлено N / M» в футере — слева, поодаль от кнопок. */
+    .foot-cnt { margin-right: auto; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
   `],
 })
 export class PlanComponent implements OnInit, OnDestroy {
@@ -483,11 +526,13 @@ export class PlanComponent implements OnInit, OnDestroy {
     return n;
   }
 
-  // ── Загрузка плана с выбором групп с.ф. (двухфазный prepare/confirm) ──────
+  // ── Загрузка плана с выбором групп с.ф. + ручные правки индексов (prepare/revalidate/confirm) ──
   readonly sfPrepare = signal<PreparePlanResult | null>(null);
-  readonly sfSel = signal<Record<number, string[]>>({}); // ord с.ф.-нитки → выбранные id_disl
+  readonly sfSel = signal<Record<number, string[]>>({});       // ord с.ф.-нитки → выбранные id_disl
+  readonly overrides = signal<Record<number, string>>({});     // ord нитки → вписанный индекс 4-3-4
   readonly sfBusy = signal(false);
-  private sfFile: File | null = null;                    // файл для прозрачного восстановления
+  readonly revalBusy = signal(false);                          // идёт сухой пересчёт (revalidate)
+  private sfFile: File | null = null;                          // файл для прозрачного восстановления
   private sfBeat: ReturnType<typeof setInterval> | null = null; // heartbeat продления токена
 
   /** Пока открыт диалог с.ф., каждые 5 мин продлеваем токен (TTL на бэке 30 мин). */
@@ -509,7 +554,44 @@ export class PlanComponent implements OnInit, OnDestroy {
   private closeSfDialog(): void {
     this.stopSfHeartbeat();
     this.sfPrepare.set(null);
+    this.sfSel.set({});
+    this.overrides.set({});
     this.sfFile = null;
+  }
+
+  /** Записать/снять ручную правку индекса нитки (ord → индекс; пусто — снятие). */
+  onOverride(ord: number, value: string): void {
+    const m = { ...this.overrides() };
+    if (value) m[ord] = value;
+    else delete m[ord];
+    this.overrides.set(m);
+  }
+
+  /** Сухой пересчёт превью с текущими правками индексов (снимок не трогаем, токен не
+   *  расходуем). При истёкшем токене — прозрачно пере-подготавливаем файл и повторяем. */
+  async revalidate(): Promise<void> {
+    const prep = this.sfPrepare();
+    if (!prep) return;
+    this.revalBusy.set(true);
+    this.error.set(null);
+    try {
+      let res: PreparePlanResult;
+      try {
+        res = await this.api.revalidate(prep.token, this.overrides());
+      } catch (err) {
+        if (this.sfFile && err instanceof HttpErrorResponse && err.status === 410) {
+          const fresh = await this.api.prepare(this.selectedCode(), this.sfFile);
+          res = await this.api.revalidate(fresh.token, this.overrides());
+        } else {
+          throw err;
+        }
+      }
+      this.sfPrepare.set(res); // обновлённые sf/problems/matched (правки сохраняются в overrides)
+    } catch (err) {
+      this.error.set(apiErrorMessage(err));
+    } finally {
+      this.revalBusy.set(false);
+    }
   }
 
   /** Группа отмечена в этой с.ф.-строке (по уникальному ключу группы). */
@@ -536,16 +618,16 @@ export class PlanComponent implements OnInit, OnDestroy {
     this.sfSel.set(sel);
   }
 
-  /** «Применить» — confirm с выбранными группами. */
+  /** «Применить» — confirm с правками индексов и выбранными группами. */
   sfApply(): void {
     const prep = this.sfPrepare();
-    if (prep) void this.applyConfirm(prep.token, this.sfSel());
+    if (prep) void this.applyConfirm(prep.token, this.overrides(), this.sfSel());
   }
 
-  /** «Отмена» / закрытие — применить план без с.ф. (решение владельца). */
+  /** «Отмена» / закрытие — применить план как есть, без правок и с.ф. (решение владельца). */
   sfCancel(): void {
     const prep = this.sfPrepare();
-    if (prep) void this.applyConfirm(prep.token, {});
+    if (prep) void this.applyConfirm(prep.token, {}, {});
   }
 
   private async doUpload(file: File): Promise<void> {
@@ -555,11 +637,13 @@ export class PlanComponent implements OnInit, OnDestroy {
     this.sfFile = file; // понадобится для восстановления, если токен истечёт
     try {
       const prep = await this.api.prepare(this.selectedCode(), file);
-      if (!prep.sf || prep.sf.length === 0) {
-        await this.applyConfirm(prep.token, {}); // с.ф. нет — применяем сразу, без диалога
+      const needsDialog = (prep.sf?.length ?? 0) > 0 || (prep.problems?.length ?? 0) > 0;
+      if (!needsDialog) {
+        await this.applyConfirm(prep.token, {}, {}); // ни с.ф., ни проблемных — применяем сразу
       } else {
         this.sfSel.set({});
-        this.sfPrepare.set(prep);  // открыть диалог выбора групп
+        this.overrides.set({});
+        this.sfPrepare.set(prep);  // открыть диалог: выбор групп с.ф. + правки индексов
         this.startSfHeartbeat();   // продлевать токен, пока окно открыто
       }
     } catch (err) {
@@ -570,19 +654,23 @@ export class PlanComponent implements OnInit, OnDestroy {
     }
   }
 
-  private async applyConfirm(token: string, selections: Record<number, string[]>): Promise<void> {
+  private async applyConfirm(
+    token: string,
+    overrides: Record<number, string>,
+    selections: Record<number, string[]>,
+  ): Promise<void> {
     this.sfBusy.set(true);
     this.error.set(null);
     try {
       let res: PlanApplyResult;
       try {
-        res = await this.api.confirm(token, selections);
+        res = await this.api.confirm(token, overrides, selections);
       } catch (err) {
         // Токен истёк/потерян (диалог висел дольше TTL или бэкенд перезапускался):
         // прозрачно пере-подготавливаем тот же файл и повторяем один раз.
         if (this.sfFile && err instanceof HttpErrorResponse && err.status === 410) {
           const prep = await this.api.prepare(this.selectedCode(), this.sfFile);
-          res = await this.api.confirm(prep.token, selections);
+          res = await this.api.confirm(prep.token, overrides, selections);
         } else {
           throw err;
         }
