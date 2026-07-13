@@ -149,7 +149,7 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 		return PlanProcessResult{}, err
 	}
 
-	p.journal.RecordPlanUpload(ctx, planCode, filename, planDocDate(doc), trains, matched, stats.Stamped)
+	p.journal.RecordPlanUpload(ctx, planCode, filename, planDocDate(doc), trains, matched, stats.Stamped, nil)
 
 	return PlanProcessResult{
 		Filename: filename,

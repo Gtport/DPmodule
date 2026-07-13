@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"sort"
 
 	"go.uber.org/zap"
 
@@ -42,14 +43,22 @@ type dislJournalDetail struct {
 	Terminals []dislTermJournal `json:"terminals"`
 }
 
+// planOverrideJournal — одно переопределение индекса нитки оператором (с.ф.→реальный
+// индекс либо исправление опечатки) для аудита действия пользователя.
+type planOverrideJournal struct {
+	Ord     int    `json:"ord"`
+	IndexPp string `json:"index_pp"`
+}
+
 // planJournalDetail — detail события plan_upload.
 type planJournalDetail struct {
-	Filename string            `json:"filename"`
-	PlanCode string            `json:"plan_code"`
-	Nitki    int               `json:"nitki"`
-	Matched  int               `json:"matched"`
-	Stamped  int               `json:"stamped"`
-	PlanDate *domain.LocalTime `json:"plan_date,omitempty"`
+	Filename  string                `json:"filename"`
+	PlanCode  string                `json:"plan_code"`
+	Nitki     int                   `json:"nitki"`
+	Matched   int                   `json:"matched"`
+	Stamped   int                   `json:"stamped"`
+	PlanDate  *domain.LocalTime     `json:"plan_date,omitempty"`
+	Overrides []planOverrideJournal `json:"overrides,omitempty"` // ручные правки индексов (если были)
 }
 
 // RecordDislUpdate фиксирует пересборку снимка дислокации. trigger — что вызвало
@@ -78,18 +87,35 @@ func (j *Journal) RecordDislUpdate(ctx context.Context, source, trigger string, 
 }
 
 // RecordPlanUpload фиксирует загрузку плана подвода. doc_ts — дата плана из документа.
-func (j *Journal) RecordPlanUpload(ctx context.Context, planCode, filename string, planDate *domain.LocalTime, nitki, matched, stamped int) {
+// overrides — ручные переопределения индексов ниток оператором (ord→индекс), могут
+// быть nil (одношаговая загрузка/без правок); пишутся в detail как аудит действия.
+func (j *Journal) RecordPlanUpload(ctx context.Context, planCode, filename string, planDate *domain.LocalTime, nitki, matched, stamped int, overrides map[int]string) {
 	if j == nil || j.repo == nil {
 		return
 	}
 	det := planJournalDetail{
 		Filename: filename, PlanCode: planCode,
 		Nitki: nitki, Matched: matched, Stamped: stamped, PlanDate: planDate,
+		Overrides: overridesForJournal(overrides),
 	}
 	j.append(ctx, domain.JournalEvent{
 		EventType: domain.EventPlanUpload, Source: "plan_" + planCode,
 		Trigger: domain.TriggerPlan, DocTS: planDate, // загрузка плана перезаписывает снимок
 	}, det)
+}
+
+// overridesForJournal переводит карту ord→индекс в детерминированный (по ord) срез
+// для detail журнала. nil/пусто → nil (в JSON поле опускается).
+func overridesForJournal(overrides map[int]string) []planOverrideJournal {
+	if len(overrides) == 0 {
+		return nil
+	}
+	out := make([]planOverrideJournal, 0, len(overrides))
+	for ord, idx := range overrides {
+		out = append(out, planOverrideJournal{Ord: ord, IndexPp: idx})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Ord < out[j].Ord })
+	return out
 }
 
 // SnapshotUpdates возвращает события перестроения снимка дислокации (обновления ЛК/JSON

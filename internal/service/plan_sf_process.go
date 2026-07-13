@@ -47,14 +47,28 @@ type SFRowDTO struct {
 	Candidates []SFCandidateDTO  `json:"candidates"`
 }
 
-// PreparePlanResult — ответ prepare: токен + с.ф.-строки с кандидатами + превью.
+// ProblemRowDTO — обычная нитка плана (не с.ф., не «Остаток») с Activ>0, которой матч
+// не нашёл ни одного вагона: вероятна опечатка в индексе, поезд ещё не в дислокации,
+// либо уже прибыл. Оператору предлагается вписать корректный индекс (форма 4-3-4) и
+// перепроверить через Revalidate. Ports/Activ — контекст для оператора в диалоге.
+type ProblemRowDTO struct {
+	Ord     int               `json:"ord"`
+	IndexPp string            `json:"index_pp"`
+	PlanMsk *domain.LocalTime `json:"plan_msk"`
+	Activ   int               `json:"activ"`
+	Ports   []domain.PortCell `json:"ports"`
+}
+
+// PreparePlanResult — ответ prepare/revalidate: токен + с.ф.-строки с кандидатами +
+// проблемные нитки (Activ>0 без вагонов) + счётчики превью. Снимок не изменяется.
 type PreparePlanResult struct {
-	Token    string     `json:"token"`
-	PlanCode string     `json:"plan_code"`
-	Filename string     `json:"filename"`
-	SF       []SFRowDTO `json:"sf"`
-	Nitki    int        `json:"nitki"`
-	Matched  int        `json:"matched"`
+	Token    string          `json:"token"`
+	PlanCode string          `json:"plan_code"`
+	Filename string          `json:"filename"`
+	SF       []SFRowDTO      `json:"sf"`
+	Problems []ProblemRowDTO `json:"problems"`
+	Nitki    int             `json:"nitki"`
+	Matched  int             `json:"matched"`
 }
 
 // Prepare — фаза A. Возвращает токен (для confirm) и с.ф.-строки с кандидатами.
@@ -80,9 +94,56 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 		return PreparePlanResult{}, fmt.Errorf("разбор плана: %w", err)
 	}
 
+	prev, err := p.buildPreview(ctx, doc.Nitki, prof.MatchRequiresNaznach, target)
+	if err != nil {
+		return PreparePlanResult{}, err
+	}
+
+	tok := p.pending.put(pendingPlan{planCode: planCode, filename: filename, doc: doc})
+	prev.Token = tok
+	prev.PlanCode = planCode
+	prev.Filename = filename
+	return prev, nil
+}
+
+// Revalidate — сухой прогон между Prepare и Confirm: пересобирает превью с учётом
+// вписанных оператором индексов (overrides: ord→индекс; с.ф. с вписанным индексом
+// становится обычной ниткой и матчится по индексу). Снимок НЕ изменяется, токен НЕ
+// расходуется (peek продлевает TTL). Возвращает обновлённые с.ф.-строки и проблемные
+// нитки — оператор видит результат правок и правит дальше, пока не закоммитит Confirm.
+func (p *PlanProcessor) Revalidate(ctx context.Context, token string, overrides map[int]string) (PreparePlanResult, error) {
+	pend, ok := p.pending.peek(token)
+	if !ok {
+		return PreparePlanResult{}, ErrPendingNotFound
+	}
+	prof, err := plan.ResolveProfile(pend.planCode)
+	if err != nil {
+		return PreparePlanResult{}, err
+	}
+	target := p.dir.TargetNaznach(pend.planCode)
+	if len(target) == 0 {
+		return PreparePlanResult{}, fmt.Errorf("для плана %q нет целевых площадок", pend.planCode)
+	}
+
+	nitki := applyIndexOverrides(pend.doc.Nitki, overrides)
+	prev, err := p.buildPreview(ctx, nitki, prof.MatchRequiresNaznach, target)
+	if err != nil {
+		return PreparePlanResult{}, err
+	}
+	prev.Token = token
+	prev.PlanCode = pend.planCode
+	prev.Filename = pend.filename
+	return prev, nil
+}
+
+// buildPreview матчит нитки против ТЕКУЩЕГО снимка и собирает превью: с.ф.-строки с
+// группами-кандидатами и проблемные обычные нитки (Activ>0 без вагонов). Снимок не
+// изменяется. Общий код Prepare и Revalidate (Token/PlanCode/Filename проставляет
+// вызывающий). nitki — уже с применёнными overrides (или исходные — для Prepare).
+func (p *PlanProcessor) buildPreview(ctx context.Context, nitki []plan.PlanNitka, requiresNaznach bool, target map[string]struct{}) (PreparePlanResult, error) {
 	records := p.actual.All()
 	agg := planmatch.Aggregate(records, target)
-	matches := planmatch.Match(doc.Nitki, agg, prof.MatchRequiresNaznach)
+	matches := planmatch.Match(nitki, agg, requiresNaznach)
 	used := planmatch.UsedIdDisl(matches)
 
 	sf, err := p.loadSF(ctx)
@@ -91,7 +152,7 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 	}
 
 	var sfRows []SFRowDTO
-	for i, n := range doc.Nitki {
+	for i, n := range nitki {
 		if !n.IsSf {
 			continue
 		}
@@ -105,12 +166,55 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 		})
 	}
 
-	matched, trains := countPlan(doc, matches)
-	tok := p.pending.put(pendingPlan{planCode: planCode, filename: filename, doc: doc})
+	matched, trains := countPlanNitki(nitki, matches)
 	return PreparePlanResult{
-		Token: tok, PlanCode: planCode, Filename: filename,
-		SF: sfRows, Nitki: trains, Matched: matched,
+		SF: sfRows, Problems: problemRows(nitki, matches),
+		Nitki: trains, Matched: matched,
 	}, nil
+}
+
+// applyIndexOverrides возвращает копию ниток с переопределёнными индексами: для ord из
+// overrides ставит вписанный оператором индекс (Index и IndexPp) и снимает флаг с.ф.
+// (теперь нитка матчится по индексу, как обычная). Пустые/вне диапазона ord — пропуск.
+// Исходные нитки (в pending.doc) НЕ мутируются — работаем на копии.
+func applyIndexOverrides(nitki []plan.PlanNitka, overrides map[int]string) []plan.PlanNitka {
+	if len(overrides) == 0 {
+		return nitki
+	}
+	out := make([]plan.PlanNitka, len(nitki))
+	copy(out, nitki)
+	for ord, idx := range overrides {
+		if ord < 0 || ord >= len(out) {
+			continue
+		}
+		idx = strings.TrimSpace(idx)
+		if idx == "" {
+			continue
+		}
+		out[ord].Index = idx
+		out[ord].IndexPp = idx
+		out[ord].IsSf = false
+	}
+	return out
+}
+
+// problemRows собирает обычные нитки (не с.ф., не «Остаток») с Activ>0, которым матч
+// не нашёл ни одного вагона — кандидаты на исправление индекса оператором.
+func problemRows(nitki []plan.PlanNitka, matches []planmatch.NitkaMatch) []ProblemRowDTO {
+	var out []ProblemRowDTO
+	for i, n := range nitki {
+		if n.IsSf || n.IsOstatok || n.Activ <= 0 {
+			continue
+		}
+		if matches[i].Matched {
+			continue
+		}
+		out = append(out, ProblemRowDTO{
+			Ord: i, IndexPp: n.IndexPp, PlanMsk: localPtr(n.PlanMsk),
+			Activ: n.Activ, Ports: toDomainPorts(n.Ports),
+		})
+	}
+	return out
 }
 
 // Touch продлевает TTL токена подготовки, пока открыт диалог выбора с.ф. (heartbeat
@@ -119,10 +223,11 @@ func (p *PlanProcessor) Touch(token string) bool {
 	return p.pending.touch(token)
 }
 
-// Confirm — фаза B. selections: ord с.ф.-нитки → выбранные id_disl. Пустой выбор для
-// с.ф. → остаётся пустой (решение A). Ре-валидация против текущего снимка; исчезнувшие
-// группы пропускаются; один id_disl не уходит в две с.ф.
-func (p *PlanProcessor) Confirm(ctx context.Context, token string, selections map[int][]string) (PlanProcessResult, error) {
+// Confirm — фаза B. overrides: ord нитки → вписанный оператором индекс (с.ф.→реальный
+// либо исправление опечатки; применяются ДО матча). selections: ord с.ф.-нитки →
+// выбранные id_disl. Пустой выбор для с.ф. → остаётся пустой (решение A). Ре-валидация
+// против текущего снимка; исчезнувшие группы пропускаются; один id_disl не уходит в две с.ф.
+func (p *PlanProcessor) Confirm(ctx context.Context, token string, overrides map[int]string, selections map[int][]string) (PlanProcessResult, error) {
 	pend, ok := p.pending.take(token)
 	if !ok {
 		return PlanProcessResult{}, ErrPendingNotFound
@@ -136,20 +241,23 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, selections ma
 	if len(target) == 0 {
 		return PlanProcessResult{}, fmt.Errorf("для плана %q нет целевых площадок", planCode)
 	}
-	doc := pend.doc // разобран на prepare; файл уже сохранён там же — повторно не разбираем
+	// Эффективный документ: разобран на prepare (файл там же сохранён — повторно не
+	// разбираем), нитки — с применёнными ручными правками индексов. pend.doc не мутируем.
+	effDoc := *pend.doc
+	effDoc.Nitki = applyIndexOverrides(pend.doc.Nitki, overrides)
 
 	records := p.actual.All()
 	agg := planmatch.Aggregate(records, target)
-	matches := planmatch.Match(doc.Nitki, agg, prof.MatchRequiresNaznach)
+	matches := planmatch.Match(effDoc.Nitki, agg, prof.MatchRequiresNaznach)
 
 	used := planmatch.UsedIdDisl(matches)
 	sf, err := p.loadSF(ctx)
 	if err != nil {
 		return PlanProcessResult{}, err
 	}
-	for i, n := range doc.Nitki {
+	for i, n := range effDoc.Nitki {
 		if !n.IsSf {
-			continue
+			continue // в т.ч. бывшая с.ф. с вписанным индексом — уже сматчена по индексу
 		}
 		sel := selections[i]
 		if len(sel) == 0 {
@@ -183,12 +291,12 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, selections ma
 	if err != nil {
 		return PlanProcessResult{}, err
 	}
-	matched, trains := countPlan(doc, matches)
-	if err := p.saveGrid(ctx, planCode, pend.filename, doc, matches, stats.Stamped); err != nil {
+	matched, trains := countPlan(&effDoc, matches)
+	if err := p.saveGrid(ctx, planCode, pend.filename, &effDoc, matches, stats.Stamped); err != nil {
 		return PlanProcessResult{}, err
 	}
 
-	p.journal.RecordPlanUpload(ctx, planCode, pend.filename, planDocDate(doc), trains, matched, stats.Stamped)
+	p.journal.RecordPlanUpload(ctx, planCode, pend.filename, planDocDate(&effDoc), trains, matched, stats.Stamped, overrides)
 
 	return PlanProcessResult{
 		Filename: pend.filename, PlanCode: planCode,
@@ -214,8 +322,14 @@ func (p *PlanProcessor) applyAndSwap(ctx context.Context, records []domain.Dislo
 
 // countPlan считает ниток-поездов (без «Остатка») и сколько сопоставлено.
 func countPlan(doc *plan.PlanDoc, matches []planmatch.NitkaMatch) (matched, trains int) {
+	return countPlanNitki(doc.Nitki, matches)
+}
+
+// countPlanNitki — то же по срезу ниток (для превью с применёнными overrides, где
+// отдельного PlanDoc нет).
+func countPlanNitki(nitki []plan.PlanNitka, matches []planmatch.NitkaMatch) (matched, trains int) {
 	for i, m := range matches {
-		if !doc.Nitki[i].IsOstatok {
+		if !nitki[i].IsOstatok {
 			trains++
 		}
 		if m.Matched {

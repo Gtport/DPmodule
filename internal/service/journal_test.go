@@ -107,7 +107,7 @@ func TestRecordPlanUpload_SourceAndDate(t *testing.T) {
 	ctx := auth.WithClaims(context.Background(), &auth.Claims{Email: "u@x"}) // нет username → email
 
 	planDate := jlt("2026-07-12T00:00:00")
-	j.RecordPlanUpload(ctx, "ma", "ma.xlsx", &planDate, 30, 25, 410)
+	j.RecordPlanUpload(ctx, "ma", "ma.xlsx", &planDate, 30, 25, 410, nil)
 
 	require.Len(t, repo.events, 1)
 	ev := repo.events[0]
@@ -127,7 +127,7 @@ func TestDislocationJournal_Mapping(t *testing.T) {
 	ctxUser := auth.WithClaims(context.Background(), &auth.Claims{Username: "boss"})
 	j.RecordDislUpdate(ctxUser, "lk", domain.TriggerManual,
 		[]service.LKFileInfo{{FormationTS: jlt("2026-07-13T02:49:00")}}, 4631)
-	j.RecordPlanUpload(context.Background(), "ma", "ma.xlsx", nil, 30, 25, 410) // без claims → система
+	j.RecordPlanUpload(context.Background(), "ma", "ma.xlsx", nil, 30, 25, 410, nil) // без claims → система
 
 	items, err := st.DislocationJournal(context.Background(), nil, nil, 0)
 	require.NoError(t, err)
@@ -154,6 +154,6 @@ func TestJournal_NilSafe(t *testing.T) {
 	var j *service.Journal // без репозитория/приёмника — no-op, без паники
 	assert.NotPanics(t, func() {
 		j.RecordDislUpdate(context.Background(), "lk", domain.TriggerManual, nil, 0)
-		j.RecordPlanUpload(context.Background(), "ma", "f", nil, 0, 0, 0)
+		j.RecordPlanUpload(context.Background(), "ma", "f", nil, 0, 0, 0, nil)
 	})
 }
