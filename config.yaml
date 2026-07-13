@@ -27,8 +27,8 @@ postgres:
 
 keycloak:
   enabled: true    # /api требует валидный JWT (issuer+audience+подпись); «кто» → в журнал
-  jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs
-  issuer: http://localhost:8180/realms/iqport
+  jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs   # внутренний адрес (ключи), доступен бэкенду
+  issuer: http://147.45.216.32/realms/iqport   # ДОЛЖЕН совпадать с iss в токене браузера (Keycloak с динамическим hostname подставляет публичный хост). При переходе на https://95850.koara.live — сменить сюда домен.
   audience: iqport-backend
 
 log:
