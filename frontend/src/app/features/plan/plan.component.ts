@@ -177,10 +177,10 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
         <div *nzModalContent>
           @if (sfPrepare(); as prep) {
             <!-- Сборные формирования: выбрать группы ИЛИ вписать реальный индекс -->
-            @if (prep.sf.length) {
+            @if (prep.sf?.length) {
               <div class="sec-title">Сборные формирования (с.ф.)</div>
             }
-            @for (row of prep.sf; track row.ord) {
+            @for (row of prep.sf ?? []; track row.ord) {
               <div class="sf-block">
                 <div class="sf-head">
                   <span>{{ row.index_pp }} · {{ dmDate(row.plan_msk) }} {{ hm(row.plan_msk) }}</span>
@@ -214,10 +214,10 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
             }
 
             <!-- Обычные нитки без вагонов: вероятна опечатка индекса -->
-            @if (prep.problems.length) {
+            @if (prep.problems?.length) {
               <div class="sec-title">Нитки без вагонов — проверьте индекс</div>
             }
-            @for (row of prep.problems; track row.ord) {
+            @for (row of prep.problems ?? []; track row.ord) {
               <div class="sf-block">
                 <div class="sf-head">
                   <span class="idx">{{ row.index_pp || '—' }}</span>
@@ -232,7 +232,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
               </div>
             }
 
-            @if (!prep.sf.length && !prep.problems.length) {
+            @if (!prep.sf?.length && !prep.problems?.length) {
               <div class="muted">Все нитки сопоставлены — можно применять.</div>
             }
           }

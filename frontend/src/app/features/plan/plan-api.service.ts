@@ -91,13 +91,14 @@ export interface ProblemRow {
   ports: PortCell[] | null;
 }
 
-/** Ответ prepare/revalidate: токен + с.ф.-строки + проблемные нитки + превью. */
+/** Ответ prepare/revalidate: токен + с.ф.-строки + проблемные нитки + превью.
+ *  sf/problems — на границе сети допускаем null (пустой набор), рендер это учитывает. */
 export interface PreparePlanResult {
   token: string;
   plan_code: string;
   filename: string;
-  sf: SFRow[];
-  problems: ProblemRow[];
+  sf: SFRow[] | null;
+  problems: ProblemRow[] | null;
   nitki: number;
   matched: number;
 }

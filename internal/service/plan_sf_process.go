@@ -151,7 +151,7 @@ func (p *PlanProcessor) buildPreview(ctx context.Context, nitki []plan.PlanNitka
 		return PreparePlanResult{}, err
 	}
 
-	var sfRows []SFRowDTO
+	sfRows := []SFRowDTO{} // не nil — фронт ждёт массив (JSON [] вместо null)
 	for i, n := range nitki {
 		if !n.IsSf {
 			continue
@@ -201,7 +201,7 @@ func applyIndexOverrides(nitki []plan.PlanNitka, overrides map[int]string) []pla
 // problemRows собирает обычные нитки (не с.ф., не «Остаток») с Activ>0, которым матч
 // не нашёл ни одного вагона — кандидаты на исправление индекса оператором.
 func problemRows(nitki []plan.PlanNitka, matches []planmatch.NitkaMatch) []ProblemRowDTO {
-	var out []ProblemRowDTO
+	out := []ProblemRowDTO{} // не nil — фронт ждёт массив (JSON [] вместо null)
 	for i, n := range nitki {
 		if n.IsSf || n.IsOstatok || n.Activ <= 0 {
 			continue
