@@ -29,26 +29,27 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
     <div class="page">
       <app-plan-status-panel />
 
-      <nz-card class="card">
+      <!-- АСУ: одношаговое обновление снимка (в один клик, как автозабор) -->
+      <div class="asu-bar">
+        <button nz-button nzType="primary" [nzLoading]="busyAsu()" (click)="asuPull()">
+          <span nz-icon nzType="cloud-download"></span> Обновить из АСУ
+        </button>
+        <span class="asu-hint">В один клик: заберёт из АСУ и сразу пересоберёт снимок — «Обработать» не нужно.</span>
+      </div>
+
+      <!-- ЛК: ручной двухшаговый приём (загрузка → обработка) -->
+      <nz-card nzTitle="Приём ЛК (ручной)" class="card">
+        <p class="hint">Шаг 1 — загрузите xlsx-файлы (по одному на грузополучателя). Шаг 2 — «Обработать в снимок».</p>
+
         <div class="toolbar">
           <nz-upload nzAccept=".xlsx" [nzMultiple]="true" [nzShowUploadList]="false" [nzBeforeUpload]="beforeUpload">
-            <button nz-button nzType="primary" [nzLoading]="busyUpload()">
+            <button nz-button [nzLoading]="busyUpload()">
               <span nz-icon nzType="upload"></span> Загрузить ЛК
             </button>
           </nz-upload>
 
           <button nz-button nz-tooltip nzTooltipTitle="Обновить список принятых файлов" (click)="loadStatus()">
             <span nz-icon nzType="reload"></span>
-          </button>
-
-          <button
-            nz-button
-            nz-tooltip
-            nzTooltipTitle="Забрать дислокацию из АСУ вручную (тот же конвейер, что автозабор)"
-            [nzLoading]="busyAsu()"
-            (click)="asuPull()"
-          >
-            <span nz-icon nzType="cloud-download"></span> Обновить из АСУ
           </button>
 
           <span class="spacer"></span>
@@ -91,7 +92,7 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
                 <span class="fname" [title]="f.filename">{{ f.filename }}</span>
               </div>
             } @empty {
-              <p class="muted">Файлы ЛК не загружены. Загрузите xlsx или заберите из АСУ.</p>
+              <p class="muted">Файлы ЛК не загружены (для ручной загрузки). Основной источник — АСУ выше.</p>
             }
           </div>
         </nz-spin>
@@ -143,6 +144,10 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
   styles: [`
     .page { display: flex; flex-direction: column; gap: var(--space-md); max-width: 1000px; }
     .card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+    /* АСУ — отдельная строка над карточкой ЛК (основной, одношаговый источник). */
+    .asu-bar { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
+    .asu-hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); margin: 0 0 var(--space-md); }
     .toolbar { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
     .spacer { flex: 1 1 auto; }
     .msg { margin-top: var(--space-sm); }
