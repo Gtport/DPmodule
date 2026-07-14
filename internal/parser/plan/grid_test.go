@@ -53,6 +53,42 @@ func TestFindLeavesSkipsNumericRows(t *testing.T) {
 	}
 }
 
+// TestFindLeavesFirstColumnUnderTerminalName: в «новой форме» (реальный ma.xlsx от
+// 15.07.2026) у терминала НЕТ своего столбца «ИТОГО» — название терминала (НМТП, col8)
+// стоит ПРЯМО над первым грузом (Каменный уголь, col8), а train-total «Итого» — отдельный
+// col7. Раньше поиск листьев стартовал с term.start+1 и терял этот первый груз (уголь
+// НМТП и уголь ТЕРМИНАЛА не прогружались). Старт с term.start — оба должны найтись.
+func TestFindLeavesFirstColumnUnderTerminalName(t *testing.T) {
+	rows := [][]string{
+		mkRow(map[int]string{0: "План подвода поездов к станции МЫС АСТАФЬЕВА на 15.07.2026"}),
+		mkRow(map[int]string{0: "N п/п", 1: "Индекс"}), // row1
+		mkRow(map[int]string{7: "Итого", 8: "НМТП", 11: "ТЕРМИНАЛ", 13: "АТТИС ЭНТЕРПРАЙС", 14: "ПОРТ ЛИВАДИЯ"}), // терминалы (row1+1)
+		mkRow(map[int]string{8: "Каменный уголь", 9: "Черные металлы", 10: "ПРОЧИЕ ГРУЗЫ", 11: "Каменный уголь", 12: "Грузы в контейнерах"}), // грузы (row1+2)
+		mkRow(map[int]string{0: "План на 15-07-2026"}),                       // row1+3
+		mkRow(map[int]string{7: "118", 8: "16", 11: "80", 13: "13", 14: "9"}), // остаток на 18:00 (row1+4)
+	}
+	g := &GridParser{prof: Profile{PlanCode: "ma", OurTerminals: []string{"НМТП", "АТТИС"}}}
+	leaves := g.findLeaves(rows, 1)
+
+	got := map[string]bool{}
+	for _, lf := range leaves {
+		got[lf.label] = true
+	}
+	// Ключ регрессии: первый груз каждого терминала (стоит под его названием).
+	for _, want := range []string{
+		"НМТП Каменный уголь", "НМТП Черные металлы", "НМТП ПРОЧИЕ ГРУЗЫ",
+		"ТЕРМИНАЛ Каменный уголь", "ТЕРМИНАЛ Грузы в контейнерах",
+	} {
+		if !got[want] {
+			t.Errorf("нет ожидаемого листа %q; получено метки: %v", want, mapKeys(got))
+		}
+	}
+	// «Итого» (train-total, col7) — не терминал и не лист.
+	if got["Итого"] {
+		t.Errorf("train-total «Итого» ошибочно попал в листья")
+	}
+}
+
 func mapKeys(m map[string]bool) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

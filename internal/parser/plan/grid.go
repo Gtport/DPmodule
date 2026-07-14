@@ -296,7 +296,12 @@ func (g *GridParser) findLeaves(rows [][]string, row1 int) []leafCol {
 			termEnd = terminals[tIdx+1].start
 		}
 		before := len(leaves)
-		for c := term.start + 1; c < termEnd; c++ {
+		// С term.start (не +1): в «новой форме» название терминала стоит прямо над
+		// его первым грузом (НМТП/col → «Каменный уголь»/тот же col), и старт-столбец
+		// сам является листом. isLeafCol отсеет старт-столбец, если это агрегат/«ИТОГО»
+		// (старый формат с per-терминальным итогом), — тогда фолбэк ниже не сработает,
+		// т.к. настоящие листья найдутся правее. Совместимо с обоими форматами.
+		for c := term.start; c < termEnd; c++ {
 			if isLeafCol(c) {
 				leaves = append(leaves, leafCol{col: c, label: leafLabel(term.name, getLeafName(c)), isOur: isOur})
 			}
