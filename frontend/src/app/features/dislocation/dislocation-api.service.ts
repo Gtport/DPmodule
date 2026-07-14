@@ -63,6 +63,7 @@ export interface LKProcessResult {
   marka_missed: number;
   naznach_override: number;
   forecast_computed: number;
+  prog_computed: number;
   history_inserted: number;
   history_updated: number;
   status_dist: Record<string, number>;
@@ -91,5 +92,12 @@ export class DislocationApiService {
 
   process(): Promise<LKProcessResult> {
     return firstValueFrom(this.http.post<LKProcessResult>(`${this.base}/process`, {}));
+  }
+
+  /** Ручной забор дислокации из АСУ (тот же конвейер, что крон). Маршрут — не под /lk. */
+  asuPull(): Promise<LKProcessResult> {
+    return firstValueFrom(
+      this.http.post<LKProcessResult>(`${environment.apiBaseUrl}/v1/dislocation/asu/pull`, {}),
+    );
   }
 }
