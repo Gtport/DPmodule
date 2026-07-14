@@ -147,6 +147,10 @@ func run() error {
 			zap.String("client", cfgCache.Settings().ClientName),
 		)
 
+		// Профили станций плана из настроечной таблицы → реестр парсера (расхардка
+		// builtinProfiles). Пусто → у парсера остаётся builtin-fallback.
+		log.Info("plan profiles applied", zap.Int("profiles", service.ApplyPlanProfiles(cfgCache)))
+
 		// Актуальная мапа дислокации (текущий снимок) — в RAM при старте. Основа
 		// Stage 2 (сравнение нового батча с актуальным). Пока — прогрев.
 		actualCache = service.NewActualCache(dislRepo)

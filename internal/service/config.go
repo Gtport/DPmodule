@@ -15,10 +15,11 @@ import (
 type ConfigCache struct {
 	repo port.ConfigRepository
 
-	mu       sync.RWMutex
-	byID     map[string]domain.DataSource
-	ordered  []domain.DataSource
-	settings domain.ClientSettings
+	mu           sync.RWMutex
+	byID         map[string]domain.DataSource
+	ordered      []domain.DataSource
+	settings     domain.ClientSettings
+	planProfiles []domain.PlanProfile // настроечные портреты станций плана (plan_profile)
 }
 
 func NewConfigCache(repo port.ConfigRepository) *ConfigCache {
@@ -39,6 +40,10 @@ func (c *ConfigCache) Load(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load client_settings: %w", err)
 	}
+	profiles, err := c.repo.LoadPlanProfiles(ctx)
+	if err != nil {
+		return fmt.Errorf("load plan_profile: %w", err)
+	}
 
 	byID := make(map[string]domain.DataSource, len(sources))
 	for _, s := range sources {
@@ -49,6 +54,7 @@ func (c *ConfigCache) Load(ctx context.Context) error {
 	c.byID = byID
 	c.ordered = sources
 	c.settings = settings
+	c.planProfiles = profiles
 	c.mu.Unlock()
 	return nil
 }
@@ -79,6 +85,15 @@ func (c *ConfigCache) Settings() domain.ClientSettings {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.settings
+}
+
+// PlanProfiles возвращает настроечные портреты станций плана (копия среза).
+func (c *ConfigCache) PlanProfiles() []domain.PlanProfile {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]domain.PlanProfile, len(c.planProfiles))
+	copy(out, c.planProfiles)
+	return out
 }
 
 // Counts — сводка для логов после загрузки: всего источников и из них включённых.

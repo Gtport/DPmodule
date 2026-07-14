@@ -52,7 +52,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `plan.go` | Типы плана подвода: заголовок загрузки `Plan`, карточка списка `PlanSummary`, нитка `PlanNitka`, ячейка порта `PortCell`. |
 | `directory.go` | Справочники обогащения: станции, операции, marka, порты, скоростные профили, назначения. |
 | `history.go` | `VagonHistory` — строка бизнес-истории рейса (вехи погрузки/прибытия/выгрузки), таблица `vagon_history`. |
-| `config.go` | Настроечная таблица: реестр каналов ввода (`DataSource`) и клиентские параметры (`ClientSettings`). |
+| `config.go` | Настроечная таблица: реестр каналов ввода (`DataSource`), клиентские параметры (`ClientSettings`), настроечный портрет станции плана (`PlanProfile`: режим planned/capacity, коэф, наши терминалы). |
 | `localtime.go` | Тип `LocalTime` — время без часового пояса (без `Z`), единый формат в JSON и БД (инвариант «МСК naive»). |
 | `errors.go` | Общие sentinel-ошибки домена (`ErrNotFound`/`ErrBadRequest`/`ErrForbidden`/`ErrConflict`) для маппинга в HTTP-коды. |
 
@@ -63,7 +63,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `plan.go` | `PlanRepository`: хранение плана с историей загрузок (сохранить, список, свежий, по id). |
 | `history.go` | `HistoryRepository`: запись бизнес-истории рейса (проверка id, вставка, точечный UPDATE). |
 | `directory.go` | `DirectoryRepository`: загрузка справочников обогащения. |
-| `config.go` | `ConfigRepository`: загрузка настроечной таблицы (`data_source`, `client_settings`). |
+| `config.go` | `ConfigRepository`: загрузка настроечной таблицы (`data_source`, `client_settings`, `plan_profile`). |
 | `status9.go` | `Status9Repository`: кандидаты в прибытие (статусы 8/9), сохранение операторских правок. |
 | `status6.go` | `Status6Repository`: доноры перегруза (наполнение при статусе 6, удаление после использования). |
 | `external.go` | Внешние интеграции: `SecretSource` (секреты — env сейчас, Vault позже) и `ASUClient` (АСУ, pull/push). |
@@ -85,7 +85,8 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `history.go` | **S2-6**: запись бизнес-истории в `vagon_history` (новые вехи, точечное обновление, задержки/отклонения). |
 | `status_cache.go` | Write-through RAM-кэши: `Status9Cache` (кандидаты прибытия) и `Status6Cache` (доноры перегруза). |
 | `directory.go` | `DirectoryCache` — справочники в RAM с индексами поиска (станция/marka/порты/назначения/скорости). |
-| `config.go` | `ConfigCache` — настроечная таблица (`data_source`, `client_settings`) в RAM. |
+| `config.go` | `ConfigCache` — настроечная таблица (`data_source`, `client_settings`, `plan_profile`) в RAM. |
+| `plan_profile_apply.go` | `ApplyPlanProfiles` — перенос профилей станций из `ConfigCache` в реестр парсера плана (`plan.SetProfiles`) на старте; только плановые (с `plan_code`). Расхардкодивание `builtinProfiles`. |
 | `lk_intake.go` | **Приём ЛК, шаг 1**: приём xlsx, инспекция (ОКПО, дата формирования), сохранение в папку приёма. |
 | `lk_status.go` | Контроль приёма ЛК: сводка staged-файлов, замечания, блокирующие ошибки для UI/шага 2. |
 | `lk_process.go` | **Приём ЛК, шаг 2**: парсинг принятых файлов и атомарная замена снимка дислокации (мьютекс сериализует пересборку с автозагрузкой АСУ). |
@@ -128,7 +129,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 |---|---|
 | `grid.go` | Универсальный парсер «новой формы» плана: шапка, блоки дат, строки поездов, терминалы с подстолбцами грузов (`findLeaves`), строка «Остаток на 18:00» (в т.ч. её `Activ` — сумма «наших»), с.ф.-строки (`isSfRow`/`sfSynonym`/`buildSfNitka`). Правая граница поиска листьев ограничена реальной шириной заголовка (иначе холостой добег до `1<<30` давал ~6 с на разбор). |
 | `nitka.go` | Доменно-независимые структуры разбора (`PlanDoc`, `PlanNitka` c `IsSf`, `PortCell` c `IsOur`). |
-| `profile.go` | Профиль станции: какие терминалы считать «нашими» (для `Activ`). |
+| `profile.go` | Профиль станции: какие терминалы «наши» (для `Activ`) + `MatchRequiresNaznach`. Реестр инъектируемый (`SetProfiles` из настроечной таблицы `plan_profile` на старте); `builtinProfiles` — fallback для offline-утилит/тестов. |
 | `registry.go` | Реестр парсеров: контракт `Parser`, регистрация кастомных под нестандартные форматы, диспетчеризация по коду станции. |
 | `bench_test.go` | Бенчмарки разбора (`BenchmarkParseFile`, `BenchmarkStages` — excelize vs `Parse`); пропускаются без фикстуры `_data/plan/ma.xlsx`. |
 

@@ -15,6 +15,7 @@ import (
 type stubConfigRepo struct {
 	sources  []domain.DataSource
 	settings domain.ClientSettings
+	profiles []domain.PlanProfile
 }
 
 func (s *stubConfigRepo) LoadDataSources(context.Context) ([]domain.DataSource, error) {
@@ -22,6 +23,9 @@ func (s *stubConfigRepo) LoadDataSources(context.Context) ([]domain.DataSource, 
 }
 func (s *stubConfigRepo) LoadClientSettings(context.Context) (domain.ClientSettings, error) {
 	return s.settings, nil
+}
+func (s *stubConfigRepo) LoadPlanProfiles(context.Context) ([]domain.PlanProfile, error) {
+	return s.profiles, nil
 }
 
 func sampleConfig() *stubConfigRepo {

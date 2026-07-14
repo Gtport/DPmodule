@@ -3,6 +3,7 @@ package plan
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // Profile — настроечный портрет станции плана. Всё, что отличает один порт от
@@ -44,7 +45,9 @@ func (p Profile) isOurTerminal(termName string) bool {
 	return false
 }
 
-// builtinProfiles — встроенные профили станций (эталон GTport). Ключ — PlanCode.
+// builtinProfiles — встроенные профили как FALLBACK для offline-утилит (cmd/planrun)
+// и тестов без БД. В проде источник — настроечная таблица plan_profile: сервер на
+// старте вызывает SetProfiles и переопределяет реестр. Значения = сид миграции 000023.
 var builtinProfiles = map[string]Profile{
 	"ma": {
 		PlanCode:     "ma",
@@ -57,11 +60,32 @@ var builtinProfiles = map[string]Profile{
 	},
 }
 
-// ResolveProfile возвращает профиль станции по коду. Точка расширения: позже
-// здесь появится переопределение из настроечной таблицы (БД имеет приоритет над
-// встроенным). Пока — только встроенные профили.
+// registry — активный реестр профилей (ключ — PlanCode). По умолчанию builtin;
+// сервер переопределяет из БД через SetProfiles. Под RWMutex — задел под горячую
+// перезагрузку; в проде SetProfiles зовётся один раз до старта HTTP.
+var (
+	profMu   sync.RWMutex
+	registry = builtinProfiles
+)
+
+// SetProfiles переопределяет реестр профилей из настроечной таблицы (plan_profile).
+// Пустой набор игнорируется (остаётся fallback) — чтобы пустая/недоступная таблица
+// не обнулила профили offline-утилит.
+func SetProfiles(profiles map[string]Profile) {
+	if len(profiles) == 0 {
+		return
+	}
+	profMu.Lock()
+	registry = profiles
+	profMu.Unlock()
+}
+
+// ResolveProfile возвращает профиль станции по коду — из активного реестра
+// (настроечная таблица в проде, builtin как fallback).
 func ResolveProfile(planCode string) (Profile, error) {
-	p, ok := builtinProfiles[strings.ToLower(strings.TrimSpace(planCode))]
+	profMu.RLock()
+	p, ok := registry[strings.ToLower(strings.TrimSpace(planCode))]
+	profMu.RUnlock()
 	if !ok {
 		return Profile{}, fmt.Errorf("plan: неизвестный код станции %q (нет профиля)", planCode)
 	}

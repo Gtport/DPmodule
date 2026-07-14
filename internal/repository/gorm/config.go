@@ -38,6 +38,18 @@ type clientSettingsModel struct {
 
 func (clientSettingsModel) TableName() string { return "client_settings" }
 
+type planProfileModel struct {
+	StationCode          string  `gorm:"column:station_code;primaryKey"`
+	StationName          string  `gorm:"column:station_name"`
+	Mode                 string  `gorm:"column:mode"`
+	PlanCode             *string `gorm:"column:plan_code"` // nullable — пусто у бесплановых
+	CorrectionCoef       float64 `gorm:"column:correction_coef"`
+	MatchRequiresNaznach bool    `gorm:"column:match_requires_naznach"`
+	OurTerminals         string  `gorm:"column:our_terminals"` // jsonb → text
+}
+
+func (planProfileModel) TableName() string { return "plan_profile" }
+
 // ──────────────────────────────────────────────────────────────────────────
 //  Адаптер: реализует port.ConfigRepository.
 // ──────────────────────────────────────────────────────────────────────────
@@ -96,4 +108,30 @@ func (r *ConfigRepository) LoadClientSettings(ctx context.Context) (domain.Clien
 		}
 	}
 	return domain.ClientSettings{ClientName: m.ClientName, IngestPolicy: pol, Status: extra.Status}, nil
+}
+
+func (r *ConfigRepository) LoadPlanProfiles(ctx context.Context) ([]domain.PlanProfile, error) {
+	var ms []planProfileModel
+	if err := r.db.WithContext(ctx).Order("station_code").Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.PlanProfile, len(ms))
+	for i, m := range ms {
+		var terms []string
+		if m.OurTerminals != "" {
+			if err := json.Unmarshal([]byte(m.OurTerminals), &terms); err != nil {
+				return nil, fmt.Errorf("plan_profile %q our_terminals: %w", m.StationCode, err)
+			}
+		}
+		planCode := ""
+		if m.PlanCode != nil {
+			planCode = *m.PlanCode
+		}
+		out[i] = domain.PlanProfile{
+			StationCode: m.StationCode, StationName: m.StationName, Mode: m.Mode,
+			PlanCode: planCode, CorrectionCoef: m.CorrectionCoef,
+			MatchRequiresNaznach: m.MatchRequiresNaznach, OurTerminals: terms,
+		}
+	}
+	return out, nil
 }

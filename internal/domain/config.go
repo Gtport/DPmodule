@@ -92,3 +92,23 @@ type CategoryPolicy struct {
 	PlanMaxLagHours        int    `json:"plan_max_lag_hours,omitempty"`        // план не позже дислокации на N ч
 	PlanMaxDislAgeMinutes  int    `json:"plan_max_disl_age_minutes,omitempty"` // не грузить план, если дислокация старше N мин (0 — гард выключен)
 }
+
+// Режим прогноза станции (plan_profile.mode).
+const (
+	PlanModePlanned  = "planned"  // есть расписание ниток → Stage 4 раскладывает по слотам
+	PlanModeCapacity = "capacity" // плана нет → прогноз из pc_* × correction_coef
+)
+
+// PlanProfile — настроечный портрет станции плана (таблица plan_profile). Ключ —
+// StationCode (= ports.station_code); терминалы одной станции делят настройки.
+// Расхардкодивание builtinProfiles + задел под Stage 4 (Mode/CorrectionCoef) и
+// аналитику расписания (nitka_schedule).
+type PlanProfile struct {
+	StationCode          string
+	StationName          string
+	Mode                 string   // PlanModePlanned | PlanModeCapacity
+	PlanCode             string   // ma/nk у плановых; "" у бесплановых
+	CorrectionCoef       float64  // поправочный коэф (один на станцию, capacity-режим)
+	MatchRequiresNaznach bool
+	OurTerminals         []string // ключевые слова «наших» колонок плана (вклад в Activ)
+}
