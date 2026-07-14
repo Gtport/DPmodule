@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/Gtport/DPmodule/internal/auth"
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser"
 	"github.com/Gtport/DPmodule/internal/port"
@@ -36,9 +39,68 @@ func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *A
 func (p *LKProcessor) SetJournal(j *Journal) { p.journal = j }
 
 var (
-	ErrNotReady = errors.New("приём не готов к обработке")
-	ErrDataLoss = errors.New("потеря данных превышает допустимый порог")
+	ErrNotReady             = errors.New("приём не готов к обработке")
+	ErrDataLoss             = errors.New("потеря данных превышает допустимый порог")
+	ErrDislTooStale         = errors.New("файлы ЛК устарели — обновите выгрузку из ЛК")
+	ErrDislOlderThanCurrent = errors.New("файлы ЛК старше текущей дислокации — обновлять свежую дислокацию более старой нельзя")
 )
+
+// guardFreshness блокирует пересборку дислокации из устаревших файлов ЛК (по метке
+// формирования, самой старой в батче):
+//   - max_staleness_minutes: метка старше N мин от «сейчас» → отказ (ErrDislTooStale);
+//   - reject_older_than_current: батч старше текущей дислокации (doc_ts последнего
+//     обновления из журнала) → отказ (ErrDislOlderThanCurrent), кроме роли-исключения.
+//
+// Порог ≤ 0 / флаг выкл / нет метки / нет журнала → соответствующий гард пропускается.
+func (p *LKProcessor) guardFreshness(ctx context.Context, files []LKFileInfo) error {
+	pol := p.intake.cfg.Settings().IngestPolicy.Dislocation
+	current, _ := p.journal.LastDislDocTS(ctx)
+	return checkFreshness(oldestFormation(files), clock.Now().Time(), pol, current,
+		exemptRole(ctx, pol.RejectOlderRoleExempt))
+}
+
+// checkFreshness — чистое решение гарда (без кэша/журнала/часов), для тестируемости.
+// oldest — самая старая метка формирования батча; current — doc_ts текущей дислокации.
+func checkFreshness(oldest, now time.Time, pol domain.CategoryPolicy, current *domain.LocalTime, exempt bool) error {
+	if oldest.IsZero() {
+		return nil // нет метки — не блокируем
+	}
+	if pol.MaxStalenessMinutes > 0 {
+		if age := int(now.Sub(oldest).Minutes()); age > pol.MaxStalenessMinutes {
+			return fmt.Errorf("%w: сформированы %s (%d мин назад > %d)",
+				ErrDislTooStale, oldest.Format("02.01 15:04"), age, pol.MaxStalenessMinutes)
+		}
+	}
+	if pol.RejectOlderThanCurrent && current != nil && !current.IsZero() && oldest.Before(current.Time()) && !exempt {
+		return fmt.Errorf("%w: файлы %s < текущей %s",
+			ErrDislOlderThanCurrent, oldest.Format("02.01 15:04"), current.Time().Format("02.01 15:04"))
+	}
+	return nil
+}
+
+// oldestFormation — самая старая метка формирования батча (нулевые пропускаем).
+func oldestFormation(files []LKFileInfo) time.Time {
+	var oldest time.Time
+	for _, f := range files {
+		ts := time.Time(f.FormationTS)
+		if ts.IsZero() {
+			continue
+		}
+		if oldest.IsZero() || ts.Before(oldest) {
+			oldest = ts
+		}
+	}
+	return oldest
+}
+
+// exemptRole — есть ли у актора (из JWT) роль-исключение (пусто → нет исключения).
+func exemptRole(ctx context.Context, role string) bool {
+	if role == "" {
+		return false
+	}
+	c := auth.ClaimsFromContext(ctx)
+	return c != nil && c.HasRole(auth.Role(role))
+}
 
 // LKProcessResult — итог обработки.
 type LKProcessResult struct {
@@ -80,6 +142,12 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 	}
 	if !st.Ready {
 		return LKProcessResult{}, fmt.Errorf("%w: %d блокирующих замечаний", ErrNotReady, countBlocking(st.Issues))
+	}
+
+	// Гарды актуальности: не пересобирать дислокацию из устаревших файлов и не
+	// затирать свежую дислокацию (напр. только что из АСУ) более старым ЛК.
+	if err := p.guardFreshness(ctx, st.Files); err != nil {
+		return LKProcessResult{}, err
 	}
 
 	// Профиль парсера — из настроек источника 'lk' (формат файла).

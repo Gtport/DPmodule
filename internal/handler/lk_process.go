@@ -33,7 +33,8 @@ func (h *lkProcessHandler) process(c *gin.Context) {
 	res, err := h.proc.Process(c.Request.Context())
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, service.ErrNotReady) || errors.Is(err, service.ErrDataLoss) {
+		if errors.Is(err, service.ErrNotReady) || errors.Is(err, service.ErrDataLoss) ||
+			errors.Is(err, service.ErrDislTooStale) || errors.Is(err, service.ErrDislOlderThanCurrent) {
 			status = http.StatusConflict
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
