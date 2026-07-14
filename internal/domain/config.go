@@ -64,6 +64,7 @@ type ClientSettings struct {
 	ClientName   string
 	IngestPolicy IngestPolicy
 	Status       StatusPolicy // пороги расчёта статусов (из client_settings.extra.status)
+	Stage4       Stage4Policy // пороги прогноза прибытия (из client_settings.extra.stage4)
 }
 
 // StatusPolicy — общепрограмные пороги расчёта статусов дислокации (§3.12/§3.13).
@@ -111,4 +112,21 @@ type PlanProfile struct {
 	CorrectionCoef       float64  // поправочный коэф (один на станцию, capacity-режим)
 	MatchRequiresNaznach bool
 	OurTerminals         []string // ключевые слова «наших» колонок плана (вклад в Activ)
+	SlotToleranceH       float64  // допуск слота Stage 4: слот может быть ≥ Rasch − N часов
+}
+
+// NitkaSlot — один слот расписания станции (таблица nitka_schedule). Слоты повторяются
+// каждые сутки; общий пул прибытия станции для всех терминалов (Stage 4).
+type NitkaSlot struct {
+	StationCode string
+	Hour        int
+	Minute      int
+	SortOrder   int
+}
+
+// Stage4Policy — пороги прогноза прибытия (client_settings.extra.stage4).
+type Stage4Policy struct {
+	MinVagonCount int `json:"min_vagon_count"` // минимум вагонов для беспланового прогноза (эталон 20)
+	MinVagonBros  int `json:"min_vagon_bros"`  // порог для брошенных (эталон 10)
+	BrosPenaltyH  int `json:"bros_penalty_h"`  // штраф бросания, часов (эталон 72)
 }

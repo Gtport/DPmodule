@@ -14,4 +14,5 @@ type ConfigRepository interface {
 	LoadDataSources(ctx context.Context) ([]domain.DataSource, error)
 	LoadClientSettings(ctx context.Context) (domain.ClientSettings, error)
 	LoadPlanProfiles(ctx context.Context) ([]domain.PlanProfile, error)
+	LoadNitkaSchedule(ctx context.Context) ([]domain.NitkaSlot, error)
 }

@@ -30,6 +30,7 @@ type DirectoryCache struct {
 	markaOkpos      map[int64]struct{}               // множество ОКПО в marka (проверка «ОКПО известен»)
 	ports           map[string][]domain.Ports        // ключ PortKey (неуникален → срез)
 	portsByOkpo     map[int64][]domain.Ports         // ОКПО → терминалы (для приёма ЛК: «чей файл»)
+	portsByNameS    map[string]domain.Ports          // краткое имя причала (NameS) → терминал (Stage 4: станция+pc)
 	planTargets     map[string]map[string]struct{}   // plan_code → множество NameS (площадки плана)
 	routeSpeed      map[string][]domain.RouteSpeed   // ключ RouteSpeedKey; участки по убыванию FromKm
 	naznachStation  map[string]domain.NaznachStation // ключ NaznachKey; только enabled + непустой naznach (§3.17)
@@ -46,6 +47,7 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		markaOkpos:      map[int64]struct{}{},
 		ports:           map[string][]domain.Ports{},
 		portsByOkpo:     map[int64][]domain.Ports{},
+		portsByNameS:    map[string]domain.Ports{},
 		planTargets:     map[string]map[string]struct{}{},
 		routeSpeed:      map[string][]domain.RouteSpeed{},
 		naznachStation:  map[string]domain.NaznachStation{},
@@ -129,6 +131,7 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	}
 	pr := make(map[string][]domain.Ports)
 	pbo := make(map[int64][]domain.Ports)
+	pbn := make(map[string]domain.Ports)
 	// planTargets: plan_code → множество кратких имён причалов (NameS). Целевой набор
 	// площадок плана подвода строится из данных, а не хардкодом (замена
 	// isMaTargetNaznachOrGruzpolS эталона). Пустые plan_code/NameS пропускаем.
@@ -137,6 +140,9 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 		k := PortKey(p.Okpo, p.Location)
 		pr[k] = append(pr[k], p)
 		pbo[p.Okpo] = append(pbo[p.Okpo], p)
+		if ns := strings.TrimSpace(p.NameS); ns != "" {
+			pbn[ns] = p // NameS уникален (площадка причала); для Stage 4 — станция + pc_*
+		}
 
 		code := strings.TrimSpace(p.PlanCode)
 		name := strings.TrimSpace(p.NameS)
@@ -168,6 +174,7 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	c.markaOkpos = mkOkpos
 	c.ports = pr
 	c.portsByOkpo = pbo
+	c.portsByNameS = pbn
 	c.planTargets = pt
 	c.routeSpeed = rs
 	c.naznachStation = nz
@@ -291,6 +298,16 @@ func (c *DirectoryCache) PortsByOkpo(okpo int64) ([]domain.Ports, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	p, ok := c.portsByOkpo[okpo]
+	return p, ok
+}
+
+// PortByNameS возвращает терминал по краткому имени причала (NameS: АЭ/ГУТ-2/УТ-1).
+// Для Stage 4: по Naznach записи находим станцию (StationCode — пул слотов) и
+// перерабатывающую способность pc_* (интервал). NameS уникален (одна площадка).
+func (c *DirectoryCache) PortByNameS(nameS string) (domain.Ports, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	p, ok := c.portsByNameS[strings.TrimSpace(nameS)]
 	return p, ok
 }
 

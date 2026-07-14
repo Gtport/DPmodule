@@ -16,6 +16,7 @@ type stubConfigRepo struct {
 	sources  []domain.DataSource
 	settings domain.ClientSettings
 	profiles []domain.PlanProfile
+	slots    []domain.NitkaSlot
 }
 
 func (s *stubConfigRepo) LoadDataSources(context.Context) ([]domain.DataSource, error) {
@@ -26,6 +27,9 @@ func (s *stubConfigRepo) LoadClientSettings(context.Context) (domain.ClientSetti
 }
 func (s *stubConfigRepo) LoadPlanProfiles(context.Context) ([]domain.PlanProfile, error) {
 	return s.profiles, nil
+}
+func (s *stubConfigRepo) LoadNitkaSchedule(context.Context) ([]domain.NitkaSlot, error) {
+	return s.slots, nil
 }
 
 func sampleConfig() *stubConfigRepo {

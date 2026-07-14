@@ -134,6 +134,7 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 	matches := planmatch.Match(doc.Nitki, agg, prof.MatchRequiresNaznach)
 
 	out, stats := planmatch.Apply(records, matches, target, clock.Now())
+	applyStage4(out, p.dir, p.cfg, 0) // план поставил новый PlanMsk → пересчёт прогноза ProgMsk
 
 	if err := p.repo.ReplaceActual(ctx, out); err != nil {
 		return PlanProcessResult{}, fmt.Errorf("замена снимка: %w", err)

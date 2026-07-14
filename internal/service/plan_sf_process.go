@@ -409,6 +409,7 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, overrides map
 // applyAndSwap применяет матч к снимку и атомарно подменяет (вариант Б) + перечитывает кэш.
 func (p *PlanProcessor) applyAndSwap(ctx context.Context, records []domain.Dislocation, matches []planmatch.NitkaMatch, target map[string]struct{}) (planmatch.ApplyStats, error) {
 	out, stats := planmatch.Apply(records, matches, target, clock.Now())
+	applyStage4(out, p.dir, p.cfg, 0) // план поставил новый PlanMsk → пересчёт прогноза ProgMsk
 	if err := p.repo.ReplaceActual(ctx, out); err != nil {
 		return planmatch.ApplyStats{}, fmt.Errorf("замена снимка: %w", err)
 	}

@@ -46,6 +46,7 @@ type planProfileModel struct {
 	CorrectionCoef       float64 `gorm:"column:correction_coef"`
 	MatchRequiresNaznach bool    `gorm:"column:match_requires_naznach"`
 	OurTerminals         string  `gorm:"column:our_terminals"` // jsonb → text
+	SlotToleranceH       float64 `gorm:"column:slot_tolerance_h"`
 }
 
 func (planProfileModel) TableName() string { return "plan_profile" }
@@ -101,13 +102,16 @@ func (r *ConfigRepository) LoadClientSettings(ctx context.Context) (domain.Clien
 	}
 	var extra struct {
 		Status domain.StatusPolicy `json:"status"`
+		Stage4 domain.Stage4Policy `json:"stage4"`
 	}
 	if m.Extra != "" {
 		if err := json.Unmarshal([]byte(m.Extra), &extra); err != nil {
 			return domain.ClientSettings{}, fmt.Errorf("client_settings extra: %w", err)
 		}
 	}
-	return domain.ClientSettings{ClientName: m.ClientName, IngestPolicy: pol, Status: extra.Status}, nil
+	return domain.ClientSettings{
+		ClientName: m.ClientName, IngestPolicy: pol, Status: extra.Status, Stage4: extra.Stage4,
+	}, nil
 }
 
 func (r *ConfigRepository) LoadPlanProfiles(ctx context.Context) ([]domain.PlanProfile, error) {
@@ -131,7 +135,32 @@ func (r *ConfigRepository) LoadPlanProfiles(ctx context.Context) ([]domain.PlanP
 			StationCode: m.StationCode, StationName: m.StationName, Mode: m.Mode,
 			PlanCode: planCode, CorrectionCoef: m.CorrectionCoef,
 			MatchRequiresNaznach: m.MatchRequiresNaznach, OurTerminals: terms,
+			SlotToleranceH: m.SlotToleranceH,
 		}
+	}
+	return out, nil
+}
+
+func (r *ConfigRepository) LoadNitkaSchedule(ctx context.Context) ([]domain.NitkaSlot, error) {
+	// slot_time — тип time; берём HH:MM строкой (to_char), чтобы не зависеть от типа драйвера.
+	var rows []struct {
+		StationCode string `gorm:"column:station_code"`
+		HM          string `gorm:"column:hm"`
+		SortOrder   int    `gorm:"column:sort_order"`
+	}
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT station_code, to_char(slot_time,'HH24:MI') AS hm, sort_order
+		   FROM nitka_schedule ORDER BY station_code, sort_order`).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.NitkaSlot, 0, len(rows))
+	for _, row := range rows {
+		var h, m int
+		if _, err := fmt.Sscanf(row.HM, "%d:%d", &h, &m); err != nil {
+			continue // битый слот пропускаем
+		}
+		out = append(out, domain.NitkaSlot{StationCode: row.StationCode, Hour: h, Minute: m, SortOrder: row.SortOrder})
 	}
 	return out, nil
 }
