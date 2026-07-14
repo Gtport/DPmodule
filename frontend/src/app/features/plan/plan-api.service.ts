@@ -187,6 +187,13 @@ export class PlanApiService {
     return firstValueFrom(this.http.post<PreparePlanResult>(`${this.base}/prepare`, form));
   }
 
+  /** Пересчёт плановых данных по сохранённой сетке (id) на текущей дислокации, без
+   *  повторной загрузки Excel. Возвращает токен + превью (как prepare); снимок не
+   *  трогается до confirm. Дальше — тот же revalidate/confirm. */
+  recalc(id: number): Promise<PreparePlanResult> {
+    return firstValueFrom(this.http.post<PreparePlanResult>(`${this.base}/recalc`, { id }));
+  }
+
   /** Сухой пересчёт превью с ручными правками индексов (overrides: ord → индекс 4-3-4).
    *  Снимок не трогаем, токен не расходуем — для итеративной коррекции перед confirm. */
   revalidate(token: string, overrides: Record<number, string>): Promise<PreparePlanResult> {

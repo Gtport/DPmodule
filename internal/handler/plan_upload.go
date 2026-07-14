@@ -29,6 +29,7 @@ func NewPlanUploadHandler(proc *service.PlanProcessor) *planUploadHandler {
 func (h *planUploadHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.POST("/dislocation/plan/upload", h.upload)            // одношаговая загрузка (без выбора с.ф.)
 	g.POST("/dislocation/plan/prepare", h.prepare)          // фаза A: разбор + кандидаты с.ф. + проблемные нитки (снимок не трогаем)
+	g.POST("/dislocation/plan/recalc", h.recalc)            // пересчёт по сохранённой сетке на текущей дислокации (без Excel)
 	g.POST("/dislocation/plan/revalidate", h.revalidate)    // сухой пересчёт с правками индексов (снимок не трогаем)
 	g.POST("/dislocation/plan/confirm", h.confirm)          // фаза B: применить с правками индексов и выбором групп с.ф.
 	g.POST("/dislocation/plan/touch", h.touch)              // heartbeat: продлить токен, пока открыт диалог с.ф.
@@ -179,6 +180,32 @@ func (h *planUploadHandler) prepare(c *gin.Context) {
 	}
 
 	res, err := h.proc.Prepare(c.Request.Context(), code, fh.Filename, data)
+	if err != nil {
+		if errors.Is(err, service.ErrDislStale) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 — дислокация устарела
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// recalcRequest — тело recalc: id сохранённой сетки плана для пересчёта.
+type recalcRequest struct {
+	ID int64 `json:"id"`
+}
+
+// recalc — пересчёт плановых данных по сохранённой сетке (id) на ТЕКУЩЕЙ дислокации,
+// без повторной загрузки Excel. Возвращает токен + превью (как prepare); снимок не
+// изменяется до confirm. Дальше — тот же revalidate/confirm.
+func (h *planUploadHandler) recalc(c *gin.Context) {
+	var req recalcRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.ID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "не передан id плана для пересчёта"})
+		return
+	}
+	res, err := h.proc.PrepareRecalc(c.Request.Context(), req.ID)
 	if err != nil {
 		if errors.Is(err, service.ErrDislStale) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 — дислокация устарела

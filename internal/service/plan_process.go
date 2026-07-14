@@ -34,7 +34,7 @@ type PlanProcessor struct {
 
 // ErrDislStale — снимок дислокации старше допустимого для загрузки плана. Хендлер
 // отдаёт по нему 409 Conflict; на устаревшей дислокации матч/простановка недостоверны.
-var ErrDislStale = errors.New("дислокация устарела — обновите ЛК/АСУ перед загрузкой плана")
+var ErrDislStale = errors.New("дислокация устарела — обновите ЛК/АСУ перед загрузкой/пересчётом плана")
 
 func NewPlanProcessor(dir *DirectoryCache, repo port.DislocationRepository, actual *ActualCache, planRepo port.PlanRepository, baseDir string) *PlanProcessor {
 	return &PlanProcessor{

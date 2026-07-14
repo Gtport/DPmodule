@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser/plan"
 	"github.com/Gtport/DPmodule/internal/service/planmatch"
 )
@@ -67,6 +68,41 @@ func TestProblemRows(t *testing.T) {
 	assert.Equal(t, 0, probs[0].Ord)
 	assert.Equal(t, "A", probs[0].IndexPp)
 	assert.Equal(t, 12, probs[0].Activ)
+}
+
+func TestStoredNitkiToPlan(t *testing.T) {
+	msk := lt(8, 49) // *domain.LocalTime
+	nitki := []domain.PlanNitka{
+		{
+			Index: "7438-011-1234", IndexPp: "7438-011-1234", Activ: 12, Wagons: 20,
+			IsSf: false, PlanMsk: msk,
+			Ports: []domain.PortCell{{Label: "T1", Count: 5, IsOur: true}},
+		},
+		{IndexPp: "с.ф.НАХОДКА", IsSf: true, Activ: 24, PlanMsk: nil}, // с.ф. без времени/портов
+	}
+	out := storedNitkiToPlan(nitki)
+
+	require.Len(t, out, 2)
+	// обычная нитка: индекс/activ/is_sf/время/порты восстановлены для повторного матча.
+	assert.Equal(t, "7438-011-1234", out[0].IndexPp)
+	assert.Equal(t, 12, out[0].Activ)
+	assert.False(t, out[0].IsSf)
+	assert.False(t, out[0].PlanMsk.IsZero())
+	assert.Equal(t, msk.Time(), out[0].PlanMsk) // время восстановлено 1:1
+	require.Len(t, out[0].Ports, 1)
+	assert.Equal(t, "T1", out[0].Ports[0].Label)
+	assert.True(t, out[0].Ports[0].IsOur)
+	// с.ф.: флаг сохранён, нулевое время → zero, портов нет.
+	assert.True(t, out[1].IsSf)
+	assert.True(t, out[1].PlanMsk.IsZero())
+	assert.Nil(t, out[1].Ports)
+}
+
+func TestRecalcSourceName(t *testing.T) {
+	assert.Equal(t, "ma.xlsx (пересчёт)", recalcSourceName("ma.xlsx"))
+	// повторный пересчёт не накапливает пометку.
+	assert.Equal(t, "ma.xlsx (пересчёт)", recalcSourceName("ma.xlsx (пересчёт)"))
+	assert.Equal(t, "ma.xlsx (пересчёт)", recalcSourceName("  ma.xlsx (пересчёт)  "))
 }
 
 func TestPendingStore_Peek(t *testing.T) {

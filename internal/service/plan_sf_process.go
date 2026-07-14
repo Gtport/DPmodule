@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -134,6 +135,105 @@ func (p *PlanProcessor) Revalidate(ctx context.Context, token string, overrides 
 	prev.PlanCode = pend.planCode
 	prev.Filename = pend.filename
 	return prev, nil
+}
+
+// PrepareRecalc запускает пересчёт плановых данных на ТЕКУЩЕМ снимке дислокации по
+// сохранённой сетке плана (planID) — без повторной загрузки/разбора Excel. Нитки
+// восстанавливаются из БД (с уже «запечёнными» ручными правками индексов), матч
+// гоняется заново; дальше — тот же Revalidate/Confirm по токену. Возвращает токен +
+// превью (с.ф.-строки + проблемные нитки). Снимок не изменяется.
+func (p *PlanProcessor) PrepareRecalc(ctx context.Context, planID int64) (PreparePlanResult, error) {
+	if p.planRepo == nil {
+		return PreparePlanResult{}, fmt.Errorf("хранение плана не подключено")
+	}
+	header, storedNitki, err := p.planRepo.GetPlanByID(ctx, planID)
+	if err != nil {
+		return PreparePlanResult{}, err
+	}
+	if header.PlanCode == "" {
+		return PreparePlanResult{}, fmt.Errorf("сохранённый план не найден (id=%d)", planID)
+	}
+	planCode := header.PlanCode
+	prof, err := plan.ResolveProfile(planCode)
+	if err != nil {
+		return PreparePlanResult{}, err
+	}
+	target := p.dir.TargetNaznach(planCode)
+	if len(target) == 0 {
+		return PreparePlanResult{}, fmt.Errorf("для плана %q нет целевых площадок", planCode)
+	}
+	if err := p.ensureDislFresh(ctx); err != nil {
+		return PreparePlanResult{}, err
+	}
+
+	doc := &plan.PlanDoc{
+		PlanCode:   planCode,
+		SourceFile: recalcSourceName(header.SourceFile), // пометка «(пересчёт)» → видна в истории/журнале
+		Nitki:      storedNitkiToPlan(storedNitki),
+	}
+	prev, err := p.buildPreview(ctx, doc.Nitki, prof.MatchRequiresNaznach, target)
+	if err != nil {
+		return PreparePlanResult{}, err
+	}
+	tok := p.pending.put(pendingPlan{planCode: planCode, filename: doc.SourceFile, doc: doc})
+	prev.Token = tok
+	prev.PlanCode = planCode
+	prev.Filename = doc.SourceFile
+	return prev, nil
+}
+
+const recalcSuffix = "(пересчёт)"
+
+// recalcSourceName формирует имя источника пересчитанной сетки: базовое имя + пометка
+// «(пересчёт)», без накопления при повторных пересчётах.
+func recalcSourceName(src string) string {
+	base := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(src), recalcSuffix))
+	return strings.TrimSpace(base + " " + recalcSuffix)
+}
+
+// storedNitkiToPlan восстанавливает нитки парсера из сохранённой сетки плана (БД) для
+// пересчёта без повторного разбора Excel. Берём «сырьё» нитки (индекс/activ/is_sf/
+// время/порты); состав и вагоны матч пересчитает заново на текущем снимке.
+func storedNitkiToPlan(nitki []domain.PlanNitka) []plan.PlanNitka {
+	out := make([]plan.PlanNitka, len(nitki))
+	for i, n := range nitki {
+		out[i] = plan.PlanNitka{
+			Index:     n.Index,
+			IndexPp:   n.IndexPp,
+			PlanJd:    localToTime(n.PlanJd),
+			PlanMsk:   localToTime(n.PlanMsk),
+			FactMsk:   localToTime(n.FactMsk),
+			Otkl:      n.Otkl,
+			Wagons:    n.Wagons,
+			Activ:     n.Activ,
+			Ports:     planPortsFromDomain(n.Ports),
+			Comment:   n.Comment,
+			IsOstatok: n.IsOstatok,
+			IsSf:      n.IsSf,
+		}
+	}
+	return out
+}
+
+// localToTime разворачивает *domain.LocalTime в naive time.Time (nil → нулевое).
+func localToTime(t *domain.LocalTime) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return t.Time()
+}
+
+// planPortsFromDomain переводит доменные ячейки портов в ячейки парсера (обратная
+// сторона toDomainPorts) — для восстановления нитки из сохранённой сетки.
+func planPortsFromDomain(cells []domain.PortCell) []plan.PortCell {
+	if len(cells) == 0 {
+		return nil
+	}
+	out := make([]plan.PortCell, len(cells))
+	for i, c := range cells {
+		out[i] = plan.PortCell{Label: c.Label, Count: c.Count, IsOur: c.IsOur}
+	}
+	return out
 }
 
 // buildPreview матчит нитки против ТЕКУЩЕГО снимка и собирает превью: с.ф.-строки с

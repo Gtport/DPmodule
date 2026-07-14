@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, WritableSignal, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -71,6 +71,18 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
               <span nz-icon nzType="upload"></span>
             </button>
           </nz-upload>
+
+          <button
+            nz-button
+            nzType="text"
+            nz-tooltip
+            nzTooltipTitle="Пересчитать план на текущей дислокации (без повторной загрузки файла)"
+            [nzLoading]="busyRecalc()"
+            [disabled]="selectedPlanId() == null"
+            (click)="recalc()"
+          >
+            <span nz-icon nzType="sync"></span>
+          </button>
 
           <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Обновить" (click)="refresh()">
             <span nz-icon nzType="reload"></span>
@@ -311,6 +323,7 @@ export class PlanComponent implements OnInit, OnDestroy {
   readonly grid = signal<PlanGrid | null>(null);
   readonly loading = signal(false);
   readonly busyUpload = signal(false);
+  readonly busyRecalc = signal(false);
   readonly showForeign = signal(false);
   readonly uploadMsg = signal<string | null>(null);
   readonly error = signal<string | null>(null);
@@ -532,7 +545,9 @@ export class PlanComponent implements OnInit, OnDestroy {
   readonly overrides = signal<Record<number, string>>({});     // ord нитки → вписанный индекс 4-3-4
   readonly sfBusy = signal(false);
   readonly revalBusy = signal(false);                          // идёт сухой пересчёт (revalidate)
-  private sfFile: File | null = null;                          // файл для прозрачного восстановления
+  // Как заново получить превью с тем же источником (загрузка файла ИЛИ пересчёт по id) —
+  // для прозрачного восстановления, если токен истёк (410).
+  private resubmit: (() => Promise<PreparePlanResult>) | null = null;
   private sfBeat: ReturnType<typeof setInterval> | null = null; // heartbeat продления токена
 
   /** Пока открыт диалог с.ф., каждые 5 мин продлеваем токен (TTL на бэке 30 мин). */
@@ -556,7 +571,7 @@ export class PlanComponent implements OnInit, OnDestroy {
     this.sfPrepare.set(null);
     this.sfSel.set({});
     this.overrides.set({});
-    this.sfFile = null;
+    this.resubmit = null;
   }
 
   /** Записать/снять ручную правку индекса нитки (ord → индекс; пусто — снятие). */
@@ -579,8 +594,8 @@ export class PlanComponent implements OnInit, OnDestroy {
       try {
         res = await this.api.revalidate(prep.token, this.overrides());
       } catch (err) {
-        if (this.sfFile && err instanceof HttpErrorResponse && err.status === 410) {
-          const fresh = await this.api.prepare(this.selectedCode(), this.sfFile);
+        if (this.resubmit && err instanceof HttpErrorResponse && err.status === 410) {
+          const fresh = await this.resubmit();
           res = await this.api.revalidate(fresh.token, this.overrides());
         } else {
           throw err;
@@ -630,13 +645,35 @@ export class PlanComponent implements OnInit, OnDestroy {
     if (prep) void this.applyConfirm(prep.token, {}, {});
   }
 
+  /** Загрузка плана из файла (двухфазно). */
   private async doUpload(file: File): Promise<void> {
-    this.busyUpload.set(true);
+    await this.runPrepareFlow(() => this.api.prepare(this.selectedCode(), file), this.busyUpload);
+  }
+
+  /** Пересчитать выбранный план на текущей дислокации — без повторной загрузки Excel:
+   *  нитки берутся из сохранённой сетки (id), матч гоняется заново. Дальше — тот же диалог. */
+  async recalc(): Promise<void> {
+    const id = this.selectedPlanId();
+    if (id == null) {
+      this.error.set('Нет выбранного плана для пересчёта.');
+      return;
+    }
+    await this.runPrepareFlow(() => this.api.recalc(id), this.busyRecalc);
+  }
+
+  /** Общий поток загрузки/пересчёта: получить превью, открыть диалог (с.ф./проблемные)
+   *  либо применить сразу. source — источник превью (файл или пересчёт по id); хранится
+   *  в resubmit для прозрачного восстановления, если токен истечёт (410). */
+  private async runPrepareFlow(
+    source: () => Promise<PreparePlanResult>,
+    busy: WritableSignal<boolean>,
+  ): Promise<void> {
+    busy.set(true);
     this.error.set(null);
     this.uploadMsg.set(null);
-    this.sfFile = file; // понадобится для восстановления, если токен истечёт
+    this.resubmit = source;
     try {
-      const prep = await this.api.prepare(this.selectedCode(), file);
+      const prep = await source();
       const needsDialog = (prep.sf?.length ?? 0) > 0 || (prep.problems?.length ?? 0) > 0;
       if (!needsDialog) {
         await this.applyConfirm(prep.token, {}, {}); // ни с.ф., ни проблемных — применяем сразу
@@ -648,9 +685,9 @@ export class PlanComponent implements OnInit, OnDestroy {
       }
     } catch (err) {
       this.error.set(apiErrorMessage(err));
-      this.sfFile = null;
+      this.resubmit = null;
     } finally {
-      this.busyUpload.set(false);
+      busy.set(false);
     }
   }
 
@@ -668,8 +705,8 @@ export class PlanComponent implements OnInit, OnDestroy {
       } catch (err) {
         // Токен истёк/потерян (диалог висел дольше TTL или бэкенд перезапускался):
         // прозрачно пере-подготавливаем тот же файл и повторяем один раз.
-        if (this.sfFile && err instanceof HttpErrorResponse && err.status === 410) {
-          const prep = await this.api.prepare(this.selectedCode(), this.sfFile);
+        if (this.resubmit && err instanceof HttpErrorResponse && err.status === 410) {
+          const prep = await this.resubmit();
           res = await this.api.confirm(prep.token, overrides, selections);
         } else {
           throw err;
