@@ -64,6 +64,7 @@ type LKProcessResult struct {
 	MarkaMissed      int            `json:"marka_missed"`       // marka не нашла груз (кандидаты донорства S2-3c)
 	NaznachOverride  int            `json:"naznach_override"`   // назначение из перестановки naznach_station
 	ForecastComputed int            `json:"forecast_computed"`  // записей с расчётным прибытием RaschMsk (S2-5)
+	ProgComputed     int            `json:"prog_computed"`      // записей с прогнозным прибытием ProgMsk (Stage 4)
 	HistoryInserted  int            `json:"history_inserted"`   // новых рейсов в vagon_history (S2-6)
 	HistoryUpdated   int            `json:"history_updated"`    // обновлённых строк истории по переходам
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
@@ -185,6 +186,10 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	// вагонов в пути (статус < 9). ПОСЛЕ донорства (приёмник берёт станцию донора).
 	forecastN := applyForecast(all, p.intake.dir, cutoff)
 
+	// Stage 4: прогноз прибытия на порт (ProgMsk) по ниткам станции. ПОСЛЕ Stage 3
+	// (нужен RaschMsk) и carry-over (PlanMsk перенесён из актуального снимка).
+	progN := applyStage4(all, p.intake.dir, p.intake.cfg, cutoff)
+
 	// Stage 2 (S2-6, §3.19): запись вех рейса в vagon_history (INSERT новых + точечный
 	// UPDATE по переходам). ДО подмены снимка (actual = пред. снимок для сравнения).
 	var hist HistoryStats
@@ -221,8 +226,8 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		Status6Donors: donors, Status6Matched: donorMatched,
 		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull + mk.FilledPartial,
 		MarkaMissed: mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
-		ForecastComputed: forecastN,
-		HistoryInserted:  hist.Inserted, HistoryUpdated: hist.Updated,
+		ForecastComputed: forecastN, ProgComputed: progN,
+		HistoryInserted: hist.Inserted, HistoryUpdated: hist.Updated,
 	}, nil
 }
 

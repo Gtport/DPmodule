@@ -19,7 +19,8 @@ type ConfigCache struct {
 	byID         map[string]domain.DataSource
 	ordered      []domain.DataSource
 	settings     domain.ClientSettings
-	planProfiles []domain.PlanProfile // настроечные портреты станций плана (plan_profile)
+	planProfiles []domain.PlanProfile          // настроечные портреты станций плана (plan_profile)
+	schedule     map[string][]domain.NitkaSlot // station_code → слоты расписания (nitka_schedule)
 }
 
 func NewConfigCache(repo port.ConfigRepository) *ConfigCache {
@@ -44,10 +45,18 @@ func (c *ConfigCache) Load(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load plan_profile: %w", err)
 	}
+	slots, err := c.repo.LoadNitkaSchedule(ctx)
+	if err != nil {
+		return fmt.Errorf("load nitka_schedule: %w", err)
+	}
 
 	byID := make(map[string]domain.DataSource, len(sources))
 	for _, s := range sources {
 		byID[s.ID] = s
+	}
+	schedule := make(map[string][]domain.NitkaSlot)
+	for _, sl := range slots {
+		schedule[sl.StationCode] = append(schedule[sl.StationCode], sl)
 	}
 
 	c.mu.Lock()
@@ -55,6 +64,7 @@ func (c *ConfigCache) Load(ctx context.Context) error {
 	c.ordered = sources
 	c.settings = settings
 	c.planProfiles = profiles
+	c.schedule = schedule
 	c.mu.Unlock()
 	return nil
 }
@@ -93,6 +103,19 @@ func (c *ConfigCache) PlanProfiles() []domain.PlanProfile {
 	defer c.mu.RUnlock()
 	out := make([]domain.PlanProfile, len(c.planProfiles))
 	copy(out, c.planProfiles)
+	return out
+}
+
+// NitkaSchedule возвращает расписание слотов по станциям (station_code → слоты).
+func (c *ConfigCache) NitkaSchedule() map[string][]domain.NitkaSlot {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make(map[string][]domain.NitkaSlot, len(c.schedule))
+	for st, sl := range c.schedule {
+		cp := make([]domain.NitkaSlot, len(sl))
+		copy(cp, sl)
+		out[st] = cp
+	}
 	return out
 }
 
