@@ -38,7 +38,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 ### `cmd/` — точки входа (исполняемые команды)
 | Файл | За что отвечает |
 |---|---|
-| `cmd/server/main.go` | Основной HTTP-сервис: конфиг → БД → сборка сервера → graceful shutdown (+ Swagger-аннотации). |
+| `cmd/server/main.go` | Основной HTTP-сервис: конфиг → БД → сборка сервера → фоновые воркеры (крон забора АСУ) → graceful shutdown (+ Swagger-аннотации). |
 | `cmd/migrate/main.go` | Применение SQL-миграций БД (golang-migrate; флаги `-dir`/`-dsn`, `up`/`down`). |
 | `cmd/jsonrun/main.go` | Разовый прогон боевых JSON-выгрузок АСУ через весь конвейер дислокации (Stage 1–3, снимок, status9/6, история). |
 | `cmd/planrun/main.go` | Разбор файла плана и печать ниток; с дампом дислокации — ещё и матч (без БД, только печать). |
@@ -136,7 +136,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 |---|---|
 | `lk_upload.go` | Приём ЛК: список staged-файлов + загрузка xlsx (шаг 1). |
 | `lk_process.go` | Запуск шага 2 обработки ЛК (staged-файлы → снимок). |
-| `asu_pull.go` | `POST /dislocation/asu/pull` — триггер автозагрузки АСУ-АСУ (дёргается по cron с JWT сервис-аккаунта). Рассогласование меток → 409, АСУ недоступна → 502. |
+| `asu_pull.go` | `POST /dislocation/asu/pull` — ручной триггер автозагрузки АСУ-АСУ (по расписанию — внутренний крон-воркер, см. `internal/worker`). Рассогласование меток → 409, АСУ недоступна → 502. |
 | `plan_upload.go` | План подвода: загрузка файла (upload/prepare/confirm/touch), получение свежего/по id, история загрузок; гард свежести → 409. |
 | `status.go` | `/dislocation/status` (актуальность из журнала) + `/dislocation/journal?from&to&limit` (журнал обновлений дислокации за период: источник, триггер, кто, когда, вагоны). |
 | `me.go` | `/me`: данные текущего пользователя из JWT-claims. |
@@ -147,12 +147,12 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | Файл | За что отвечает |
 |---|---|
 | `internal/server/server.go` | Сборка `http.Server`: монтаж всех маршрутов и middleware; отдельный сервер метрик. |
-| `internal/config/config.go` | Загрузка конфигурации (файл + секреты из env, значения по умолчанию): HTTP, Postgres, Keycloak, метрики, логи. |
+| `internal/config/config.go` | Загрузка конфигурации (файл + секреты из env, значения по умолчанию): HTTP, Postgres, Keycloak, метрики, логи, ASU (расписание крона забора). |
 | `internal/auth/claims.go` | Модель JWT-claims и ролей, проброс/чтение из context, `HasRole`. |
 | `internal/secret/env.go` | Реализация `SecretSource` поверх переменных окружения. |
 | `internal/clock/clock.go` | Единый источник «сейчас» (московское время; подмена в тестах). |
 | `internal/worker/worker.go` | Интерфейс `Worker` и запуск набора воркеров (логирование, recover). |
-| `internal/worker/cron.go` | `CronWorker` — периодический запуск фоновой задачи по интервалу. |
+| `internal/worker/cron.go` | `CronWorker` — периодический запуск фоновой задачи по интервалу (используется кроном забора АСУ — `asu-pull`). |
 
 ### `pkg/` — переиспользуемые пакеты
 | Файл | За что отвечает |

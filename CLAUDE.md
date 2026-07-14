@@ -116,5 +116,13 @@ Backend, ранний этап. Сделано: seed из `TMPL_backend`; спр
 обогащения (stations, cargo_operations, marka, ports) + `DirectoryCache`
 (загрузка справочников в RAM на старте). Фронтенд: форк `TMPL_frontend` в
 `frontend/`, dev-окружение поднято (systemd user-юнит `dpmodule-frontend`,
-`ng serve` :4200 за nginx `95850.koara.live`) — см. раздел «Фронтенд». Дальше —
-первый перенос сущности (`Dislocation`) как образец слоёв. <обновляй по ходу>
+`ng serve` :4200 за nginx `95850.koara.live`) — см. раздел «Фронтенд».
+
+Интеграция АСУ-АСУ (забор дислокации attis/nmtp):
+- В `main`: исходящий клиент умеет `X-API-Key` (поле `auth_header`) и `insecure_tls`
+  для самоподписанного серта; миграция `000022` (PR #50, влит). Проверено боевым
+  забором attis/nmtp.
+- Ветка `feat/asu-cron` (в работе): фоновый крон забора — внутренний тикер
+  (`worker.CronWorker`) в процессе сервера, интервал из `config.yaml` (`asu.enabled`
+  /`asu.pull_interval`, дефолт 10m); ручка `POST /dislocation/asu/pull` остаётся для
+  ручного запуска. Источники — в таблице `data_source`. <обновляй по ходу>

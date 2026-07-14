@@ -36,3 +36,7 @@ log:
   max_size_mb: 100
   max_backups: 5
   max_age_days: 30
+
+asu:
+  enabled: false        # true → фоновый забор дислокации из АСУ по тикеру
+  pull_interval: 10m    # период забора (источники — в таблице data_source)
