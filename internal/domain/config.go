@@ -48,7 +48,9 @@ type DataSourceConfig struct {
 	Clients       []string `json:"clients,omitempty"`         // коды клиентов провайдера: ["attis","nmtp"]
 	PathTemplate  string   `json:"path_template,omitempty"`   // шаблон пути, {client} → код; дефолт "/{client}/dislocation"
 	Method        string   `json:"method,omitempty"`          // HTTP-метод, дефолт GET
-	AuthSecretKey string   `json:"auth_secret_key,omitempty"` // ключ секрета (Bearer к АСУ) в SecretSource; пусто — без авторизации
+	AuthSecretKey string   `json:"auth_secret_key,omitempty"` // ключ секрета в SecretSource; пусто — без авторизации
+	AuthHeader    string   `json:"auth_header,omitempty"`     // заголовок для секрета (напр. "X-API-Key"); пусто — "Authorization: Bearer <секрет>"
+	InsecureTLS   bool     `json:"insecure_tls,omitempty"`    // не проверять TLS-сертификат провайдера (самоподписанный серт на IP); по умолчанию проверяем
 	TimeoutSecs   int      `json:"timeout_secs,omitempty"`    // таймаут одного запроса, дефолт 30
 }
 
