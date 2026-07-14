@@ -18,6 +18,7 @@ import {
   DashboardOutline, CalendarOutline, ScheduleOutline, DeploymentUnitOutline,
   FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
   SwapOutline, GlobalOutline, BarChartOutline, LineChartOutline, UploadOutline, InboxOutline,
+  ReloadOutline, PrinterOutline, InfoCircleOutline, // тулбар плана подвода
   // Сплошные (fill) — как в GTport; сайдбар диспетчера использует именно их.
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
 } from '@ant-design/icons-angular/icons';
@@ -36,6 +37,7 @@ const icons = [
   DashboardOutline, CalendarOutline, ScheduleOutline, DeploymentUnitOutline,
   FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
   SwapOutline, GlobalOutline, BarChartOutline, LineChartOutline, UploadOutline, InboxOutline,
+  ReloadOutline, PrinterOutline, InfoCircleOutline,
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
   ...CUSTOM_ICONS,
 ];
