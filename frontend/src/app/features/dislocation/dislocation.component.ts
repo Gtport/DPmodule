@@ -14,7 +14,7 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
 
 /**
  * Раздел «Дислокация»: статус-панель системы сверху + компактный приём ЛК
- * (загрузка xlsx → контроль → «Обработать в снимок») + ручной забор из АСУ.
+ * (загрузка xlsx → контроль → «Обновить дислокацию») + ручной забор из АСУ.
  * Двухшаговость ЛК сохранена (диспетчер видит файлы/замечания до пересборки),
  * но подача компактная (тулбар + список), по образцу gtport LKManager2.
  */
@@ -29,17 +29,17 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
     <div class="page">
       <app-plan-status-panel />
 
-      <!-- АСУ: одношаговое обновление снимка (в один клик, как автозабор) -->
+      <!-- АСУ: одношаговое обновление дислокации (в один клик, как автозабор) -->
       <div class="asu-bar">
         <button nz-button nzType="primary" [nzLoading]="busyAsu()" (click)="asuPull()">
           <span nz-icon nzType="cloud-download"></span> Обновить из АСУ
         </button>
-        <span class="asu-hint">В один клик: заберёт из АСУ и сразу пересоберёт снимок — «Обработать» не нужно.</span>
+        <span class="asu-hint">В один клик: заберёт из АСУ и сразу обновит дислокацию — отдельно ничего жать не нужно.</span>
       </div>
 
       <!-- ЛК: ручной двухшаговый приём (загрузка → обработка) -->
       <nz-card nzTitle="Приём ЛК (ручной)" class="card">
-        <p class="hint">Шаг 1 — загрузите xlsx-файлы (по одному на грузополучателя). Шаг 2 — «Обработать в снимок».</p>
+        <p class="hint">Шаг 1 — загрузите xlsx-файлы (по одному на грузополучателя). Шаг 2 — «Обновить дислокацию».</p>
 
         <div class="toolbar">
           <nz-upload nzAccept=".xlsx" [nzMultiple]="true" [nzShowUploadList]="false" [nzBeforeUpload]="beforeUpload">
@@ -67,7 +67,7 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
               [nzLoading]="busyProcess()"
               (click)="process()"
             >
-              Обработать в снимок
+              Обновить дислокацию
             </button>
           }
         </div>
@@ -101,7 +101,7 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
       @if (processResult(); as res) {
         <nz-card class="card">
           <div class="rsum">
-            <b>Снимок обновлён ({{ resultSource() }}):</b>
+            <b>Дислокация обновлена ({{ resultSource() }}):</b>
             <span>вагонов <b>{{ res.count }}</b> (было {{ res.prev_snapshot }})</span>
             <span>· прогноз {{ res.prog_computed }}</span>
             <span>· расч. ход {{ res.forecast_computed }}</span>
