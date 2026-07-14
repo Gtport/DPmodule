@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/Gtport/DPmodule/internal/adapter/asu"
+	"github.com/Gtport/DPmodule/internal/adapter/reference"
 	"github.com/Gtport/DPmodule/internal/config"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/handler"
@@ -39,10 +40,10 @@ func Build(
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
-) (*http.Server, *service.ASUIngest) {
-	// asuIngest отдаём наружу: фоновый крон-воркер забора живёт в main (жизненный
-	// цикл процесса), а сама ручка POST /dislocation/asu/pull остаётся здесь. nil,
-	// если нет БД/справочников (тогда воркер не запускается).
+) (*http.Server, *service.ASUIngest, *service.ReferenceService) {
+	// asuIngest и refSvc отдаём наружу: их фоновые крон-воркеры живут в main
+	// (жизненный цикл процесса), а ручки остаются здесь. asuIngest = nil, если нет
+	// БД/справочников (тогда воркер не запускается).
 	var asuIngest *service.ASUIngest
 
 	if cfg.App.Env != "dev" {
@@ -76,6 +77,13 @@ func Build(
 		api.Use(jwtMW.Middleware())
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
+
+	// Памятки на подачу/уборку (внешний провайдер, тот же что дислокация). Не зависит
+	// от БД — на этом этапе данные только логируются, не сохраняются. Ручной забор по
+	// номеру и ручной триггер инкремента — здесь; крон-инкремент запускает main.
+	refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS, cfg.Reference.AuthSecretKey, secret.NewEnvSource())
+	refSvc := service.NewReferenceService(refClient, cfg.Reference.Clients, cfg.Reference.PullInterval, log)
+	handler.NewReferenceHandler(refSvc).RegisterRoutes(api)
 
 	// Приём файлов ЛК (шаг 1) — только если справочники и настроечная таблица
 	// загружены (требует БД). Формат — из ConfigCache, «чей файл» (ОКПО→терминалы)
@@ -120,7 +128,7 @@ func Build(
 		Handler:      router,
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
-	}, asuIngest
+	}, asuIngest, refSvc
 }
 
 // NewMetricsServer returns a minimal http.Server that serves /metrics only,

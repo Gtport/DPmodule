@@ -40,3 +40,11 @@ log:
 asu:
   enabled: false        # true → фоновый забор дислокации из АСУ по тикеру
   pull_interval: 10m    # период забора (источники — в таблице data_source)
+
+reference:              # памятки на подачу/уборку (тот же провайдер, что дислокация)
+  enabled: false        # true → фоновый крон-инкремент по тикеру
+  base_url: ""          # заполняет DevOps (тот же адрес, что у АСУ)
+  insecure_tls: false   # true для самоподписанного серта провайдера
+  pull_interval: 1h     # период крон-инкремента
+  clients: [attis]      # у провайдера памятки пока только для attis (nmtp → 404); добавить, когда появится
+  # auth_secret_key по умолчанию ASU_TOKEN (env) — ключ X-API-Key того же провайдера

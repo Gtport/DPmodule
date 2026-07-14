@@ -9,14 +9,27 @@ import (
 )
 
 type Config struct {
-	App      App      `yaml:"app"`
-	HTTP     HTTP     `yaml:"http"`
-	Metrics  Metrics  `yaml:"metrics"`
-	Postgres Postgres `yaml:"postgres"`
-	Keycloak Keycloak `yaml:"keycloak"`
-	Log      Log      `yaml:"log"`
-	Storage  Storage  `yaml:"storage"`
-	ASU      ASU      `yaml:"asu"`
+	App       App       `yaml:"app"`
+	HTTP      HTTP      `yaml:"http"`
+	Metrics   Metrics   `yaml:"metrics"`
+	Postgres  Postgres  `yaml:"postgres"`
+	Keycloak  Keycloak  `yaml:"keycloak"`
+	Log       Log       `yaml:"log"`
+	Storage   Storage   `yaml:"storage"`
+	ASU       ASU       `yaml:"asu"`
+	Reference Reference `yaml:"reference"`
+}
+
+// Reference — забор памяток на подачу/уборку из внешнего сервиса (тот же провайдер,
+// что дислокация: base_url и ключ те же). Крон-инкремент раз в час + ручной забор по
+// номеру. На этом этапе данные только логируются, в БД не кладутся.
+type Reference struct {
+	Enabled       bool          `yaml:"enabled"`         // включить фоновый забор обновлений по тикеру
+	BaseURL       string        `yaml:"base_url"`        // базовый URL провайдера (тот же, что у АСУ)
+	InsecureTLS   bool          `yaml:"insecure_tls"`    // не проверять серт (самоподписанный на IP)
+	PullInterval  time.Duration `yaml:"pull_interval"`   // период крон-инкремента; дефолт 1h
+	Clients       []string      `yaml:"clients"`         // коды клиентов провайдера: ["attis","nmtp"]
+	AuthSecretKey string        `yaml:"auth_secret_key"` // env-ключ X-API-Key; дефолт ASU_TOKEN (тот же провайдер)
 }
 
 // ASU — фоновый забор дислокации из АСУ-АСУ (внутренний крон). Сами источники
@@ -188,6 +201,12 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.ASU.PullInterval == 0 {
 		cfg.ASU.PullInterval = 10 * time.Minute
+	}
+	if cfg.Reference.PullInterval == 0 {
+		cfg.Reference.PullInterval = time.Hour
+	}
+	if cfg.Reference.AuthSecretKey == "" {
+		cfg.Reference.AuthSecretKey = "ASU_TOKEN" // тот же провайдер/ключ, что и АСУ
 	}
 }
 

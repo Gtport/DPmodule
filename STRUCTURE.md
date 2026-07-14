@@ -66,12 +66,13 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `config.go` | `ConfigRepository`: загрузка настроечной таблицы (`data_source`, `client_settings`, `plan_profile`). |
 | `status9.go` | `Status9Repository`: кандидаты в прибытие (статусы 8/9), сохранение операторских правок. |
 | `status6.go` | `Status6Repository`: доноры перегруза (наполнение при статусе 6, удаление после использования). |
-| `external.go` | Внешние интеграции: `SecretSource` (секреты — env сейчас, Vault позже) и `ASUClient` (АСУ, pull/push). |
+| `external.go` | Внешние интеграции: `SecretSource` (секреты — env сейчас, Vault позже), `ASUClient` (АСУ, pull/push) и `ReferenceClient` (памятки: по номеру / инкремент). |
 
 ### `internal/adapter/` — адаптеры внешних интеграций
 | Файл | За что отвечает |
 |---|---|
 | `asu/http_client.go` | HTTP-реализация `port.ASUClient`: GET к сервису АСУ (`<base_url>/<client>/dislocation`), секрет из `SecretSource` в заголовке `auth_header` (напр. `X-API-Key`; пусто → `Bearer`), опция `insecure_tls` (самоподписанный серт). Сырые байты; разбор — в `parser.JSONParser`. |
+| `reference/http_client.go` | HTTP-реализация `port.ReferenceClient`: забор памяток у того же провайдера (`/reference?number=` и `/reference/update/{client}?last_update=`), `X-API-Key` из `SecretSource`, `insecure_tls`. Сырые байты (разбор пока не подключён). |
 
 ### `internal/service/` — бизнес-логика
 | Файл | За что отвечает |
@@ -91,6 +92,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `lk_status.go` | Контроль приёма ЛК: сводка staged-файлов, замечания, блокирующие ошибки для UI/шага 2. |
 | `lk_process.go` | **Приём ЛК, шаг 2**: парсинг принятых файлов и атомарная замена снимка дислокации (мьютекс сериализует пересборку с автозагрузкой АСУ). |
 | `asu_ingest.go` | **Автозагрузка АСУ-АСУ** (`api_pull`): забор всех клиентов провайдера за проход, гард рассогласования меток формирования (порог `max_source_skew_minutes`), общий конвейер `ProcessRecords` → снимок; триггер журнала `scheduled`. |
+| `reference.go` | **Памятки на подачу/уборку** (`ReferenceService`): забор по номеру и крон-инкремент по клиентам (`last_update = now − interval`). Клиенты независимы (ошибка одного не рушит проход). ЭТАП-ЗАГЛУШКА: данные логируются, **не сохраняются** и не разбираются. |
 | `plan_process.go` | `PlanProcessor`: приём файла плана, матч ниток с вагонами, простановка планового прибытия; чтение планов для фронта. |
 | `plan_sf_process.go` | Загрузка плана с человеко-в-цикле: `Prepare` (кандидаты с.ф. + проблемные нитки без вагонов), `Revalidate` (сухой пересчёт с ручными правками индексов, снимок не трогаем), `Confirm` (правки + выбор групп с.ф.), `Touch`, `PrepareRecalc` (пересчёт по сохранённой сетке на текущей дислокации — нитки восстанавливаются из БД, без Excel); pending-токены (`peek`/`take`), ре-валидация против текущего снимка. Ручная правка = `IndexPp/IsSf` на копии ниток, движок `planmatch` не тронут. |
 | `journal.go` | `Journal` — запись единого журнала событий (`disl_update`/`plan_upload`): «кто» из JWT в контексте, «когда» из `clock.Now()`, `doc_ts` — время из документа; чтение последнего обновления для гарда/панели; best-effort, nil-safe. |
@@ -139,6 +141,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `lk_upload.go` | Приём ЛК: список staged-файлов + загрузка xlsx (шаг 1). |
 | `lk_process.go` | Запуск шага 2 обработки ЛК (staged-файлы → снимок). |
 | `asu_pull.go` | `POST /dislocation/asu/pull` — ручной триггер автозагрузки АСУ-АСУ (по расписанию — внутренний крон-воркер, см. `internal/worker`). Рассогласование меток → 409, АСУ недоступна → 502. |
+| `reference.go` | Памятки: `GET /reference?number=` (по номеру) и `POST /reference/update/pull` (ручной триггер инкремента; по расписанию — крон-воркер). Провайдер недоступен → 502. |
 | `plan_upload.go` | План подвода: загрузка файла (upload/prepare/confirm/touch), получение свежего/по id, история загрузок; гард свежести → 409. |
 | `status.go` | `/dislocation/status` (актуальность из журнала) + `/dislocation/journal?from&to&limit` (журнал обновлений дислокации за период: источник, триггер, кто, когда, вагоны). |
 | `me.go` | `/me`: данные текущего пользователя из JWT-claims. |
@@ -149,7 +152,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | Файл | За что отвечает |
 |---|---|
 | `internal/server/server.go` | Сборка `http.Server`: монтаж всех маршрутов и middleware; отдельный сервер метрик. |
-| `internal/config/config.go` | Загрузка конфигурации (файл + секреты из env, значения по умолчанию): HTTP, Postgres, Keycloak, метрики, логи, ASU (расписание крона забора). |
+| `internal/config/config.go` | Загрузка конфигурации (файл + секреты из env, значения по умолчанию): HTTP, Postgres, Keycloak, метрики, логи, ASU и Reference (расписание кронов забора). |
 | `internal/auth/claims.go` | Модель JWT-claims и ролей, проброс/чтение из context, `HasRole`. |
 | `internal/secret/env.go` | Реализация `SecretSource` поверх переменных окружения. |
 | `internal/clock/clock.go` | Единый источник «сейчас» (московское время; подмена в тестах). |
