@@ -180,7 +180,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, planRepo, journalRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, planRepo, journalRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
@@ -188,10 +188,13 @@ func run() error {
 	}
 
 	// -- фоновые воркеры --
-	// Крон забора дислокации из АСУ: тикер в процессе сервера (RAM-кэши обновляются
-	// здесь же). Останавливается отменой bgCtx при shutdown. Источники — в data_source;
-	// если ни одного включённого нет, Pull вернёт ErrNoASUSource — тихо пропускаем.
+	// Крон-тикеры в процессе сервера (RAM-кэши/интеграции работают здесь же).
+	// Останавливаются отменой bgCtx при shutdown.
 	bgCtx, bgCancel := context.WithCancel(context.Background())
+	var workers []worker.Worker
+
+	// Забор дислокации из АСУ. Источники — в data_source; если включённых нет,
+	// Pull вернёт ErrNoASUSource — тихо пропускаем.
 	if cfg.ASU.Enabled && asuIngest != nil {
 		job := func(ctx context.Context) error {
 			_, err := asuIngest.Pull(ctx)
@@ -201,9 +204,17 @@ func run() error {
 			}
 			return err
 		}
-		w := worker.NewCronWorker("asu-pull", cfg.ASU.PullInterval, log, job)
-		go worker.Run(bgCtx, log, w)
-		log.Info("asu-pull worker started", zap.Duration("interval", cfg.ASU.PullInterval))
+		workers = append(workers, worker.NewCronWorker("asu-pull", cfg.ASU.PullInterval, log, job))
+	}
+
+	// Инкремент памяток на подачу/уборку (пока только лог, без сохранения).
+	if cfg.Reference.Enabled && refSvc != nil {
+		workers = append(workers, worker.NewCronWorker("reference-update", cfg.Reference.PullInterval, log, refSvc.PullUpdates))
+	}
+
+	if len(workers) > 0 {
+		go worker.Run(bgCtx, log, workers...)
+		log.Info("background workers started", zap.Int("count", len(workers)))
 	}
 
 	// -- graceful shutdown --

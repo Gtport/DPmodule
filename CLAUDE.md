@@ -118,11 +118,13 @@ Backend, ранний этап. Сделано: seed из `TMPL_backend`; спр
 `frontend/`, dev-окружение поднято (systemd user-юнит `dpmodule-frontend`,
 `ng serve` :4200 за nginx `95850.koara.live`) — см. раздел «Фронтенд».
 
-Интеграция АСУ-АСУ (забор дислокации attis/nmtp):
-- В `main`: исходящий клиент умеет `X-API-Key` (поле `auth_header`) и `insecure_tls`
-  для самоподписанного серта; миграция `000022` (PR #50, влит). Проверено боевым
-  забором attis/nmtp.
-- Ветка `feat/asu-cron` (в работе): фоновый крон забора — внутренний тикер
-  (`worker.CronWorker`) в процессе сервера, интервал из `config.yaml` (`asu.enabled`
-  /`asu.pull_interval`, дефолт 10m); ручка `POST /dislocation/asu/pull` остаётся для
-  ручного запуска. Источники — в таблице `data_source`. <обновляй по ходу>
+Интеграции с внешним провайдером (тот же адрес, `X-API-Key`, самоподписанный TLS):
+- **Дислокация АСУ-АСУ** (в `main`): исходящий клиент с `auth_header`/`insecure_tls`
+  (миграция `000022`, PR #50); фоновый крон-тикер `worker.CronWorker` (config `asu.*`,
+  дефолт 10m, PR #52); ручка `POST /dislocation/asu/pull`. Проверено боевым забором.
+- **Памятки на подачу/уборку** (ветка `feat/reference-pull`, в работе): забор по номеру
+  `GET /reference?number=` и крон-инкремент `POST /reference/update/pull`
+  (config `reference.*`, дефолт 1h). Клиент — `internal/adapter/reference`. Данные пока
+  **логируются, не сохраняются и не разбираются** (заглушка под будущее). Провайдер
+  отдаёт памятки только для `attis` (nmtp → 404), проход толерантен к клиентам. Боевой
+  smoke обеих ручек пройден. <обновляй по ходу>
