@@ -6,6 +6,7 @@ package asu
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,19 +22,22 @@ const (
 	defaultTimeout      = 30 * time.Second
 )
 
-// HTTPClient реализует port.ASUClient: GET к сервису АСУ, авторизация Bearer-токеном
-// из SecretSource (ключ — auth_secret_key источника; пусто → без авторизации).
+// HTTPClient реализует port.ASUClient: GET к сервису АСУ, авторизация секретом из
+// SecretSource (ключ — auth_secret_key источника; пусто → без авторизации). Секрет
+// уходит в заголовке auth_header (напр. "X-API-Key"); пустой auth_header → в
+// "Authorization: Bearer <секрет>".
 type HTTPClient struct {
 	baseURL      string
 	pathTemplate string
 	method       string
 	authKey      string
+	authHeader   string
 	secrets      port.SecretSource
 	hc           *http.Client
 }
 
 // NewHTTPClient собирает клиент из config источника (base_url/path_template/method/
-// timeout_secs/auth_secret_key) и SecretSource для токена к АСУ.
+// timeout_secs/auth_secret_key/auth_header/insecure_tls) и SecretSource для токена к АСУ.
 func NewHTTPClient(cfg domain.DataSourceConfig, secrets port.SecretSource) *HTTPClient {
 	pathTemplate := cfg.PathTemplate
 	if pathTemplate == "" {
@@ -47,13 +51,20 @@ func NewHTTPClient(cfg domain.DataSourceConfig, secrets port.SecretSource) *HTTP
 	if cfg.TimeoutSecs > 0 {
 		timeout = time.Duration(cfg.TimeoutSecs) * time.Second
 	}
+	hc := &http.Client{Timeout: timeout}
+	// insecure_tls: провайдер отдаёт самоподписанный серт (напр. на IP:8443) —
+	// отключаем проверку цепочки ТОЛЬКО для этого источника (эквивалент curl -k).
+	if cfg.InsecureTLS {
+		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	}
 	return &HTTPClient{
 		baseURL:      strings.TrimRight(cfg.BaseURL, "/"),
 		pathTemplate: pathTemplate,
 		method:       method,
 		authKey:      cfg.AuthSecretKey,
+		authHeader:   cfg.AuthHeader,
 		secrets:      secrets,
-		hc:           &http.Client{Timeout: timeout},
+		hc:           hc,
 	}
 }
 
@@ -71,7 +82,11 @@ func (c *HTTPClient) Pull(ctx context.Context, resource string) ([]byte, error) 
 		if err != nil {
 			return nil, fmt.Errorf("АСУ %q: секрет %q: %w", resource, c.authKey, err)
 		}
-		req.Header.Set("Authorization", "Bearer "+token)
+		if c.authHeader != "" {
+			req.Header.Set(c.authHeader, token) // напр. X-API-Key: <ключ>
+		} else {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := c.hc.Do(req)

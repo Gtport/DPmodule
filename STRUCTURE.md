@@ -70,7 +70,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 ### `internal/adapter/` — адаптеры внешних интеграций
 | Файл | За что отвечает |
 |---|---|
-| `asu/http_client.go` | HTTP-реализация `port.ASUClient`: GET к сервису АСУ (`<base_url>/<client>/dislocation`), Bearer-токен из `SecretSource`. Сырые байты; разбор — в `parser.JSONParser`. |
+| `asu/http_client.go` | HTTP-реализация `port.ASUClient`: GET к сервису АСУ (`<base_url>/<client>/dislocation`), секрет из `SecretSource` в заголовке `auth_header` (напр. `X-API-Key`; пусто → `Bearer`), опция `insecure_tls` (самоподписанный серт). Сырые байты; разбор — в `parser.JSONParser`. |
 
 ### `internal/service/` — бизнес-логика
 | Файл | За что отвечает |
