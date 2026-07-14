@@ -5,7 +5,7 @@ import { PlanApiService, DislTermStatus, PlanStatus, SystemStatus } from './plan
 
 /** Понятные подписи станций планов и способов обновления дислокации для панели. */
 const PLAN_LABELS: Record<string, string> = { ma: 'ПП Мыс', nk: 'ПП Находка' };
-const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ' };
+const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ', asu: 'АСУ' };
 
 /**
  * Статус-панель актуальности (по образцу gtport StatusPanel): способ и время
