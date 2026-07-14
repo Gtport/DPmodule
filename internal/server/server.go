@@ -39,7 +39,12 @@ func Build(
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
-) *http.Server {
+) (*http.Server, *service.ASUIngest) {
+	// asuIngest отдаём наружу: фоновый крон-воркер забора живёт в main (жизненный
+	// цикл процесса), а сама ручка POST /dislocation/asu/pull остаётся здесь. nil,
+	// если нет БД/справочников (тогда воркер не запускается).
+	var asuIngest *service.ASUIngest
+
 	if cfg.App.Env != "dev" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -96,11 +101,12 @@ func Build(
 			handler.NewPlanUploadHandler(planProc).RegisterRoutes(api)
 
 			// Автозагрузка дислокации из АСУ-АСУ (ingest=api_pull): забор всех клиентов,
-			// сверка меток формирования и пересборка снимка тем же конвейером (proc). Дёргается
-			// по cron с JWT сервис-аккаунта. Транспорт — HTTP-адаптер, токен к АСУ из env.
+			// сверка меток формирования и пересборка снимка тем же конвейером (proc). По
+			// расписанию — внутренний крон-воркер (см. main.go); ручной триггер — ручка
+			// POST /dislocation/asu/pull. Транспорт — HTTP-адаптер, ключ к АСУ из env.
 			secrets := secret.NewEnvSource()
 			asuFactory := func(dc domain.DataSourceConfig) port.ASUClient { return asu.NewHTTPClient(dc, secrets) }
-			asuIngest := service.NewASUIngest(cfgCache, asuFactory, proc, log)
+			asuIngest = service.NewASUIngest(cfgCache, asuFactory, proc, log)
 			asuIngest.SetJournal(journal)
 			handler.NewASUPullHandler(asuIngest).RegisterRoutes(api)
 
@@ -114,7 +120,7 @@ func Build(
 		Handler:      router,
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
-	}
+	}, asuIngest
 }
 
 // NewMetricsServer returns a minimal http.Server that serves /metrics only,

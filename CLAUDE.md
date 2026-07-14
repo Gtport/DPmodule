@@ -118,11 +118,11 @@ Backend, ранний этап. Сделано: seed из `TMPL_backend`; спр
 `frontend/`, dev-окружение поднято (systemd user-юнит `dpmodule-frontend`,
 `ng serve` :4200 за nginx `95850.koara.live`) — см. раздел «Фронтенд».
 
-Последнее (ветка `feat/disl-apikey-auth` запушена, PR ещё не открыт): исходящий
-клиент АСУ (`internal/adapter/asu/http_client.go`) научился слать секрет в
-произвольном заголовке (`auth_header`, напр. `X-API-Key`) вместо
-`Authorization: Bearer` и опционально пропускать самоподписанный TLS-серт
-(`insecure_tls`); миграция `000022` прописывает `auth_header:"X-API-Key"`
-источнику `asu`. Проверено боевым забором дислокации attis (758) и nmtp (3861)
-по реальному провайдеру. Активирует владелец после merge: `base_url`+`insecure_tls`
-+`enabled` в БД, `ASU_TOKEN` в env. <обновляй по ходу>
+Интеграция АСУ-АСУ (забор дислокации attis/nmtp):
+- В `main`: исходящий клиент умеет `X-API-Key` (поле `auth_header`) и `insecure_tls`
+  для самоподписанного серта; миграция `000022` (PR #50, влит). Проверено боевым
+  забором attis/nmtp.
+- Ветка `feat/asu-cron` (в работе): фоновый крон забора — внутренний тикер
+  (`worker.CronWorker`) в процессе сервера, интервал из `config.yaml` (`asu.enabled`
+  /`asu.pull_interval`, дефолт 10m); ручка `POST /dislocation/asu/pull` остаётся для
+  ручного запуска. Источники — в таблице `data_source`. <обновляй по ходу>

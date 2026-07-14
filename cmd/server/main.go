@@ -31,6 +31,7 @@ import (
 	gormrepo "github.com/Gtport/DPmodule/internal/repository/gorm"
 	"github.com/Gtport/DPmodule/internal/server"
 	"github.com/Gtport/DPmodule/internal/service"
+	"github.com/Gtport/DPmodule/internal/worker"
 	"github.com/Gtport/DPmodule/pkg/logger"
 	"github.com/Gtport/DPmodule/pkg/middleware"
 )
@@ -179,11 +180,30 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, planRepo, journalRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, planRepo, journalRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
 		metricsSrv = server.NewMetricsServer(cfg.HTTP.Host, cfg.Metrics.Port)
+	}
+
+	// -- фоновые воркеры --
+	// Крон забора дислокации из АСУ: тикер в процессе сервера (RAM-кэши обновляются
+	// здесь же). Останавливается отменой bgCtx при shutdown. Источники — в data_source;
+	// если ни одного включённого нет, Pull вернёт ErrNoASUSource — тихо пропускаем.
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	if cfg.ASU.Enabled && asuIngest != nil {
+		job := func(ctx context.Context) error {
+			_, err := asuIngest.Pull(ctx)
+			if errors.Is(err, service.ErrNoASUSource) {
+				log.Debug("asu-pull: источник не настроен/выключен — пропуск")
+				return nil
+			}
+			return err
+		}
+		w := worker.NewCronWorker("asu-pull", cfg.ASU.PullInterval, log, job)
+		go worker.Run(bgCtx, log, w)
+		log.Info("asu-pull worker started", zap.Duration("interval", cfg.ASU.PullInterval))
 	}
 
 	// -- graceful shutdown --
@@ -208,6 +228,7 @@ func run() error {
 
 	<-quit
 	log.Info("shutting down...")
+	bgCancel() // останавливаем фоновые воркеры (крон АСУ)
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 	defer cancel()

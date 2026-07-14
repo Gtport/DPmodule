@@ -16,6 +16,16 @@ type Config struct {
 	Keycloak Keycloak `yaml:"keycloak"`
 	Log      Log      `yaml:"log"`
 	Storage  Storage  `yaml:"storage"`
+	ASU      ASU      `yaml:"asu"`
+}
+
+// ASU — фоновый забор дислокации из АСУ-АСУ (внутренний крон). Сами источники
+// (base_url/clients/auth) живут в настроечной таблице data_source; здесь только
+// расписание тикера. Enabled=false → воркер не запускается (забор только вручную
+// через POST /dislocation/asu/pull).
+type ASU struct {
+	Enabled      bool          `yaml:"enabled"`       // включить фоновый забор по тикеру
+	PullInterval time.Duration `yaml:"pull_interval"` // период забора; дефолт 10m
 }
 
 // Storage — локальное файловое хранилище на сервере (вне git). Загруженные
@@ -175,6 +185,9 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Storage.BaseDir == "" {
 		cfg.Storage.BaseDir = "_data"
+	}
+	if cfg.ASU.PullInterval == 0 {
+		cfg.ASU.PullInterval = 10 * time.Minute
 	}
 }
 
