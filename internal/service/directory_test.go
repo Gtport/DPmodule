@@ -15,6 +15,7 @@ import (
 type stubDirRepo struct {
 	stations   []domain.Station
 	ops        []domain.CargoOperation
+	cargo      []domain.Cargo
 	marka      []domain.Marka
 	ports      []domain.Ports
 	routeSpeed []domain.RouteSpeed
@@ -27,6 +28,7 @@ func (s *stubDirRepo) LoadStations(context.Context) ([]domain.Station, error) {
 func (s *stubDirRepo) LoadCargoOperations(context.Context) ([]domain.CargoOperation, error) {
 	return s.ops, nil
 }
+func (s *stubDirRepo) LoadCargo(context.Context) ([]domain.Cargo, error) { return s.cargo, nil }
 func (s *stubDirRepo) LoadMarka(context.Context) ([]domain.Marka, error) { return s.marka, nil }
 func (s *stubDirRepo) LoadPorts(context.Context) ([]domain.Ports, error) { return s.ports, nil }
 func (s *stubDirRepo) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {
@@ -74,6 +76,7 @@ func TestDirectoryCache_LoadAndLookup(t *testing.T) {
 	repo := &stubDirRepo{
 		stations: []domain.Station{{Kod: 63710, Kod4: 6371, Name: "ХИМИЧЕСКАЯ", Road: "ВСЖД"}},
 		ops:      []domain.CargoOperation{{Kod: 1, Oper: "ПОГРУЗКА", OperS: "Погр"}},
+		cargo:    []domain.Cargo{{Kod: 161113, Name: "УГОЛЬ КАМЕННЫЙ МАРКИ Г-ГАЗОВЫЙ", CargoGroup: "УГОЛЬ", CargoS: "УГОЛЬ Г", CargoSms: "Г"}},
 		marka: []domain.Marka{
 			{Okpo: 1, StationKod: 2, CargoKod: 3, Shipper: "A"},
 			{Okpo: 1, StationKod: 2, CargoKod: 3, Shipper: "B"}, // тот же ключ → срез из 2
@@ -92,13 +95,24 @@ func TestDirectoryCache_LoadAndLookup(t *testing.T) {
 	c := service.NewDirectoryCache(repo)
 	require.NoError(t, c.Load(context.Background()))
 
-	st, cargoOps, marka, ports, routeSpeed, naznach := c.Counts()
+	st, cargoOps, cargo, marka, ports, routeSpeed, naznach := c.Counts()
 	assert.Equal(t, 1, st)
 	assert.Equal(t, 1, cargoOps)
+	assert.Equal(t, 1, cargo)
 	assert.Equal(t, 1, marka) // 1 ключ (две записи под ним)
 	assert.Equal(t, 1, ports)
 	assert.Equal(t, 2, routeSpeed) // 2 профиля: '*' и 'УЛАК'
 	assert.Equal(t, 0, naznach)    // перестановок не задано
+
+	t.Run("cargo by kod", func(t *testing.T) {
+		g, ok := c.GetCargoByKod(161113)
+		require.True(t, ok)
+		assert.Equal(t, "УГОЛЬ", g.CargoGroup)
+		assert.Equal(t, "УГОЛЬ Г", g.CargoS)
+		assert.Equal(t, "Г", g.CargoSms)
+		_, ok = c.GetCargoByKod(999999)
+		assert.False(t, ok)
+	})
 
 	t.Run("station by kod / kod4", func(t *testing.T) {
 		s, ok := c.GetStationByKod(63710)

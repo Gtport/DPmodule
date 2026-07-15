@@ -58,6 +58,7 @@ type s4Dir struct{ ports []domain.Ports }
 
 func (s4Dir) LoadStations(context.Context) ([]domain.Station, error)               { return nil, nil }
 func (s4Dir) LoadCargoOperations(context.Context) ([]domain.CargoOperation, error) { return nil, nil }
+func (s4Dir) LoadCargo(context.Context) ([]domain.Cargo, error)                    { return nil, nil }
 func (s4Dir) LoadMarka(context.Context) ([]domain.Marka, error)                    { return nil, nil }
 func (s s4Dir) LoadPorts(context.Context) ([]domain.Ports, error)                  { return s.ports, nil }
 func (s4Dir) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error)          { return nil, nil }
