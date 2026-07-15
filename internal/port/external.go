@@ -16,9 +16,10 @@ type ASUClient interface {
 }
 
 // ReferenceClient — забор памяток на подачу/уборку у внешнего сервиса (тот же
-// провайдер, что дислокация). ByNumber — по номеру памятки; Update — инкремент по
-// клиенту с курсором last_update. Возвращает сырые байты ответа; разбор — выше.
+// провайдер, что дислокация). Оба маршрута адресуются по клиенту: ByNumber — памятка
+// по номеру, Update — инкремент с курсором last_update. Возвращает сырые байты
+// ответа; разбор — выше.
 type ReferenceClient interface {
-	ByNumber(ctx context.Context, number string) ([]byte, error)
+	ByNumber(ctx context.Context, client, number string) ([]byte, error)
 	Update(ctx context.Context, client, lastUpdate string) ([]byte, error)
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -31,15 +32,23 @@ func NewReferenceService(cl port.ReferenceClient, clients []string, interval tim
 	return &ReferenceService{cl: cl, clients: clients, interval: interval, log: log}
 }
 
-// FetchByNumber — ручной забор памятки по номеру. Пока: получить, залогировать
-// размер, вернуть его. Не сохраняем.
-func (s *ReferenceService) FetchByNumber(ctx context.Context, number string) (int, error) {
-	body, err := s.cl.ByNumber(ctx, number)
+// FetchByNumber — ручной забор памятки по номеру у конкретного клиента. Пустой
+// client → первый из настроенных (reference.clients). Номер уникален в пределах
+// клиента: у чужого клиента тот же номер даёт 404.
+// Пока: получить, залогировать размер, вернуть его. Не сохраняем.
+func (s *ReferenceService) FetchByNumber(ctx context.Context, client, number string) (int, error) {
+	if client == "" {
+		if len(s.clients) == 0 {
+			return 0, errors.New("reference: клиент не задан и список reference.clients пуст")
+		}
+		client = s.clients[0]
+	}
+	body, err := s.cl.ByNumber(ctx, client, number)
 	if err != nil {
 		return 0, err
 	}
 	s.log.Info("reference: памятка по номеру получена (не сохраняем)",
-		zap.String("number", number), zap.Int("bytes", len(body)))
+		zap.String("client", client), zap.String("number", number), zap.Int("bytes", len(body)))
 	return len(body), nil
 }
 
