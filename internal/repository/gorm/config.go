@@ -47,6 +47,7 @@ type planProfileModel struct {
 	MatchRequiresNaznach bool    `gorm:"column:match_requires_naznach"`
 	OurTerminals         string  `gorm:"column:our_terminals"` // jsonb → text
 	SlotToleranceH       float64 `gorm:"column:slot_tolerance_h"`
+	DistributionMethod   string  `gorm:"column:distribution_method"`
 }
 
 func (planProfileModel) TableName() string { return "plan_profile" }
@@ -135,7 +136,7 @@ func (r *ConfigRepository) LoadPlanProfiles(ctx context.Context) ([]domain.PlanP
 			StationCode: m.StationCode, StationName: m.StationName, Mode: m.Mode,
 			PlanCode: planCode, CorrectionCoef: m.CorrectionCoef,
 			MatchRequiresNaznach: m.MatchRequiresNaznach, OurTerminals: terms,
-			SlotToleranceH: m.SlotToleranceH,
+			SlotToleranceH: m.SlotToleranceH, DistributionMethod: m.DistributionMethod,
 		}
 	}
 	return out, nil

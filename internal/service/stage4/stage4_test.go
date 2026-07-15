@@ -97,3 +97,44 @@ func TestNextEighteen(t *testing.T) {
 	// нулевой ref → от now.
 	assert.Equal(t, tm(2026, 7, 14, 18, 0), nextEighteen(time.Time{}, tm(2026, 7, 14, 10, 0)))
 }
+
+// расписание станции U: 02:00, 08:00, 14:00, 20:00 (каждые 6ч).
+var schedU = map[string][]HM{"U": {{2, 0}, {8, 0}, {14, 0}, {20, 0}}}
+
+// staircaseCfg — допуск 6ч и метод staircase на станции U (профиль УТ-1).
+func staircaseCfg() Config {
+	c := baseCfg()
+	c.Tolerance = map[string]time.Duration{"U": 6 * time.Hour}
+	c.Method = map[string]string{"U": MethodStaircase}
+	return c
+}
+
+// Лестница: первый поезд НЕ раньше стартовой нитки — допуск (−6ч) не тянет ниже старта.
+// Контраст: excel-метод на том же входе ставит поезд ДО стартовой нитки (это и был баг УТ-1).
+func TestDistribute_StaircaseFirstNotBeforeStart(t *testing.T) {
+	// Now 10:00 → старт = ближайшие 18:00 = 14.07 18:00. Rasch задолго до старта, интервал ~0.
+	tr := []Train{{Key: "A", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 5, 0)), VagonCount: 30, Pc: 100000}}
+	start := tm(2026, 7, 14, 18, 0)
+
+	got := Distribute(tr, schedU, staircaseCfg())["A"]
+	assert.Equal(t, tm(2026, 7, 14, 20, 0), got)
+	assert.False(t, got.Before(start), "первый поезд не раньше стартовой нитки")
+
+	// excel (тот же вход): допуск съедает старт → нитка ДО старта (14:00).
+	ce := staircaseCfg()
+	ce.Method = map[string]string{"U": MethodExcel}
+	assert.Equal(t, tm(2026, 7, 14, 14, 0), Distribute(tr, schedU, ce)["A"],
+		"excel-метод (для контраста) ставит поезд до стартовой нитки")
+}
+
+// Лестница ре-якорит currentTime на НАЗНАЧЕННУЮ нитку: B не раньше нитки A (20:00);
+// 20:00 занят → B уезжает на следующие сутки (02:00), хотя его Rasch ранний.
+func TestDistribute_StaircaseReanchorsOnSlot(t *testing.T) {
+	tr := []Train{
+		{Key: "A", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 5, 0)), VagonCount: 30, Pc: 100000},
+		{Key: "B", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 6, 0)), VagonCount: 30, Pc: 100000},
+	}
+	out := Distribute(tr, schedU, staircaseCfg())
+	assert.Equal(t, tm(2026, 7, 14, 20, 0), out["A"])
+	assert.Equal(t, tm(2026, 7, 15, 2, 0), out["B"], "ре-якорь на нитку A → B на следующие сутки")
+}

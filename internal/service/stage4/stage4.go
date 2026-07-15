@@ -14,6 +14,18 @@ import (
 	"time"
 )
 
+// Методы раскладки беспланных поездов по слотам станции (перенос двух алгоритмов
+// эталона GTport). Метод задаётся профилем станции (plan_profile.distribution_method).
+const (
+	// MethodExcel — общий пул + глобальная сортировка по Rasch + ближайшая свободная
+	// нитка (distributeAEGUT2ByExcelMethod эталона). АЭ/ГУТ-2. Значение по умолчанию.
+	MethodExcel = "excel"
+	// MethodStaircase — последовательная «лестница» (distributeGroupWithInterval эталона):
+	// currentTime ре-якорится на НАЗНАЧЕННУЮ нитку, следующий поезд ≥ currentTime +
+	// интервал; допуск живёт ТОЛЬКО в Rasch-слагаемом, стартовая нитка — жёсткий низ. УТ-1.
+	MethodStaircase = "staircase"
+)
+
 // HM — слот расписания (час:минута суток). Слоты повторяются каждые сутки.
 type HM struct {
 	H, M int
@@ -37,6 +49,7 @@ type Config struct {
 	MinVagonBros int                      // порог для брошенных (эталон 10)
 	BrosPenalty  time.Duration            // штраф бросания (эталон 72ч): сдвиг нитки и базы Mistake
 	Tolerance    map[string]time.Duration // station_code → допуск: слот может быть ≥ Rasch − допуск (квирк «−6ч»)
+	Method       map[string]string        // station_code → метод раскладки (MethodStaircase|MethodExcel); пусто → excel
 	Now          time.Time                // «сейчас» (clock.Now) — старт распределения, если плана нет вовсе
 }
 
@@ -84,11 +97,49 @@ func Distribute(trains []Train, schedules map[string][]HM, cfg Config) map[strin
 		byStation[t.Station][t.Group] = append(byStation[t.Station][t.Group], t)
 	}
 
-	// 4. Распределяем по каждой станции независимо (свой пул слотов).
+	// 4. Распределяем по каждой станции независимо (свой пул слотов), методом из профиля.
 	for station, groups := range byStation {
-		distributeStation(station, groups, schedules[station], cfg, startTime, trains, out)
+		if cfg.Method[station] == MethodStaircase {
+			distributeStaircase(station, groups, schedules[station], cfg, startTime, out)
+		} else {
+			distributeStation(station, groups, schedules[station], cfg, startTime, trains, out)
+		}
 	}
 	return out
+}
+
+// distributeStaircase — «лестница» эталона (distributeGroupWithInterval), метод УТ-1.
+// Все беспланные поезда станции — в один пул (без разбивки по роду), по порядку Rasch
+// (+штраф бросания). currentTime стартует со startTime и ре-якорится на КАЖДУЮ назначенную
+// нитку; следующий поезд не раньше currentTime + интервал. Допуск (−6ч) применяется ТОЛЬКО
+// к Rasch-слагаемому — стартовая нитка и интервальный пол остаются жёстким низом, поэтому
+// поезд (в т.ч. первый) не может встать раньше стартовой нитки. Плановые нитки НЕ
+// предзанимаются (как в эталоне УТ-1) — беспланные идут после startTime, пересечения нет.
+func distributeStaircase(station string, groups map[string][]Train, slots []HM, cfg Config, startTime time.Time, out map[string]time.Time) {
+	var trains []Train
+	for _, g := range groups {
+		trains = append(trains, g...)
+	}
+	base := func(t Train) time.Time {
+		b := *t.RaschMsk
+		if t.Bros {
+			b = b.Add(cfg.BrosPenalty)
+		}
+		return b
+	}
+	sort.SliceStable(trains, func(i, j int) bool { return base(trains[i]).Before(base(trains[j])) })
+
+	tol := cfg.Tolerance[station]
+	occupied := map[time.Time]bool{}
+	currentTime := startTime
+	for _, t := range trains {
+		minByRasch := base(t).Add(-tol)               // допуск −6ч — только к Rasch (штраф уже в base)
+		minByInterval := currentTime.Add(interval(t)) // пол от предыдущей НАЗНАЧЕННОЙ нитки, без допуска
+		slot := findSlot(maxTime(minByInterval, minByRasch), slots, occupied)
+		out[t.Key] = slot
+		occupied[slot] = true
+		currentTime = slot // ре-якорь на назначенную нитку
+	}
 }
 
 // distributeStation раскладывает беспланные поезда одной станции по её слотам.

@@ -69,16 +69,20 @@ func applyStage4(kept []domain.Dislocation, dir *DirectoryCache, cfg *ConfigCach
 		list = append(list, *t)
 	}
 
-	// 2. Расписания, допуски, пороги.
+	// 2. Расписания, допуски, метод раскладки, пороги.
 	tol := map[string]time.Duration{}
+	method := map[string]string{}
 	for _, p := range cfg.PlanProfiles() {
 		if p.SlotToleranceH > 0 {
 			tol[p.StationCode] = time.Duration(p.SlotToleranceH * float64(time.Hour))
 		}
+		if p.DistributionMethod != "" {
+			method[p.StationCode] = p.DistributionMethod
+		}
 	}
 	scfg := stage4.Config{
 		MinVagon: pol.MinVagonCount, MinVagonBros: pol.MinVagonBros,
-		BrosPenalty: brosPenalty, Tolerance: tol, Now: clock.Now().Time(),
+		BrosPenalty: brosPenalty, Tolerance: tol, Method: method, Now: clock.Now().Time(),
 	}
 
 	// 3. Распределение.
