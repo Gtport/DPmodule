@@ -6,10 +6,11 @@ import { environment } from '../../../environments/environment';
 /** Поезд на экране «Прогнозы»: состав + прогнозные поля Stage 3/4. Времена — МСК naive. */
 export interface ForecastTrain {
   id_disl: string;
-  index_pp: string;
+  index: string;
   naznach: string;
+  gruzpol_s: string;
+  sms_1: string;
   stan_nazn: string;
-  cargo_group: string;
   cargo_s: string;
   vagon_count: number;
   ves: number;
