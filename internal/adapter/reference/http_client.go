@@ -1,9 +1,9 @@
 // Package reference — HTTP-адаптер забора памяток на подачу/уборку из внешнего
 // сервиса (тот же провайдер, что дислокация). Реализует port.ReferenceClient
-// поверх двух маршрутов провайдера:
+// поверх двух маршрутов провайдера (клиент — в пути, как у дислокации):
 //
-//	GET <base_url>/reference?number=<n>                     — памятка по номеру
-//	GET <base_url>/reference/update/<client>?last_update=<t> — инкремент по клиенту
+//	GET <base_url>/<client>/reference?number=<n>              — памятка по номеру
+//	GET <base_url>/<client>/reference/update?last_update=<t>  — инкремент по клиенту
 //
 // Авторизация — заголовок X-API-Key (ключ из SecretSource). Клиент только достаёт
 // сырые байты; разбор JSON — не здесь (на этом этапе разбор ещё не подключён).
@@ -51,15 +51,15 @@ func NewHTTPClient(baseURL string, insecureTLS bool, authSecretKey string, secre
 	}
 }
 
-// ByNumber — памятка по номеру: GET <base>/reference?number=<n>.
-func (c *HTTPClient) ByNumber(ctx context.Context, number string) ([]byte, error) {
-	u := c.baseURL + "/reference?number=" + url.QueryEscape(number)
-	return c.get(ctx, u, "памятка number="+number)
+// ByNumber — памятка по номеру: GET <base>/<client>/reference?number=<n>.
+func (c *HTTPClient) ByNumber(ctx context.Context, client, number string) ([]byte, error) {
+	u := c.baseURL + "/" + url.PathEscape(client) + "/reference?number=" + url.QueryEscape(number)
+	return c.get(ctx, u, "памятка "+client+" number="+number)
 }
 
-// Update — инкремент по клиенту: GET <base>/reference/update/<client>?last_update=<t>.
+// Update — инкремент по клиенту: GET <base>/<client>/reference/update?last_update=<t>.
 func (c *HTTPClient) Update(ctx context.Context, client, lastUpdate string) ([]byte, error) {
-	u := c.baseURL + "/reference/update/" + url.PathEscape(client) + "?last_update=" + url.QueryEscape(lastUpdate)
+	u := c.baseURL + "/" + url.PathEscape(client) + "/reference/update?last_update=" + url.QueryEscape(lastUpdate)
 	return c.get(ctx, u, "памятки update "+client)
 }
 

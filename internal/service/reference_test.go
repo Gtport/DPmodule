@@ -12,11 +12,13 @@ import (
 // fakeRefClient — заглушка port.ReferenceClient: помнит опрошенных клиентов,
 // возвращает ошибку для перечисленных в failFor.
 type fakeRefClient struct {
-	called  []string
-	failFor map[string]bool
+	called     []string
+	byNumberCl string // клиент, с которым пришёл последний ByNumber
+	failFor    map[string]bool
 }
 
-func (f *fakeRefClient) ByNumber(_ context.Context, number string) ([]byte, error) {
+func (f *fakeRefClient) ByNumber(_ context.Context, client, number string) ([]byte, error) {
+	f.byNumberCl = client
 	return []byte(`{"PAMYATKI":{}}`), nil
 }
 
@@ -53,12 +55,35 @@ func TestPullUpdates_AllOK(t *testing.T) {
 
 func TestFetchByNumber(t *testing.T) {
 	fc := &fakeRefClient{}
-	svc := NewReferenceService(fc, nil, time.Hour, zap.NewNop())
-	n, err := svc.FetchByNumber(context.Background(), "10272")
+	svc := NewReferenceService(fc, []string{"attis"}, time.Hour, zap.NewNop())
+	n, err := svc.FetchByNumber(context.Background(), "nmtp", "10272")
 	if err != nil {
 		t.Fatalf("FetchByNumber: %v", err)
 	}
 	if n == 0 {
 		t.Fatal("ждали ненулевой размер тела")
+	}
+	if fc.byNumberCl != "nmtp" {
+		t.Fatalf("явный клиент должен дойти до клиента как есть, получили %q", fc.byNumberCl)
+	}
+}
+
+// Пустой client → первый из настроенных reference.clients.
+func TestFetchByNumber_DefaultClient(t *testing.T) {
+	fc := &fakeRefClient{}
+	svc := NewReferenceService(fc, []string{"attis", "nmtp"}, time.Hour, zap.NewNop())
+	if _, err := svc.FetchByNumber(context.Background(), "", "10272"); err != nil {
+		t.Fatalf("FetchByNumber: %v", err)
+	}
+	if fc.byNumberCl != "attis" {
+		t.Fatalf("ждали дефолтного attis, получили %q", fc.byNumberCl)
+	}
+}
+
+// Клиент не задан и список пуст → внятная ошибка, а не запрос в никуда.
+func TestFetchByNumber_NoClientConfigured(t *testing.T) {
+	svc := NewReferenceService(&fakeRefClient{}, nil, time.Hour, zap.NewNop())
+	if _, err := svc.FetchByNumber(context.Background(), "", "10272"); err == nil {
+		t.Fatal("ждали ошибку: клиент не задан и reference.clients пуст")
 	}
 }

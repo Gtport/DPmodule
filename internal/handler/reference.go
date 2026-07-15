@@ -28,7 +28,8 @@ func (h *referenceHandler) RegisterRoutes(g *gin.RouterGroup) {
 // @Summary  Памятка по номеру (забор у провайдера; пока не сохраняется)
 // @Tags     reference
 // @Security BearerAuth
-// @Param    number query string true "номер памятки (NUMBER_PAMYATKA)"
+// @Param    number query string true  "номер памятки (NUMBER_PAMYATKA)"
+// @Param    client query string false "код клиента у провайдера; по умолчанию первый из reference.clients"
 // @Success  200 {object} object
 // @Failure  400 {object} object "не задан number"
 // @Failure  502 {object} object "провайдер недоступен / ошибка забора"
@@ -39,7 +40,7 @@ func (h *referenceHandler) byNumber(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "требуется параметр number"})
 		return
 	}
-	n, err := h.svc.FetchByNumber(c.Request.Context(), number)
+	n, err := h.svc.FetchByNumber(c.Request.Context(), c.Query("client"), number)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return

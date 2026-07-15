@@ -31,11 +31,11 @@ func TestByNumber(t *testing.T) {
 	defer srv.Close()
 
 	cl := NewHTTPClient(srv.URL, false, "ASU_TOKEN", staticSecrets{"ASU_TOKEN": "SEKRET"})
-	if _, err := cl.ByNumber(context.Background(), "10272"); err != nil {
+	if _, err := cl.ByNumber(context.Background(), "attis", "10272"); err != nil {
 		t.Fatalf("ByNumber: %v", err)
 	}
-	if got.URL.Path != "/reference" {
-		t.Fatalf("путь: ждали /reference, получили %q", got.URL.Path)
+	if got.URL.Path != "/attis/reference" {
+		t.Fatalf("путь: ждали /attis/reference, получили %q", got.URL.Path)
 	}
 	if q := got.URL.Query().Get("number"); q != "10272" {
 		t.Fatalf("number: ждали 10272, получили %q", q)
@@ -53,8 +53,8 @@ func TestUpdate(t *testing.T) {
 	if _, err := cl.Update(context.Background(), "attis", "2026-07-08 00:00:00.000"); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if got.URL.Path != "/reference/update/attis" {
-		t.Fatalf("путь: ждали /reference/update/attis, получили %q", got.URL.Path)
+	if got.URL.Path != "/attis/reference/update" {
+		t.Fatalf("путь: ждали /attis/reference/update, получили %q", got.URL.Path)
 	}
 	if q := got.URL.Query().Get("last_update"); q != "2026-07-08 00:00:00.000" {
 		t.Fatalf("last_update: ждали '2026-07-08 00:00:00.000', получили %q", q)
@@ -69,12 +69,12 @@ func TestInsecureTLS(t *testing.T) {
 	defer srv.Close()
 
 	strict := NewHTTPClient(srv.URL, false, "", staticSecrets{})
-	if _, err := strict.ByNumber(context.Background(), "1"); err == nil {
+	if _, err := strict.ByNumber(context.Background(), "attis", "1"); err == nil {
 		t.Fatal("ждали ошибку TLS-проверки для самоподписанного серта")
 	}
 
 	lax := NewHTTPClient(srv.URL, true, "", staticSecrets{})
-	if _, err := lax.ByNumber(context.Background(), "1"); err != nil {
+	if _, err := lax.ByNumber(context.Background(), "attis", "1"); err != nil {
 		t.Fatalf("с insecure_tls запрос должен пройти: %v", err)
 	}
 }
