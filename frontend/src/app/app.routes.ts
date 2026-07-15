@@ -6,7 +6,7 @@ import { DISP, DISPATCHER_NAV } from './layout/shell/nav.config';
 
 // Разделы, перенесённые из заглушки на реальный экран — исключаем из
 // автогенерации ниже и подключаем явно (см. routes).
-const IMPLEMENTED_PATHS = new Set(['dislocation', 'plan']);
+const IMPLEMENTED_PATHS = new Set(['dislocation', 'plan', 'forecasts']);
 
 // Разделы диспетчера — генерируем из реестра навигации: каждый пункт (кроме
 // external, напр. home, и уже перенесённых из IMPLEMENTED_PATHS) → маршрут на
@@ -49,6 +49,13 @@ export const routes: Routes = [
         path: 'plan',
         loadComponent: () =>
           import('./features/plan/plan.component').then((m) => m.PlanComponent),
+        canActivate: [authGuard],
+        data: { roles: DISP },
+      },
+      {
+        path: 'forecasts',
+        loadComponent: () =>
+          import('./features/forecasts/forecast.component').then((m) => m.ForecastComponent),
         canActivate: [authGuard],
         data: { roles: DISP },
       },
