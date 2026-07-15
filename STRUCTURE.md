@@ -50,7 +50,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 |---|---|
 | `dislocation.go` | Центральная сущность: запись о местонахождении/состоянии вагона (она же DTO API); проходит Stage 1–4. |
 | `plan.go` | Типы плана подвода: заголовок загрузки `Plan`, карточка списка `PlanSummary`, нитка `PlanNitka`, ячейка порта `PortCell`. |
-| `directory.go` | Справочники обогащения: станции, операции, marka, порты, скоростные профили, назначения. |
+| `directory.go` | Справочники обогащения: станции, операции, словарь грузов (cargo), marka, порты, скоростные профили, назначения. |
 | `history.go` | `VagonHistory` — строка бизнес-истории рейса (вехи погрузки/прибытия/выгрузки), таблица `vagon_history`. |
 | `config.go` | Настроечная таблица: реестр каналов ввода (`DataSource`), клиентские параметры (`ClientSettings`), настроечный портрет станции плана (`PlanProfile`: режим planned/capacity, коэф, наши терминалы). |
 | `localtime.go` | Тип `LocalTime` — время без часового пояса (без `Z`), единый формат в JSON и БД (инвариант «МСК naive»). |
@@ -77,7 +77,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 ### `internal/service/` — бизнес-логика
 | Файл | За что отвечает |
 |---|---|
-| `enrich.go` | **Stage 1 целиком**: построчное обогащение батча из справочников (станции, порт+фильтр, операции, статусы, производные). |
+| `enrich.go` | **Stage 1 целиком**: построчное обогащение батча из справочников (станции, порт+фильтр, груз из словаря cargo, операции, статусы, производные). |
 | `actual.go` | `ActualCache` — текущий снимок дислокации в RAM (ключ — вагон); основа Stage 2. |
 | `carryover.go` | **Stage 2 (S2-2)**: перенос полей из прошлого снимка для найденных вагонов, инициализация новых. |
 | `marka.go` | **Stage 2 (S2-3)**: обогащение груза/назначения новых вагонов из справочника marka и перестановок. |
@@ -87,7 +87,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `stage4_apply.go` | **Stage 4** обвязка: агрегирует записи в поезда (станция/род/`pc` из справочников), зовёт ядро `stage4.Distribute`, пишет `ProgMsk` + производные `ProgJd`/`DelayProg`/`Mistake` (перенос `calculateProgJdAndDelay`); настройки из `ConfigCache` (расписание/пороги/допуски). |
 | `history.go` | **S2-6**: запись бизнес-истории в `vagon_history` (новые вехи, точечное обновление, задержки/отклонения). |
 | `status_cache.go` | Write-through RAM-кэши: `Status9Cache` (кандидаты прибытия) и `Status6Cache` (доноры перегруза). |
-| `directory.go` | `DirectoryCache` — справочники в RAM с индексами поиска (станция/marka/порты/назначения/скорости). |
+| `directory.go` | `DirectoryCache` — справочники в RAM с индексами поиска (станция/cargo/marka/порты/назначения/скорости). |
 | `config.go` | `ConfigCache` — настроечная таблица (`data_source`, `client_settings`, `plan_profile`) в RAM. |
 | `plan_profile_apply.go` | `ApplyPlanProfiles` — перенос профилей станций из `ConfigCache` в реестр парсера плана (`plan.SetProfiles`) на старте; только плановые (с `plan_code`). Расхардкодивание `builtinProfiles`. |
 | `lk_intake.go` | **Приём ЛК, шаг 1**: приём xlsx, инспекция (ОКПО, дата формирования), сохранение в папку приёма. |
@@ -192,6 +192,10 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
   (=60): не грузить план, если снимок дислокации старше N мин (гард в `PlanProcessor`).
 - `000020_event_journal_trigger.*.sql` — колонка `trigger` (manual/scheduled/actualization/plan):
   что вызвало обновление снимка дислокации (для журнала `/dislocation/journal`).
+- `000027_cargo_directory.*.sql` — словарь грузов ЕТСНГ (`cargo`): код → группа/краткое
+  имя/метка; обогащение Stage 1 каждому вагону независимо от отправителя. Данные:
+  `scripts/gen_cargo_seed.py` (полный перечень + ручная переработка, правило cargo_sms) →
+  `_reference/seed/cargo.csv` → `scripts/seed_directories.sql`.
 
 ---
 

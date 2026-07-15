@@ -25,6 +25,7 @@ type DirectoryCache struct {
 	stations        map[int]domain.Station
 	stationsByKod4  map[int]domain.Station
 	cargoOperations map[int]domain.CargoOperation
+	cargo           map[int64]domain.Cargo           // код груза ЕТСНГ → группа/имя/метка (Stage 1)
 	marka           map[string][]domain.Marka        // ключ MarkaKey (неуникален → срез)
 	markaByStation  map[int64][]domain.Marka         // код станции отправления → записи (частичный матч S2-3)
 	markaOkpos      map[int64]struct{}               // множество ОКПО в marka (проверка «ОКПО известен»)
@@ -42,6 +43,7 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		stations:        map[int]domain.Station{},
 		stationsByKod4:  map[int]domain.Station{},
 		cargoOperations: map[int]domain.CargoOperation{},
+		cargo:           map[int64]domain.Cargo{},
 		marka:           map[string][]domain.Marka{},
 		markaByStation:  map[int64][]domain.Marka{},
 		markaOkpos:      map[int64]struct{}{},
@@ -84,6 +86,10 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load cargo_operations: %w", err)
 	}
+	cargo, err := c.repo.LoadCargo(ctx)
+	if err != nil {
+		return fmt.Errorf("load cargo: %w", err)
+	}
 	marka, err := c.repo.LoadMarka(ctx)
 	if err != nil {
 		return fmt.Errorf("load marka: %w", err)
@@ -110,6 +116,10 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	co := make(map[int]domain.CargoOperation, len(ops))
 	for _, o := range ops {
 		co[o.Kod] = o
+	}
+	cg := make(map[int64]domain.Cargo, len(cargo))
+	for _, g := range cargo {
+		cg[g.Kod] = g
 	}
 	mk := make(map[string][]domain.Marka)
 	mkByStation := make(map[int64][]domain.Marka)
@@ -169,6 +179,7 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	c.stations = st
 	c.stationsByKod4 = st4
 	c.cargoOperations = co
+	c.cargo = cg
 	c.marka = mk
 	c.markaByStation = mkByStation
 	c.markaOkpos = mkOkpos
@@ -183,10 +194,10 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 }
 
 // Counts — сводка по числу ключей (для логов после загрузки).
-func (c *DirectoryCache) Counts() (stations, cargoOps, marka, ports, routeSpeed, naznach int) {
+func (c *DirectoryCache) Counts() (stations, cargoOps, cargo, marka, ports, routeSpeed, naznach int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return len(c.stations), len(c.cargoOperations), len(c.marka), len(c.ports), len(c.routeSpeed), len(c.naznachStation)
+	return len(c.stations), len(c.cargoOperations), len(c.cargo), len(c.marka), len(c.ports), len(c.routeSpeed), len(c.naznachStation)
 }
 
 // ──────────────────────────────── lookup ────────────────────────────────
@@ -238,6 +249,14 @@ func (c *DirectoryCache) GetCargoOperation(kod int) (domain.CargoOperation, bool
 	defer c.mu.RUnlock()
 	o, ok := c.cargoOperations[kod]
 	return o, ok
+}
+
+// GetCargoByKod — груз по коду ЕТСНГ (Stage 1: группа/краткое имя/метка).
+func (c *DirectoryCache) GetCargoByKod(kod int64) (domain.Cargo, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	g, ok := c.cargo[kod]
+	return g, ok
 }
 
 func (c *DirectoryCache) GetMarkaByCompositeKey(okpo, stationKod, cargoKod int64) ([]domain.Marka, bool) {

@@ -37,6 +37,7 @@ type Stage1Stats struct {
 	PortDisabled       int         // отброшено: порт выключен
 	StationsNotFound   []int       // коды станций вне справочника
 	OperationsNotFound []int       // коды операций вне справочника
+	CargoNotFound      []int       // коды грузов вне словаря cargo
 	StatusDist         map[int]int // распределение статусов
 }
 
@@ -45,8 +46,11 @@ type Stage1Stats struct {
 //     записи — квирк gtlogic для паритета);
 //  2. идентификация порта (ОКПО+StanNazn → GruzpolS) и ФИЛЬТР: остаются только
 //     вагоны включённых портов;
-//  3. операции (Oper/OperS) — только на оставшихся;
-//  4. статусы и производные (status, date_op/date_op_jd, date_kon, delay, id_disl,
+//  3. груз из словаря cargo (CodeCargo → CargoGroup/CargoS/CargoSms) — каждому
+//     оставшемуся вагону, независимо от отправителя (marka в Stage 2 добирает
+//     только бизнес-атрибуцию: отправитель/клиент/sms);
+//  4. операции (Oper/OperS) — только на оставшихся;
+//  5. статусы и производные (status, date_op/date_op_jd, date_kon, delay, id_disl,
 //     id_status4/5).
 //
 // Возвращает отфильтрованный обогащённый набор («новую мапу») и статистику. «Сейчас»
@@ -59,6 +63,7 @@ func (e *Enricher) Stage1(records []domain.Dislocation, cfg Stage1Config) ([]dom
 	now := time.Time(clock.Now())
 	stationsNF := map[int]struct{}{}
 	opsNF := map[int]struct{}{}
+	cargoNF := map[int]struct{}{}
 	st := Stage1Stats{Input: len(records), StatusDist: map[int]int{}}
 	kept := make([]domain.Dislocation, 0, len(records))
 
@@ -76,10 +81,13 @@ func (e *Enricher) Stage1(records []domain.Dislocation, cfg Stage1Config) ([]dom
 			continue
 		}
 
-		// 3. Операции (только на оставшихся).
+		// 3. Груз из словаря cargo (только на оставшихся).
+		e.enrichCargo(&r, cargoNF)
+
+		// 4. Операции (только на оставшихся).
 		e.enrichOperation(&r, opsNF)
 
-		// 4. Статусы и производные.
+		// 5. Статусы и производные.
 		deriveDates(&r, cfg.CutoffHour)
 		status := computeStatus(&r, cfg.ProstDnMin, cfg.ProstChMin)
 		r.Status = &status
@@ -100,7 +108,30 @@ func (e *Enricher) Stage1(records []domain.Dislocation, cfg Stage1Config) ([]dom
 	st.Kept = len(kept)
 	st.StationsNotFound = sortedKeys(stationsNF)
 	st.OperationsNotFound = sortedKeys(opsNF)
+	st.CargoNotFound = sortedKeys(cargoNF)
 	return kept, st
+}
+
+// enrichCargo заполняет груз-поля из словаря cargo по коду ЕТСНГ (CodeCargo).
+// Универсальная идентичность груза — не зависит от отправителя, поэтому Stage 1;
+// бизнес-атрибуцию (Gruzotpr/Client/Sms) добирает marka в Stage 2. Пустой код
+// (порожний вагон) — не ошибка; код вне словаря — счётчик CargoNotFound.
+func (e *Enricher) enrichCargo(r *domain.Dislocation, notFound map[int]struct{}) {
+	if r.CodeCargo == "" {
+		return
+	}
+	kod, err := strconv.ParseInt(r.CodeCargo, 10, 64)
+	if err != nil {
+		return
+	}
+	g, ok := e.dir.GetCargoByKod(kod)
+	if !ok {
+		notFound[int(kod)] = struct{}{}
+		return
+	}
+	r.CargoGroup = g.CargoGroup
+	r.CargoS = g.CargoS
+	r.CargoSms = g.CargoSms
 }
 
 // identifyPort идентифицирует порт по составному ключу (ОКПО грузополучателя +

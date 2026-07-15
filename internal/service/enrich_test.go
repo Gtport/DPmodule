@@ -36,6 +36,9 @@ func fullEnricher(t *testing.T) *service.Enricher {
 		ops: []domain.CargoOperation{
 			{Kod: 1, Oper: "ПРИБЫТИЕ НА СТАНЦИЮ НАЗНАЧЕНИЯ", OperS: "Приб"},
 		},
+		cargo: []domain.Cargo{
+			{Kod: 161113, Name: "УГОЛЬ КАМЕННЫЙ МАРКИ Г-ГАЗОВЫЙ", CargoGroup: "УГОЛЬ", CargoS: "УГОЛЬ Г", CargoSms: "Г"},
+		},
 	})
 	require.NoError(t, dc.Load(context.Background()))
 	return service.NewEnricher(dc)
@@ -113,6 +116,27 @@ func TestStage1_FilterByPort(t *testing.T) {
 	assert.Equal(t, 1, st.PortDisabled)   // D
 	assert.Equal(t, "ГУТ-2", kept[0].GruzpolS)
 	assert.Equal(t, "УТ-1", kept[1].GruzpolS)
+}
+
+// Обогащение из словаря cargo: код → группа/краткое имя/метка; каждому вагону
+// после фильтра по порту, независимо от отправителя (в отличие от marka).
+func TestStage1_CargoDictionary(t *testing.T) {
+	recs := []domain.Dislocation{
+		{Vagon: "A", GruzpolOkpo: "1126022", CodeStanNazn: "985702", CodeCargo: "161113"}, // в словаре
+		{Vagon: "B", GruzpolOkpo: "1126022", CodeStanNazn: "985702", CodeCargo: "999999"}, // кода нет
+		{Vagon: "C", GruzpolOkpo: "1126022", CodeStanNazn: "985702"},                      // порожний (без кода)
+	}
+
+	kept, st := fullEnricher(t).Stage1(recs, stage1Cfg)
+
+	require.Len(t, kept, 3)
+	assert.Equal(t, "УГОЛЬ", kept[0].CargoGroup)
+	assert.Equal(t, "УГОЛЬ Г", kept[0].CargoS)
+	assert.Equal(t, "Г", kept[0].CargoSms)
+
+	assert.Empty(t, kept[1].CargoGroup) // код вне словаря → поля пустые, код в счётчике
+	assert.Empty(t, kept[2].CargoGroup) // пустой код → не ошибка
+	assert.Equal(t, []int{999999}, st.CargoNotFound)
 }
 
 // ─────────────────────────── Stage 1: статусы и производные ───────────────────────────

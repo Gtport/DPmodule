@@ -124,10 +124,11 @@ func run() error {
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
 		}
-		stationsN, cargoOpsN, markaN, portsN, routeSpeedN, naznachN := dirCache.Counts()
+		stationsN, cargoOpsN, cargoN, markaN, portsN, routeSpeedN, naznachN := dirCache.Counts()
 		log.Info("directory cache loaded",
 			zap.Int("stations", stationsN),
 			zap.Int("cargo_operations", cargoOpsN),
+			zap.Int("cargo", cargoN),
 			zap.Int("marka", markaN),
 			zap.Int("ports", portsN),
 			zap.Int("route_speed", routeSpeedN),
