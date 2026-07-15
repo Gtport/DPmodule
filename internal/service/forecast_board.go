@@ -11,11 +11,12 @@ import (
 // Stage 3/4. Прогнозные поля одинаковы внутри поезда (берём первое непустое значение).
 type ForecastTrain struct {
 	IdDisl     string            `json:"id_disl"`
-	IndexPp    string            `json:"index_pp"`
-	Naznach    string            `json:"naznach"`     // терминал (площадка назначения)
-	StanNazn   string            `json:"stan_nazn"`   // станция назначения
-	CargoGroup string            `json:"cargo_group"` // род (УГОЛЬ/МЕТАЛЛ)
-	CargoS     string            `json:"cargo_s"`     // имя груза
+	Index      string            `json:"index"`     // текущий индекс поезда
+	Naznach    string            `json:"naznach"`   // терминал (площадка назначения)
+	GruzpolS   string            `json:"gruzpol_s"` // краткое имя причала грузополучателя
+	Sms1       string            `json:"sms_1"`     // метка SMS/уведомлений
+	StanNazn   string            `json:"stan_nazn"` // станция назначения
+	CargoS     string            `json:"cargo_s"`   // имя груза (для состава)
 	VagonCount int               `json:"vagon_count"`
 	Ves        float64           `json:"ves"`       // масса состава, тонны
 	HasPlan    bool              `json:"has_plan"`  // нитка задана планом (зелёная подсветка)
@@ -50,8 +51,9 @@ func (b *ForecastBoard) Trains() []ForecastTrain {
 		t, ok := byTrain[r.IdDisl]
 		if !ok {
 			t = &ForecastTrain{
-				IdDisl: r.IdDisl, IndexPp: r.IndexPp, Naznach: r.Naznach,
-				StanNazn: r.StanNazn, CargoGroup: r.CargoGroup, CargoS: r.CargoS,
+				IdDisl: r.IdDisl, Index: r.Index, Naznach: r.Naznach,
+				GruzpolS: r.GruzpolS, Sms1: r.Sms1,
+				StanNazn: r.StanNazn, CargoS: r.CargoS,
 			}
 			byTrain[r.IdDisl] = t
 			order = append(order, r.IdDisl)

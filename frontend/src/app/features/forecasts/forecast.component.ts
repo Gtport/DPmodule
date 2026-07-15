@@ -49,7 +49,9 @@ import { ForecastApiService, ForecastTrain } from './forecast-api.service';
         <thead>
           <tr>
             <th nzWidth="70px">Терминал</th>
+            <th nzWidth="70px">Грузопол.</th>
             <th nzWidth="130px">Индекс</th>
+            <th nzWidth="60px">SMS</th>
             <th nzWidth="150px">Состав</th>
             <th>Станция назначения</th>
             <th nzWidth="105px">Расчёт МСК</th>
@@ -62,7 +64,9 @@ import { ForecastApiService, ForecastTrain } from './forecast-api.service';
           @for (r of tbl.data; track r.id_disl) {
             <tr [class.plan]="r.has_plan">
               <td><nz-tag class="term">{{ r.naznach }}</nz-tag></td>
-              <td class="idx" [title]="r.id_disl">{{ r.index_pp || '—' }}</td>
+              <td class="small">{{ r.gruzpol_s || '—' }}</td>
+              <td class="idx" [title]="r.id_disl">{{ r.index || '—' }}</td>
+              <td class="small">{{ r.sms_1 || '—' }}</td>
               <td class="sostav">{{ sostav(r) }}</td>
               <td class="small" [title]="r.stan_nazn">{{ r.stan_nazn || '—' }}</td>
               <td class="c">{{ fmt(r.rasch_msk) }}</td>
@@ -130,11 +134,10 @@ export class ForecastComponent implements OnInit {
     }
   }
 
-  /** Состав как в плане: вагоны + род/груз (+ масса, если есть). */
+  /** Состав как в плане: вагоны + груз (+ масса, если есть). */
   sostav(r: ForecastTrain): string {
-    const cargo = r.cargo_group || r.cargo_s || '';
     const ves = r.ves ? ` · ${Math.round(r.ves)}т` : '';
-    return `${r.vagon_count} ваг${cargo ? ' · ' + cargo : ''}${ves}`;
+    return `${r.vagon_count} ваг${r.cargo_s ? ' · ' + r.cargo_s : ''}${ves}`;
   }
 
   /** «2026-07-15T08:49:00» → «15.07 08:49»; пусто → «—». */
