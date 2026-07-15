@@ -113,6 +113,7 @@ type PlanProfile struct {
 	MatchRequiresNaznach bool
 	OurTerminals         []string // ключевые слова «наших» колонок плана (вклад в Activ)
 	SlotToleranceH       float64  // допуск слота Stage 4: слот может быть ≥ Rasch − N часов
+	DistributionMethod   string   // метод раскладки Stage 4: "staircase" (УТ-1) | "excel" (АЭ/ГУТ-2); пусто → excel
 }
 
 // NitkaSlot — один слот расписания станции (таблица nitka_schedule). Слоты повторяются
