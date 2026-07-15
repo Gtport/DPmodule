@@ -101,40 +101,61 @@ func TestNextEighteen(t *testing.T) {
 // расписание станции U: 02:00, 08:00, 14:00, 20:00 (каждые 6ч).
 var schedU = map[string][]HM{"U": {{2, 0}, {8, 0}, {14, 0}, {20, 0}}}
 
-// staircaseCfg — допуск 6ч и метод staircase на станции U (профиль УТ-1).
-func staircaseCfg() Config {
+// tolCfg — допуск 6ч на станции U.
+func tolCfg() Config {
 	c := baseCfg()
 	c.Tolerance = map[string]time.Duration{"U": 6 * time.Hour}
-	c.Method = map[string]string{"U": MethodStaircase}
 	return c
 }
 
-// Лестница: первый поезд НЕ раньше стартовой нитки — допуск (−6ч) не тянет ниже старта.
-// Контраст: excel-метод на том же входе ставит поезд ДО стартовой нитки (это и был баг УТ-1).
-func TestDistribute_StaircaseFirstNotBeforeStart(t *testing.T) {
+// Первый поезд НЕ раньше стартовой нитки: допуск (−6ч) применяется только к Rasch,
+// стартовая нитка — жёсткий низ. Rasch задолго до старта, но слот ≥ старта.
+func TestDistribute_FirstNotBeforeStart(t *testing.T) {
 	// Now 10:00 → старт = ближайшие 18:00 = 14.07 18:00. Rasch задолго до старта, интервал ~0.
 	tr := []Train{{Key: "A", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 5, 0)), VagonCount: 30, Pc: 100000}}
 	start := tm(2026, 7, 14, 18, 0)
 
-	got := Distribute(tr, schedU, staircaseCfg())["A"]
+	got := Distribute(tr, schedU, tolCfg())["A"]
 	assert.Equal(t, tm(2026, 7, 14, 20, 0), got)
-	assert.False(t, got.Before(start), "первый поезд не раньше стартовой нитки")
-
-	// excel (тот же вход): допуск съедает старт → нитка ДО старта (14:00).
-	ce := staircaseCfg()
-	ce.Method = map[string]string{"U": MethodExcel}
-	assert.Equal(t, tm(2026, 7, 14, 14, 0), Distribute(tr, schedU, ce)["A"],
-		"excel-метод (для контраста) ставит поезд до стартовой нитки")
+	assert.False(t, got.Before(start), "первый поезд не раньше стартовой нитки, несмотря на допуск −6ч")
 }
 
-// Лестница ре-якорит currentTime на НАЗНАЧЕННУЮ нитку: B не раньше нитки A (20:00);
+// Первая нитка беспланного группы = последний плановый группы + его интервал (не старт).
+// Плановый P: нитка 08:00, интервал 120*24/120=24ч → причал занят до 15.07 08:00; беспланный
+// A встаёт на 15.07 08:00, а не на стартовую нитку 14.07.
+func TestDistribute_FirstNitkaFromLastPlan(t *testing.T) {
+	cfg := baseCfg() // Now 14.07 10:00 → старт 14.07 18:00
+	tr := []Train{
+		{Key: "P", Station: "U", Group: "g", PlanMsk: tp(tm(2026, 7, 14, 8, 0)), VagonCount: 120, Pc: 120},
+		{Key: "A", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 3, 0)), VagonCount: 30, Pc: 100000},
+	}
+	out := Distribute(tr, schedU, cfg)
+	assert.Equal(t, tm(2026, 7, 14, 8, 0), out["P"], "плановый = PlanMsk")
+	assert.Equal(t, tm(2026, 7, 15, 8, 0), out["A"], "первая нитка беспланного = последний плановый + интервал")
+}
+
+// Лимит длины состава станции: интервал считает min(вагонов, лимит). A=71ваг, Pc=64,
+// лимит 64 → интервал 64*24/64=24ч (без лимита было бы 26.6ч); B через 24ч после нитки A.
+func TestDistribute_TrainLengthCap(t *testing.T) {
+	cfg := baseCfg()
+	cfg.MaxLen = map[string]int{"U": 64}
+	tr := []Train{
+		{Key: "A", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 5, 0)), VagonCount: 71, Pc: 64},
+		{Key: "B", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 6, 0)), VagonCount: 30, Pc: 100000},
+	}
+	out := Distribute(tr, schedU, cfg)
+	assert.Equal(t, tm(2026, 7, 14, 20, 0), out["A"])
+	assert.Equal(t, tm(2026, 7, 15, 20, 0), out["B"], "интервал A по лимиту 64 (24ч), не по 71 ваг")
+}
+
+// Очередь причала ре-якорится на НАЗНАЧЕННУЮ нитку: B не раньше нитки A (20:00);
 // 20:00 занят → B уезжает на следующие сутки (02:00), хотя его Rasch ранний.
-func TestDistribute_StaircaseReanchorsOnSlot(t *testing.T) {
+func TestDistribute_ReanchorsOnSlot(t *testing.T) {
 	tr := []Train{
 		{Key: "A", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 5, 0)), VagonCount: 30, Pc: 100000},
 		{Key: "B", Station: "U", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 6, 0)), VagonCount: 30, Pc: 100000},
 	}
-	out := Distribute(tr, schedU, staircaseCfg())
+	out := Distribute(tr, schedU, tolCfg())
 	assert.Equal(t, tm(2026, 7, 14, 20, 0), out["A"])
 	assert.Equal(t, tm(2026, 7, 15, 2, 0), out["B"], "ре-якорь на нитку A → B на следующие сутки")
 }
