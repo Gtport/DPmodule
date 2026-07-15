@@ -78,6 +78,11 @@ func Build(
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
 
+	// Экран «Прогнозы»: сводка поездов с прогнозными полями Stage 3/4 из RAM-снимка.
+	if actualCache != nil {
+		handler.NewForecastHandler(service.NewForecastBoard(actualCache)).RegisterRoutes(api)
+	}
+
 	// Памятки на подачу/уборку (внешний провайдер, тот же что дислокация). Не зависит
 	// от БД — на этом этапе данные только логируются, не сохраняются. Ручной забор по
 	// номеру и ручной триггер инкремента — здесь; крон-инкремент запускает main.
