@@ -98,13 +98,16 @@ func (s *LKIntake) Status() (LKStatus, error) {
 
 	pol := s.cfg.Settings().IngestPolicy.Dislocation
 
-	// 1. Устаревание — на каждый файл.
+	// 1. Устаревание — на каждый файл. БЛОК (не warning): гард обработки
+	// (checkFreshness) отклоняет устаревшие файлы безусловно (без роль-исключения),
+	// поэтому Ready обязан это отражать — иначе статус зелёный «готово», а обработка
+	// падает 409. «Любой файл устарел» ⟺ «самый старый устарел» ⟺ гард отклонит.
 	if pol.MaxStalenessMinutes > 0 {
 		for _, f := range st.Files {
 			if f.AgeMinutes > pol.MaxStalenessMinutes {
 				st.Issues = append(st.Issues, LKIssue{
-					Level: LKIssueWarning, Code: LKCodeStale, Okpo: f.Okpo,
-					Message: fmt.Sprintf("файл устарел: %d мин > %d", f.AgeMinutes, pol.MaxStalenessMinutes),
+					Level: LKIssueBlock, Code: LKCodeStale, Okpo: f.Okpo,
+					Message: fmt.Sprintf("файл устарел: возраст %d мин при допустимых %d — не годится для обновления дислокации", f.AgeMinutes, pol.MaxStalenessMinutes),
 				})
 			}
 		}
