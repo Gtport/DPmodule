@@ -51,25 +51,6 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
           <button nz-button nz-tooltip nzTooltipTitle="Обновить список принятых файлов" (click)="loadStatus()">
             <span nz-icon nzType="reload"></span>
           </button>
-
-          <span class="spacer"></span>
-
-          @if (status(); as st) {
-            @if (st.files.length) {
-              <nz-tag [nzColor]="st.ready ? 'success' : 'error'">
-                {{ st.ready ? 'готово к обработке' : 'есть замечания' }}
-              </nz-tag>
-            }
-            <button
-              nz-button
-              nzType="primary"
-              [disabled]="!st.ready"
-              [nzLoading]="busyProcess()"
-              (click)="process()"
-            >
-              Обновить дислокацию
-            </button>
-          }
         </div>
 
         <nz-spin [nzSpinning]="loadingStatus()">
@@ -97,6 +78,27 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
             }
           </div>
         </nz-spin>
+
+        <!-- Шаг 2 — отдельной строкой под файлами (визуально отделён от загрузки). -->
+        @if (status(); as st) {
+          @if (st.files.length) {
+            <div class="step2">
+              <nz-tag [nzColor]="st.ready ? 'success' : 'error'">
+                {{ st.ready ? 'готово к обработке' : notReadyReason(st) }}
+              </nz-tag>
+              <span class="spacer"></span>
+              <button
+                nz-button
+                nzType="primary"
+                [disabled]="!st.ready"
+                [nzLoading]="busyProcess()"
+                (click)="process()"
+              >
+                Обновить дислокацию
+              </button>
+            </div>
+          }
+        }
       </nz-card>
 
       @if (processResult(); as res) {
@@ -143,7 +145,7 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
     </div>
   `,
   styles: [`
-    .page { display: flex; flex-direction: column; gap: var(--space-md); max-width: 1000px; }
+    .page { display: flex; flex-direction: column; gap: var(--space-md); max-width: 700px; }
     .card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
     /* АСУ — отдельная строка над карточкой ЛК (основной, одношаговый источник). */
     .asu-bar { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
@@ -151,6 +153,12 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
     .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); margin: 0 0 var(--space-md); }
     .toolbar { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
     .spacer { flex: 1 1 auto; }
+    /* Шаг 2 — статус + кнопка обработки, отдельной строкой под списком файлов. */
+    .step2 {
+      display: flex; align-items: center; gap: var(--space-sm);
+      margin-top: var(--space-md); padding-top: var(--space-md);
+      border-top: 1px solid var(--color-border, #f0f0f0);
+    }
     .muted { color: var(--color-text-muted); margin: var(--space-sm) 0 0; }
     /* Компактный список файлов ЛК — каждый файл строго в одну строку. */
     .files { margin-top: var(--space-sm); display: flex; flex-direction: column; }
@@ -268,6 +276,15 @@ export class DislocationComponent implements OnInit {
   orphanIssues(): LKIssue[] {
     const present = new Set((this.status()?.files ?? []).map((f) => f.okpo));
     return (this.status()?.issues ?? []).filter((i) => !i.okpo || !present.has(i.okpo));
+  }
+
+  /** Честный статус «почему не готово» по блокирующим замечаниям (детали — в строках файлов). */
+  notReadyReason(st: LKStatus): string {
+    const blocks = st.issues.filter((i) => i.level === 'block').map((i) => i.code);
+    if (blocks.includes('stale')) return 'файлы устарели — не годятся для обновления';
+    if (blocks.includes('missing')) return 'не хватает файлов грузополучателей';
+    if (blocks.includes('gap')) return 'файлы из разных срезов';
+    return 'есть замечания — обработка невозможна';
   }
 
   /** Короткая подпись тега по коду замечания (полный текст — в тултипе/строке). */

@@ -93,8 +93,9 @@ func TestLKStatus_GapBlocks(t *testing.T) {
 	assert.Contains(t, codes(st, service.LKIssueBlock), service.LKCodeGap)
 }
 
-// Устаревание — это предупреждение, не блок: набор полон и без разрыва → готово.
-func TestLKStatus_StaleWarnsButReady(t *testing.T) {
+// Устаревание — БЛОК (согласовано с гардом обработки): устаревший файл не годится
+// для обновления дислокации, статус не должен показывать «готово».
+func TestLKStatus_StaleBlocks(t *testing.T) {
 	restore := clock.SetForTest(time.Date(2026, 7, 2, 6, 10, 0, 0, time.UTC))
 	defer restore()
 
@@ -105,9 +106,8 @@ func TestLKStatus_StaleWarnsButReady(t *testing.T) {
 	st, err := intake.Status()
 	require.NoError(t, err)
 
-	assert.True(t, st.Ready) // stale не блокирует
-	assert.Contains(t, codes(st, service.LKIssueWarning), service.LKCodeStale)
-	assert.Empty(t, codes(st, service.LKIssueBlock))
+	assert.False(t, st.Ready) // stale блокирует — как и гард обработки
+	assert.Contains(t, codes(st, service.LKIssueBlock), service.LKCodeStale)
 }
 
 // Пустая папка → нет файлов, оба ожидаемых отсутствуют → не готово.
