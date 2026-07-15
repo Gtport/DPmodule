@@ -26,7 +26,7 @@ type DirectoryCache struct {
 	stationsByKod4  map[int]domain.Station
 	cargoOperations map[int]domain.CargoOperation
 	cargo           map[int64]domain.Cargo           // код груза ЕТСНГ → группа/имя/метка (Stage 1)
-	marka           map[string][]domain.Marka        // ключ MarkaKey (неуникален → срез)
+	marka           map[string]domain.Marka          // ключ MarkaKey (уникален с 000028)
 	markaByStation  map[int64][]domain.Marka         // код станции отправления → записи (частичный матч S2-3)
 	markaOkpos      map[int64]struct{}               // множество ОКПО в marka (проверка «ОКПО известен»)
 	ports           map[string][]domain.Ports        // ключ PortKey (неуникален → срез)
@@ -44,7 +44,7 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		stationsByKod4:  map[int]domain.Station{},
 		cargoOperations: map[int]domain.CargoOperation{},
 		cargo:           map[int64]domain.Cargo{},
-		marka:           map[string][]domain.Marka{},
+		marka:           map[string]domain.Marka{},
 		markaByStation:  map[int64][]domain.Marka{},
 		markaOkpos:      map[int64]struct{}{},
 		ports:           map[string][]domain.Ports{},
@@ -62,9 +62,10 @@ func NaznachKey(destStation, originStation string) string {
 	return destStation + "\x1f" + originStation
 }
 
-// MarkaKey / PortKey — составные ключи поиска (совпадают со схемой ключей gtlogic).
-func MarkaKey(okpo, stationKod, cargoKod int64) string {
-	return fmt.Sprintf("%d:%d:%d", okpo, stationKod, cargoKod)
+// MarkaKey / PortKey — составные ключи поиска. Ключ marka — по ГРУППЕ груза
+// (не по коду): новый код знакомой группы матчится без правки словаря (000028).
+func MarkaKey(okpo, stationKod int64, cargoGroup string) string {
+	return fmt.Sprintf("%d:%d:%s", okpo, stationKod, cargoGroup)
 }
 
 func PortKey(okpo int64, location string) string {
@@ -121,12 +122,11 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	for _, g := range cargo {
 		cg[g.Kod] = g
 	}
-	mk := make(map[string][]domain.Marka)
+	mk := make(map[string]domain.Marka, len(marka))
 	mkByStation := make(map[int64][]domain.Marka)
 	mkOkpos := make(map[int64]struct{})
 	for _, m := range marka {
-		k := MarkaKey(m.Okpo, m.StationKod, m.CargoKod)
-		mk[k] = append(mk[k], m)
+		mk[MarkaKey(m.Okpo, m.StationKod, m.CargoGroup)] = m
 		mkByStation[m.StationKod] = append(mkByStation[m.StationKod], m)
 		mkOkpos[m.Okpo] = struct{}{}
 	}
@@ -259,21 +259,22 @@ func (c *DirectoryCache) GetCargoByKod(kod int64) (domain.Cargo, bool) {
 	return g, ok
 }
 
-func (c *DirectoryCache) GetMarkaByCompositeKey(okpo, stationKod, cargoKod int64) ([]domain.Marka, bool) {
+func (c *DirectoryCache) GetMarkaByCompositeKey(okpo, stationKod int64, cargoGroup string) (domain.Marka, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	m, ok := c.marka[MarkaKey(okpo, stationKod, cargoKod)]
+	m, ok := c.marka[MarkaKey(okpo, stationKod, cargoGroup)]
 	return m, ok
 }
 
-// GetMarkaByStationAndCargo — записи marka по (станция отправления + груз), любой ОКПО.
-// Для частичного матча S2-3, когда ОКПО грузоотправителя в marka не известен (§3.17).
-func (c *DirectoryCache) GetMarkaByStationAndCargo(stationKod, cargoKod int64) []domain.Marka {
+// GetMarkaByStationAndGroup — записи marka по (станция отправления + группа груза),
+// любой ОКПО. Для частичного матча S2-3, когда ОКПО грузоотправителя в marka не
+// известен (§3.17).
+func (c *DirectoryCache) GetMarkaByStationAndGroup(stationKod int64, cargoGroup string) []domain.Marka {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	var out []domain.Marka
 	for _, m := range c.markaByStation[stationKod] {
-		if m.CargoKod == cargoKod {
+		if m.CargoGroup == cargoGroup {
 			out = append(out, m)
 		}
 	}

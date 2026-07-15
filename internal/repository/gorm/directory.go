@@ -45,15 +45,13 @@ type cargoModel struct {
 func (cargoModel) TableName() string { return "cargo" }
 
 type markaModel struct {
-	ID         int64  `gorm:"column:id;primaryKey"`
-	Okpo       int64  `gorm:"column:okpo"`
-	StationKod int64  `gorm:"column:station_kod"`
-	CargoKod   int64  `gorm:"column:cargo_kod"`
+	Okpo       int64  `gorm:"column:okpo;primaryKey"`
+	StationKod int64  `gorm:"column:station_kod;primaryKey"`
+	CargoGroup string `gorm:"column:cargo_group;primaryKey"`
 	Shipper    string `gorm:"column:shipper"`
-	CargoS     string `gorm:"column:cargo_s"`
 	Client     string `gorm:"column:client"`
-	CargoGroup string `gorm:"column:cargo_group"`
 	Sms1       string `gorm:"column:sms_1"`
+	Sms3       string `gorm:"column:sms_3"`
 }
 
 func (markaModel) TableName() string { return "marka" }
@@ -164,9 +162,8 @@ func (r *DirectoryRepository) LoadMarka(ctx context.Context) ([]domain.Marka, er
 	out := make([]domain.Marka, len(ms))
 	for i, m := range ms {
 		out[i] = domain.Marka{
-			Okpo: m.Okpo, StationKod: m.StationKod, CargoKod: m.CargoKod,
-			Shipper: m.Shipper, CargoS: m.CargoS, Client: m.Client,
-			CargoGroup: m.CargoGroup, Sms1: m.Sms1,
+			Okpo: m.Okpo, StationKod: m.StationKod, CargoGroup: m.CargoGroup,
+			Shipper: m.Shipper, Client: m.Client, Sms1: m.Sms1, Sms3: m.Sms3,
 		}
 	}
 	return out, nil
