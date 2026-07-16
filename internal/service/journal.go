@@ -152,6 +152,19 @@ func overridesForJournal(overrides map[int]string) []planOverrideJournal {
 	return out
 }
 
+// RecordDictReload фиксирует «Обновить справочники»: горячая перезагрузка
+// словарей + пересчёт снимка (trigger=actualization — без новых данных потока).
+func (j *Journal) RecordDictReload(ctx context.Context, detail any) {
+	if j == nil || j.repo == nil {
+		return
+	}
+	now := clock.Now()
+	j.append(ctx, domain.JournalEvent{
+		EventType: domain.EventDictReload, Source: "directories",
+		Trigger: domain.TriggerActualization, DocTS: &now,
+	}, detail)
+}
+
 // SnapshotUpdates возвращает события перестроения снимка дислокации (обновления
 // ЛК/JSON + загрузки планов + отклонённые гардами попытки) за период [from, to] —
 // источник журнала обновлений дислокации.
@@ -160,7 +173,7 @@ func (j *Journal) SnapshotUpdates(ctx context.Context, from, to *domain.LocalTim
 		return nil, nil
 	}
 	return j.repo.Range(ctx, from, to,
-		[]string{domain.EventDislUpdate, domain.EventDislRejected, domain.EventPlanUpload}, limit)
+		[]string{domain.EventDislUpdate, domain.EventDislRejected, domain.EventPlanUpload, domain.EventDictReload}, limit)
 }
 
 // append дописывает событие: проставляет actor из контекста, created_at из clock.Now(),

@@ -166,6 +166,43 @@ func enrichFromMarka(r *domain.Dislocation, dir *DirectoryCache) bool {
 	return true
 }
 
+// applyMarkaRefresh — принудительное переприменение словаря marka к УЖЕ
+// атрибутированным записям (механизм «Обновить справочники», гибрид владельца).
+// Строгий матч по сырым ключам потока и ПЕРЕНЕСЁННОЙ группе груза — код груза
+// не участвует (мог испортиться в пути, а перенесённая группа достоверна):
+// строка нашлась → атрибуция и цвет применяются заново (правки словаря доезжают
+// до вагонов), sms_2 пересчитывается с перенесённой меткой; не нашлась (кривое
+// ОКПО/станция, наследованная атрибуция) — запись не трогаем. Возвращает число
+// фактически изменённых записей.
+func applyMarkaRefresh(kept []domain.Dislocation, dir *DirectoryCache) int {
+	changed := 0
+	for i := range kept {
+		r := &kept[i]
+		if r.Gruzotpr == "" { // без атрибуции — путь applyMarkaEnrichment
+			continue
+		}
+		if r.GruzotprOkpo == "" || r.CodeStationNach == "" || r.CargoGroup == "" {
+			continue
+		}
+		okpo, err1 := strconv.ParseInt(r.GruzotprOkpo, 10, 64)
+		st, err2 := strconv.ParseInt(r.CodeStationNach, 10, 64)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		m, ok := dir.GetMarkaByCompositeKey(okpo, st, r.CargoGroup)
+		if !ok {
+			continue
+		}
+		before := [6]string{r.Gruzotpr, r.Client, r.Sms1, r.Sms2, r.Sms3, r.Color}
+		applyMarka(r, m)
+		r.Sms2 = joinNonEmpty(r.Sms1, r.CargoSms)
+		if before != [6]string{r.Gruzotpr, r.Client, r.Sms1, r.Sms2, r.Sms3, r.Color} {
+			changed++
+		}
+	}
+	return changed
+}
+
 // applyMarka переносит непустую бизнес-атрибуцию записи marka в дислокацию
 // (shipper/client/sms_1/sms_3 + цвет строки для UI). Груз-поля marka больше не
 // даёт — они из словаря cargo; Sms2 — расчётный (applyMarkaEnrichment, шаг 3).

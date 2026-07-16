@@ -35,6 +35,11 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
           <span nz-icon nzType="cloud-download"></span> Обновить из АСУ
         </button>
         <span class="asu-hint">В один клик: заберёт из АСУ и сразу обновит дислокацию — отдельно ничего жать не нужно.</span>
+        <span class="spacer"></span>
+        <button nz-button [nzLoading]="busyDict()" (click)="reloadDirectories()"
+                nz-tooltip nzTooltipTitle="После правки словарей (marka, cargo): перезагрузить их в память и пересчитать поля вагонов и прогнозы">
+          <span nz-icon nzType="book"></span> Обновить справочники
+        </button>
       </div>
 
       <!-- ЛК: ручной двухшаговый приём (загрузка → обработка) -->
@@ -194,6 +199,7 @@ export class DislocationComponent implements OnInit {
   readonly busyUpload = computed(() => this.pendingUploads() > 0);
   readonly busyProcess = signal(false);
   readonly busyAsu = signal(false);
+  readonly busyDict = signal(false);
   readonly processResult = signal<LKProcessResult | null>(null);
   readonly resultSource = signal<'ЛК' | 'АСУ'>('ЛК');
   readonly showDetails = signal(false);
@@ -243,6 +249,22 @@ export class DislocationComponent implements OnInit {
       this.msg.error(apiErrorMessage(err));
     } finally {
       this.busyAsu.set(false);
+    }
+  }
+
+  /** «Обновить справочники»: перезагрузка словарей + пересчёт снимка (после правки marka/cargo). */
+  async reloadDirectories(): Promise<void> {
+    this.busyDict.set(true);
+    try {
+      const res = await this.api.reloadDirectories();
+      const parts = [`обновлено ${res.refreshed}`, `заполнено ${res.filled + res.filled_by_train}`];
+      if (res.still_empty) parts.push(`без атрибуции ${res.still_empty}`);
+      this.msg.success(`Справочники перезагружены, снимок пересчитан: ${parts.join(', ')} из ${res.count} ваг`);
+      void this.statusPanel?.load();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.busyDict.set(false);
     }
   }
 

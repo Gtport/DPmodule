@@ -100,4 +100,22 @@ export class DislocationApiService {
       this.http.post<LKProcessResult>(`${environment.apiBaseUrl}/v1/dislocation/asu/pull`, {}),
     );
   }
+
+  /** «Обновить справочники»: перезагрузка словарей в RAM + пересчёт снимка (после правки marka/cargo). */
+  reloadDirectories(): Promise<DictReloadResult> {
+    return firstValueFrom(
+      this.http.post<DictReloadResult>(`${environment.apiBaseUrl}/v1/dislocation/directories/reload`, {}),
+    );
+  }
+}
+
+/** Отчёт «Обновить справочники»: что пересчитано в снимке после перезагрузки словарей. */
+export interface DictReloadResult {
+  count: number;             // вагонов в снимке
+  refreshed: number;         // атрибутированные, обновлены правкой словаря
+  filled: number;            // были пустые — заполнены marka
+  filled_by_train: number;   // заполнены наследованием по составу
+  still_empty: number;       // остались без атрибуции
+  forecast_computed: number; // пересчитан ход (Stage 3)
+  prog_computed: number;     // пересчитан прогноз порта (Stage 4)
 }

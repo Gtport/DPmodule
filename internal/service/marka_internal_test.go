@@ -174,6 +174,63 @@ func TestApplyMarkaEnrichment(t *testing.T) {
 	assert.Equal(t, "РУК КОНЦ", kept[3].Sms2)       // перенесённый sms_2 не пересчитан
 }
 
+// «Обновить справочники»: принудительное переприменение marka атрибутированным
+// (гибрид владельца) — правки словаря доезжают, кривые ключи ничего не портят.
+func TestApplyMarkaRefresh(t *testing.T) {
+	dir := markaDir(t, markaFixture, cargoFixture, nil)
+
+	t.Run("правка словаря доезжает до вагона со строгим ключом", func(t *testing.T) {
+		kept := []domain.Dislocation{{
+			Vagon: "V1", GruzotprOkpo: "1", CodeStationNach: "2", CargoGroup: "УГОЛЬ",
+			// атрибуция по СТАРОЙ версии словаря
+			Gruzotpr: "ОТПР", Client: "КЛ-СТАРЫЙ", Sms1: "Улак", Sms2: "Улак Г",
+			Sms3: "УЛАК", Color: "#старый", CargoSms: "Г",
+		}}
+		assert.Equal(t, 1, applyMarkaRefresh(kept, dir))
+		assert.Equal(t, "КЛ", kept[0].Client)     // правка словаря применена
+		assert.Equal(t, "#FFC000", kept[0].Color) // цвет обновлён
+		assert.Equal(t, "Улак Г", kept[0].Sms2)   // sms_2 с ПЕРЕНЕСЁННОЙ меткой
+	})
+
+	t.Run("кривое ОКПО (0) — достоверная запись не тронута", func(t *testing.T) {
+		kept := []domain.Dislocation{{
+			Vagon: "V2", GruzotprOkpo: "00000000", CodeStationNach: "2", CargoGroup: "УГОЛЬ",
+			Gruzotpr: "ВЕРНЫЙ", Client: "ВЕРНЫЙ КЛ", Sms1: "ВЕРН", Sms2: "ВЕРН X", Color: "#верный",
+		}}
+		assert.Equal(t, 0, applyMarkaRefresh(kept, dir))
+		assert.Equal(t, "ВЕРНЫЙ", kept[0].Gruzotpr)
+		assert.Equal(t, "#верный", kept[0].Color)
+	})
+
+	t.Run("наследованная атрибуция (ключи вне словаря) — не тронута", func(t *testing.T) {
+		kept := []domain.Dislocation{{
+			Vagon: "V3", GruzotprOkpo: "77", CodeStationNach: "999", CargoGroup: "УГОЛЬ",
+			Gruzotpr: "ОТ СОСТАВА", Sms1: "СОСТ", Sms2: "СОСТ Г",
+		}}
+		assert.Equal(t, 0, applyMarkaRefresh(kept, dir))
+		assert.Equal(t, "ОТ СОСТАВА", kept[0].Gruzotpr)
+	})
+
+	t.Run("испорченный код груза не влияет (матч по перенесённой группе)", func(t *testing.T) {
+		kept := []domain.Dislocation{{
+			Vagon: "V4", GruzotprOkpo: "1", CodeStationNach: "2", CargoGroup: "УГОЛЬ",
+			CodeCargo: "999999", // кривой код — при матче не участвует
+			Gruzotpr:  "ОТПР", Client: "КЛ", Sms1: "Улак", Sms2: "Улак КОНЦ",
+			Sms3: "УЛАК", Color: "#FFC000", CargoSms: "КОНЦ",
+		}}
+		assert.Equal(t, 0, applyMarkaRefresh(kept, dir)) // всё совпало — изменений нет
+		assert.Equal(t, "Улак КОНЦ", kept[0].Sms2)       // метка из снимка сохранена
+	})
+
+	t.Run("без атрибуции — refresh пропускает (путь applyMarkaEnrichment)", func(t *testing.T) {
+		kept := []domain.Dislocation{{
+			Vagon: "V5", GruzotprOkpo: "1", CodeStationNach: "2", CargoGroup: "УГОЛЬ",
+		}}
+		assert.Equal(t, 0, applyMarkaRefresh(kept, dir))
+		assert.Empty(t, kept[0].Gruzotpr)
+	})
+}
+
 // S2-3d: наследование бизнес-атрибуции по составу (IndexMain) при единогласии.
 func TestApplyTrainInheritance(t *testing.T) {
 	dir := markaDir(t, markaFixture, cargoFixture, nil)
@@ -227,7 +284,7 @@ func TestApplyTrainInheritance(t *testing.T) {
 		s0 := 0
 		kept := []domain.Dislocation{
 			{Vagon: "D", Gruzotpr: "ОТПР", CargoGroup: "УГОЛЬ", IndexMain: "IX-4", Status: &s2},
-			{Vagon: "P", PorozhPriznak: "1", IndexMain: "IX-4", Status: &s2},                      // порожний
+			{Vagon: "P", PorozhPriznak: "1", IndexMain: "IX-4", Status: &s2},                     // порожний
 			{Vagon: "Z", GruzotprOkpo: "0", CodeCargo: "161113", IndexMain: "IX-4", Status: &s0}, // на ст. отправления
 		}
 		st := applyMarkaEnrichment(kept, dir)
