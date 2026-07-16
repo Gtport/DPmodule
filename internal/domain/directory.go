@@ -51,6 +51,7 @@ type Cargo struct {
 type Marka struct {
 	Okpo       int64  // ОКПО грузоотправителя (ключ)
 	StationKod int64  // код станции отправления (ключ)
+	Station    string // имя станции погрузки (информационное, для владельца; поиск — по коду)
 	CargoGroup string // группа груза (ключ; = Cargo.CargoGroup)
 	Shipper    string // → Gruzotpr
 	Client     string // → Client

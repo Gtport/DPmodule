@@ -200,6 +200,9 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
   station_kod, cargo_group), только бизнес-атрибуция (shipper/client/sms_1/sms_3);
   sms_2 — расчётный (sms_1 + cargo_sms словаря). Пересоздание таблицы; данные:
   `scripts/gen_marka_seed.py` (схлопывание старого экспорта) → `_reference/seed/marka.csv`.
+- `000029_marka_station_name.*.sql` — имя станции погрузки (`station`) в marka:
+  информационная колонка для владельца (словарь правится руками), backfill из
+  `stations`; поиск обогащения — по-прежнему по коду.
 
 ---
 
