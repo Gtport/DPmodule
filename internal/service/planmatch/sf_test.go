@@ -154,3 +154,33 @@ func TestSFStationsAndUsed(t *testing.T) {
 		t.Errorf("used=%v, ожидалось {A,C}", used)
 	}
 }
+
+// Регрессия (план Находка, с.ф. ХАБАРОВСК II): у вагонов уехавшего сборного IndexMain —
+// исходный индекс со станции отправления (8649-… Междуреченск), а кандидат найден по
+// ТЕКУЩЕМУ индексу сборного (9700-… = kod_4 Хабаровска II) — его и показываем/ключуем.
+// Сборный из вагонов разных исходных маршрутов — ОДНА группа (по IndexMain развалился бы).
+func TestSFCandidates_DepartedShowsSbornyiIndex(t *testing.T) {
+	sf := []SFRecord{{Sinonim: "ХАБАРОВСК II", Station: "ХАБАРОВСК II", Quantity: 60}}
+	target := map[string]struct{}{"УТ-1": {}}
+	kod4 := map[string][]string{"ХАБАРОВСК II": {"9700"}}
+	s2 := 2
+
+	records := []domain.Dislocation{
+		{Vagon: "111", StationOper: "КАМЕНУШКА", Naznach: "УТ-1",
+			Index: "9700-429-9845", IndexMain: "8649-299-9847", IdDisl: "D1", Status: &s2},
+		{Vagon: "112", StationOper: "КАМЕНУШКА", Naznach: "УТ-1",
+			Index: "9700-429-9845", IndexMain: "8700-100-9847", IdDisl: "D1", Status: &s2},
+	}
+
+	got := SFCandidates("ХАБАРОВСК II", sf, records, target, map[string]struct{}{}, kod4)
+	if len(got) != 1 {
+		t.Fatalf("сборный из разных исходных маршрутов должен быть одной группой, получено %d: %+v", len(got), got)
+	}
+	g := got[0]
+	if !g.Departed || g.Index != "9700-429-9845" || g.Quantity != 2 {
+		t.Errorf("ожидался уехавший сборный с ТЕКУЩИМ индексом 9700-429-9845 и qty=2: %+v", g)
+	}
+	if len(g.SubGroups) != 2 {
+		t.Errorf("«Состав» должен показать 2 подгруппы (разные исходные маршруты): %+v", g.SubGroups)
+	}
+}
