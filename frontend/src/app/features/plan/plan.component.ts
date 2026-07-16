@@ -155,7 +155,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                     <tr class="divider"><td [attr.colspan]="colCount()"></td></tr>
                   }
                   <tr [class.ostatok]="n.is_ostatok">
-                    <td>{{ n.is_ostatok ? '' : dmDate(n.plan_msk) }}</td>
+                    <td>{{ n.is_ostatok ? '' : dmDate(n.plan_jd) }}</td>
                     <td class="idx">{{ n.index_pp || '—' }}</td>
                     <td class="small">{{ n.station_oper }}</td>
                     <td class="c">{{ hm(n.plan_msk) }}</td>
@@ -467,9 +467,11 @@ export class PlanComponent implements OnInit, OnDestroy {
     return 9 + this.portLabels().length; // 6 базовых + порты + Кол-во/Состав/Примечание
   }
 
-  /** Ключ «блока суток»: у «Остатка» — отдельный, у нитки — дата плана. */
+  /** Ключ «блока суток»: у «Остатка» — отдельный, у нитки — ЖД-дата плана
+   *  (plan_jd: час МСК ≥ 18 → следующие сутки). Порядок строк — хронология
+   *  подвода (МСК), поэтому вечерние поезда открывают следующий ЖД-день. */
   private dateKey(n: PlanNitka): string {
-    return n.is_ostatok ? 'ostatok' : this.dmDate(n.plan_msk);
+    return n.is_ostatok ? 'ostatok' : this.dmDate(n.plan_jd);
   }
 
   /** Разделитель-блок перед строкой i при смене суток (как в оригинале gtport). */
