@@ -377,31 +377,16 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 			continue
 		}
 
-		// С.ф.-строка с пустым порядковым номером (маркер «с.ф.» в «Индекс»).
-		if col0 == "" {
-			if isSfRow(label) {
-				if n, ok := g.buildSfNitka(rows[r], cols, blockDate); ok {
-					nitki = append(nitki, n)
-					sfEmitted++
-				} else {
-					sfSkipped++
-				}
-			}
-			continue
-		}
-		// Строка поезда: col0 — числовой порядковый номер.
-		if !isAllDigits(col0) {
-			continue
-		}
+		// Нитка распознаётся ПО СОДЕРЖИМОМУ столбца «Индекс», номер п/п не требуем:
+		// в свежих блоках месячной книги он не проставлен (прод-фикс gtport).
+		//  - маркер «с.ф.» → нитка сборного формирования;
+		//  - валидный индекс 4-3-4 → нитка поезда (в т.ч. без времени: «не подводить»/
+		//    пусто в «Плане» — нитка отображается, но планового времени не имеет);
+		//  - иначе — свободная нитка/служебная строка, пропускаем.
 		if blockDate.IsZero() {
-			continue // нет даты блока — построить время нельзя
+			continue // нет даты блока — нитку не к чему привязать
 		}
-		index := getCell(rows[r], cols.colIndex)
-		if index == "" {
-			continue // свободная нитка без индекса — эталон её не эмитит
-		}
-		// С.ф.-строка с порядковым номером («с.ф.БИКИН», «0000-000-0000»).
-		if isSfRow(index) {
+		if isSfRow(label) {
 			if n, ok := g.buildSfNitka(rows[r], cols, blockDate); ok {
 				nitki = append(nitki, n)
 				sfEmitted++
@@ -410,7 +395,9 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 			}
 			continue
 		}
-
+		if !trainIndexRe.MatchString(label) {
+			continue
+		}
 		nitki = append(nitki, g.buildNitka(rows[r], cols, blockDate))
 		trains++
 	}
@@ -433,9 +420,16 @@ func (g *GridParser) buildNitka(row []string, cols gridCols, blockDate time.Time
 		return strings.TrimSpace(row[col])
 	}
 
-	planJd := combineDateTime(blockDate, get(cols.colPlan)) // ЖД-время, без сдвига
+	planCell := get(cols.colPlan)
+	planJd := combineDateTime(blockDate, planCell) // ЖД-время, без сдвига
 	planMsk := applyMskRule(planJd)
 	factMsk := applyMskRule(combineDateTime(blockDate, get(cols.colFact)))
+	// «План» не время («не подводить», пусто, прочее) → нитка без планового
+	// времени; сырой текст сохраняем для отображения в колонке «План».
+	planRaw := ""
+	if planJd.IsZero() {
+		planRaw = planCell
+	}
 
 	ports, activ := buildPorts(row, cols)
 
@@ -447,6 +441,7 @@ func (g *GridParser) buildNitka(row []string, cols gridCols, blockDate time.Time
 		PlanMsk: planMsk,
 		FactMsk: factMsk,
 		Otkl:    formatOtkl(planMsk, factMsk),
+		PlanRaw: planRaw,
 		Wagons:  atoiSafe(get(cols.colKolVag)),
 		Activ:   activ,
 		Ports:   ports,
@@ -554,6 +549,10 @@ func formatOtkl(plan, fact time.Time) string {
 	}
 	return fmt.Sprintf("%s%02d:%02d", sign, int(d.Hours()), int(d.Minutes())%60)
 }
+
+// trainIndexRe — валидный индекс поезда «АААА-БББ-ВВВВ» (признак строки-нитки;
+// номер п/п не используется — в свежих блоках месячной книги он не проставлен).
+var trainIndexRe = regexp.MustCompile(`^\d{4}-\d{3}-\d{4}$`)
 
 // isAllDigits — строка состоит только из цифр (непустая).
 func isAllDigits(s string) bool {

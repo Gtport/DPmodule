@@ -163,16 +163,17 @@ function todayMsk(): string {
                     <tr class="divider"><td [attr.colspan]="colCount()"></td></tr>
                   }
                   <tr [class.ostatok]="n.is_ostatok">
-                    <td class="date-cell">{{ n.is_ostatok ? '' : dmyDate(n.plan_jd) }}</td>
+                    <td class="date-cell" [class.virt]="rowDates()[i].virtual">{{ rowDates()[i].text }}</td>
                     <td class="idx">{{ n.index_pp || '—' }}</td>
                     <td class="small">{{ n.station_oper }}</td>
-                    <td class="c">{{ hm(n.plan_msk) }}</td>
+                    <td class="c" [class.virt]="!hm(n.plan_msk) && !!n.plan_raw">{{ hm(n.plan_msk) || n.plan_raw }}</td>
                     <td class="c">{{ hm(n.fact_msk) }}</td>
                     <td class="c">{{ n.otkl }}</td>
                     @for (label of portLabels(); track label) {
                       <td class="c">{{ portCount(n, label) }}</td>
                     }
-                    <td class="c bold">{{ n.activ || '' }}</td>
+                    <!-- «Кол-во»: для нитки — сопоставленные вагоны; для «Остатка» — остаток наших. -->
+                    <td class="c bold">{{ (n.is_ostatok ? n.activ : n.matched_wagons) || '' }}</td>
                     <td class="small sostav">{{ n.sostav }}</td>
                     <td class="small">{{ n.comment }}</td>
                   </tr>
@@ -322,6 +323,8 @@ function todayMsk(): string {
     .plan-on { color: var(--color-text); font-weight: 600; }
     /* Колонка «Дата»: дд.мм.гг, полужирно, по центру. */
     .date-cell { text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+    /* Виртуальная дата / текст вместо времени («не подводить») — серый курсив (как в gtport). */
+    .virt { color: #999; font-style: italic; font-weight: 400; }
     /* Разделитель-блок между сутками (как в оригинале: голубой). Селектор с
        ::ng-deep — иначе паддинги ячеек таблицы перебивают и полоса блёкнет. */
     .plan-tbl ::ng-deep tr.divider > td {
@@ -470,15 +473,17 @@ export class PlanComponent implements OnInit, OnDestroy {
       if (this.showDivider(i)) {
         body += '<tr class="divider"><td colspan="' + cols.length + '"></td></tr>';
       }
+      const rd = this.rowDates()[i];
       const cells = [
-        '<td class="c b">' + (n.is_ostatok ? '' : this.dmyDate(n.plan_jd)) + '</td>',
+        '<td class="c ' + (rd.virtual ? 'virt' : 'b') + '">' + rd.text + '</td>',
         '<td class="b">' + esc(n.index_pp || '—') + '</td>',
         '<td>' + esc(n.station_oper) + '</td>',
-        '<td class="c">' + this.hm(n.plan_msk) + '</td>',
+        '<td class="c' + (!this.hm(n.plan_msk) && n.plan_raw ? ' virt' : '') + '">' +
+          (this.hm(n.plan_msk) || esc(n.plan_raw)) + '</td>',
         '<td class="c">' + this.hm(n.fact_msk) + '</td>',
         '<td class="c">' + esc(n.otkl) + '</td>',
         ...labels.map((l) => '<td class="c">' + this.portCount(n, l) + '</td>'),
-        '<td class="c b">' + (n.activ || '') + '</td>',
+        '<td class="c b">' + ((n.is_ostatok ? n.activ : n.matched_wagons) || '') + '</td>',
         '<td class="pre">' + esc(n.sostav) + '</td>',
         '<td class="pre">' + esc(n.comment) + '</td>',
       ];
@@ -496,6 +501,7 @@ export class PlanComponent implements OnInit, OnDestroy {
       'th, td { border: 1px solid #999; padding: 1px 3px; }' +
       'th { background: #f0f0f0; text-align: center; }' +
       '.c { text-align: center; } .b { font-weight: 600; } .pre { white-space: pre-wrap; }' +
+      '.virt { color: #999; font-style: italic; }' +
       'tr.divider td { height: 4px; background: #d9ecfc; border-left: none; border-right: none; }' +
       'tr.ostatok td { background: #f5f5f5; font-weight: 500; }' +
       '</style></head><body>' +
@@ -565,18 +571,32 @@ export class PlanComponent implements OnInit, OnDestroy {
     return 9 + this.portLabels().length; // 6 базовых + порты + Кол-во/Состав/Примечание
   }
 
-  /** Ключ «блока суток»: у «Остатка» — отдельный, у нитки — ЖД-дата плана
-   *  (plan_jd: час МСК ≥ 18 → следующие сутки). Порядок строк — хронология
-   *  подвода (МСК), поэтому вечерние поезда открывают следующий ЖД-день. */
-  private dateKey(n: PlanNitka): string {
-    return n.is_ostatok ? 'ostatok' : this.dmDate(n.plan_jd);
+  /** Дата для отображения по строкам: своя ЖД-дата (plan_jd), а для беспланных
+   *  ниток («не подводить» — времени нет) — «виртуальная»: перенос последней
+   *  известной даты, серым курсивом (как в gtport). */
+  readonly rowDates = computed<{ text: string; virtual: boolean }[]>(() => {
+    let last = '';
+    return this.rows().map((n) => {
+      if (n.is_ostatok) return { text: '', virtual: false };
+      const own = this.dmyDate(n.plan_jd);
+      if (own) {
+        last = own;
+        return { text: own, virtual: false };
+      }
+      return { text: last, virtual: true };
+    });
+  });
+
+  /** Ключ «блока суток»: у «Остатка» — отдельный, у нитки — отображаемая дата
+   *  (ЖД-дата, для беспланных — виртуальная: строка остаётся в блоке своего дня). */
+  private dateKey(i: number): string {
+    return this.rows()[i].is_ostatok ? 'ostatok' : this.rowDates()[i].text;
   }
 
   /** Разделитель-блок перед строкой i при смене суток (как в оригинале gtport). */
   showDivider(i: number): boolean {
     if (i <= 0) return false;
-    const r = this.rows();
-    return this.dateKey(r[i]) !== this.dateKey(r[i - 1]);
+    return this.dateKey(i) !== this.dateKey(i - 1);
   }
 
   /**

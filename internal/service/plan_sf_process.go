@@ -207,6 +207,7 @@ func storedNitkiToPlan(nitki []domain.PlanNitka) []plan.PlanNitka {
 			PlanMsk:   localToTime(n.PlanMsk),
 			FactMsk:   localToTime(n.FactMsk),
 			Otkl:      n.Otkl,
+			PlanRaw:   n.PlanRaw,
 			Wagons:    n.Wagons,
 			Activ:     n.Activ,
 			Ports:     planPortsFromDomain(n.Ports),
@@ -459,18 +460,34 @@ func buildGridNitki(planCode string, doc *plan.PlanDoc, matches []planmatch.Nitk
 			PlanJd:        localPtr(n.PlanJd),
 			FactMsk:       localPtr(n.FactMsk),
 			Otkl:          n.Otkl,
+			PlanRaw:       n.PlanRaw,
 			Wagons:        n.Wagons,
 			Activ:         n.Activ,
 			Ports:         toDomainPorts(n.Ports),
 			Sostav:        planmatch.FormatSostav(matches[i].SubGroups),
 			Comment:       n.Comment,
 			Matched:       matches[i].Matched,
-			MatchedWagons: len(matches[i].Vagons),
+			MatchedWagons: matchedWagons(matches[i]),
 			IsOstatok:     n.IsOstatok,
 			IsSf:          n.IsSf,
 		}
 	}
 	return nitki
+}
+
+// matchedWagons — сопоставлено вагонов нитке для сетки («Кол-во»): сумма подгрупп
+// победителя — согласовано с «Составом» и включает ПРИБЫВШИЕ вагоны (им план не
+// штампуется — collectVagons их исключает, поэтому len(Vagons) для прибывшего
+// поезда 0, хотя сопоставление есть). Fallback — вагоны к простановке (с.ф. и пр.).
+func matchedWagons(m planmatch.NitkaMatch) int {
+	sum := 0
+	for _, sg := range m.SubGroups {
+		sum += sg.Quantity
+	}
+	if sum == 0 {
+		return len(m.Vagons)
+	}
+	return sum
 }
 
 // saveGrid сохраняет сетку плана (заголовок + нитки) для фронта; nil planRepo → no-op.

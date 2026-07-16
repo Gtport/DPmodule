@@ -48,6 +48,7 @@ type PlanNitka struct {
 	PlanJd        *LocalTime `json:"plan_jd"`      // плановое время как в плане (без сдвига)
 	FactMsk       *LocalTime `json:"fact_msk"`
 	Otkl          string     `json:"otkl"`
+	PlanRaw       string     `json:"plan_raw"` // сырой текст «Плана», когда он не время («не подводить»)
 	Wagons        int        `json:"wagons"`         // всего вагонов поезда
 	Activ         int        `json:"activ"`          // вагонов «наших» причалов
 	Ports         []PortCell `json:"ports"`          // ячейки портов (обобщённо, из файла)
