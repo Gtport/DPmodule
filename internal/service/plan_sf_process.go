@@ -33,6 +33,7 @@ type SFCandidateDTO struct {
 	IdDisl   string   `json:"id_disl"`  // справочно
 	Station  string   `json:"station"`  // станция текущей операции (для уехавших — где поезд сейчас)
 	Departed bool     `json:"departed"` // true: покинул станцию формирования (найден по префиксу индекса)
+	Formed   bool     `json:"formed"`   // true: сформирован (реальный индекс), но ещё на станции формирования
 	Index    string   `json:"index"`
 	Date     string   `json:"date"`
 	Quantity int      `json:"quantity"`
@@ -541,7 +542,8 @@ func toCandidateDTO(gs []planmatch.SFGroup) []SFCandidateDTO {
 			date = g.DateOp.Time().Format("2006-01-02")
 		}
 		out[i] = SFCandidateDTO{
-			Key: g.Key, IdDisl: g.IdDisl, Station: g.StationOper, Departed: g.Departed,
+			Key: g.Key, IdDisl: g.IdDisl, Station: g.StationOper,
+			Departed: g.Departed, Formed: g.Formed,
 			Index: g.Index, Date: date, Quantity: g.Quantity,
 			Sostav: planmatch.FormatSostav(g.SubGroups), Vagons: g.Vagons,
 		}

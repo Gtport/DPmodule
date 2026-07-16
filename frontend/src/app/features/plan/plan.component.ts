@@ -202,10 +202,10 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                   <span class="sf-cnt">выбрано {{ sfSelectedWagons(row) }} ваг</span>
                 </div>
 
-                <!-- 1. Уехавшие со станции формирования: реальный индекс найден по префиксу -->
-                @if (departedCands(row).length) {
-                  <div class="sub-title">Поезд-кандидат — уехал со станции формирования</div>
-                  @for (c of departedCands(row); track c.key) {
+                <!-- 1. Сформированные сборные (реальный индекс по префиксу): уехали или ещё стоят -->
+                @if (trainCands(row).length) {
+                  <div class="sub-title">Поезд-кандидат — сформирован с реальным индексом</div>
+                  @for (c of trainCands(row); track c.key) {
                     <label
                       nz-checkbox
                       class="sf-cand"
@@ -214,7 +214,8 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                       (nzCheckedChange)="toggleCandidate(row.ord, c.key)"
                     >
                       <span class="sf-body">
-                        <b class="idx">{{ c.index }}</b> · сейчас {{ c.station }} ·
+                        <b class="idx">{{ c.index }}</b> ·
+                        {{ c.departed ? 'уехал — сейчас ' + c.station : 'на станции формирования' }} ·
                         {{ c.date }} · <b>{{ c.quantity }}</b> ваг · {{ c.sostav }}
                       </span>
                     </label>
@@ -553,14 +554,15 @@ export class PlanComponent implements OnInit, OnDestroy {
       .join(', ');
   }
 
-  /** Уехавшие со станции формирования поезда-кандидаты (секция 1 диалога с.ф.). */
-  departedCands(row: SFRow): SFCandidate[] {
-    return row.candidates.filter((c) => c.departed);
+  /** Поезда-кандидаты (секция 1 диалога с.ф.): сформированные с реальным индексом —
+   *  уехавшие со станции формирования и ещё стоящие на ней. */
+  trainCands(row: SFRow): SFCandidate[] {
+    return row.candidates.filter((c) => c.departed || c.formed);
   }
 
-  /** Группы, стоящие на станции формирования (секция 2 диалога с.ф.). */
+  /** Несобранные группы на станции формирования (секция 2 диалога с.ф.). */
   standingCands(row: SFRow): SFCandidate[] {
-    return row.candidates.filter((c) => !c.departed);
+    return row.candidates.filter((c) => !c.departed && !c.formed);
   }
 
   /** Сумма вагонов выбранных групп с.ф.-строки (для «выбрано N ваг» в заголовке). */
