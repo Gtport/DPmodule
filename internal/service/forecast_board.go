@@ -13,10 +13,9 @@ type ForecastTrain struct {
 	IdDisl     string            `json:"id_disl"`
 	Index      string            `json:"index"`     // текущий индекс поезда
 	Naznach    string            `json:"naznach"`   // терминал (площадка назначения)
-	GruzpolS   string            `json:"gruzpol_s"` // краткое имя причала грузополучателя
-	Sms1       string            `json:"sms_1"`     // метка SMS/уведомлений
+	GruzpolS   string            `json:"gruzpol_s"` // краткое имя причала грузополучателя (для состава)
+	Sms2       string            `json:"sms_2"`     // расчётная метка груза (sms_1 + cargo_sms, для состава)
 	StanNazn   string            `json:"stan_nazn"` // станция назначения
-	CargoS     string            `json:"cargo_s"`   // имя груза (для состава)
 	VagonCount int               `json:"vagon_count"`
 	Ves        float64           `json:"ves"`       // масса состава, тонны
 	HasPlan    bool              `json:"has_plan"`  // нитка задана планом (зелёная подсветка)
@@ -52,8 +51,7 @@ func (b *ForecastBoard) Trains() []ForecastTrain {
 		if !ok {
 			t = &ForecastTrain{
 				IdDisl: r.IdDisl, Index: r.Index, Naznach: r.Naznach,
-				GruzpolS: r.GruzpolS, Sms1: r.Sms1,
-				StanNazn: r.StanNazn, CargoS: r.CargoS,
+				GruzpolS: r.GruzpolS, Sms2: r.Sms2, StanNazn: r.StanNazn,
 			}
 			byTrain[r.IdDisl] = t
 			order = append(order, r.IdDisl)

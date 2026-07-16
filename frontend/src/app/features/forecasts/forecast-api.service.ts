@@ -9,9 +9,8 @@ export interface ForecastTrain {
   index: string;
   naznach: string;
   gruzpol_s: string;
-  sms_1: string;
+  sms_2: string;
   stan_nazn: string;
-  cargo_s: string;
   vagon_count: number;
   ves: number;
   has_plan: boolean;
