@@ -7,6 +7,7 @@ const (
 	EventDislUpdate   = "disl_update"   // снимок дислокации пересобран (ЛК/JSON)
 	EventDislRejected = "disl_rejected" // обновление дислокации ОТКЛОНЕНО гардом (снимок не тронут)
 	EventPlanUpload   = "plan_upload"   // загружен план подвода (МА/НК)
+	EventDictReload   = "dict_reload"   // «Обновить справочники»: перезагрузка словарей + пересчёт снимка
 )
 
 // Триггеры обновления снимка дислокации (event_journal.trigger).

@@ -106,6 +106,10 @@ func Build(
 			proc.SetJournal(journal)
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
 
+			// «Обновить справочники»: горячая перезагрузка словарей + гибридный
+			// пересчёт снимка (правки cargo/marka доезжают до вагонов) + Stage 3–4.
+			handler.NewDictReloadHandler(proc).RegisterRoutes(api)
+
 			// Приём плана подвода: разбор + матч + простановка PlanMsk в снимок.
 			// Целевые площадки — из DirectoryCache (ports.plan_code).
 			planProc := service.NewPlanProcessor(dirCache, dislRepo, actualCache, planRepo, cfg.Storage.BaseDir)
