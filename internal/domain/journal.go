@@ -4,8 +4,9 @@ import "encoding/json"
 
 // Типы событий единого журнала (event_journal.event_type).
 const (
-	EventDislUpdate = "disl_update" // снимок дислокации пересобран (ЛК/JSON)
-	EventPlanUpload = "plan_upload" // загружен план подвода (МА/НК)
+	EventDislUpdate   = "disl_update"   // снимок дислокации пересобран (ЛК/JSON)
+	EventDislRejected = "disl_rejected" // обновление дислокации ОТКЛОНЕНО гардом (снимок не тронут)
+	EventPlanUpload   = "plan_upload"   // загружен план подвода (МА/НК)
 )
 
 // Триггеры обновления снимка дислокации (event_journal.trigger).

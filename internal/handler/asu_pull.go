@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/service"
 )
 
@@ -33,7 +34,7 @@ func (h *asuPullHandler) RegisterRoutes(g *gin.RouterGroup) {
 // @Failure  503 {object} object "источник АСУ не настроен"
 // @Router   /api/v1/dislocation/asu/pull [post]
 func (h *asuPullHandler) pull(c *gin.Context) {
-	res, err := h.ingest.Pull(c.Request.Context())
+	res, err := h.ingest.Pull(c.Request.Context(), domain.TriggerManual)
 	if err != nil {
 		c.JSON(statusForASUError(err), gin.H{"error": err.Error()})
 		return

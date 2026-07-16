@@ -55,10 +55,12 @@ type pulledSource struct {
 	count int
 }
 
-// Pull — один проход автозагрузки: забор всех клиентов → гард рассогласования →
-// общий конвейер обработки → журнал. При рассогласовании меток снимок НЕ трогаем:
-// логируем и возвращаем ErrSourceSkew (обработка прекращена).
-func (a *ASUIngest) Pull(ctx context.Context) (LKProcessResult, error) {
+// Pull — один проход автозагрузки: забор всех клиентов → гарды → общий конвейер
+// обработки → журнал. trigger — кто запустил (domain.TriggerManual — кнопка,
+// TriggerScheduled — крон); пишется в журнал. Любой отказ (гард, сбой забора/
+// разбора/обработки) фиксируется событием disl_rejected с кодом гарда и причиной
+// (какой поток некачественный) — снимок при этом НЕ трогается.
+func (a *ASUIngest) Pull(ctx context.Context, trigger string) (LKProcessResult, error) {
 	sources := a.apiPullSources()
 	if len(sources) == 0 {
 		return LKProcessResult{}, ErrNoASUSource
@@ -69,6 +71,12 @@ func (a *ASUIngest) Pull(ctx context.Context) (LKProcessResult, error) {
 	perFile := make(map[string]int, len(sources))
 	pulled := make([]pulledSource, 0, len(sources))
 
+	// reject фиксирует отклонённую попытку в журнале и возвращает ошибку вызывающему.
+	reject := func(guard string, err error) (LKProcessResult, error) {
+		a.journal.RecordDislRejected(ctx, "asu", trigger, files, guard, err.Error())
+		return LKProcessResult{}, err
+	}
+
 	for _, ds := range sources {
 		if len(ds.Config.Clients) == 0 {
 			return LKProcessResult{}, fmt.Errorf("%w: источник %q без списка клиентов", ErrNoASUSource, ds.ID)
@@ -77,11 +85,11 @@ func (a *ASUIngest) Pull(ctx context.Context) (LKProcessResult, error) {
 		for _, code := range ds.Config.Clients {
 			raw, err := cl.Pull(ctx, code)
 			if err != nil {
-				return LKProcessResult{}, fmt.Errorf("забор АСУ %s/%s: %w", ds.ID, code, err)
+				return reject("fetch", fmt.Errorf("забор АСУ %s/%s: %w", ds.ID, code, err))
 			}
 			res, err := a.parser.Parse(raw)
 			if err != nil {
-				return LKProcessResult{}, fmt.Errorf("разбор АСУ %s/%s: %w", ds.ID, code, err)
+				return reject("parse", fmt.Errorf("разбор АСУ %s/%s: %w", ds.ID, code, err))
 			}
 			// Контроль целостности: заявленный count против фактического (только предупреждение).
 			if res.DeclaredCount != nil && *res.DeclaredCount != len(res.Records) {
@@ -100,14 +108,22 @@ func (a *ASUIngest) Pull(ctx context.Context) (LKProcessResult, error) {
 	// «совместный срез» у ЛК, но отдельный порог MaxSourceSkewMinutes).
 	skew := a.cfg.Settings().IngestPolicy.Dislocation.MaxSourceSkewMinutes
 	if err := a.checkSkew(pulled, skew); err != nil {
-		return LKProcessResult{}, err
+		guard := "skew"
+		if errors.Is(err, ErrNoFormationTS) {
+			guard = "no_formation_ts"
+		}
+		return reject(guard, err)
 	}
 
 	// Гарды свежести — та же политика, что у ЛК (max_staleness_minutes,
 	// reject_older_than_current): АСУ при обрыве связи с РЖД продолжает отдавать
 	// один и тот же устаревший срез — им снимок не пересобираем.
 	if err := a.proc.guardFreshness(ctx, files); err != nil {
-		return LKProcessResult{}, err
+		guard := "stale"
+		if errors.Is(err, ErrDislOlderThanCurrent) {
+			guard = "older"
+		}
+		return reject(guard, err)
 	}
 	// Гард «данные не обновились»: у КАЖДОГО потока метка формирования должна быть
 	// НОВЕЕ, чем в предыдущем обновлении; хотя бы один поток с той же (или более
@@ -115,14 +131,14 @@ func (a *ASUIngest) Pull(ctx context.Context) (LKProcessResult, error) {
 	// и маскирует обрыв данных). Сравнение по потокам: единая worst-метка (doc_ts)
 	// не ловит отставание одного потока при свежем другом.
 	if err := a.checkNotNewer(ctx, files); err != nil {
-		return LKProcessResult{}, err
+		return reject("not_newer", err)
 	}
 
 	res, err := a.proc.ProcessRecords(ctx, all, len(files), perFile)
 	if err != nil {
-		return res, err
+		return reject("process", err) // в т.ч. порог потери данных (max_data_loss_pct)
 	}
-	a.journal.RecordDislUpdate(ctx, "asu", domain.TriggerScheduled, files, res.Count)
+	a.journal.RecordDislUpdate(ctx, "asu", trigger, files, res.Count)
 	return res, nil
 }
 
