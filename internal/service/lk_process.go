@@ -123,7 +123,8 @@ type LKProcessResult struct {
 	Status6Matched   int            `json:"status6_matched"`    // приёмников, добравших груз у донора (S2-3c)
 	MarkaCandidates  int            `json:"marka_candidates"`   // записей без груза (нужна marka) (S2-3)
 	MarkaFilled      int            `json:"marka_filled"`       // груз заполнен из marka (полное + частичное)
-	MarkaMissed      int            `json:"marka_missed"`       // marka не нашла груз (кандидаты донорства S2-3c)
+	MarkaTrainFilled int            `json:"marka_train_filled"` // атрибуция унаследована по составу (S2-3d)
+	MarkaMissed      int            `json:"marka_missed"`       // не нашли ни marka, ни состав (кандидаты донорства S2-3c)
 	NaznachOverride  int            `json:"naznach_override"`   // назначение из перестановки naznach_station
 	ForecastComputed int            `json:"forecast_computed"`  // записей с расчётным прибытием RaschMsk (S2-5)
 	ProgComputed     int            `json:"prog_computed"`      // записей с прогнозным прибытием ProgMsk (Stage 4)
@@ -293,6 +294,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		CarryMatched: co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
 		Status6Donors: donors, Status6Matched: donorMatched,
 		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull + mk.FilledPartial,
+		MarkaTrainFilled: mk.FilledByTrain,
 		MarkaMissed: mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
 		ForecastComputed: forecastN, ProgComputed: progN,
 		HistoryInserted: hist.Inserted, HistoryUpdated: hist.Updated,

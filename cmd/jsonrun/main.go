@@ -101,8 +101,8 @@ func run() error {
 		res.NaznEnriched, res.PortUnresolved, res.PortDisabled)
 	fmt.Printf("статусы: %v\n", res.StatusDist)
 	fmt.Printf("carry-over: matched=%d new=%d sticky=%d\n", res.CarryMatched, res.CarryNew, res.CarrySticky)
-	fmt.Printf("marka: кандидатов=%d заполнено=%d нет марки=%d, перестановок=%d\n",
-		res.MarkaCandidates, res.MarkaFilled, res.MarkaMissed, res.NaznachOverride)
+	fmt.Printf("marka: кандидатов=%d заполнено=%d по составу=%d нет марки=%d, перестановок=%d\n",
+		res.MarkaCandidates, res.MarkaFilled, res.MarkaTrainFilled, res.MarkaMissed, res.NaznachOverride)
 	fmt.Printf("status6 доноры=%d, донорство=%d\n", res.Status6Donors, res.Status6Matched)
 	fmt.Printf("status9: 9-вставлено=%d снято=%d, 8-пропавших=%d\n",
 		res.Status9Inserted, res.Status9Removed, res.Status8Missing)
