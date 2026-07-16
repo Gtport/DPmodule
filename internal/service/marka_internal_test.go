@@ -45,7 +45,7 @@ func markaDir(t *testing.T, marka []domain.Marka, cargo []domain.Cargo, nz []dom
 
 // Ключ marka — по группе груза (000028); группу вагону даёт словарь cargo.
 var markaFixture = []domain.Marka{
-	{Okpo: 1, StationKod: 2, CargoGroup: "УГОЛЬ", Shipper: "ОТПР", Client: "КЛ", Sms1: "Улак", Sms3: "УЛАК"},
+	{Okpo: 1, StationKod: 2, CargoGroup: "УГОЛЬ", Shipper: "ОТПР", Client: "КЛ", Sms1: "Улак", Sms3: "УЛАК", Color: "#FFC000"},
 }
 
 var cargoFixture = []domain.Cargo{
@@ -63,6 +63,7 @@ func TestEnrichFromMarka(t *testing.T) {
 		assert.Equal(t, "КЛ", r.Client)
 		assert.Equal(t, "Улак", r.Sms1)
 		assert.Equal(t, "УЛАК", r.Sms3)
+		assert.Equal(t, "#FFC000", r.Color)
 	})
 
 	t.Run("новый код знакомой группы матчится (смысл переработки)", func(t *testing.T) {
@@ -137,16 +138,17 @@ func TestApplyMarkaEnrichment(t *testing.T) {
 		// новый: словарь даст группу УГОЛЬ → marka по группе + перестановка назначения
 		{Vagon: "V1", GruzotprOkpo: "1", CodeStationNach: "2", CodeCargo: "161113",
 			StanNazn: "МЫС АСТАФЬЕВА", StationNach: "ST-NACH", GruzpolS: "ГУТ-2"},
-		// существующий: атрибуция перенесена carry-over'ом — marka не трогаем, Naznach
-		// тоже; словарь по коду затирает перенесённые груз-поля, Sms2 пересчитывается
+		// существующий атрибутированный: ВСЁ из carry-over — ни marka, ни словарь,
+		// ни пересчёт sms_2 его не трогают (код груза мог испортиться в пути,
+		// снимок вернее потока — решение владельца)
 		{Vagon: "V2", Gruzotpr: "УЖЕ", Naznach: "УТ-1", GruzpolS: "УТ-1",
 			CodeCargo: "161043", CargoS: "КОНЦЕНТР УГОЛЬН", Sms1: "РУК", Sms2: "старое"},
 		// новый без совпадения в marka — кандидат донорства S2-3c
 		{Vagon: "V3", GruzotprOkpo: "7", CodeStationNach: "8", CodeCargo: "161113",
 			StanNazn: "НАХОДКА", StationNach: "X", GruzpolS: "УТ-1"},
-		// порожний: кода нет — перенесённые груз-поля не трогаем
+		// порожний атрибутированный: перенесённые груз-поля и sms_2 не трогаем
 		{Vagon: "V4", Gruzotpr: "БЫЛ", Naznach: "УТ-1", GruzpolS: "УТ-1",
-			CargoS: "ПРОШЛЫЙ ГРУЗ", CargoGroup: "УГОЛЬ", CargoSms: "КОНЦ", Sms1: "РУК"},
+			CargoS: "ПРОШЛЫЙ ГРУЗ", CargoGroup: "УГОЛЬ", CargoSms: "КОНЦ", Sms1: "РУК", Sms2: "РУК КОНЦ"},
 	}
 	st := applyMarkaEnrichment(kept, dir)
 
@@ -160,16 +162,16 @@ func TestApplyMarkaEnrichment(t *testing.T) {
 	assert.Equal(t, "Улак Г", kept[0].Sms2)    // расчёт: Sms1 marka + CargoSms словаря
 	assert.Equal(t, "АЭ", kept[0].Naznach)     // перестановка
 
-	assert.Equal(t, "УЖЕ", kept[1].Gruzotpr)      // не тронут
-	assert.Equal(t, "КОНЦЕНТРАТ", kept[1].CargoS) // словарь — источник правды
-	assert.Equal(t, "РУК КОНЦ", kept[1].Sms2)     // пересчитан
-	assert.Equal(t, "УТ-1", kept[1].Naznach)      // не тронут
+	assert.Equal(t, "УЖЕ", kept[1].Gruzotpr)           // не тронут
+	assert.Equal(t, "КОНЦЕНТР УГОЛЬН", kept[1].CargoS) // из снимка, словарь не затирает
+	assert.Equal(t, "старое", kept[1].Sms2)            // из снимка, не пересчитан
+	assert.Equal(t, "УТ-1", kept[1].Naznach)           // не тронут
 
 	assert.Empty(t, kept[2].Gruzotpr)        // marka не нашла
 	assert.Equal(t, "УТ-1", kept[2].Naznach) // дефолт
 
 	assert.Equal(t, "ПРОШЛЫЙ ГРУЗ", kept[3].CargoS) // порожний: перенос сохранён
-	assert.Equal(t, "РУК КОНЦ", kept[3].Sms2)       // расчёт из перенесённых
+	assert.Equal(t, "РУК КОНЦ", kept[3].Sms2)       // перенесённый sms_2 не пересчитан
 }
 
 // S2-3d: наследование бизнес-атрибуции по составу (IndexMain) при единогласии.
@@ -193,6 +195,7 @@ func TestApplyTrainInheritance(t *testing.T) {
 		assert.Equal(t, "КЛ", kept[2].Client)
 		assert.Equal(t, "Улак", kept[2].Sms1)
 		assert.Equal(t, "УЛАК", kept[2].Sms3)
+		assert.Equal(t, "#FFC000", kept[2].Color)         // цвет наследуется вместе с атрибуцией
 		assert.Equal(t, "00000000", kept[2].GruzotprOkpo) // сырое ОКПО не подделано
 		assert.Equal(t, "Улак КОНЦ", kept[2].Sms2)        // sms_1 состава + СВОЯ метка груза
 	})

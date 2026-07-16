@@ -16,24 +16,28 @@ type MarkaStats struct {
 }
 
 // applyMarkaEnrichment — Stage 2 (S2-3, §3.17): груз и назначение после carry-over,
-// ДО донорства status6. Порядок:
-//  1. словарь cargo переприменяется по коду ЕТСНГ — для известного кода словарь
-//     ИСТОЧНИК ПРАВДЫ (затирает перенесённое carry-over'ом); пустой/неизвестный
-//     код — остаётся перенесённое (порожний сохраняет груз прошлого рейса);
+// ДО донорства status6. Атрибутированные существующие вагоны (Gruzotpr непустой
+// после carry-over) НЕ трогаем совсем: груз-поля и sms_2 переносятся из последнего
+// снимка как есть — код груза может испортиться в пути следования, снимок вернее
+// потока (решение владельца). Правки словарей на такие вагоны действуют только
+// через пересчёт снимка. Остальным (новые и неатрибутированные):
+//  1. словарь cargo переприменяется по коду ЕТСНГ (повтор Stage 1 — для юнитов
+//     и симметрии; пустой/неизвестный код — поля не трогаются);
 //  2. бизнес-атрибуция из marka СТРОГО по ключу (ОКПО отправителя, станция
-//     отправления, ГРУППА груза) — только записям с пустым Gruzotpr (новые
-//     вагоны); частичный матч (станция+группа при чужом ОКПО) упразднён —
-//     он подставлял атрибуцию чужого отправителя (решение владельца);
-//     Naznach — перестановка назначения (новым вагонам);
+//     отправления, ГРУППА груза); частичный матч (станция+группа при чужом ОКПО)
+//     упразднён — подставлял атрибуцию чужого отправителя (решение владельца);
 //  3. наследование по составу (S2-3d): оставшимся без атрибуции — от единогласных
 //     соседей по IndexMain (кривое/пустое ОКПО или станция у части вагонов состава);
-//  4. расчётный Sms2 = Sms1 + CargoSms (после наследования, по всем записям).
+//  4. расчётный Sms2 = Sms1 + CargoSms (после наследования).
+// Naznach — перестановка назначения — любым записям с пустым Naznach.
 func applyMarkaEnrichment(kept []domain.Dislocation, dir *DirectoryCache) MarkaStats {
 	var st MarkaStats
+	fresh := make([]bool, len(kept)) // без атрибуции на входе → обогащаем и считаем sms_2
 	for i := range kept {
 		r := &kept[i]
-		reapplyCargoDict(r, dir)
 		if r.Gruzotpr == "" { // требуется бизнес-атрибуция
+			fresh[i] = true
+			reapplyCargoDict(r, dir)
 			st.Candidates++
 			if enrichFromMarka(r, dir) {
 				st.FilledFull++
@@ -50,7 +54,9 @@ func applyMarkaEnrichment(kept []domain.Dislocation, dir *DirectoryCache) MarkaS
 	st.FilledByTrain = applyTrainInheritance(kept)
 	st.MissedMarka -= st.FilledByTrain // унаследовавшие больше не кандидаты донорства
 	for i := range kept {
-		kept[i].Sms2 = joinNonEmpty(kept[i].Sms1, kept[i].CargoSms)
+		if fresh[i] {
+			kept[i].Sms2 = joinNonEmpty(kept[i].Sms1, kept[i].CargoSms)
+		}
 	}
 	return st
 }
@@ -60,14 +66,14 @@ func applyMarkaEnrichment(kept []domain.Dislocation, dir *DirectoryCache) MarkaS
 // переносится атрибуция соседей по составу (IndexMain) — но ТОЛЬКО при полном
 // единогласии доноров: составы бывают сборные, при разногласии не гадаем
 // (вагон остаётся кандидатом донорства S2-3c). Наследуются выходные поля
-// (Gruzotpr/Client/Sms1/Sms3), сырое GruzotprOkpo не подделываем. Кандидат с
+// (Gruzotpr/Client/Sms1/Sms3/Color), сырое GruzotprOkpo не подделываем. Кандидат с
 // собственной группой груза наследует только от состава той же группы.
 // Расширение сверх эталона gtlogic (решение владельца). Возвращает число
 // заполненных записей.
 func applyTrainInheritance(kept []domain.Dislocation) int {
 	type trainAttr struct {
-		gruzotpr, client, sms1, sms3, cargoGroup string
-		conflict                                 bool
+		gruzotpr, client, sms1, sms3, color, cargoGroup string
+		conflict                                        bool
 	}
 	donors := map[string]*trainAttr{}
 	for i := range kept {
@@ -79,12 +85,13 @@ func applyTrainInheritance(kept []domain.Dislocation) int {
 		if !ok {
 			donors[r.IndexMain] = &trainAttr{
 				gruzotpr: r.Gruzotpr, client: r.Client,
-				sms1: r.Sms1, sms3: r.Sms3, cargoGroup: r.CargoGroup,
+				sms1: r.Sms1, sms3: r.Sms3, color: r.Color, cargoGroup: r.CargoGroup,
 			}
 			continue
 		}
 		if a.gruzotpr != r.Gruzotpr || a.client != r.Client ||
-			a.sms1 != r.Sms1 || a.sms3 != r.Sms3 || a.cargoGroup != r.CargoGroup {
+			a.sms1 != r.Sms1 || a.sms3 != r.Sms3 || a.color != r.Color ||
+			a.cargoGroup != r.CargoGroup {
 			a.conflict = true
 		}
 	}
@@ -102,7 +109,7 @@ func applyTrainInheritance(kept []domain.Dislocation) int {
 		if r.CargoGroup != "" && r.CargoGroup != a.cargoGroup {
 			continue // чужеродный вагон в составе — не наследуем
 		}
-		r.Gruzotpr, r.Client, r.Sms1, r.Sms3 = a.gruzotpr, a.client, a.sms1, a.sms3
+		r.Gruzotpr, r.Client, r.Sms1, r.Sms3, r.Color = a.gruzotpr, a.client, a.sms1, a.sms3, a.color
 		filled++
 	}
 	return filled
@@ -117,9 +124,10 @@ func trainInheritEligible(r *domain.Dislocation) bool {
 		r.Status != nil && *r.Status != 0
 }
 
-// reapplyCargoDict — повторное применение словаря cargo после carry-over (первый
-// раз — Stage 1, до carry-over). Известный код → группа/имя/метка из словаря
-// безусловно; пустой или неизвестный код — поля не трогаем.
+// reapplyCargoDict — повторное применение словаря cargo неатрибутированным
+// записям (первый раз — Stage 1, до carry-over; здесь по сути повтор, нужен
+// юнит-тестам без Stage 1). Известный код → группа/имя/метка из словаря;
+// пустой или неизвестный код — поля не трогаем.
 func reapplyCargoDict(r *domain.Dislocation, dir *DirectoryCache) {
 	if r.CodeCargo == "" {
 		return
@@ -159,8 +167,9 @@ func enrichFromMarka(r *domain.Dislocation, dir *DirectoryCache) bool {
 }
 
 // applyMarka переносит непустую бизнес-атрибуцию записи marka в дислокацию
-// (shipper/client/sms_1/sms_3). Груз-поля marka больше не даёт — они из словаря
-// cargo; Sms2 — расчётный (applyMarkaEnrichment, шаг 3). Пустые поля не затирают.
+// (shipper/client/sms_1/sms_3 + цвет строки для UI). Груз-поля marka больше не
+// даёт — они из словаря cargo; Sms2 — расчётный (applyMarkaEnrichment, шаг 3).
+// Пустые поля не затирают.
 func applyMarka(r *domain.Dislocation, m domain.Marka) {
 	if m.Shipper != "" {
 		r.Gruzotpr = m.Shipper
@@ -173,6 +182,9 @@ func applyMarka(r *domain.Dislocation, m domain.Marka) {
 	}
 	if m.Sms3 != "" {
 		r.Sms3 = m.Sms3
+	}
+	if m.Color != "" {
+		r.Color = m.Color
 	}
 }
 
