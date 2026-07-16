@@ -15,9 +15,10 @@ import (
 
 // Ошибки автозагрузки АСУ (хендлер маппит их в HTTP-коды).
 var (
-	ErrNoASUSource   = errors.New("источник АСУ (api_pull) не настроен или выключен")
-	ErrSourceSkew    = errors.New("рассогласование меток формирования источников АСУ")
-	ErrNoFormationTS = errors.New("источник АСУ не вернул метку формирования")
+	ErrNoASUSource    = errors.New("источник АСУ (api_pull) не настроен или выключен")
+	ErrSourceSkew     = errors.New("рассогласование меток формирования источников АСУ")
+	ErrNoFormationTS  = errors.New("источник АСУ не вернул метку формирования")
+	ErrSourceNotNewer = errors.New("данные АСУ не обновились — метка формирования не новее предыдущего обновления")
 )
 
 // ASUClientFactory строит транспорт под конкретный источник (у каждого свой base_url/
@@ -102,6 +103,21 @@ func (a *ASUIngest) Pull(ctx context.Context) (LKProcessResult, error) {
 		return LKProcessResult{}, err
 	}
 
+	// Гарды свежести — та же политика, что у ЛК (max_staleness_minutes,
+	// reject_older_than_current): АСУ при обрыве связи с РЖД продолжает отдавать
+	// один и тот же устаревший срез — им снимок не пересобираем.
+	if err := a.proc.guardFreshness(ctx, files); err != nil {
+		return LKProcessResult{}, err
+	}
+	// Гард «данные не обновились»: у КАЖДОГО потока метка формирования должна быть
+	// НОВЕЕ, чем в предыдущем обновлении; хотя бы один поток с той же (или более
+	// старой) меткой → снимок не трогаем (перезапись теми же данными бессмысленна
+	// и маскирует обрыв данных). Сравнение по потокам: единая worst-метка (doc_ts)
+	// не ловит отставание одного потока при свежем другом.
+	if err := a.checkNotNewer(ctx, files); err != nil {
+		return LKProcessResult{}, err
+	}
+
 	res, err := a.proc.ProcessRecords(ctx, all, len(files), perFile)
 	if err != nil {
 		return res, err
@@ -140,6 +156,35 @@ func (a *ASUIngest) checkSkew(pulled []pulledSource, limit int) error {
 			zap.Int("gap_min", gap), zap.Int("limit_min", limit),
 			zap.String("oldest", lo.String()), zap.String("newest", hi.String()))
 		return fmt.Errorf("%w: %d мин > %d", ErrSourceSkew, gap, limit)
+	}
+	return nil
+}
+
+// checkNotNewer сверяет метки формирования потоков с предыдущим обновлением
+// дислокации (журнал): каждый уже известный поток обязан принести метку строго
+// новее прежней. Нет журнала/прежних меток или поток новый → пропуск (не блокируем
+// на неполных данных; свежесть относительно «сейчас» проверяет guardFreshness).
+func (a *ASUIngest) checkNotNewer(ctx context.Context, files []LKFileInfo) error {
+	prev, ok := a.journal.LastDislFormationTS(ctx)
+	if !ok {
+		return nil
+	}
+	for _, f := range files {
+		if f.FormationTS.IsZero() {
+			continue // отсутствие метки ловит checkSkew
+		}
+		pts, known := prev[f.Organisation]
+		if !known {
+			continue // новый поток — сравнивать не с чем
+		}
+		if !f.FormationTS.Time().After(pts.Time()) {
+			a.log.Warn("АСУ: поток не принёс новых данных — обработка прекращена",
+				zap.String("source", f.Organisation),
+				zap.String("formation_ts", f.FormationTS.String()),
+				zap.String("prev_ts", pts.String()))
+			return fmt.Errorf("%w: %s (%s ≤ %s)",
+				ErrSourceNotNewer, f.Organisation, f.FormationTS.String(), pts.String())
+		}
 	}
 	return nil
 }

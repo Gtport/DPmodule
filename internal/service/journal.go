@@ -156,6 +156,31 @@ func (j *Journal) LastDislDocTS(ctx context.Context) (*domain.LocalTime, bool) {
 	return ev.DocTS, true
 }
 
+// LastDislFormationTS возвращает метки формирования по потокам (organisation →
+// formation_ts) из последнего обновления дислокации — для гарда «данные не
+// обновились» на пути АСУ. ok=false, если журнала/событий нет или detail не
+// разбирается (гард тогда пропускает — не блокируем на неполных данных).
+func (j *Journal) LastDislFormationTS(ctx context.Context) (map[string]domain.LocalTime, bool) {
+	if j == nil || j.repo == nil {
+		return nil, false
+	}
+	ev, ok, err := j.repo.LatestByType(ctx, domain.EventDislUpdate)
+	if err != nil || !ok || len(ev.Detail) == 0 {
+		return nil, false
+	}
+	var det dislJournalDetail
+	if err := json.Unmarshal(ev.Detail, &det); err != nil || len(det.Terminals) == 0 {
+		return nil, false
+	}
+	out := make(map[string]domain.LocalTime, len(det.Terminals))
+	for _, t := range det.Terminals {
+		if !t.FormationTS.IsZero() && t.Organisation != "" {
+			out[t.Organisation] = t.FormationTS
+		}
+	}
+	return out, len(out) > 0
+}
+
 // LatestDislUpdate возвращает последнее событие обновления дислокации (для панели).
 func (j *Journal) LatestDislUpdate(ctx context.Context) (domain.JournalEvent, bool) {
 	if j == nil || j.repo == nil {

@@ -45,7 +45,8 @@ func (h *asuPullHandler) pull(c *gin.Context) {
 func statusForASUError(err error) int {
 	switch {
 	case errors.Is(err, service.ErrSourceSkew), errors.Is(err, service.ErrNoFormationTS),
-		errors.Is(err, service.ErrDataLoss):
+		errors.Is(err, service.ErrDataLoss), errors.Is(err, service.ErrSourceNotNewer),
+		errors.Is(err, service.ErrDislTooStale), errors.Is(err, service.ErrDislOlderThanCurrent):
 		return http.StatusConflict
 	case errors.Is(err, service.ErrNoASUSource):
 		return http.StatusServiceUnavailable
