@@ -5,6 +5,7 @@ import { NzRadioModule } from 'ng-zorro-antd/radio';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { ForecastApiService, ForecastTrain } from './forecast-api.service';
 
@@ -74,10 +75,6 @@ import { ForecastApiService, ForecastTrain } from './forecast-api.service';
           }
         </tbody>
       </nz-table>
-
-      @if (error()) {
-        <p class="err">{{ error() }}</p>
-      }
     </div>
   `,
   styles: [`
@@ -94,17 +91,17 @@ import { ForecastApiService, ForecastTrain } from './forecast-api.service';
     .term { margin: 0; }
     /* Плановые поезда — зелёная подсветка строки. */
     tr.plan > td { background: var(--color-success-bg, #f6ffed); }
-    .err { color: var(--color-error, #cf1322); font-size: var(--font-size-sm); }
     :host ::ng-deep .ant-table-tbody > tr > td { padding: 4px 8px; }
     :host ::ng-deep .ant-table-thead > tr > th { padding: 6px 8px; }
   `],
 })
 export class ForecastComponent implements OnInit {
   private readonly api = inject(ForecastApiService);
+  /** Уведомления — всплывающие тосты с автоуборкой (договорённость), не баннеры в теле. */
+  private readonly msg = inject(NzMessageService);
 
   readonly rows = signal<ForecastTrain[]>([]);
   readonly loading = signal(false);
-  readonly error = signal<string | null>(null);
   readonly terminal = signal<string>('');
 
   readonly terminals = computed(() =>
@@ -121,11 +118,10 @@ export class ForecastComponent implements OnInit {
 
   async load(): Promise<void> {
     this.loading.set(true);
-    this.error.set(null);
     try {
       this.rows.set(await this.api.getForecast());
     } catch (err) {
-      this.error.set(apiErrorMessage(err));
+      this.msg.error(apiErrorMessage(err));
     } finally {
       this.loading.set(false);
     }
