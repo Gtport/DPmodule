@@ -64,7 +64,8 @@ export interface PlanGrid {
 export interface SFCandidate {
   key: string;     // уникальный идентификатор группы для выбора (id_disl не уникален!)
   id_disl: string;
-  station: string;
+  station: string;  // станция текущей операции (для уехавших — где поезд сейчас)
+  departed: boolean; // true: покинул станцию формирования (найден по префиксу индекса)
   index: string;
   date: string;
   quantity: number;

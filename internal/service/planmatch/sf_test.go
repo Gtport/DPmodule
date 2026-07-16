@@ -27,7 +27,7 @@ func TestSFCandidates(t *testing.T) {
 		{Vagon: "500", StationOper: "БИКИН", Naznach: "ГУТ-2", IdDisl: "D5"},
 	}
 
-	got := SFCandidates("БИКИН", sf, records, target, used)
+	got := SFCandidates("БИКИН", sf, records, target, used, nil)
 	if len(got) != 2 {
 		t.Fatalf("ожидалось 2 группы-кандидата, получено %d: %+v", len(got), got)
 	}
@@ -43,6 +43,62 @@ func TestSFCandidates(t *testing.T) {
 		t.Errorf("D2: ok=%v qty=%d index=%q", ok, g.Quantity, g.Index)
 	}
 	for _, bad := range []string{"D3", "D4", "D5"} {
+		if _, ok := byID[bad]; ok {
+			t.Errorf("группа %s не должна быть кандидатом", bad)
+		}
+	}
+}
+
+// TestSFCandidates_Departed: уехавшие со станции формирования сборные ловятся по
+// префиксу индекса (АААА = kod_4 станции с.ф.), помечаются Departed и идут первыми;
+// прибывшие/порожние/чужие префиксы/занятые — не предлагаются.
+func TestSFCandidates_Departed(t *testing.T) {
+	sf := []SFRecord{{Sinonim: "БИКИН", Station: "БИКИН", Quantity: 50}}
+	target := map[string]struct{}{"АЭ": {}}
+	kod4 := map[string]string{"БИКИН": "9401"}
+	used := map[string]struct{}{"D9": {}}
+	s2, s10 := 2, 10
+
+	records := []domain.Dislocation{
+		// стоящий на станции формирования — обычный кандидат
+		{Vagon: "100", StationOper: "БИКИН", Naznach: "АЭ", Index: "9401-011-9857", IdDisl: "D0", Status: &s2},
+		// уехал: в пути, индекс с префиксом БИКИНа — кандидат Departed
+		{Vagon: "111", StationOper: "ХАБАРОВСК II", Naznach: "АЭ", Index: "9401-055-9857", IndexMain: "9401-055-9857", IdDisl: "D1", Status: &s2},
+		{Vagon: "112", StationOper: "ХАБАРОВСК II", Naznach: "АЭ", Index: "9401-055-9857", IndexMain: "9401-055-9857", IdDisl: "D1", Status: &s2},
+		// переформирован в пути: текущий индекс чужой, IndexMain хранит исходный — кандидат
+		{Vagon: "200", StationOper: "РУЖИНО", Naznach: "АЭ", Index: "8888-001-9857", IndexMain: "9401-077-9857", IdDisl: "D2", Status: &s2},
+		// прибыл (10) → не предлагается
+		{Vagon: "300", StationOper: "МЫС АСТАФЬЕВА", Naznach: "АЭ", Index: "9401-099-9857", IdDisl: "D3", Status: &s10},
+		// порожний → не предлагается
+		{Vagon: "400", StationOper: "РУЖИНО", Naznach: "АЭ", Index: "9401-100-9857", IdDisl: "D4", Status: &s2, PorozhPriznak: "1"},
+		// чужой префикс → не предлагается
+		{Vagon: "500", StationOper: "РУЖИНО", Naznach: "АЭ", Index: "7777-001-9857", IdDisl: "D5", Status: &s2},
+		// занят обычной ниткой → не предлагается
+		{Vagon: "600", StationOper: "РУЖИНО", Naznach: "АЭ", Index: "9401-200-9857", IdDisl: "D9", Status: &s2},
+	}
+
+	got := SFCandidates("БИКИН", sf, records, target, used, kod4)
+	if len(got) != 3 {
+		t.Fatalf("ожидалось 3 группы (стоящий D0 + уехавшие D1, D2), получено %d: %+v", len(got), got)
+	}
+	// Уехавшие — первыми.
+	if !got[0].Departed || !got[1].Departed || got[2].Departed {
+		t.Errorf("порядок Departed: %v %v %v, ожидалось true true false", got[0].Departed, got[1].Departed, got[2].Departed)
+	}
+	byID := map[string]SFGroup{}
+	for _, g := range got {
+		byID[g.IdDisl] = g
+	}
+	if g := byID["D1"]; !g.Departed || g.Quantity != 2 || g.StationOper != "ХАБАРОВСК II" {
+		t.Errorf("D1: %+v", g)
+	}
+	if g := byID["D2"]; !g.Departed || g.Index != "9401-077-9857" {
+		t.Errorf("D2 (переформирован, IndexMain): %+v", g)
+	}
+	if g := byID["D0"]; g.Departed {
+		t.Errorf("D0 стоит на станции формирования — не Departed: %+v", g)
+	}
+	for _, bad := range []string{"D3", "D4", "D5", "D9"} {
 		if _, ok := byID[bad]; ok {
 			t.Errorf("группа %s не должна быть кандидатом", bad)
 		}
