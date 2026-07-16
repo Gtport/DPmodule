@@ -27,6 +27,7 @@ import (
 
 	_ "github.com/Gtport/DPmodule/api/swagger"
 	"github.com/Gtport/DPmodule/internal/config"
+	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
 	gormrepo "github.com/Gtport/DPmodule/internal/repository/gorm"
 	"github.com/Gtport/DPmodule/internal/server"
@@ -202,7 +203,7 @@ func run() error {
 	// Pull вернёт ErrNoASUSource — тихо пропускаем.
 	if cfg.ASU.Enabled && asuIngest != nil {
 		job := func(ctx context.Context) error {
-			_, err := asuIngest.Pull(ctx)
+			_, err := asuIngest.Pull(ctx, domain.TriggerScheduled)
 			if errors.Is(err, service.ErrNoASUSource) {
 				log.Debug("asu-pull: источник не настроен/выключен — пропуск")
 				return nil

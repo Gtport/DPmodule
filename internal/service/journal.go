@@ -43,6 +43,14 @@ type dislJournalDetail struct {
 	Terminals []dislTermJournal `json:"terminals"`
 }
 
+// dislRejectJournalDetail — detail события disl_rejected: какой гард сработал и
+// почему (текст с именем некачественного потока), метки формирования по потокам.
+type dislRejectJournalDetail struct {
+	Guard     string            `json:"guard"`  // skew|no_formation_ts|stale|older|not_newer|process|fetch|parse
+	Reason    string            `json:"reason"` // человекочитаемая причина (текст ошибки)
+	Terminals []dislTermJournal `json:"terminals,omitempty"`
+}
+
 // planOverrideJournal — одно переопределение индекса нитки оператором (с.ф.→реальный
 // индекс либо исправление опечатки) для аудита действия пользователя.
 type planOverrideJournal struct {
@@ -86,6 +94,32 @@ func (j *Journal) RecordDislUpdate(ctx context.Context, source, trigger string, 
 	}, det)
 }
 
+// RecordDislRejected фиксирует ОТКЛОНЁННУЮ попытку обновления дислокации (гард или
+// сбой забора/обработки): снимок не тронут, но факт и причина видны в журнале.
+// guard — код сработавшей защиты, reason — человекочитаемый текст (какой поток
+// некачественный и почему). trigger — кто запускал (manual — кнопка, scheduled — cron).
+func (j *Journal) RecordDislRejected(ctx context.Context, source, trigger string, files []LKFileInfo, guard, reason string) {
+	if j == nil || j.repo == nil {
+		return
+	}
+	det := dislRejectJournalDetail{Guard: guard, Reason: reason, Terminals: make([]dislTermJournal, 0, len(files))}
+	var oldest *domain.LocalTime
+	for _, f := range files {
+		det.Terminals = append(det.Terminals, dislTermJournal{
+			Okpo: f.Okpo, Organisation: f.Organisation, Terminals: f.Terminals,
+			FormationTS: f.FormationTS, AgeMinutes: f.AgeMinutes,
+		})
+		ts := f.FormationTS
+		if !ts.IsZero() && (oldest == nil || ts.Time().Before(oldest.Time())) {
+			cp := ts
+			oldest = &cp
+		}
+	}
+	j.append(ctx, domain.JournalEvent{
+		EventType: domain.EventDislRejected, Source: source, Trigger: trigger, DocTS: oldest,
+	}, det)
+}
+
 // RecordPlanUpload фиксирует загрузку плана подвода. doc_ts — дата плана из документа.
 // overrides — ручные переопределения индексов ниток оператором (ord→индекс), могут
 // быть nil (одношаговая загрузка/без правок); пишутся в detail как аудит действия.
@@ -118,14 +152,15 @@ func overridesForJournal(overrides map[int]string) []planOverrideJournal {
 	return out
 }
 
-// SnapshotUpdates возвращает события перестроения снимка дислокации (обновления ЛК/JSON
-// + загрузки планов) за период [from, to] — источник журнала обновлений дислокации.
+// SnapshotUpdates возвращает события перестроения снимка дислокации (обновления
+// ЛК/JSON + загрузки планов + отклонённые гардами попытки) за период [from, to] —
+// источник журнала обновлений дислокации.
 func (j *Journal) SnapshotUpdates(ctx context.Context, from, to *domain.LocalTime, limit int) ([]domain.JournalEvent, error) {
 	if j == nil || j.repo == nil {
 		return nil, nil
 	}
 	return j.repo.Range(ctx, from, to,
-		[]string{domain.EventDislUpdate, domain.EventPlanUpload}, limit)
+		[]string{domain.EventDislUpdate, domain.EventDislRejected, domain.EventPlanUpload}, limit)
 }
 
 // append дописывает событие: проставляет actor из контекста, created_at из clock.Now(),

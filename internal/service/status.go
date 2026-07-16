@@ -106,16 +106,20 @@ func dislStatusFrom(ev domain.JournalEvent, now domain.LocalTime) *DislStatusDTO
 	return d
 }
 
-// DislJournalEntry — одна запись журнала обновлений дислокации (обновление снимка).
+// DislJournalEntry — одна запись журнала обновлений дислокации (обновление снимка
+// либо отклонённая гардом попытка).
 type DislJournalEntry struct {
-	At        domain.LocalTime  `json:"at"`         // когда записано (МСК)
-	EventType string            `json:"event_type"` // disl_update | plan_upload (справочно)
-	Source    string            `json:"source"`     // lk | json | plan_ma | plan_nk
-	Trigger   string            `json:"trigger"`    // manual | scheduled | actualization | plan
-	ActorType string            `json:"actor_type"` // system | user
-	Actor     string            `json:"actor"`      // имя пользователя (пусто для system)
-	DocTS     *domain.LocalTime `json:"doc_ts"`     // метка формирования (ЛК) / дата плана
-	Wagons    int               `json:"wagons"`     // затронуто вагонов (снимок для ЛК, застолблено для плана)
+	At        domain.LocalTime  `json:"at"`               // когда записано (МСК)
+	EventType string            `json:"event_type"`       // disl_update | disl_rejected | plan_upload
+	Source    string            `json:"source"`           // lk | asu | plan_ma | plan_nk
+	Trigger   string            `json:"trigger"`          // manual (кнопка) | scheduled (крон) | plan
+	ActorType string            `json:"actor_type"`       // system | user
+	Actor     string            `json:"actor"`            // имя пользователя (пусто для system)
+	DocTS     *domain.LocalTime `json:"doc_ts"`           // метка формирования (ЛК/АСУ) / дата плана
+	Wagons    int               `json:"wagons"`           // затронуто вагонов (снимок для ЛК, застолблено для плана)
+	Result    string            `json:"result"`           // ok | rejected
+	Guard     string            `json:"guard,omitempty"`  // код сработавшей защиты (для rejected)
+	Reason    string            `json:"reason,omitempty"` // причина отказа: какой поток некачественный и почему
 }
 
 // DislocationJournal возвращает журнал обновлений дислокации за период [from, to]
@@ -152,8 +156,18 @@ func dislJournalEntryFrom(ev domain.JournalEvent) DislJournalEntry {
 			e.Trigger = domain.TriggerManual
 		}
 	}
-	// Кол-во вагонов: для обновления ЛК/JSON — размер снимка, для плана — застолблено.
+	// Результат и детали: для отклонённых — код гарда и причина (какой поток
+	// некачественный); для успешных — кол-во вагонов (снимок для ЛК/АСУ, застолблено
+	// для плана).
+	e.Result = "ok"
 	switch ev.EventType {
+	case domain.EventDislRejected:
+		e.Result = "rejected"
+		var det dislRejectJournalDetail
+		if json.Unmarshal(ev.Detail, &det) == nil {
+			e.Guard = det.Guard
+			e.Reason = det.Reason
+		}
 	case domain.EventPlanUpload:
 		var det planJournalDetail
 		if json.Unmarshal(ev.Detail, &det) == nil {
