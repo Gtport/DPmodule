@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
-import { NzAlertModule } from 'ng-zorro-antd/alert';
+import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzSelectModule } from 'ng-zorro-antd/select';
@@ -42,7 +42,7 @@ function todayMsk(): string {
 @Component({
   selector: 'app-plan',
   imports: [
-    FormsModule, NzButtonModule, NzCardModule, NzAlertModule, NzTagModule,
+    FormsModule, NzButtonModule, NzCardModule, NzTagModule,
     NzTableModule, NzSelectModule, NzCheckboxModule, NzUploadModule, NzIconModule,
     NzSpinModule, NzTabsModule, NzTooltipModule, NzModalModule,
     PlanStatusPanelComponent, IndexInputComponent,
@@ -100,11 +100,7 @@ function todayMsk(): string {
             <span nz-icon nzType="sync"></span>
           </button>
 
-          <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Обновить" (click)="refresh()">
-            <span nz-icon nzType="reload"></span>
-          </button>
-
-          <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Печать" [disabled]="!grid()" (click)="printTable()">
+          <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Печать таблицы плана (альбомная)" [disabled]="!grid()" (click)="printTable()">
             <span nz-icon nzType="printer"></span>
           </button>
 
@@ -131,13 +127,6 @@ function todayMsk(): string {
             </span>
           }
         </div>
-
-        @if (uploadMsg()) {
-          <nz-alert class="msg" nzType="success" [nzMessage]="uploadMsg()!" nzShowIcon nzCloseable />
-        }
-        @if (error()) {
-          <nz-alert class="msg" nzType="error" [nzMessage]="error()!" nzShowIcon nzCloseable />
-        }
       </nz-card>
 
       <nz-card class="card">
@@ -308,7 +297,6 @@ function todayMsk(): string {
     .lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .spacer { flex: 1 1 auto; }
     .summary { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-    .msg { margin-top: var(--space-md); }
     .muted { color: var(--color-text-muted); }
     .c { text-align: center; }
     .bold { font-weight: 600; }
@@ -364,6 +352,8 @@ function todayMsk(): string {
 })
 export class PlanComponent implements OnInit, OnDestroy {
   private readonly api = inject(PlanApiService);
+  /** Уведомления — всплывающие тосты с автоуборкой (договорённость), не баннеры в теле. */
+  private readonly msg = inject(NzMessageService);
 
   @ViewChild(PlanStatusPanelComponent) private statusPanel?: PlanStatusPanelComponent;
 
@@ -389,8 +379,6 @@ export class PlanComponent implements OnInit, OnDestroy {
   readonly busyUpload = signal(false);
   readonly busyRecalc = signal(false);
   readonly showForeign = signal(false);
-  readonly uploadMsg = signal<string | null>(null);
-  readonly error = signal<string | null>(null);
 
   /**
    * Столбцы портов в порядке первого появления. По умолчанию — только «наши» причалы
@@ -448,7 +436,6 @@ export class PlanComponent implements OnInit, OnDestroy {
   onCodeChange(code: string): void {
     this.selectedCode.set(code);
     this.selectedLabel.set(this.stationOptions.find((o) => o.code === code)?.label ?? code);
-    this.uploadMsg.set(null);
     this.reload(code);
   }
 
@@ -458,14 +445,67 @@ export class PlanComponent implements OnInit, OnDestroy {
     if (code) this.onCodeChange(code);
   }
 
-  /** Обновить список загрузок текущей станции. */
-  refresh(): void {
-    this.reload(this.selectedCode());
-  }
-
-  /** Печать таблицы штатным диалогом браузера. */
+  /** Печать ТОЛЬКО таблицы плана (не всей страницы): отдельное окно с печатной
+   *  версией, альбомная ориентация, автопечать и автозакрытие (как в gtport). */
   printTable(): void {
-    window.print();
+    const g = this.grid();
+    if (!g) return;
+    const w = window.open('', '_blank');
+    if (!w) {
+      this.msg.error('Не удалось открыть окно печати — разрешите всплывающие окна для этого сайта.');
+      return;
+    }
+    const esc = (v: string | null | undefined) =>
+      (v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const labels = this.portLabels();
+    // Заголовки портов — те же сокращения, что в таблице на экране (shortLabel).
+    const cols = ['Дата', 'Индекс', 'Дислокация', 'План', 'Факт', 'Откл',
+      ...labels.map((l) => this.shortLabel(l)), 'Кол-во', 'Состав', 'Примечание'];
+    const header = cols.map((c) => '<th>' + esc(c) + '</th>').join('');
+
+    let body = '';
+    const rows = this.rows();
+    for (let i = 0; i < rows.length; i++) {
+      const n = rows[i];
+      if (this.showDivider(i)) {
+        body += '<tr class="divider"><td colspan="' + cols.length + '"></td></tr>';
+      }
+      const cells = [
+        '<td class="c b">' + (n.is_ostatok ? '' : this.dmyDate(n.plan_jd)) + '</td>',
+        '<td class="b">' + esc(n.index_pp || '—') + '</td>',
+        '<td>' + esc(n.station_oper) + '</td>',
+        '<td class="c">' + this.hm(n.plan_msk) + '</td>',
+        '<td class="c">' + this.hm(n.fact_msk) + '</td>',
+        '<td class="c">' + esc(n.otkl) + '</td>',
+        ...labels.map((l) => '<td class="c">' + this.portCount(n, l) + '</td>'),
+        '<td class="c b">' + (n.activ || '') + '</td>',
+        '<td class="pre">' + esc(n.sostav) + '</td>',
+        '<td class="pre">' + esc(n.comment) + '</td>',
+      ];
+      body += '<tr' + (n.is_ostatok ? ' class="ostatok"' : '') + '>' + cells.join('') + '</tr>';
+    }
+
+    const title = 'План подвода — ' + this.selectedLabel() +
+      (g.plan.plan_date ? ' (на ' + this.dmyDate(g.plan.plan_date) + ')' : '');
+    const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title><style>' +
+      '@page { size: A4 landscape; margin: 8mm; }' +
+      'body { font-family: Arial, sans-serif; margin: 0; }' +
+      'h3 { text-align: center; margin: 4px 0 8px; font-size: 14px; }' +
+      '.sub { text-align: center; color: #555; font-size: 10px; margin-bottom: 6px; }' +
+      'table { width: 100%; border-collapse: collapse; font-size: 9px; }' +
+      'th, td { border: 1px solid #999; padding: 1px 3px; }' +
+      'th { background: #f0f0f0; text-align: center; }' +
+      '.c { text-align: center; } .b { font-weight: 600; } .pre { white-space: pre-wrap; }' +
+      'tr.divider td { height: 4px; background: #d9ecfc; border-left: none; border-right: none; }' +
+      'tr.ostatok td { background: #f5f5f5; font-weight: 500; }' +
+      '</style></head><body>' +
+      '<h3>' + esc(title) + '</h3>' +
+      '<div class="sub">напечатано ' + new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' МСК</div>' +
+      '<table><thead><tr>' + header + '</tr></thead><tbody>' + body + '</tbody></table>' +
+      '<script>setTimeout(function(){window.print();setTimeout(function(){window.close();},300);},300);<\/script>' +
+      '</body></html>';
+    w.document.write(html);
+    w.document.close();
   }
 
   onPlanChange(id: number | null): void {
@@ -684,7 +724,6 @@ export class PlanComponent implements OnInit, OnDestroy {
     const prep = this.sfPrepare();
     if (!prep) return;
     this.revalBusy.set(true);
-    this.error.set(null);
     try {
       let res: PreparePlanResult;
       try {
@@ -699,7 +738,7 @@ export class PlanComponent implements OnInit, OnDestroy {
       }
       this.sfPrepare.set(res); // обновлённые sf/problems/matched (правки сохраняются в overrides)
     } catch (err) {
-      this.error.set(apiErrorMessage(err));
+      this.msg.error(apiErrorMessage(err));
     } finally {
       this.revalBusy.set(false);
     }
@@ -751,7 +790,7 @@ export class PlanComponent implements OnInit, OnDestroy {
   async recalc(): Promise<void> {
     const id = this.selectedPlanId();
     if (id == null) {
-      this.error.set('Нет выбранного плана для пересчёта.');
+      this.msg.error('Нет выбранного плана для пересчёта.');
       return;
     }
     await this.runPrepareFlow(() => this.api.recalc(id), this.busyRecalc);
@@ -765,8 +804,6 @@ export class PlanComponent implements OnInit, OnDestroy {
     busy: WritableSignal<boolean>,
   ): Promise<void> {
     busy.set(true);
-    this.error.set(null);
-    this.uploadMsg.set(null);
     this.resubmit = source;
     try {
       const prep = await source();
@@ -780,7 +817,7 @@ export class PlanComponent implements OnInit, OnDestroy {
         this.startSfHeartbeat();   // продлевать токен, пока окно открыто
       }
     } catch (err) {
-      this.error.set(apiErrorMessage(err));
+      this.msg.error(apiErrorMessage(err));
       this.resubmit = null;
     } finally {
       busy.set(false);
@@ -793,7 +830,6 @@ export class PlanComponent implements OnInit, OnDestroy {
     selections: Record<number, string[]>,
   ): Promise<void> {
     this.sfBusy.set(true);
-    this.error.set(null);
     try {
       let res: PlanApplyResult;
       try {
@@ -808,14 +844,14 @@ export class PlanComponent implements OnInit, OnDestroy {
           throw err;
         }
       }
-      this.uploadMsg.set(
+      this.msg.success(
         `${res.filename}: ниток ${res.nitki}, сопоставлено ${res.matched}, вагонов застолблено ${res.stamped}`,
       );
       this.closeSfDialog();
       await this.reload(this.selectedCode());
       void this.statusPanel?.load(); // загрузка меняет актуальность плана — обновим панель сразу
     } catch (err) {
-      this.error.set(apiErrorMessage(err));
+      this.msg.error(apiErrorMessage(err));
       this.closeSfDialog(); // не запираем пользователя: окно закрывается даже при ошибке
     } finally {
       this.sfBusy.set(false);
@@ -827,7 +863,6 @@ export class PlanComponent implements OnInit, OnDestroy {
    *  сбрасывается (показываем все), открывается свежайшая загрузка. */
   private async reload(code: string): Promise<void> {
     this.loading.set(true);
-    this.error.set(null);
     try {
       const plans = await this.api.listPlans(code);
       this.plans.set(plans);
@@ -847,7 +882,7 @@ export class PlanComponent implements OnInit, OnDestroy {
     } catch (err) {
       this.grid.set(null);
       if (!(err instanceof HttpErrorResponse && err.status === 404)) {
-        this.error.set(apiErrorMessage(err));
+        this.msg.error(apiErrorMessage(err));
       }
     } finally {
       this.loading.set(false);
@@ -856,11 +891,10 @@ export class PlanComponent implements OnInit, OnDestroy {
 
   private async loadGridById(id: number): Promise<void> {
     this.loading.set(true);
-    this.error.set(null);
     try {
       this.grid.set(await this.api.getById(this.selectedCode(), id));
     } catch (err) {
-      this.error.set(apiErrorMessage(err));
+      this.msg.error(apiErrorMessage(err));
     } finally {
       this.loading.set(false);
     }
