@@ -15,7 +15,7 @@ import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { PlanApiService, PlanApplyResult, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFRow } from './plan-api.service';
+import { PlanApiService, PlanApplyResult, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFCandidate, SFRow } from './plan-api.service';
 import { PlanStatusPanelComponent } from './plan-status-panel.component';
 import { IndexInputComponent } from './index-input.component';
 
@@ -202,15 +202,29 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                   <span class="sf-cnt">выбрано {{ sfSelectedWagons(row) }} ваг</span>
                 </div>
 
-                <div class="ovr">
-                  <span class="ovr-lbl">Поезд уже сформирован? Впишите индекс:</span>
-                  <app-index-input (valueChange)="onOverride(row.ord, $event)" (completed)="revalidate()" />
-                </div>
+                <!-- 1. Уехавшие со станции формирования: реальный индекс найден по префиксу -->
+                @if (departedCands(row).length) {
+                  <div class="sub-title">Поезд-кандидат — уехал со станции формирования</div>
+                  @for (c of departedCands(row); track c.key) {
+                    <label
+                      nz-checkbox
+                      class="sf-cand"
+                      [nzChecked]="isChecked(row.ord, c.key)"
+                      [nzDisabled]="isTaken(row.ord, c.key)"
+                      (nzCheckedChange)="toggleCandidate(row.ord, c.key)"
+                    >
+                      <span class="sf-body">
+                        <b class="idx">{{ c.index }}</b> · сейчас {{ c.station }} ·
+                        {{ c.date }} · <b>{{ c.quantity }}</b> ваг · {{ c.sostav }}
+                      </span>
+                    </label>
+                  }
+                }
 
-                @if (row.candidates.length === 0) {
-                  <div class="muted">Нет групп-кандидатов на станции формирования.</div>
-                } @else {
-                  @for (c of row.candidates; track c.key) {
+                <!-- 2. Группы на станции формирования -->
+                @if (standingCands(row).length) {
+                  <div class="sub-title">Группы на станции формирования</div>
+                  @for (c of standingCands(row); track c.key) {
                     <label
                       nz-checkbox
                       class="sf-cand"
@@ -222,6 +236,15 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                     </label>
                   }
                 }
+                @if (row.candidates.length === 0) {
+                  <div class="muted">Кандидатов нет: ни групп на станции формирования, ни уехавших поездов.</div>
+                }
+
+                <!-- 3. Ручной ввод индекса -->
+                <div class="ovr">
+                  <span class="ovr-lbl">Знаете индекс? Впишите вручную:</span>
+                  <app-index-input (valueChange)="onOverride(row.ord, $event)" (completed)="revalidate()" />
+                </div>
               </div>
             }
 
@@ -299,6 +322,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     .sf-body { display: inline-block; }
     /* Заголовок секции диалога (с.ф. / нитки без вагонов). */
     .sec-title { font-weight: 600; margin: var(--space-sm) 0 var(--space-xs); color: var(--color-text-secondary); }
+    .sub-title { font-size: var(--font-size-sm); font-weight: 500; margin: var(--space-xs) 0 2px; color: var(--color-text-secondary); }
     /* Строка ручного ввода индекса (переопределение с.ф./исправление опечатки). */
     .ovr { display: flex; align-items: center; gap: var(--space-sm); margin: var(--space-xs) 0; flex-wrap: wrap; }
     .ovr-lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
@@ -527,6 +551,16 @@ export class PlanComponent implements OnInit, OnDestroy {
       .sort((a, b) => b[1] - a[1])
       .map(([t, n]) => `${t}-${n}`)
       .join(', ');
+  }
+
+  /** Уехавшие со станции формирования поезда-кандидаты (секция 1 диалога с.ф.). */
+  departedCands(row: SFRow): SFCandidate[] {
+    return row.candidates.filter((c) => c.departed);
+  }
+
+  /** Группы, стоящие на станции формирования (секция 2 диалога с.ф.). */
+  standingCands(row: SFRow): SFCandidate[] {
+    return row.candidates.filter((c) => !c.departed);
   }
 
   /** Сумма вагонов выбранных групп с.ф.-строки (для «выбрано N ваг» в заголовке). */

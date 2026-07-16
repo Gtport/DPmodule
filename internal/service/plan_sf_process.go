@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,9 +29,10 @@ var ErrPendingNotFound = errors.New("токен подготовки не най
 
 // SFCandidateDTO — группа-кандидат вагонов для с.ф. (для диалога выбора на фронте).
 type SFCandidateDTO struct {
-	Key      string   `json:"key"`     // уникальный идентификатор группы для выбора (id_disl не уникален)
-	IdDisl   string   `json:"id_disl"` // справочно
-	Station  string   `json:"station"`
+	Key      string   `json:"key"`      // уникальный идентификатор группы для выбора (id_disl не уникален)
+	IdDisl   string   `json:"id_disl"`  // справочно
+	Station  string   `json:"station"`  // станция текущей операции (для уехавших — где поезд сейчас)
+	Departed bool     `json:"departed"` // true: покинул станцию формирования (найден по префиксу индекса)
 	Index    string   `json:"index"`
 	Date     string   `json:"date"`
 	Quantity int      `json:"quantity"`
@@ -251,12 +253,13 @@ func (p *PlanProcessor) buildPreview(ctx context.Context, nitki []plan.PlanNitka
 		return PreparePlanResult{}, err
 	}
 
+	kod4 := p.sfKod4(sf)
 	sfRows := []SFRowDTO{} // не nil — фронт ждёт массив (JSON [] вместо null)
 	for i, n := range nitki {
 		if !n.IsSf {
 			continue
 		}
-		cands := planmatch.SFCandidates(synonymOf(n.IndexPp), sf, records, target, used)
+		cands := planmatch.SFCandidates(synonymOf(n.IndexPp), sf, records, target, used, kod4)
 		sfRows = append(sfRows, SFRowDTO{
 			Ord:        i,
 			IndexPp:    n.IndexPp,
@@ -355,6 +358,7 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, overrides map
 	if err != nil {
 		return PlanProcessResult{}, err
 	}
+	kod4 := p.sfKod4(sf)
 	for i, n := range effDoc.Nitki {
 		if !n.IsSf {
 			continue // в т.ч. бывшая с.ф. с вписанным индексом — уже сматчена по индексу
@@ -364,7 +368,7 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, overrides map
 			continue // отмена/без выбора
 		}
 		byKey := map[string]planmatch.SFGroup{}
-		for _, g := range planmatch.SFCandidates(synonymOf(n.IndexPp), sf, records, target, used) {
+		for _, g := range planmatch.SFCandidates(synonymOf(n.IndexPp), sf, records, target, used, kod4) {
 			byKey[g.Key] = g // ключ уникален; id_disl может совпадать у разных групп
 		}
 		var vagons []string
@@ -501,6 +505,26 @@ func (p *PlanProcessor) loadSF(ctx context.Context) ([]planmatch.SFRecord, error
 	return out, nil
 }
 
+// sfKod4 строит мапу «станция формирования → kod_4 строкой» для поиска уехавших
+// сборных по префиксу индекса (АААА-БББ-ВВВВ). Станции не в справочнике пропускаются
+// (для них ловятся только стоящие кандидаты).
+func (p *PlanProcessor) sfKod4(sf []planmatch.SFRecord) map[string]string {
+	out := map[string]string{}
+	for _, r := range sf {
+		name := strings.TrimSpace(r.Station)
+		if name == "" {
+			continue
+		}
+		if _, ok := out[name]; ok {
+			continue
+		}
+		if k4, ok := p.dir.Kod4ByStationName(name); ok && k4 > 0 {
+			out[name] = strconv.Itoa(k4)
+		}
+	}
+	return out
+}
+
 // synonymOf извлекает синоним (ВЕРХНИЙ регистр) из index_pp с.ф.: «с.ф.БИКИН» → «БИКИН».
 func synonymOf(indexPp string) string {
 	up := strings.ToUpper(strings.TrimSpace(indexPp))
@@ -516,9 +540,9 @@ func toCandidateDTO(gs []planmatch.SFGroup) []SFCandidateDTO {
 			date = g.DateOp.Time().Format("2006-01-02")
 		}
 		out[i] = SFCandidateDTO{
-			Key: g.Key, IdDisl: g.IdDisl, Station: g.StationOper, Index: g.Index,
-			Date: date, Quantity: g.Quantity, Sostav: planmatch.FormatSostav(g.SubGroups),
-			Vagons: g.Vagons,
+			Key: g.Key, IdDisl: g.IdDisl, Station: g.StationOper, Departed: g.Departed,
+			Index: g.Index, Date: date, Quantity: g.Quantity,
+			Sostav: planmatch.FormatSostav(g.SubGroups), Vagons: g.Vagons,
 		}
 	}
 	return out

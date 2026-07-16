@@ -18,10 +18,16 @@ type SFRecord struct {
 
 // SFGroup — группа-кандидат вагонов для с.ф.: агрегация снимка дислокации по станции
 // формирования. Показывается пользователю в диалоге; выбранные группы на confirm
-// проставляются как вагоны нитки с.ф.
+// проставляются как вагоны нитки с.ф. Два вида кандидатов:
+//   - «стоящие» (Departed=false): вагоны сейчас НА станции формирования синонима;
+//   - «уехавшие» (Departed=true): сборный уже покинул станцию формирования с реальным
+//     индексом АААА-БББ-ВВВВ, где АААА = kod_4 станции формирования — ловим по префиксу
+//     индекса, без плановых данных (хвост ВВВВ не проверяем: сборный может следовать
+//     не до нашей станции).
 type SFGroup struct {
 	Key         string            // уникальный ключ группы (StationOper|index|date|IdDisl) — id_disl не уникален!
-	StationOper string            // станция текущей операции (= станция формирования синонима)
+	StationOper string            // станция текущей операции (для уехавших — где поезд сейчас)
+	Departed    bool              // true: покинул станцию формирования (найден по префиксу индекса)
 	Index       string            // IndexMain если непуст, иначе Index (как в эталоне)
 	IndexMain   string            //
 	DateOp      *domain.LocalTime // дата операции группы
@@ -45,9 +51,12 @@ func SFStations(synonym string, sf []SFRecord) map[string]struct{} {
 }
 
 // SFCandidates собирает группы-кандидаты вагонов для с.ф.-синонима: агрегирует записи
-// дислокации на станциях синонима (из sf) по ключу StationOper|индекс|дата|IdDisl,
-// среди «наших» площадок (target). Исключает IdDisl, уже занятые обычными нитками
-// (usedIdDisl). Перенос эталонного filterAndAggregateByStations (+ excludeUsedIdDisl);
+// дислокации по ключу StationOper|индекс|дата|IdDisl среди «наших» площадок (target).
+// Кандидаты двух видов: стоящие на станциях синонима (из sf) и уехавшие — по префиксу
+// индекса = kod_4 станции формирования (kod4ByStation: имя станции → kod_4 строкой;
+// пустая мапа отключает поиск уехавших). Исключает IdDisl, уже занятые обычными
+// нитками (usedIdDisl); для уехавших дополнительно — прибывших и порожних. Перенос
+// эталонного filterAndAggregateByStations (+ excludeUsedIdDisl + расширение departed);
 // порт-специфику (набор «наших» площадок) движок получает параметром — не хардкодит.
 func SFCandidates(
 	synonym string,
@@ -55,18 +64,28 @@ func SFCandidates(
 	records []domain.Dislocation,
 	target map[string]struct{},
 	usedIdDisl map[string]struct{},
+	kod4ByStation map[string]string,
 ) []SFGroup {
 	stations := SFStations(synonym, sf)
 	if len(stations) == 0 {
 		return nil
+	}
+	// Префиксы индекса уехавших сборных = kod_4 станций формирования синонима.
+	prefixes := map[string]struct{}{}
+	for st := range stations {
+		if k4 := strings.TrimSpace(kod4ByStation[st]); k4 != "" {
+			prefixes[k4] = struct{}{}
+		}
 	}
 
 	groups := map[string]*SFGroup{}
 	subIdx := map[string]map[string]int{} // ключ группы → sgKey → индекс подгруппы в g.SubGroups
 	for i := range records {
 		r := &records[i]
-		if _, ok := stations[strings.TrimSpace(r.StationOper)]; !ok {
-			continue // не станция формирования синонима
+		_, standing := stations[strings.TrimSpace(r.StationOper)]
+		departed := !standing && isDepartedSF(r, prefixes)
+		if !standing && !departed {
+			continue // ни на станции формирования, ни уехавший с неё
 		}
 		if !isTarget(r.Naznach, r.GruzpolS, target) {
 			continue // не наша площадка
@@ -88,6 +107,7 @@ func SFCandidates(
 			g = &SFGroup{
 				Key:         key,
 				StationOper: r.StationOper,
+				Departed:    departed,
 				Index:       indexToUse,
 				IndexMain:   r.IndexMain,
 				DateOp:      r.DateOp,
@@ -121,8 +141,12 @@ func SFCandidates(
 	for _, g := range groups {
 		out = append(out, *g)
 	}
-	// Стабильный порядок (как эталон сортирует группы по дате): дата → станция → индекс.
+	// Стабильный порядок: уехавшие — выше (секция «поезд-кандидат» в диалоге), далее
+	// как эталон сортирует группы: дата → станция → индекс.
 	sort.Slice(out, func(i, j int) bool {
+		if out[i].Departed != out[j].Departed {
+			return out[i].Departed
+		}
 		if di, dj := dateKey(out[i].DateOp), dateKey(out[j].DateOp); di != dj {
 			return di < dj
 		}
@@ -132,6 +156,27 @@ func SFCandidates(
 		return out[i].Index < out[j].Index
 	})
 	return out
+}
+
+// isDepartedSF — уехавший со станции формирования сборный: первый сегмент индекса
+// (АААА из АААА-БББ-ВВВВ) совпадает с kod_4 одной из станций формирования синонима.
+// Смотрим и текущий Index, и IndexMain (после переформирования в пути текущий индекс
+// меняется, IndexMain хранит исходный). Прибывшие (10/12) и порожние не предлагаются.
+func isDepartedSF(r *domain.Dislocation, prefixes map[string]struct{}) bool {
+	if len(prefixes) == 0 || r.PorozhPriznak == "1" {
+		return false
+	}
+	if r.Status != nil && (*r.Status == 10 || *r.Status == 12) {
+		return false
+	}
+	for _, idx := range []string{r.IndexMain, r.Index} {
+		if seg, _, ok := strings.Cut(strings.TrimSpace(idx), "-"); ok {
+			if _, hit := prefixes[seg]; hit {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // UsedIdDisl собирает IdDisl, занятые сматченными обычными нитками (для исключения
