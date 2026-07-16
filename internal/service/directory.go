@@ -244,22 +244,25 @@ func (c *DirectoryCache) GetStationByKod4(kod4 int) (domain.Station, bool) {
 	return s, ok
 }
 
-// Kod4ByStationName — kod_4 станции по точному имени (для поиска уехавших сборных
-// по префиксу индекса, с.ф.). Линейный проход по справочнику — вызывается редко
-// (подготовка диалога плана), отдельный индекс по имени не заводим.
-func (c *DirectoryCache) Kod4ByStationName(name string) (int, bool) {
+// Kod4sByStationName — ВСЕ kod_4 станций с точным именем (для поиска уехавших
+// сборных по префиксу индекса, с.ф.). Имя не уникально: у крупной станции несколько
+// парков с одним именем и разными кодами (НАХОДКА — 9845…9848), сборный может уехать
+// с любого. Линейный проход по справочнику — вызывается редко (подготовка диалога
+// плана), отдельный индекс по имени не заводим.
+func (c *DirectoryCache) Kod4sByStationName(name string) []int {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return 0, false
+		return nil
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	var out []int
 	for _, s := range c.stations {
-		if s.Name == name {
-			return s.Kod4, true
+		if s.Name == name && s.Kod4 > 0 {
+			out = append(out, s.Kod4)
 		}
 	}
-	return 0, false
+	return out
 }
 
 func (c *DirectoryCache) GetCargoOperation(kod int) (domain.CargoOperation, bool) {
