@@ -16,6 +16,7 @@ type planModel struct {
 	PlanCode   string            `gorm:"column:plan_code"`
 	SourceFile string            `gorm:"column:source_file"`
 	LoadedAt   *domain.LocalTime `gorm:"column:loaded_at"`
+	PlanDate   *domain.LocalTime `gorm:"column:plan_date"`
 	Nitki      int               `gorm:"column:nitki"`
 	Matched    int               `gorm:"column:matched"`
 	Stamped    int               `gorm:"column:stamped"`
@@ -53,21 +54,21 @@ func (planNitkaModel) TableName() string { return "plan_nitka" }
 func toPlanModel(p domain.Plan) planModel {
 	return planModel{
 		PlanCode: p.PlanCode, SourceFile: p.SourceFile, LoadedAt: p.LoadedAt,
-		Nitki: p.Nitki, Matched: p.Matched, Stamped: p.Stamped,
+		PlanDate: p.PlanDate, Nitki: p.Nitki, Matched: p.Matched, Stamped: p.Stamped,
 	}
 }
 
 func (m planModel) toDomain() domain.Plan {
 	return domain.Plan{
 		ID: m.ID, PlanCode: m.PlanCode, SourceFile: m.SourceFile, LoadedAt: m.LoadedAt,
-		Nitki: m.Nitki, Matched: m.Matched, Stamped: m.Stamped,
+		PlanDate: m.PlanDate, Nitki: m.Nitki, Matched: m.Matched, Stamped: m.Stamped,
 	}
 }
 
 func (m planModel) toSummary() domain.PlanSummary {
 	return domain.PlanSummary{
 		ID: m.ID, PlanCode: m.PlanCode, SourceFile: m.SourceFile, LoadedAt: m.LoadedAt,
-		Nitki: m.Nitki, Matched: m.Matched, Stamped: m.Stamped,
+		PlanDate: m.PlanDate, Nitki: m.Nitki, Matched: m.Matched, Stamped: m.Stamped,
 	}
 }
 

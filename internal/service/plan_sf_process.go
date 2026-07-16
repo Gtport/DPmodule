@@ -482,7 +482,8 @@ func (p *PlanProcessor) saveGrid(ctx context.Context, planCode, filename string,
 	now := clock.Now()
 	header := domain.Plan{
 		PlanCode: planCode, SourceFile: filename, LoadedAt: &now,
-		Nitki: trains, Matched: matched, Stamped: stamped,
+		PlanDate: planDateOnly(doc), // «на какую дату план» — для списка/фильтра
+		Nitki:    trains, Matched: matched, Stamped: stamped,
 	}
 	if _, err := p.planRepo.SavePlan(ctx, header, buildGridNitki(planCode, doc, matches)); err != nil {
 		return fmt.Errorf("сохранение сетки плана: %w", err)

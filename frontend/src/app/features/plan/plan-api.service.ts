@@ -16,6 +16,7 @@ export interface Plan {
   plan_code: string;
   source_file: string;
   loaded_at: string | null;
+  plan_date: string | null; // «на какую дату план» (самая ранняя ЖД-дата ниток)
   nitki: number;
   matched: number;
   stamped: number;
@@ -27,6 +28,7 @@ export interface PlanSummary {
   plan_code: string;
   source_file: string;
   loaded_at: string | null;
+  plan_date: string | null; // «на какую дату план» (самая ранняя ЖД-дата ниток)
   nitki: number;
   matched: number;
   stamped: number;
