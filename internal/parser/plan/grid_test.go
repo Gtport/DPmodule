@@ -142,3 +142,69 @@ func TestBuildSfNitka(t *testing.T) {
 		t.Errorf("с.ф. без станции должна пропускаться (ok=false)")
 	}
 }
+
+// TestCollectByIndexNotRowNumber: нитка распознаётся по валидному индексу 4-3-4
+// (или маркеру с.ф.) в столбце «Индекс», номер п/п НЕ требуется — в свежих блоках
+// месячной книги он не проставлен (прод-фикс gtport). «План» с текстом
+// («не подводить») → нитка без времени, текст в PlanRaw; свободные нитки (только
+// время, без индекса) и служебные строки — не эмитятся.
+func TestCollectByIndexNotRowNumber(t *testing.T) {
+	rows := [][]string{
+		mkRow(map[int]string{0: "План подвода поездов к станции МЫС АСТАФЬЕВА"}),
+		mkRow(map[int]string{0: "N п/п", 1: "Индекс", 5: "План", 6: "Факт"}), // row1
+		mkRow(map[int]string{7: "Итого", 8: "НМТП"}),
+		mkRow(map[int]string{8: "Каменный уголь"}),
+		mkRow(map[int]string{0: "План на 18-07-2026"}),
+		mkRow(map[int]string{1: "Остаток на 18:00", 8: "25"}),
+		// с номером п/п — принимается (как раньше)
+		mkRow(map[int]string{0: "1", 1: "9131-001-9857", 5: "19:22", 7: "56", 8: "56"}),
+		// БЕЗ номера п/п, валидный индекс — принимается (фикс)
+		mkRow(map[int]string{1: "9131-677-9857", 5: "21:06", 7: "56", 8: "56"}),
+		// БЕЗ номера, «не подводить» вместо времени — нитка без времени, текст в PlanRaw
+		mkRow(map[int]string{1: "9379-782-9857", 5: "не подводить", 7: "71", 8: "71"}),
+		// свободная нитка (только время) — пропускается
+		mkRow(map[int]string{5: "00:01"}),
+		// служебная итоговая строка — пропускается
+		mkRow(map[int]string{1: "План выгрузки", 8: "55"}),
+		// с.ф. без номера — эмитится
+		mkRow(map[int]string{1: "с.ф.", 3: "БИКИН", 5: "19:22", 7: "50", 8: "15"}),
+	}
+	g := &GridParser{prof: Profile{PlanCode: "ma", OurTerminals: []string{"НМТП"}}}
+	cols, err := g.findColumns(rows)
+	if err != nil {
+		t.Fatalf("findColumns: %v", err)
+	}
+	cols.colStation = 3 // станция с.ф. (в mkRow-фикстуре шапка её не объявляет)
+	nitki, err := g.collect(rows, cols)
+	if err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+
+	byIdx := map[string]PlanNitka{}
+	for _, n := range nitki {
+		byIdx[n.IndexPp] = n
+	}
+	if len(nitki) != 5 { // Остаток + 3 поезда + с.ф.
+		t.Fatalf("ожидалось 5 ниток, получено %d: %+v", len(nitki), byIdx)
+	}
+	if _, ok := byIdx["9131-001-9857"]; !ok {
+		t.Error("нитка с номером п/п потеряна")
+	}
+	n, ok := byIdx["9131-677-9857"]
+	if !ok || n.PlanJd.IsZero() || n.PlanJd.Day() != 18 || n.PlanJd.Hour() != 21 {
+		t.Errorf("нитка без номера п/п: %+v (ожидалось 18.07 21:06)", n)
+	}
+	np, ok := byIdx["9379-782-9857"]
+	if !ok {
+		t.Fatal("нитка «не подводить» потеряна")
+	}
+	if !np.PlanJd.IsZero() || !np.PlanMsk.IsZero() || np.PlanRaw != "не подводить" {
+		t.Errorf("«не подводить»: jd=%v msk=%v raw=%q (ожидалось: без времени, текст в PlanRaw)", np.PlanJd, np.PlanMsk, np.PlanRaw)
+	}
+	if _, ok := byIdx["с.ф.БИКИН"]; !ok {
+		t.Error("с.ф. без номера п/п потеряна")
+	}
+	if _, ok := byIdx[""]; ok && len(byIdx) > 5 {
+		t.Error("свободная нитка/служебная строка попала в нитки")
+	}
+}

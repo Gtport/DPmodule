@@ -38,6 +38,7 @@ type planNitkaModel struct {
 	PlanJd        *domain.LocalTime `gorm:"column:plan_jd"`
 	FactMsk       *domain.LocalTime `gorm:"column:fact_msk"`
 	Otkl          string            `gorm:"column:otkl"`
+	PlanRaw       string            `gorm:"column:plan_raw"`
 	Wagons        int               `gorm:"column:wagons"`
 	Activ         int               `gorm:"column:activ"`
 	Ports         string            `gorm:"column:ports"` // jsonb → text ([]PortCell)
@@ -101,7 +102,7 @@ func toPlanNitkaModel(planID int64, n domain.PlanNitka) planNitkaModel {
 	return planNitkaModel{
 		PlanID: planID, PlanCode: n.PlanCode, Ord: n.Ord, Index: n.Index, IndexPp: n.IndexPp,
 		StationOper: n.StationOper, PlanMsk: n.PlanMsk, PlanJd: n.PlanJd, FactMsk: n.FactMsk,
-		Otkl: n.Otkl, Wagons: n.Wagons, Activ: n.Activ, Ports: marshalPorts(n.Ports),
+		Otkl: n.Otkl, PlanRaw: n.PlanRaw, Wagons: n.Wagons, Activ: n.Activ, Ports: marshalPorts(n.Ports),
 		Sostav: n.Sostav, Comment: n.Comment, Matched: n.Matched, MatchedWagons: n.MatchedWagons,
 		IsOstatok: n.IsOstatok, IsSf: n.IsSf,
 	}
@@ -111,7 +112,7 @@ func (m planNitkaModel) toDomain() domain.PlanNitka {
 	return domain.PlanNitka{
 		PlanCode: m.PlanCode, Ord: m.Ord, Index: m.Index, IndexPp: m.IndexPp,
 		StationOper: m.StationOper, PlanMsk: m.PlanMsk, PlanJd: m.PlanJd, FactMsk: m.FactMsk,
-		Otkl: m.Otkl, Wagons: m.Wagons, Activ: m.Activ, Ports: unmarshalPorts(m.Ports),
+		Otkl: m.Otkl, PlanRaw: m.PlanRaw, Wagons: m.Wagons, Activ: m.Activ, Ports: unmarshalPorts(m.Ports),
 		Sostav: m.Sostav, Comment: m.Comment, Matched: m.Matched, MatchedWagons: m.MatchedWagons,
 		IsOstatok: m.IsOstatok, IsSf: m.IsSf,
 	}

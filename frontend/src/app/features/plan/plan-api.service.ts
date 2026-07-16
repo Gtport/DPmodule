@@ -45,6 +45,7 @@ export interface PlanNitka {
   plan_jd: string | null;
   fact_msk: string | null;
   otkl: string;
+  plan_raw: string; // сырой текст «Плана», когда он не время («не подводить»)
   wagons: number;
   activ: number;
   ports: PortCell[] | null;
