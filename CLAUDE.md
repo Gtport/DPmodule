@@ -113,8 +113,12 @@ go build ./...
 
 ## Текущий статус
 Backend, ранний этап. Сделано: seed из `TMPL_backend`; справочные таблицы
-обогащения (stations, cargo_operations, marka, ports) + `DirectoryCache`
-(загрузка справочников в RAM на старте). Фронтенд: форк `TMPL_frontend` в
+обогащения (stations, cargo_operations, cargo, marka, ports) + `DirectoryCache`
+(загрузка справочников в RAM на старте). Обогащение груза переработано
+(решение владельца, PR #66 + feat/marka-group-key): словарь `cargo` (код ЕТСНГ →
+группа/имя/метка, Stage 1, каждому вагону) отделён от бизнес-атрибуции `marka`
+(ключ по ГРУППЕ груза: новый код знакомой группы матчится без правки словаря;
+sms_2 — расчётный: sms_1 + cargo_sms). Фронтенд: форк `TMPL_frontend` в
 `frontend/`, dev-окружение поднято (systemd user-юнит `dpmodule-frontend`,
 `ng serve` :4200 за nginx `95850.koara.live`) — см. раздел «Фронтенд».
 

@@ -44,17 +44,18 @@ type Cargo struct {
 	CargoSms   string // → Dislocation.CargoSms
 }
 
-// Marka — словарь «наши грузы» (Stage 2).
-// Ключ: Okpo+StationKod+CargoKod (НЕ уникален — на ключ может быть несколько записей).
+// Marka — словарь бизнес-атрибуции «наших» грузов (Stage 2, миграция 000028).
+// Ключ: Okpo+StationKod+CargoGroup (УНИКАЛЕН). Вход по ГРУППЕ груза, а не по коду:
+// новый код внутри знакомой группы у известного отправителя матчится без правки
+// словаря. Идентичность груза (группа/имя/метка) — словарь Cargo, не marka.
 type Marka struct {
-	Okpo       int64
-	StationKod int64
-	CargoKod   int64
+	Okpo       int64  // ОКПО грузоотправителя (ключ)
+	StationKod int64  // код станции отправления (ключ)
+	CargoGroup string // группа груза (ключ; = Cargo.CargoGroup)
 	Shipper    string // → Gruzotpr
-	CargoS     string // → CargoS
 	Client     string // → Client
-	CargoGroup string // → CargoGroup
-	Sms1       string // → CargoSms / Sms1
+	Sms1       string // → Sms1 (метка уровня отправитель+станция+группа)
+	Sms3       string // → Sms3 (регион/направление; пусто, если неоднозначно)
 }
 
 // Ports — справочник причалов/грузополучателей (Stage 2) + слой настроек/физики

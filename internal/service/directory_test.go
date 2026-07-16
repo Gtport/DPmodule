@@ -78,8 +78,7 @@ func TestDirectoryCache_LoadAndLookup(t *testing.T) {
 		ops:      []domain.CargoOperation{{Kod: 1, Oper: "ПОГРУЗКА", OperS: "Погр"}},
 		cargo:    []domain.Cargo{{Kod: 161113, Name: "УГОЛЬ КАМЕННЫЙ МАРКИ Г-ГАЗОВЫЙ", CargoGroup: "УГОЛЬ", CargoS: "УГОЛЬ Г", CargoSms: "Г"}},
 		marka: []domain.Marka{
-			{Okpo: 1, StationKod: 2, CargoKod: 3, Shipper: "A"},
-			{Okpo: 1, StationKod: 2, CargoKod: 3, Shipper: "B"}, // тот же ключ → срез из 2
+			{Okpo: 1, StationKod: 2, CargoGroup: "УГОЛЬ", Shipper: "A", Client: "К", Sms1: "Улак", Sms3: "УЛАК"},
 		},
 		ports: []domain.Ports{{Okpo: 1126022, Location: "МЫС АСТАФЬЕВА", NameS: "ГУТ-2"}},
 		routeSpeed: []domain.RouteSpeed{
@@ -99,7 +98,7 @@ func TestDirectoryCache_LoadAndLookup(t *testing.T) {
 	assert.Equal(t, 1, st)
 	assert.Equal(t, 1, cargoOps)
 	assert.Equal(t, 1, cargo)
-	assert.Equal(t, 1, marka) // 1 ключ (две записи под ним)
+	assert.Equal(t, 1, marka)
 	assert.Equal(t, 1, ports)
 	assert.Equal(t, 2, routeSpeed) // 2 профиля: '*' и 'УЛАК'
 	assert.Equal(t, 0, naznach)    // перестановок не задано
@@ -130,11 +129,13 @@ func TestDirectoryCache_LoadAndLookup(t *testing.T) {
 		assert.Equal(t, "Погр", op.OperS)
 	})
 
-	t.Run("marka composite key returns slice", func(t *testing.T) {
-		mk, ok := c.GetMarkaByCompositeKey(1, 2, 3)
+	t.Run("marka composite key (окпо+станция+группа)", func(t *testing.T) {
+		mk, ok := c.GetMarkaByCompositeKey(1, 2, "УГОЛЬ")
 		require.True(t, ok)
-		assert.Len(t, mk, 2)
-		_, ok = c.GetMarkaByCompositeKey(9, 9, 9)
+		assert.Equal(t, "A", mk.Shipper)
+		assert.Equal(t, "Улак", mk.Sms1)
+		assert.Equal(t, "УЛАК", mk.Sms3)
+		_, ok = c.GetMarkaByCompositeKey(9, 9, "НЕТ")
 		assert.False(t, ok)
 	})
 
