@@ -19,6 +19,13 @@ const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ', asu:
     <div class="status-bar">
       <span class="cap">Актуальность · МСК</span>
 
+      <!-- Текущее время: МСК и операционные ЖД-сутки (час ≥ 18 → дата +1) -->
+      <span class="grp clock" nz-tooltip nzTooltipTitle="ЖД-сутки: с 18:00 МСК начинается следующая дата">
+        <span class="lbl">Сейчас</span>
+        <nz-tag class="chip" nzColor="default">МСК {{ nowMsk() }}</nz-tag>
+        <nz-tag class="chip" nzColor="default">ЖД {{ nowJd() }}</nz-tag>
+      </span>
+
       <!-- Дислокация -->
       <span class="grp">
         <span class="lbl">Дислокация</span>
@@ -67,6 +74,7 @@ const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ', asu:
       font-size: 0.82rem;
     }
     .cap { color: #888; font-weight: 600; margin-right: 4px; }
+    .clock .chip { font-variant-numeric: tabular-nums; font-weight: 600; }
     .grp { display: inline-flex; align-items: center; gap: 5px; }
     .lbl { color: #555; }
     .term { display: inline-flex; align-items: center; gap: 3px; }
@@ -78,14 +86,39 @@ const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ', asu:
 export class PlanStatusPanelComponent implements OnInit, OnDestroy {
   private readonly api = inject(PlanApiService);
   readonly status = signal<SystemStatus | null>(null);
+  readonly now = signal(new Date());
   private timer: ReturnType<typeof setInterval> | null = null;
+  private clock: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
     void this.load();
     this.timer = setInterval(() => void this.load(), 60_000); // раз в минуту
+    this.clock = setInterval(() => this.now.set(new Date()), 10_000); // часы — без сети
   }
   ngOnDestroy(): void {
     if (this.timer) clearInterval(this.timer);
+    if (this.clock) clearInterval(this.clock);
+  }
+
+  /** Компоненты текущего времени МСК: «ГГГГ-ММ-ДД ЧЧ:ММ:СС» (независимо от пояса браузера). */
+  private mskString(): string {
+    return this.now().toLocaleString('sv-SE', { timeZone: 'Europe/Moscow' });
+  }
+
+  /** Текущее время МСК: «дд.мм чч:мм». */
+  nowMsk(): string {
+    const s = this.mskString();
+    return `${s.slice(8, 10)}.${s.slice(5, 7)} ${s.slice(11, 16)}`;
+  }
+
+  /** ЖД-время: то же чч:мм, но при часе МСК ≥ 18 дата +1 (операционные ЖД-сутки). */
+  nowJd(): string {
+    const s = this.mskString();
+    const d = new Date(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)));
+    if (+s.slice(11, 13) >= 18) d.setUTCDate(d.getUTCDate() + 1);
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    return `${dd}.${mm} ${s.slice(11, 16)}`;
   }
 
   /** Публичный ре-фетч (плановая загрузка меняет актуальность — дёргаем извне). */
