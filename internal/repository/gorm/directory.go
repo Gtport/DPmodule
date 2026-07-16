@@ -53,6 +53,8 @@ type markaModel struct {
 	Client     string `gorm:"column:client"`
 	Sms1       string `gorm:"column:sms_1"`
 	Sms3       string `gorm:"column:sms_3"`
+	Color      string `gorm:"column:color"`
+	Sprav1     string `gorm:"column:sprav_1"`
 }
 
 func (markaModel) TableName() string { return "marka" }
@@ -166,6 +168,7 @@ func (r *DirectoryRepository) LoadMarka(ctx context.Context) ([]domain.Marka, er
 			Okpo: m.Okpo, StationKod: m.StationKod, Station: m.Station,
 			CargoGroup: m.CargoGroup,
 			Shipper: m.Shipper, Client: m.Client, Sms1: m.Sms1, Sms3: m.Sms3,
+			Color: m.Color, Sprav1: m.Sprav1,
 		}
 	}
 	return out, nil

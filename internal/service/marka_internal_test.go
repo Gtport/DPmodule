@@ -56,9 +56,9 @@ var cargoFixture = []domain.Cargo{
 func TestEnrichFromMarka(t *testing.T) {
 	dir := markaDir(t, markaFixture, cargoFixture, nil)
 
-	t.Run("полное совпадение (ОКПО+станция+группа)", func(t *testing.T) {
+	t.Run("строгое совпадение (ОКПО+станция+группа)", func(t *testing.T) {
 		r := &domain.Dislocation{GruzotprOkpo: "1", CodeStationNach: "2", CargoGroup: "УГОЛЬ"}
-		assert.Equal(t, markaFull, enrichFromMarka(r, dir))
+		assert.True(t, enrichFromMarka(r, dir))
 		assert.Equal(t, "ОТПР", r.Gruzotpr)
 		assert.Equal(t, "КЛ", r.Client)
 		assert.Equal(t, "Улак", r.Sms1)
@@ -69,26 +69,28 @@ func TestEnrichFromMarka(t *testing.T) {
 		// Код 161043 в marka никогда не значился — но группа УГОЛЬ известна.
 		r := &domain.Dislocation{GruzotprOkpo: "1", CodeStationNach: "2", CodeCargo: "161043"}
 		reapplyCargoDict(r, dir)
-		assert.Equal(t, markaFull, enrichFromMarka(r, dir))
+		assert.True(t, enrichFromMarka(r, dir))
 		assert.Equal(t, "ОТПР", r.Gruzotpr)
 		assert.Equal(t, "КОНЦЕНТРАТ", r.CargoS) // имя груза — из словаря, не из marka
 	})
 
-	t.Run("частичное (ОКПО не известен) — станция+группа", func(t *testing.T) {
+	t.Run("чужой ОКПО на знакомой станции+группе — СТРОГО не матчится", func(t *testing.T) {
+		// Раньше срабатывал частичный матч (станция+группа любого отправителя) —
+		// подставлял атрибуцию чужого отправителя. Упразднён решением владельца.
 		r := &domain.Dislocation{GruzotprOkpo: "99", CodeStationNach: "2", CargoGroup: "УГОЛЬ"}
-		assert.Equal(t, markaPartial, enrichFromMarka(r, dir))
-		assert.Equal(t, "ОТПР", r.Gruzotpr) // взят у отправителя с той же станцией+группой
+		assert.False(t, enrichFromMarka(r, dir))
+		assert.Empty(t, r.Gruzotpr)
 	})
 
 	t.Run("ОКПО известен, но нет сочетания — без домысла", func(t *testing.T) {
 		r := &domain.Dislocation{GruzotprOkpo: "1", CodeStationNach: "5", CargoGroup: "МЕТАЛЛ"}
-		assert.Equal(t, markaNone, enrichFromMarka(r, dir))
+		assert.False(t, enrichFromMarka(r, dir))
 		assert.Empty(t, r.Gruzotpr)
 	})
 
-	t.Run("пустая группа (порожний/код вне словаря) → none", func(t *testing.T) {
+	t.Run("пустая группа (порожний/код вне словаря) → не матчится", func(t *testing.T) {
 		r := &domain.Dislocation{GruzotprOkpo: "1", CodeStationNach: "2"}
-		assert.Equal(t, markaNone, enrichFromMarka(r, dir))
+		assert.False(t, enrichFromMarka(r, dir))
 	})
 }
 
