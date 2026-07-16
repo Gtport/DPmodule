@@ -14,8 +14,9 @@
   shipper/client — должны быть однозначны, конфликт = ошибка (падаем громко).
 
 Груз-поля (cargo_kod/cargo_s/cargo_group-как-данные) не переносятся — их даёт
-словарь cargo. Результат — CSV под `\\copy marka(okpo,station_kod,cargo_group,
-shipper,client,sms_1,sms_3)` из scripts/seed_directories.sql.
+словарь cargo; имя станции погрузки (station) переносится как информационное
+(правится вместе с кодом). Результат — CSV под `\\copy marka(okpo,station_kod,
+station,cargo_group,shipper,client,sms_1,sms_3)` из scripts/seed_directories.sql.
 """
 
 import argparse
@@ -51,6 +52,7 @@ def main() -> int:
 
     out_rows = []
     for (okpo, station, group), rows in sorted(groups.items()):
+        station_name = uniq(rows, "station")[0]
         shippers, clients = uniq(rows, "shipper"), uniq(rows, "client")
         if len(shippers) > 1 or len(clients) > 1:
             print(f"ОШИБКА: конфликт shipper/client у ключа ({okpo},{station},{group}): {shippers} / {clients}", file=sys.stderr)
@@ -67,11 +69,11 @@ def main() -> int:
             sms3 = ""
             print(f"конфликт sms_2 у ({okpo},{station},{group}): {sms3_variants} → пусто")
 
-        out_rows.append([okpo, station, group, shippers[0], clients[0], sms1, sms3])
+        out_rows.append([okpo, station, station_name, group, shippers[0], clients[0], sms1, sms3])
 
     with open(args.out, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["okpo", "station_kod", "cargo_group", "shipper", "client", "sms_1", "sms_3"])
+        w.writerow(["okpo", "station_kod", "station", "cargo_group", "shipper", "client", "sms_1", "sms_3"])
         w.writerows(out_rows)
 
     print(f"Схлопнуто {total} строк → {len(out_rows)} ключей в {args.out}")
