@@ -41,8 +41,8 @@ func (p *LKProcessor) SetJournal(j *Journal) { p.journal = j }
 var (
 	ErrNotReady             = errors.New("приём не готов к обработке")
 	ErrDataLoss             = errors.New("потеря данных превышает допустимый порог")
-	ErrDislTooStale         = errors.New("файлы ЛК устарели — обновите выгрузку из ЛК")
-	ErrDislOlderThanCurrent = errors.New("файлы ЛК старше текущей дислокации — обновлять свежую дислокацию более старой нельзя")
+	ErrDislTooStale         = errors.New("данные дислокации устарели — источник отдаёт старый срез")
+	ErrDislOlderThanCurrent = errors.New("данные старше текущей дислокации — обновлять свежую дислокацию более старыми нельзя")
 )
 
 // guardFreshness блокирует пересборку дислокации из устаревших файлов ЛК (по метке
