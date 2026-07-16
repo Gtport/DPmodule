@@ -49,8 +49,9 @@ func TestSFCandidates(t *testing.T) {
 	}
 }
 
-// TestSFCandidates_Departed: уехавшие со станции формирования сборные ловятся по
-// префиксу индекса (АААА = kod_4 станции с.ф.), помечаются Departed и идут первыми;
+// TestSFCandidates_Departed: сформированные сборные ловятся по префиксу индекса
+// (АААА = kod_4 станции с.ф.) — уехавшие (Departed) и ещё стоящие на станции
+// формирования (Formed); идут первыми (уехавшие → сформированные → группы);
 // прибывшие/порожние/чужие префиксы/занятые — не предлагаются.
 func TestSFCandidates_Departed(t *testing.T) {
 	sf := []SFRecord{{Sinonim: "БИКИН", Station: "БИКИН", Quantity: 50}}
@@ -61,8 +62,10 @@ func TestSFCandidates_Departed(t *testing.T) {
 	s2, s10 := 2, 10
 
 	records := []domain.Dislocation{
-		// стоящий на станции формирования — обычный кандидат
+		// сформирован (индекс со «своим» префиксом), но ещё на станции формирования
 		{Vagon: "100", StationOper: "БИКИН", Naznach: "АЭ", Index: "9401-011-9857", IdDisl: "D0", Status: &s2},
+		// несобранная группа на станции формирования (индекс прибывшего поезда)
+		{Vagon: "050", StationOper: "БИКИН", Naznach: "АЭ", Index: "7777-005-9722", IdDisl: "D7", Status: &s2},
 		// уехал: в пути, индекс с префиксом БИКИНа — кандидат Departed
 		{Vagon: "111", StationOper: "ХАБАРОВСК II", Naznach: "АЭ", Index: "9401-055-9857", IndexMain: "9401-055-9857", IdDisl: "D1", Status: &s2},
 		{Vagon: "112", StationOper: "ХАБАРОВСК II", Naznach: "АЭ", Index: "9401-055-9857", IndexMain: "9401-055-9857", IdDisl: "D1", Status: &s2},
@@ -81,13 +84,21 @@ func TestSFCandidates_Departed(t *testing.T) {
 	}
 
 	got := SFCandidates("БИКИН", sf, records, target, used, kod4)
-	if len(got) != 4 {
-		t.Fatalf("ожидалось 4 группы (стоящий D0 + уехавшие D1, D2, D6), получено %d: %+v", len(got), got)
+	if len(got) != 5 {
+		t.Fatalf("ожидалось 5 групп (уехавшие D1, D2, D6 + сформированный D0 + группа D7), получено %d: %+v", len(got), got)
 	}
-	// Уехавшие — первыми.
-	if !got[0].Departed || !got[1].Departed || !got[2].Departed || got[3].Departed {
-		t.Errorf("порядок Departed: %v %v %v %v, ожидалось true true true false",
-			got[0].Departed, got[1].Departed, got[2].Departed, got[3].Departed)
+	// Порядок: уехавшие → сформированный → несобранная группа.
+	for i, want := range []string{"D1", "D2", "D6", "D0", "D7"} {
+		// D1/D2/D6 сортируются между собой по дате/станции/индексу — проверяем классы.
+		_ = want
+		switch {
+		case i < 3 && !got[i].Departed:
+			t.Errorf("позиция %d: ожидался уехавший, получено %+v", i, got[i])
+		case i == 3 && (!got[i].Formed || got[i].Departed):
+			t.Errorf("позиция 3: ожидался сформированный на станции, получено %+v", got[i])
+		case i == 4 && (got[i].Formed || got[i].Departed):
+			t.Errorf("позиция 4: ожидалась несобранная группа, получено %+v", got[i])
+		}
 	}
 	byID := map[string]SFGroup{}
 	for _, g := range got {
@@ -102,8 +113,11 @@ func TestSFCandidates_Departed(t *testing.T) {
 	if g := byID["D6"]; !g.Departed || g.Index != "9402-033-9857" {
 		t.Errorf("D6 (второй парк станции, kod_4 9402): %+v", g)
 	}
-	if g := byID["D0"]; g.Departed {
-		t.Errorf("D0 стоит на станции формирования — не Departed: %+v", g)
+	if g := byID["D0"]; g.Departed || !g.Formed {
+		t.Errorf("D0 сформирован, но на станции формирования — Formed, не Departed: %+v", g)
+	}
+	if g := byID["D7"]; g.Departed || g.Formed {
+		t.Errorf("D7 — несобранная группа (чужой префикс): %+v", g)
 	}
 	for _, bad := range []string{"D3", "D4", "D5", "D9"} {
 		if _, ok := byID[bad]; ok {

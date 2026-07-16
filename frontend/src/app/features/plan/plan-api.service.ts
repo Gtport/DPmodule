@@ -66,6 +66,7 @@ export interface SFCandidate {
   id_disl: string;
   station: string;  // станция текущей операции (для уехавших — где поезд сейчас)
   departed: boolean; // true: покинул станцию формирования (найден по префиксу индекса)
+  formed: boolean;   // true: сформирован (реальный индекс), но ещё на станции формирования
   index: string;
   date: string;
   quantity: number;
