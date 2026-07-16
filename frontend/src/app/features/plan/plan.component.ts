@@ -28,6 +28,11 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
   { code: 'nk', label: 'Находка' },
 ];
 
+/** Текущая дата МСК (yyyy-MM-dd) — дефолт фильтра по дате плана; не зависит от пояса браузера. */
+function todayMsk(): string {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Moscow' }).slice(0, 10);
+}
+
 /**
  * Раздел «План подвода»: загрузка xlsx-плана станции (разбор + матч вагонов +
  * простановка PlanMsk) и таблица плана как в оригинале GTport — столбцы портов
@@ -53,15 +58,26 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
         </nz-tabs>
 
         <div class="controls">
+          <!-- Фильтр по дате плана (как в gtport): пусто — все загрузки -->
+          <span class="lbl">Дата плана:</span>
+          <input
+            class="date-filter"
+            type="date"
+            [ngModel]="dateFilter()"
+            (ngModelChange)="onDateFilter($event)"
+            nz-tooltip
+            nzTooltipTitle="Показать загрузки плана на выбранную дату; пусто — все"
+          />
+
           <span class="lbl">План:</span>
           <nz-select
             [ngModel]="selectedPlanId()"
             (ngModelChange)="onPlanChange($event)"
-            [nzDisabled]="!plans().length"
+            [nzDisabled]="!filteredPlans().length"
             nzPlaceHolder="—"
-            style="width: 260px"
+            style="width: 280px"
           >
-            @for (p of plans(); track p.id) {
+            @for (p of filteredPlans(); track p.id) {
               <nz-option [nzValue]="p.id" [nzLabel]="planLabel(p)" />
             }
           </nz-select>
@@ -108,6 +124,9 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
           <span class="spacer"></span>
           @if (grid(); as g) {
             <span class="summary">
+              @if (g.plan.plan_date) {
+                <b class="plan-on">план на {{ dmDate(g.plan.plan_date) }}</b> ·
+              }
               ниток {{ g.plan.nitki }} · сопоставлено {{ g.plan.matched }} · вагонов застолблено {{ g.plan.stamped }}
             </span>
           }
@@ -129,7 +148,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
               class="plan-tbl"
               [nzData]="rows()"
               [nzShowPagination]="false"
-              [nzScroll]="{ x: 'max-content' }"
+              [nzScroll]="{ x: 'max-content', y: '70vh' }"
               nzSize="small"
               nzBordered
             >
@@ -138,11 +157,11 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                   <th nzWidth="70px">Дата</th>
                   <th nzWidth="135px">Индекс</th>
                   <th nzWidth="150px">Дислокация</th>
-                  <th nzWidth="60px">План</th>
-                  <th nzWidth="60px">Факт</th>
-                  <th nzWidth="64px">Откл</th>
+                  <th nzWidth="44px">План</th>
+                  <th nzWidth="44px">Факт</th>
+                  <th nzWidth="44px">Откл</th>
                   @for (label of portLabels(); track label) {
-                    <th class="port-col" nzWidth="60px" [title]="label"><span class="vert">{{ shortLabel(label) }}</span></th>
+                    <th class="port-col" nzWidth="44px" [title]="label"><span class="vert">{{ shortLabel(label) }}</span></th>
                   }
                   <th class="qty" nzWidth="44px"><span class="vert">Кол-во</span></th>
                   <th nzWidth="440px">Состав</th>
@@ -155,7 +174,7 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
                     <tr class="divider"><td [attr.colspan]="colCount()"></td></tr>
                   }
                   <tr [class.ostatok]="n.is_ostatok">
-                    <td>{{ n.is_ostatok ? '' : dmDate(n.plan_jd) }}</td>
+                    <td class="date-cell">{{ n.is_ostatok ? '' : dmyDate(n.plan_jd) }}</td>
                     <td class="idx">{{ n.index_pp || '—' }}</td>
                     <td class="small">{{ n.station_oper }}</td>
                     <td class="c">{{ hm(n.plan_msk) }}</td>
@@ -300,14 +319,26 @@ const STATION_OPTIONS: { code: string; label: string }[] = [
     .port-col, .qty { text-align: center; }
     .vert { writing-mode: vertical-lr; text-orientation: mixed; display: inline-block; white-space: nowrap; line-height: 1; }
     /* ── Компактная таблица как в оригинале gtport ──────────────────────────
-       Плотные строки (высота), серая заливка шапки (#f5f5f5), голубой разделитель. */
-    .plan-tbl ::ng-deep table { font-size: 0.96rem; }
+       Плотный мелкий шрифт (0.8rem), паддинги 1px, серая прилипающая шапка
+       (#f5f5f5), полная сетка ячеек (nzBordered), скролл до 70vh. */
+    .plan-tbl ::ng-deep table { font-size: 0.8rem; }
     .plan-tbl ::ng-deep .ant-table-thead > tr > th {
-      padding: 2px 6px; background: #f5f5f5; font-weight: 600; line-height: 1.2; text-align: center;
+      padding: 2px 4px; background: #f5f5f5; font-weight: 600; line-height: 1.2; text-align: center;
+      font-size: 0.9rem;
     }
-    .plan-tbl ::ng-deep .ant-table-tbody > tr > td { padding: 1px 6px; line-height: 1.25; }
-    /* Разделитель-блок между сутками (как в оригинале: голубой, тонкий). */
-    tr.divider td { padding: 0; height: 2px; background: #e8f4fd; border-left: none; border-right: none; }
+    .plan-tbl ::ng-deep .ant-table-tbody > tr > td { padding: 1px 4px; line-height: 1.3; }
+    .date-filter {
+      height: 26px; padding: 0 6px; border: 1px solid var(--color-border, #d9d9d9);
+      border-radius: 4px; font-size: var(--font-size-sm); color: inherit; background: transparent;
+    }
+    .plan-on { color: var(--color-text); font-weight: 600; }
+    /* Колонка «Дата»: дд.мм.гг, полужирно, по центру. */
+    .date-cell { text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+    /* Разделитель-блок между сутками (как в оригинале: голубой). Селектор с
+       ::ng-deep — иначе паддинги ячеек таблицы перебивают и полоса блёкнет. */
+    .plan-tbl ::ng-deep tr.divider > td {
+      padding: 0; height: 5px; background: #d9ecfc; border-left: none; border-right: none;
+    }
     tr.ostatok td { background: var(--color-bg-subtle); font-weight: 500; }
     /* Переключатель станций — крупнее (как в gtport): 1rem, высота вкладки ~36px. */
     .plan-tabs ::ng-deep .ant-tabs-tab { font-size: 1rem; font-weight: 500; padding: 6px 12px; }
@@ -345,6 +376,14 @@ export class PlanComponent implements OnInit, OnDestroy {
   );
 
   readonly plans = signal<PlanSummary[]>([]);
+  /** Фильтр списка загрузок по дате плана (yyyy-MM-dd из input[type=date]); '' — все.
+   *  По умолчанию — текущая дата МСК (обычный рабочий сценарий: план на сегодня). */
+  readonly dateFilter = signal<string>(todayMsk());
+  readonly filteredPlans = computed<PlanSummary[]>(() => {
+    const d = this.dateFilter();
+    const all = this.plans();
+    return d ? all.filter((p) => (p.plan_date ?? '').slice(0, 10) === d) : all;
+  });
   readonly grid = signal<PlanGrid | null>(null);
   readonly loading = signal(false);
   readonly busyUpload = signal(false);
@@ -435,10 +474,23 @@ export class PlanComponent implements OnInit, OnDestroy {
     this.loadGridById(id);
   }
 
+  /** Смена фильтра по дате плана: если текущий план выпал из выборки —
+   *  автоматически выбираем первый подходящий (как в gtport). */
+  onDateFilter(value: string): void {
+    this.dateFilter.set(value ?? '');
+    const list = this.filteredPlans();
+    if (!list.length) return;
+    if (!list.some((p) => p.id === this.selectedPlanId())) {
+      this.onPlanChange(list[0].id);
+    }
+  }
+
+  /** Подпись загрузки в списке: «загружен дд.мм чч:мм» (+ пометка пересчёта). */
   planLabel(p: PlanSummary): string {
     const ts = p.loaded_at;
     const when = ts && ts.length >= 16 ? `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}` : '—';
-    return `${when} · ${p.source_file}`;
+    const recalc = p.source_file.includes('(пересчёт)') ? ' (пересчёт)' : '';
+    return `загружен ${when}${recalc}`;
   }
 
   /** Возврат false — сами шлём файл через сервис, штатный XHR nz-upload не нужен. */
@@ -450,6 +502,12 @@ export class PlanComponent implements OnInit, OnDestroy {
   dmDate(ts: string | null): string {
     if (!ts || ts.length < 10) return '';
     return `${ts.slice(8, 10)}.${ts.slice(5, 7)}`;
+  }
+
+  /** «2026-07-17…» → «17.07.26» (колонка «Дата» таблицы плана). */
+  dmyDate(ts: string | null): string {
+    if (!ts || ts.length < 10) return '';
+    return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(2, 4)}`;
   }
 
   hm(ts: string | null): string {
@@ -764,7 +822,9 @@ export class PlanComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Перечитывает список загрузок станции и открывает самую свежую. */
+  /** Перечитывает список загрузок станции и открывает самую свежую: сначала в
+   *  рамках фильтра по дате плана; если на выбранную дату планов нет — фильтр
+   *  сбрасывается (показываем все), открывается свежайшая загрузка. */
   private async reload(code: string): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
@@ -776,7 +836,12 @@ export class PlanComponent implements OnInit, OnDestroy {
         this.grid.set(null);
         return;
       }
-      const latest = plans[0];
+      let candidates = this.filteredPlans();
+      if (!candidates.length) {
+        this.dateFilter.set(''); // на дату фильтра планов нет — показываем все
+        candidates = plans;
+      }
+      const latest = candidates[0];
       this.selectedPlanId.set(latest.id);
       this.grid.set(await this.api.getById(code, latest.id));
     } catch (err) {

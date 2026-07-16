@@ -94,6 +94,17 @@ func planDocDate(doc *plan.PlanDoc) *domain.LocalTime {
 	return domain.NewLocalTime(earliest)
 }
 
+// planDateOnly — дата плана (planDocDate), усечённая до суток: для колонки
+// plan.plan_date (список загрузок, фильтр по дате).
+func planDateOnly(doc *plan.PlanDoc) *domain.LocalTime {
+	ts := planDocDate(doc)
+	if ts == nil {
+		return nil
+	}
+	t := ts.Time()
+	return domain.NewLocalTime(time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC))
+}
+
 // PlanProcessResult — сводка обработки плана.
 type PlanProcessResult struct {
 	Filename string `json:"filename"`

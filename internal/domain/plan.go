@@ -8,9 +8,10 @@ type Plan struct {
 	PlanCode   string     `json:"plan_code"`
 	SourceFile string     `json:"source_file"`
 	LoadedAt   *LocalTime `json:"loaded_at"`
-	Nitki      int        `json:"nitki"`   // всего ниток (без служебных строк)
-	Matched    int        `json:"matched"` // сопоставлено с вагонами
-	Stamped    int        `json:"stamped"` // вагонов застолблено
+	PlanDate   *LocalTime `json:"plan_date"` // «на какую дату план»: самая ранняя ЖД-дата ниток
+	Nitki      int        `json:"nitki"`     // всего ниток (без служебных строк)
+	Matched    int        `json:"matched"`   // сопоставлено с вагонами
+	Stamped    int        `json:"stamped"`   // вагонов застолблено
 }
 
 // PlanSummary — краткая карточка загрузки для списка выбора плана на фронте.
@@ -19,6 +20,7 @@ type PlanSummary struct {
 	PlanCode   string     `json:"plan_code"`
 	SourceFile string     `json:"source_file"`
 	LoadedAt   *LocalTime `json:"loaded_at"`
+	PlanDate   *LocalTime `json:"plan_date"` // «на какую дату план» (для списка/фильтра)
 	Nitki      int        `json:"nitki"`
 	Matched    int        `json:"matched"`
 	Stamped    int        `json:"stamped"`
