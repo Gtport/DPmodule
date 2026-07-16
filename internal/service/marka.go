@@ -9,8 +9,7 @@ import (
 // MarkaStats — диагностика S2-3 (обогащение новых вагонов из marka + перестановки).
 type MarkaStats struct {
 	Candidates      int // записей, которым требовалась бизнес-атрибуция (Gruzotpr пусто)
-	FilledFull      int // атрибуция заполнена полным совпадением marka (ОКПО+станция+группа)
-	FilledPartial   int // заполнена частичным совпадением (станция+группа)
+	FilledFull      int // атрибуция заполнена строгим совпадением marka (ОКПО+станция+группа)
 	FilledByTrain   int // заполнена наследованием по составу (S2-3d, единогласные соседи)
 	MissedMarka     int // не нашли ни marka, ни состав (кандидаты донорства S2-3c)
 	NaznachOverride int // Naznach взят из naznach_station (не дефолт GruzpolS)
@@ -21,8 +20,10 @@ type MarkaStats struct {
 //  1. словарь cargo переприменяется по коду ЕТСНГ — для известного кода словарь
 //     ИСТОЧНИК ПРАВДЫ (затирает перенесённое carry-over'ом); пустой/неизвестный
 //     код — остаётся перенесённое (порожний сохраняет груз прошлого рейса);
-//  2. бизнес-атрибуция из marka по ключу (ОКПО отправителя, станция отправления,
-//     ГРУППА груза) — только записям с пустым Gruzotpr (новые вагоны);
+//  2. бизнес-атрибуция из marka СТРОГО по ключу (ОКПО отправителя, станция
+//     отправления, ГРУППА груза) — только записям с пустым Gruzotpr (новые
+//     вагоны); частичный матч (станция+группа при чужом ОКПО) упразднён —
+//     он подставлял атрибуцию чужого отправителя (решение владельца);
 //     Naznach — перестановка назначения (новым вагонам);
 //  3. наследование по составу (S2-3d): оставшимся без атрибуции — от единогласных
 //     соседей по IndexMain (кривое/пустое ОКПО или станция у части вагонов состава);
@@ -34,12 +35,9 @@ func applyMarkaEnrichment(kept []domain.Dislocation, dir *DirectoryCache) MarkaS
 		reapplyCargoDict(r, dir)
 		if r.Gruzotpr == "" { // требуется бизнес-атрибуция
 			st.Candidates++
-			switch enrichFromMarka(r, dir) {
-			case markaFull:
+			if enrichFromMarka(r, dir) {
 				st.FilledFull++
-			case markaPartial:
-				st.FilledPartial++
-			case markaNone:
+			} else {
 				st.MissedMarka++
 			}
 		}
@@ -137,39 +135,27 @@ func reapplyCargoDict(r *domain.Dislocation, dir *DirectoryCache) {
 	}
 }
 
-type markaMatch int
-
-const (
-	markaNone markaMatch = iota
-	markaFull
-	markaPartial
-)
-
-// enrichFromMarka заполняет бизнес-атрибуцию из marka по ключу (ОКПО грузоотправителя,
-// код станции отправления, ГРУППА груза). Полное совпадение → применяем; иначе, ТОЛЬКО
-// если ОКПО в marka вовсе не известен, — частичное по (станция+группа) любого
-// отправителя (для известного ОКПО пробел не домысливаем). Группа — из словаря cargo
-// (шаг 1 applyMarkaEnrichment); пустая группа (порожний, код вне словаря) → none.
-func enrichFromMarka(r *domain.Dislocation, dir *DirectoryCache) markaMatch {
+// enrichFromMarka заполняет бизнес-атрибуцию из marka СТРОГО по ключу (ОКПО
+// грузоотправителя, код станции отправления, ГРУППА груза) — совпасть должны все
+// три поля. Частичного матча нет: на одной станции+группе бывают разные
+// отправители с разной атрибуцией, гадать нельзя (несовпавшие закрывает
+// наследование по составу S2-3d либо донорство S2-3c). Группа — из словаря cargo
+// (шаг 1 applyMarkaEnrichment); пустая группа (порожний, код вне словаря) → false.
+func enrichFromMarka(r *domain.Dislocation, dir *DirectoryCache) bool {
 	if r.GruzotprOkpo == "" || r.CodeStationNach == "" || r.CargoGroup == "" {
-		return markaNone
+		return false
 	}
 	okpo, err1 := strconv.ParseInt(r.GruzotprOkpo, 10, 64)
 	st, err2 := strconv.ParseInt(r.CodeStationNach, 10, 64)
 	if err1 != nil || err2 != nil {
-		return markaNone
+		return false
 	}
-	if m, ok := dir.GetMarkaByCompositeKey(okpo, st, r.CargoGroup); ok {
-		applyMarka(r, m)
-		return markaFull
+	m, ok := dir.GetMarkaByCompositeKey(okpo, st, r.CargoGroup)
+	if !ok {
+		return false
 	}
-	if !dir.MarkaHasOkpo(okpo) {
-		if recs := dir.GetMarkaByStationAndGroup(st, r.CargoGroup); len(recs) > 0 {
-			applyMarka(r, recs[0])
-			return markaPartial
-		}
-	}
-	return markaNone
+	applyMarka(r, m)
+	return true
 }
 
 // applyMarka переносит непустую бизнес-атрибуцию записи marka в дислокацию

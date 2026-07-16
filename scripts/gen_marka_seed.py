@@ -15,8 +15,11 @@
 
 Груз-поля (cargo_kod/cargo_s/cargo_group-как-данные) не переносятся — их даёт
 словарь cargo; имя станции погрузки (station) переносится как информационное
-(правится вместе с кодом). Результат — CSV под `\\copy marka(okpo,station_kod,
-station,cargo_group,shipper,client,sms_1,sms_3)` из scripts/seed_directories.sql.
+(правится вместе с кодом). color переносится (в оригинале однозначен внутри
+ключа; конфликт → предупреждение, берётся первый). sprav_1 в оригинале
+неоднозначен внутри группового ключа — НЕ переносится, пишется пустым (поле
+«на будущее»). Результат — CSV под `\\copy marka(okpo,station_kod,station,
+cargo_group,shipper,client,sms_1,sms_3,color,sprav_1)` из scripts/seed_directories.sql.
 """
 
 import argparse
@@ -69,11 +72,16 @@ def main() -> int:
             sms3 = ""
             print(f"конфликт sms_2 у ({okpo},{station},{group}): {sms3_variants} → пусто")
 
-        out_rows.append([okpo, station, station_name, group, shippers[0], clients[0], sms1, sms3])
+        colors = uniq(rows, "color")
+        color = colors[0]
+        if len(colors) > 1:
+            print(f"конфликт color у ({okpo},{station},{group}): {colors} → взято «{color}»")
+
+        out_rows.append([okpo, station, station_name, group, shippers[0], clients[0], sms1, sms3, color, ""])
 
     with open(args.out, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["okpo", "station_kod", "station", "cargo_group", "shipper", "client", "sms_1", "sms_3"])
+        w.writerow(["okpo", "station_kod", "station", "cargo_group", "shipper", "client", "sms_1", "sms_3", "color", "sprav_1"])
         w.writerows(out_rows)
 
     print(f"Схлопнуто {total} строк → {len(out_rows)} ключей в {args.out}")

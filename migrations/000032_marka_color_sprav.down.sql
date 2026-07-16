@@ -1,0 +1,3 @@
+ALTER TABLE dpport.marka
+    DROP COLUMN IF EXISTS color,
+    DROP COLUMN IF EXISTS sprav_1;

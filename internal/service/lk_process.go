@@ -293,7 +293,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
 		CarryMatched: co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
 		Status6Donors: donors, Status6Matched: donorMatched,
-		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull + mk.FilledPartial,
+		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull,
 		MarkaTrainFilled: mk.FilledByTrain,
 		MarkaMissed: mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
 		ForecastComputed: forecastN, ProgComputed: progN,
