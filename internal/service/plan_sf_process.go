@@ -505,11 +505,12 @@ func (p *PlanProcessor) loadSF(ctx context.Context) ([]planmatch.SFRecord, error
 	return out, nil
 }
 
-// sfKod4 строит мапу «станция формирования → kod_4 строкой» для поиска уехавших
-// сборных по префиксу индекса (АААА-БББ-ВВВВ). Станции не в справочнике пропускаются
+// sfKod4 строит мапу «станция формирования → все её kod_4 строками» для поиска
+// уехавших сборных по префиксу индекса (АААА-БББ-ВВВВ). Кодов может быть несколько
+// (парки крупной станции с одним именем). Станции не в справочнике пропускаются
 // (для них ловятся только стоящие кандидаты).
-func (p *PlanProcessor) sfKod4(sf []planmatch.SFRecord) map[string]string {
-	out := map[string]string{}
+func (p *PlanProcessor) sfKod4(sf []planmatch.SFRecord) map[string][]string {
+	out := map[string][]string{}
 	for _, r := range sf {
 		name := strings.TrimSpace(r.Station)
 		if name == "" {
@@ -518,8 +519,8 @@ func (p *PlanProcessor) sfKod4(sf []planmatch.SFRecord) map[string]string {
 		if _, ok := out[name]; ok {
 			continue
 		}
-		if k4, ok := p.dir.Kod4ByStationName(name); ok && k4 > 0 {
-			out[name] = strconv.Itoa(k4)
+		for _, k4 := range p.dir.Kod4sByStationName(name) {
+			out[name] = append(out[name], strconv.Itoa(k4))
 		}
 	}
 	return out

@@ -55,7 +55,8 @@ func TestSFCandidates(t *testing.T) {
 func TestSFCandidates_Departed(t *testing.T) {
 	sf := []SFRecord{{Sinonim: "БИКИН", Station: "БИКИН", Quantity: 50}}
 	target := map[string]struct{}{"АЭ": {}}
-	kod4 := map[string]string{"БИКИН": "9401"}
+	// У станции может быть несколько kod_4 (парки с одним именем) — ловим по любому.
+	kod4 := map[string][]string{"БИКИН": {"9401", "9402"}}
 	used := map[string]struct{}{"D9": {}}
 	s2, s10 := 2, 10
 
@@ -75,15 +76,18 @@ func TestSFCandidates_Departed(t *testing.T) {
 		{Vagon: "500", StationOper: "РУЖИНО", Naznach: "АЭ", Index: "7777-001-9857", IdDisl: "D5", Status: &s2},
 		// занят обычной ниткой → не предлагается
 		{Vagon: "600", StationOper: "РУЖИНО", Naznach: "АЭ", Index: "9401-200-9857", IdDisl: "D9", Status: &s2},
+		// уехал со ВТОРОГО парка станции (другой kod_4 того же имени) — кандидат
+		{Vagon: "700", StationOper: "РУЖИНО", Naznach: "АЭ", Index: "9402-033-9857", IdDisl: "D6", Status: &s2},
 	}
 
 	got := SFCandidates("БИКИН", sf, records, target, used, kod4)
-	if len(got) != 3 {
-		t.Fatalf("ожидалось 3 группы (стоящий D0 + уехавшие D1, D2), получено %d: %+v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("ожидалось 4 группы (стоящий D0 + уехавшие D1, D2, D6), получено %d: %+v", len(got), got)
 	}
 	// Уехавшие — первыми.
-	if !got[0].Departed || !got[1].Departed || got[2].Departed {
-		t.Errorf("порядок Departed: %v %v %v, ожидалось true true false", got[0].Departed, got[1].Departed, got[2].Departed)
+	if !got[0].Departed || !got[1].Departed || !got[2].Departed || got[3].Departed {
+		t.Errorf("порядок Departed: %v %v %v %v, ожидалось true true true false",
+			got[0].Departed, got[1].Departed, got[2].Departed, got[3].Departed)
 	}
 	byID := map[string]SFGroup{}
 	for _, g := range got {
@@ -94,6 +98,9 @@ func TestSFCandidates_Departed(t *testing.T) {
 	}
 	if g := byID["D2"]; !g.Departed || g.Index != "9401-077-9857" {
 		t.Errorf("D2 (переформирован, IndexMain): %+v", g)
+	}
+	if g := byID["D6"]; !g.Departed || g.Index != "9402-033-9857" {
+		t.Errorf("D6 (второй парк станции, kod_4 9402): %+v", g)
 	}
 	if g := byID["D0"]; g.Departed {
 		t.Errorf("D0 стоит на станции формирования — не Departed: %+v", g)

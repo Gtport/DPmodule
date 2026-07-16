@@ -53,8 +53,8 @@ func SFStations(synonym string, sf []SFRecord) map[string]struct{} {
 // SFCandidates собирает группы-кандидаты вагонов для с.ф.-синонима: агрегирует записи
 // дислокации по ключу StationOper|индекс|дата|IdDisl среди «наших» площадок (target).
 // Кандидаты двух видов: стоящие на станциях синонима (из sf) и уехавшие — по префиксу
-// индекса = kod_4 станции формирования (kod4ByStation: имя станции → kod_4 строкой;
-// пустая мапа отключает поиск уехавших). Исключает IdDisl, уже занятые обычными
+// индекса = kod_4 станции формирования (kod4ByStation: имя станции → все её kod_4
+// строками; пустая мапа отключает поиск уехавших). Исключает IdDisl, уже занятые обычными
 // нитками (usedIdDisl); для уехавших дополнительно — прибывших и порожних. Перенос
 // эталонного filterAndAggregateByStations (+ excludeUsedIdDisl + расширение departed);
 // порт-специфику (набор «наших» площадок) движок получает параметром — не хардкодит.
@@ -64,17 +64,20 @@ func SFCandidates(
 	records []domain.Dislocation,
 	target map[string]struct{},
 	usedIdDisl map[string]struct{},
-	kod4ByStation map[string]string,
+	kod4ByStation map[string][]string,
 ) []SFGroup {
 	stations := SFStations(synonym, sf)
 	if len(stations) == 0 {
 		return nil
 	}
-	// Префиксы индекса уехавших сборных = kod_4 станций формирования синонима.
+	// Префиксы индекса уехавших сборных = все kod_4 станций формирования синонима
+	// (у крупной станции несколько парков с одним именем и разными кодами).
 	prefixes := map[string]struct{}{}
 	for st := range stations {
-		if k4 := strings.TrimSpace(kod4ByStation[st]); k4 != "" {
-			prefixes[k4] = struct{}{}
+		for _, k4 := range kod4ByStation[st] {
+			if k4 = strings.TrimSpace(k4); k4 != "" {
+				prefixes[k4] = struct{}{}
+			}
 		}
 	}
 
