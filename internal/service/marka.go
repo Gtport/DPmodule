@@ -11,19 +11,22 @@ type MarkaStats struct {
 	Candidates      int // записей, которым требовалась бизнес-атрибуция (Gruzotpr пусто)
 	FilledFull      int // атрибуция заполнена полным совпадением marka (ОКПО+станция+группа)
 	FilledPartial   int // заполнена частичным совпадением (станция+группа)
-	MissedMarka     int // marka не нашла (кандидаты донорства S2-3c)
+	FilledByTrain   int // заполнена наследованием по составу (S2-3d, единогласные соседи)
+	MissedMarka     int // не нашли ни marka, ни состав (кандидаты донорства S2-3c)
 	NaznachOverride int // Naznach взят из naznach_station (не дефолт GruzpolS)
 }
 
 // applyMarkaEnrichment — Stage 2 (S2-3, §3.17): груз и назначение после carry-over,
-// ДО донорства status6. Три шага на каждой записи:
+// ДО донорства status6. Порядок:
 //  1. словарь cargo переприменяется по коду ЕТСНГ — для известного кода словарь
 //     ИСТОЧНИК ПРАВДЫ (затирает перенесённое carry-over'ом); пустой/неизвестный
 //     код — остаётся перенесённое (порожний сохраняет груз прошлого рейса);
 //  2. бизнес-атрибуция из marka по ключу (ОКПО отправителя, станция отправления,
 //     ГРУППА груза) — только записям с пустым Gruzotpr (новые вагоны);
-//  3. расчётные поля: Sms2 = Sms1 + CargoSms (уникальность уровня кода груза);
-//     Naznach — перестановка назначения (новым вагонам).
+//     Naznach — перестановка назначения (новым вагонам);
+//  3. наследование по составу (S2-3d): оставшимся без атрибуции — от единогласных
+//     соседей по IndexMain (кривое/пустое ОКПО или станция у части вагонов состава);
+//  4. расчётный Sms2 = Sms1 + CargoSms (после наследования, по всем записям).
 func applyMarkaEnrichment(kept []domain.Dislocation, dir *DirectoryCache) MarkaStats {
 	var st MarkaStats
 	for i := range kept {
@@ -40,14 +43,80 @@ func applyMarkaEnrichment(kept []domain.Dislocation, dir *DirectoryCache) MarkaS
 				st.MissedMarka++
 			}
 		}
-		r.Sms2 = joinNonEmpty(r.Sms1, r.CargoSms)
 		if r.Naznach == "" { // назначение ещё не определено (новый вагон)
 			if enrichNaznach(r, dir) {
 				st.NaznachOverride++
 			}
 		}
 	}
+	st.FilledByTrain = applyTrainInheritance(kept)
+	st.MissedMarka -= st.FilledByTrain // унаследовавшие больше не кандидаты донорства
+	for i := range kept {
+		kept[i].Sms2 = joinNonEmpty(kept[i].Sms1, kept[i].CargoSms)
+	}
 	return st
+}
+
+// applyTrainInheritance — S2-3d: наследование бизнес-атрибуции по составу.
+// Вагону без атрибуции (кривое/пустое/неизвестное ОКПО, станция вне marka)
+// переносится атрибуция соседей по составу (IndexMain) — но ТОЛЬКО при полном
+// единогласии доноров: составы бывают сборные, при разногласии не гадаем
+// (вагон остаётся кандидатом донорства S2-3c). Наследуются выходные поля
+// (Gruzotpr/Client/Sms1/Sms3), сырое GruzotprOkpo не подделываем. Кандидат с
+// собственной группой груза наследует только от состава той же группы.
+// Расширение сверх эталона gtlogic (решение владельца). Возвращает число
+// заполненных записей.
+func applyTrainInheritance(kept []domain.Dislocation) int {
+	type trainAttr struct {
+		gruzotpr, client, sms1, sms3, cargoGroup string
+		conflict                                 bool
+	}
+	donors := map[string]*trainAttr{}
+	for i := range kept {
+		r := &kept[i]
+		if r.Gruzotpr == "" || !trainInheritEligible(r) {
+			continue
+		}
+		a, ok := donors[r.IndexMain]
+		if !ok {
+			donors[r.IndexMain] = &trainAttr{
+				gruzotpr: r.Gruzotpr, client: r.Client,
+				sms1: r.Sms1, sms3: r.Sms3, cargoGroup: r.CargoGroup,
+			}
+			continue
+		}
+		if a.gruzotpr != r.Gruzotpr || a.client != r.Client ||
+			a.sms1 != r.Sms1 || a.sms3 != r.Sms3 || a.cargoGroup != r.CargoGroup {
+			a.conflict = true
+		}
+	}
+
+	filled := 0
+	for i := range kept {
+		r := &kept[i]
+		if r.Gruzotpr != "" || !trainInheritEligible(r) {
+			continue
+		}
+		a, ok := donors[r.IndexMain]
+		if !ok || a.conflict {
+			continue
+		}
+		if r.CargoGroup != "" && r.CargoGroup != a.cargoGroup {
+			continue // чужеродный вагон в составе — не наследуем
+		}
+		r.Gruzotpr, r.Client, r.Sms1, r.Sms3 = a.gruzotpr, a.client, a.sms1, a.sms3
+		filled++
+	}
+	return filled
+}
+
+// trainInheritEligible — участвует ли запись в наследовании по составу (донором
+// или кандидатом): гружёная, с осмысленным индексом состава, не на станции
+// отправления (статус ≠ 0 — условие владельца).
+func trainInheritEligible(r *domain.Dislocation) bool {
+	return r.PorozhPriznak != "1" &&
+		r.IndexMain != "" && r.IndexMain != "Б/И" &&
+		r.Status != nil && *r.Status != 0
 }
 
 // reapplyCargoDict — повторное применение словаря cargo после carry-over (первый

@@ -169,3 +169,65 @@ func TestApplyMarkaEnrichment(t *testing.T) {
 	assert.Equal(t, "ПРОШЛЫЙ ГРУЗ", kept[3].CargoS) // порожний: перенос сохранён
 	assert.Equal(t, "РУК КОНЦ", kept[3].Sms2)       // расчёт из перенесённых
 }
+
+// S2-3d: наследование бизнес-атрибуции по составу (IndexMain) при единогласии.
+func TestApplyTrainInheritance(t *testing.T) {
+	dir := markaDir(t, markaFixture, cargoFixture, nil)
+	s2 := 2 // статус «в пути»
+
+	t.Run("единогласный состав → сирота наследует, sms_2 со своей меткой", func(t *testing.T) {
+		kept := []domain.Dislocation{
+			// доноры: заматчились marka (ОКПО 1, станция 2, УГОЛЬ)
+			{Vagon: "D1", GruzotprOkpo: "1", CodeStationNach: "2", CodeCargo: "161113", IndexMain: "IX-1", Status: &s2},
+			{Vagon: "D2", GruzotprOkpo: "1", CodeStationNach: "2", CodeCargo: "161113", IndexMain: "IX-1", Status: &s2},
+			// сирота: ОКПО нулевое, станция вне marka — но код груза свой, читаемый
+			{Vagon: "S", GruzotprOkpo: "00000000", CodeStationNach: "999", CodeCargo: "161043", IndexMain: "IX-1", Status: &s2},
+		}
+		st := applyMarkaEnrichment(kept, dir)
+
+		assert.Equal(t, 1, st.FilledByTrain)
+		assert.Equal(t, 0, st.MissedMarka) // сирота закрыт составом
+		assert.Equal(t, "ОТПР", kept[2].Gruzotpr)
+		assert.Equal(t, "КЛ", kept[2].Client)
+		assert.Equal(t, "Улак", kept[2].Sms1)
+		assert.Equal(t, "УЛАК", kept[2].Sms3)
+		assert.Equal(t, "00000000", kept[2].GruzotprOkpo) // сырое ОКПО не подделано
+		assert.Equal(t, "Улак КОНЦ", kept[2].Sms2)        // sms_1 состава + СВОЯ метка груза
+	})
+
+	t.Run("сборный состав (разногласие) → не наследуем", func(t *testing.T) {
+		kept := []domain.Dislocation{
+			{Vagon: "D1", Gruzotpr: "ОТПР-А", IndexMain: "IX-2", Status: &s2, CodeCargo: "161113"},
+			{Vagon: "D2", Gruzotpr: "ОТПР-Б", IndexMain: "IX-2", Status: &s2, CodeCargo: "161113"},
+			{Vagon: "S", GruzotprOkpo: "00000000", CodeStationNach: "999", CodeCargo: "161113", IndexMain: "IX-2", Status: &s2},
+		}
+		st := applyMarkaEnrichment(kept, dir)
+		assert.Equal(t, 0, st.FilledByTrain)
+		assert.Equal(t, 1, st.MissedMarka) // остался кандидатом донорства
+		assert.Empty(t, kept[2].Gruzotpr)
+	})
+
+	t.Run("несовпадение группы → не наследуем", func(t *testing.T) {
+		kept := []domain.Dislocation{
+			{Vagon: "D", Gruzotpr: "ОТПР", CargoGroup: "МЕТАЛЛ", IndexMain: "IX-3", Status: &s2},
+			// сирота-уголь в металлическом составе
+			{Vagon: "S", GruzotprOkpo: "0", CodeStationNach: "999", CodeCargo: "161113", IndexMain: "IX-3", Status: &s2},
+		}
+		st := applyMarkaEnrichment(kept, dir)
+		assert.Equal(t, 0, st.FilledByTrain)
+		assert.Empty(t, kept[1].Gruzotpr)
+	})
+
+	t.Run("порожний и статус 0 не участвуют", func(t *testing.T) {
+		s0 := 0
+		kept := []domain.Dislocation{
+			{Vagon: "D", Gruzotpr: "ОТПР", CargoGroup: "УГОЛЬ", IndexMain: "IX-4", Status: &s2},
+			{Vagon: "P", PorozhPriznak: "1", IndexMain: "IX-4", Status: &s2},                      // порожний
+			{Vagon: "Z", GruzotprOkpo: "0", CodeCargo: "161113", IndexMain: "IX-4", Status: &s0}, // на ст. отправления
+		}
+		st := applyMarkaEnrichment(kept, dir)
+		assert.Equal(t, 0, st.FilledByTrain)
+		assert.Empty(t, kept[1].Gruzotpr)
+		assert.Empty(t, kept[2].Gruzotpr)
+	})
+}
