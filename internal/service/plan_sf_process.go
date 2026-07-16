@@ -375,11 +375,13 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, overrides map
 		}
 		var vagons []string
 		var subs []planmatch.SubGroup
+		var chosen []planmatch.SFGroup
 		for _, key := range sel {
 			g, ok := byKey[key]
 			if !ok {
 				continue // группа исчезла/занята — пропускаем (окно рассогласования)
 			}
+			chosen = append(chosen, g)
 			vagons = append(vagons, g.Vagons...)
 			subs = append(subs, g.SubGroups...)
 			if g.IdDisl != "" {
@@ -390,6 +392,14 @@ func (p *PlanProcessor) Confirm(ctx context.Context, token string, overrides map
 			matches[i].Matched = true
 			matches[i].Vagons = vagons
 			matches[i].SubGroups = subs // «Состав» и станция нитки с.ф. в сетке
+			// Выбран единственный РЕАЛЬНЫЙ поезд (сформирован/уехал) → нитка получает
+			// его индекс вместо метки с.ф. — как при ручном вводе индекса (несобранные
+			// группы реального индекса ещё не имеют, метка с.ф. остаётся).
+			if len(chosen) == 1 && (chosen[0].Departed || chosen[0].Formed) && chosen[0].Index != "" {
+				effDoc.Nitki[i].Index = chosen[0].Index
+				effDoc.Nitki[i].IndexPp = chosen[0].Index
+				effDoc.Nitki[i].IsSf = false
+			}
 		}
 	}
 

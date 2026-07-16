@@ -31,7 +31,7 @@ type SFGroup struct {
 	StationOper string            // станция текущей операции (для уехавших — где поезд сейчас)
 	Departed    bool              // true: покинул станцию формирования (найден по префиксу индекса)
 	Formed      bool              // true: сформирован (реальный индекс), но ещё на станции формирования
-	Index       string            // IndexMain если непуст, иначе Index (как в эталоне)
+	Index       string            // группы: IndexMain если непуст, иначе Index (эталон); поезда-кандидаты: индекс СБОРНОГО (сф-префикс)
 	IndexMain   string            //
 	DateOp      *domain.LocalTime // дата операции группы
 	IdDisl      string            // id операции (может совпадать у разных групп — не идентификатор!)
@@ -109,6 +109,15 @@ func SFCandidates(
 		if r.IndexMain != "" {
 			indexToUse = r.IndexMain
 		}
+		// Поезд-кандидат (сформирован/уехал): показываем и группируем по индексу
+		// СБОРНОГО (сф-префикс, обычно текущий Index) — по нему кандидат и найден,
+		// а IndexMain у вагонов исходный (со станции отправления) и у сборного из
+		// разных маршрутов развалил бы один поезд на несколько групп.
+		if departed || formed {
+			if idx := sfPrefixedIndex(r, prefixes); idx != "" {
+				indexToUse = idx
+			}
+		}
 		key := r.StationOper + "|" + indexToUse + "|" + dateKey(r.DateOp) + "|" + r.IdDisl
 
 		g := groups[key]
@@ -178,21 +187,28 @@ func SFCandidates(
 	return out
 }
 
-// hasSFIndexPrefix — первый сегмент индекса (АААА из АААА-БББ-ВВВВ) совпадает с kod_4
-// одной из станций формирования синонима. Смотрим и текущий Index, и IndexMain (после
-// переформирования в пути текущий индекс меняется, IndexMain хранит исходный).
-func hasSFIndexPrefix(r *domain.Dislocation, prefixes map[string]struct{}) bool {
+// sfPrefixedIndex — индекс записи с сф-префиксом (АААА из АААА-БББ-ВВВВ = kod_4 одной
+// из станций формирования синонима) или "". Сначала текущий Index (сборный, как поезд
+// едет сейчас), затем IndexMain (если сборный успел переформироваться в пути — текущий
+// индекс уже чужой, исходный сф-индекс хранит IndexMain).
+func sfPrefixedIndex(r *domain.Dislocation, prefixes map[string]struct{}) string {
 	if len(prefixes) == 0 {
-		return false
+		return ""
 	}
-	for _, idx := range []string{r.IndexMain, r.Index} {
-		if seg, _, ok := strings.Cut(strings.TrimSpace(idx), "-"); ok {
+	for _, idx := range []string{r.Index, r.IndexMain} {
+		idx = strings.TrimSpace(idx)
+		if seg, _, ok := strings.Cut(idx, "-"); ok {
 			if _, hit := prefixes[seg]; hit {
-				return true
+				return idx
 			}
 		}
 	}
-	return false
+	return ""
+}
+
+// hasSFIndexPrefix — есть ли у записи индекс с сф-префиксом (текущий или исходный).
+func hasSFIndexPrefix(r *domain.Dislocation, prefixes map[string]struct{}) bool {
+	return sfPrefixedIndex(r, prefixes) != ""
 }
 
 // isDepartedSF — уехавший со станции формирования сборный: индекс со «своим»
