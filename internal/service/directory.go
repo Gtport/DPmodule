@@ -318,6 +318,21 @@ func (c *DirectoryCache) PortByNameS(nameS string) (domain.Ports, bool) {
 	return p, ok
 }
 
+// EnabledTerminals — краткие имена (NameS) включённых терминалов, отсортированы.
+// Цели перестановок/переадресации на экране «Перестановки» (не хардкод площадок).
+func (c *DirectoryCache) EnabledTerminals() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]string, 0, len(c.portsByNameS))
+	for name, p := range c.portsByNameS {
+		if p.Enabled {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // EnabledOkpos возвращает отсортированное множество ОКПО, у которых есть хотя бы
 // один активный терминал. Для контроля приёма ЛК: какие грузополучатели ожидаются
 // (пока единственный канал 'lk' питает всех; при связке port→data_source сузим).

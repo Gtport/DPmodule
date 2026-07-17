@@ -21,6 +21,7 @@ import {
   ReloadOutline, PrinterOutline, InfoCircleOutline, SyncOutline, // тулбар плана подвода
   CloudDownloadOutline, // забор из АСУ на экране дислокации
   QuestionCircleOutline, // сайдбар: «Пропавшие вагоны»
+  DownOutline, RightOutline, // дерево групп на «Перестановках»
   // Сплошные (fill) — как в GTport; сайдбар диспетчера использует именно их.
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
 } from '@ant-design/icons-angular/icons';
@@ -40,7 +41,7 @@ const icons = [
   FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
   SwapOutline, GlobalOutline, BarChartOutline, LineChartOutline, UploadOutline, InboxOutline,
   ReloadOutline, PrinterOutline, InfoCircleOutline, SyncOutline, CloudDownloadOutline,
-  QuestionCircleOutline,
+  QuestionCircleOutline, DownOutline, RightOutline,
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
   ...CUSTOM_ICONS,
 ];
