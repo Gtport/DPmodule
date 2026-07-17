@@ -58,9 +58,9 @@ import { AdminApiService, AdminColumn, AdminRow, AdminTable } from './admin-api.
             <thead>
               <tr>
                 @for (c of columns(); track c.name) {
-                  <th>{{ c.name }}</th>
+                  <th>{{ c.label || c.name }}</th>
                 }
-                <th nzRight nzWidth="88px"></th>
+                <th nzRight nzWidth="120px"></th>
               </tr>
             </thead>
             <tbody>
@@ -70,6 +70,10 @@ import { AdminApiService, AdminColumn, AdminRow, AdminTable } from './admin-api.
                     <td [class.num]="c.kind === 'number'">{{ cell(row, c) }}</td>
                   }
                   <td nzRight class="ops">
+                    <button nz-button nzType="link" nzSize="small" nz-tooltip nzTooltipTitle="Копировать в новую строку"
+                            (click)="openCopy(row)">
+                      <span nz-icon nzType="copy"></span>
+                    </button>
                     <button nz-button nzType="link" nzSize="small" (click)="openEdit(row)">
                       <span nz-icon nzType="edit"></span>
                     </button>
@@ -88,14 +92,14 @@ import { AdminApiService, AdminColumn, AdminRow, AdminTable } from './admin-api.
         }
       </nz-card>
 
-      <nz-modal [nzVisible]="modalOpen()" [nzTitle]="editingId() === null ? 'Новая строка' : 'Правка строки'"
+      <nz-modal [nzVisible]="modalOpen()" [nzTitle]="modalTitle()"
                 [nzOkLoading]="saving()" (nzOnOk)="save()" (nzOnCancel)="modalOpen.set(false)"
                 nzOkText="Сохранить" nzCancelText="Отмена">
         <ng-container *nzModalContent>
           <div class="form">
             @for (c of formColumns(); track c.name) {
               <div class="frow">
-                <label class="flabel" [class.req]="c.required">{{ c.name }}</label>
+                <label class="flabel" [class.req]="c.required">{{ c.label || c.name }}</label>
                 @switch (c.kind) {
                   @case ('number') {
                     <nz-input-number class="fctl" [ngModel]="draftNum(c.name)"
@@ -125,8 +129,10 @@ import { AdminApiService, AdminColumn, AdminRow, AdminTable } from './admin-api.
     .spacer { flex: 1 1 auto; }
     .muted { color: var(--color-text-muted); }
     .grid { font-size: var(--font-size-sm); }
-    .grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .grid td.ops { white-space: nowrap; text-align: right; }
+    /* Выравнивание по центру — просьба владельца (для всех справочников). */
+    .grid th, .grid td { text-align: center; }
+    .grid td.num { font-variant-numeric: tabular-nums; }
+    .grid td.ops { white-space: nowrap; }
     .form { display: flex; flex-direction: column; gap: var(--space-sm); }
     .frow { display: flex; align-items: center; gap: var(--space-md); }
     .flabel { flex: 0 0 140px; text-align: right; color: var(--color-text-secondary); }
@@ -152,6 +158,12 @@ export class AdminComponent implements OnInit {
   readonly saving = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly draft = signal<AdminRow>({});
+  readonly copying = signal(false);
+
+  readonly modalTitle = computed(() => {
+    if (this.editingId() !== null) return 'Правка строки';
+    return this.copying() ? 'Новая строка (копия)' : 'Новая строка';
+  });
 
   /** Колонки формы: ключ-serial не правится руками. */
   readonly formColumns = computed(() => this.columns().filter((c) => !c.pk));
@@ -204,12 +216,25 @@ export class AdminComponent implements OnInit {
 
   openCreate(): void {
     this.editingId.set(null);
+    this.copying.set(false);
     this.draft.set({});
+    this.modalOpen.set(true);
+  }
+
+  /** Копия строки: форма новой записи с предзаполненными значениями (ключ сброшен) —
+   *  удобно добавить отправителю ещё одну станцию, поправив одно поле. */
+  openCopy(row: AdminRow): void {
+    this.editingId.set(null);
+    this.copying.set(true);
+    const draft: AdminRow = {};
+    for (const c of this.formColumns()) draft[c.name] = row[c.name];
+    this.draft.set(draft);
     this.modalOpen.set(true);
   }
 
   openEdit(row: AdminRow): void {
     this.editingId.set(this.rowKey(row));
+    this.copying.set(false);
     this.draft.set({ ...row });
     this.modalOpen.set(true);
   }

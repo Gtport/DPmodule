@@ -13,6 +13,7 @@ export interface AdminTable {
 /** Колонка справочника — для грида и динамической формы. */
 export interface AdminColumn {
   name: string;
+  label: string; // русская подпись (комментарий колонки в БД); пусто → показываем name
   kind: 'number' | 'text' | 'boolean';
   required: boolean;
   pk: boolean;

@@ -1,0 +1,19 @@
+COMMENT ON COLUMN dpport.marka.id          IS NULL;
+COMMENT ON COLUMN dpport.marka.okpo        IS NULL;
+COMMENT ON COLUMN dpport.marka.station_kod IS NULL;
+COMMENT ON COLUMN dpport.marka.station     IS NULL;
+COMMENT ON COLUMN dpport.marka.cargo_group IS NULL;
+COMMENT ON COLUMN dpport.marka.shipper     IS NULL;
+COMMENT ON COLUMN dpport.marka.client      IS NULL;
+COMMENT ON COLUMN dpport.marka.sms_1       IS NULL;
+COMMENT ON COLUMN dpport.marka.sms_3       IS NULL;
+COMMENT ON COLUMN dpport.marka.color       IS NULL;
+COMMENT ON COLUMN dpport.marka.sprav_1     IS NULL;
+
+COMMENT ON COLUMN dpport.stations.kod       IS NULL;
+COMMENT ON COLUMN dpport.stations.kod_4     IS NULL;
+COMMENT ON COLUMN dpport.stations.name      IS NULL;
+COMMENT ON COLUMN dpport.stations.road      IS NULL;
+COMMENT ON COLUMN dpport.stations.latitude  IS NULL;
+COMMENT ON COLUMN dpport.stations.longitude IS NULL;
+COMMENT ON COLUMN dpport.stations.is_bam    IS NULL;
