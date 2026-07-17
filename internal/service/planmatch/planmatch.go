@@ -322,7 +322,7 @@ func findBestInMap(indexPp string, m map[string]Aggregation, activValue int, tar
 }
 
 // collectVagons выбирает вагоны победившей агрегации для простановки плана
-// (updateWagonsForSubGroup + shouldUpdateWagon): Status≠10, площадка «наша» по
+// (updateWagonsForSubGroup + shouldUpdateWagon): Status<10, площадка «наша» по
 // Naznach (эталонный isTargetNaznachForPlan — write-back сверяет именно Naznach,
 // тогда как агрегация брала Naznach ИЛИ GruzpolS), совпадение IdDisl+IndexMain с
 // подгруппой; для NK дополнительно совпадение Naznach с подгруппой.
@@ -330,8 +330,8 @@ func collectVagons(agg AggResult, best Aggregation, requiresNaznach bool) []stri
 	seen := map[string]struct{}{}
 	var vagons []string
 	for _, r := range agg.records {
-		if r.Status != nil && *r.Status == 10 {
-			continue
+		if r.Status != nil && *r.Status >= 10 {
+			continue // прибыл/выгружен — план не проставляем
 		}
 		if r.Vagon == "" {
 			continue
