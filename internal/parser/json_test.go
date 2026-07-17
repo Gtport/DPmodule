@@ -71,6 +71,10 @@ func TestJSONParser_IndexBezIndeksa(t *testing.T) {
 		`[{"NOM_VAG":"1","INDEX_POEZD":""}]`:      "Б/И", // пусто
 		`[{"NOM_VAG":"1","INDEX_POEZD":"123"}]`:   "Б/И", // не 15 цифр
 		`[{"NOM_VAG":"1","INDEX_POEZD":"12345"}]`: "Б/И",
+		// новый контракт: индекс уже отформатирован источником → как есть
+		`[{"NOM_VAG":"1","INDEX_POEZD":"1234-567-8901"}]`:   "1234-567-8901",
+		`[{"NOM_VAG":"1","INDEX_POEZD":" 1234-567-8901 "}]`: "1234-567-8901",
+		`[{"NOM_VAG":"1","INDEX_POEZD":"12-34-56"}]`:        "Б/И", // дефисный, но не 4-3-4
 	}
 	p := parser.NewJSONParser()
 	for raw, want := range cases {
