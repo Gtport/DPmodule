@@ -4,18 +4,21 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
 // RearrangeService — экран «Перестановки/Переадресация» (перенос gtport
-// RearrangementService, §HARDCODE: без хардкода станций и терминалов).
+// RearrangementService, без хардкода станций и терминалов).
 //
 // Перестановки: распределение вагонов, идущих на наши станции с «управляемых»
 // станций погрузки (пара станций разрешена справочником naznach_station,
 // enabled), по терминалам (naznach). Переадресация: увод поезда целиком на
-// другой свой терминал или внешний порт (pereadr_* вместо info_1/info_2).
+// терминал другой станции или внешний порт (pereadr_* вместо info_1/info_2).
+// Правила целей (не хардкод, из реестра портов): перестановка — терминалы ТОЙ ЖЕ
+// станции назначения; переадресация — терминалы ДРУГИХ станций + внешний порт.
 //
 // Запись — батчем: одна операция = одно применение к снимку + один пересчёт
 // Stage 3–4 + одна атомарная подмена + одно событие журнала (rearrangement).
@@ -31,39 +34,78 @@ func NewRearrangeService(proc *LKProcessor) *RearrangeService {
 
 // RearrVagonDTO — вагон в подгруппе (детализация выбора).
 type RearrVagonDTO struct {
-	ID      string `json:"id"`
-	Vagon   string `json:"vagon"`
-	NppVag  *int   `json:"npp_vag"`
-	Invoice string `json:"invoice"`
-	Naznach string `json:"naznach"`
+	ID       string `json:"id"`
+	Vagon    string `json:"vagon"`
+	NppVag   *int   `json:"npp_vag"`
+	Invoice  string `json:"invoice"`
+	GruzpolS string `json:"gruzpol_s"`
+	Naznach  string `json:"naznach"`
 }
 
-// RearrSubGroupDTO — второй уровень группировки.
+// RearrSubGroupDTO — второй уровень группировки. Заполнены поля своего режима.
 type RearrSubGroupDTO struct {
-	Key        string          `json:"key"`
-	Label      string          `json:"label"`
-	Naznach    string          `json:"naznach"`
-	VagonCount int             `json:"vagon_count"`
-	Vagons     []RearrVagonDTO `json:"vagons"`
+	Key           string          `json:"key"`
+	IndexMain     string          `json:"index_main,omitempty"`
+	Index         string          `json:"index,omitempty"`
+	StationOper   string          `json:"station_oper"`
+	StationNach   string          `json:"station_nach,omitempty"`
+	GruzpolS      string          `json:"gruzpol_s"`
+	Naznach       string          `json:"naznach"`
+	RasstStanNazn *int            `json:"rasst_stan_nazn"`
+	Status        *int            `json:"status"`
+	VagonCount    int             `json:"vagon_count"`
+	Vagons        []RearrVagonDTO `json:"vagons"`
 }
 
 // RearrGroupDTO — первый уровень группировки (обе вкладки и оба режима).
 type RearrGroupDTO struct {
-	Key        string             `json:"key"`
-	Title      string             `json:"title"`    // левая часть заголовка
-	Subtitle   string             `json:"subtitle"` // правая часть (станция/статус и т.п.)
-	Naznach    string             `json:"naznach"`  // терминал группы (переадресация)
-	Available  bool               `json:"available"`
-	VagonCount int                `json:"vagon_count"`
-	SubGroups  []RearrSubGroupDTO `json:"sub_groups"`
+	Key         string             `json:"key"`
+	IndexMain   string             `json:"index_main,omitempty"`
+	Index       string             `json:"index,omitempty"`
+	StationNach string             `json:"station_nach,omitempty"`
+	StationOper string             `json:"station_oper,omitempty"`
+	StanNazn    string             `json:"stan_nazn"` // станция назначения — опора правил целей
+	GruzpolS    string             `json:"gruzpol_s,omitempty"`
+	Naznach     string             `json:"naznach,omitempty"`
+	PereadrPort string             `json:"pereadr_port,omitempty"`
+	Status      *int               `json:"status,omitempty"`
+	Available   bool               `json:"available"`
+	VagonCount  int                `json:"vagon_count"`
+	SubGroups   []RearrSubGroupDTO `json:"sub_groups"`
+}
+
+// TargetDTO — цель перестановки/переадресации: терминал и ЕГО станция (из
+// реестра портов; правила «своя/чужая станция» считает фронт по этим данным).
+type TargetDTO struct {
+	Name    string `json:"name"`    // NameS терминала (значение naznach)
+	Station string `json:"station"` // имя причальной станции терминала
 }
 
 // RearrGroupsDTO — ответ ручек группировок.
 type RearrGroupsDTO struct {
 	GroupBy string          `json:"group_by"`
 	Groups  []RearrGroupDTO `json:"groups"`
-	Targets []string        `json:"targets"` // включённые терминалы (цели перестановки)
+	Targets []TargetDTO     `json:"targets"`
 	Total   int             `json:"total"`
+}
+
+// terminalTargets — включённые терминалы с их станциями (реестр портов;
+// StationCode → имя станции через справочник станций по 4-значному коду).
+func terminalTargets(dir *DirectoryCache) []TargetDTO {
+	names := dir.EnabledTerminals()
+	out := make([]TargetDTO, 0, len(names))
+	for _, n := range names {
+		t := TargetDTO{Name: n}
+		if p, ok := dir.PortByNameS(n); ok {
+			if kod4, err := strconv.Atoi(p.StationCode); err == nil {
+				if st, ok := dir.GetStationByKod4(kod4); ok {
+					t.Station = st.Name
+				}
+			}
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 // RearrangementGroups — вкладка «Перестановки»: вагоны, у которых пара
@@ -89,7 +131,14 @@ func (s *RearrangeService) RearrangementGroups(groupBy string) RearrGroupsDTO {
 	}
 	return RearrGroupsDTO{
 		GroupBy: groupBy, Groups: groups,
-		Targets: dir.EnabledTerminals(), Total: len(groups),
+		Targets: terminalTargets(dir), Total: len(groups),
+	}
+}
+
+func vagonDTO(r *domain.Dislocation) RearrVagonDTO {
+	return RearrVagonDTO{
+		ID: r.ID, Vagon: r.Vagon, NppVag: r.NppVag, Invoice: r.Invoice,
+		GruzpolS: r.GruzpolS, Naznach: r.Naznach,
 	}
 }
 
@@ -100,13 +149,15 @@ func groupParentIndex(records []domain.Dislocation) []RearrGroupDTO {
 	groups := map[string]*RearrGroupDTO{}
 	subs := map[string]map[subKey]*RearrSubGroupDTO{}
 
-	for _, r := range records {
+	for i := range records {
+		r := &records[i]
 		gk := r.IndexMain + "|" + r.StationNach
 		g, ok := groups[gk]
 		if !ok {
 			g = &RearrGroupDTO{
-				Key: gk, Title: orDash(r.IndexMain), Subtitle: r.StationNach,
-				Naznach: r.GruzpolS, Available: true,
+				Key: gk, IndexMain: r.IndexMain, StationNach: r.StationNach,
+				StanNazn: r.StanNazn, GruzpolS: r.GruzpolS, Naznach: r.Naznach,
+				Available: true,
 			}
 			groups[gk] = g
 			subs[gk] = map[subKey]*RearrSubGroupDTO{}
@@ -117,38 +168,43 @@ func groupParentIndex(records []domain.Dislocation) []RearrGroupDTO {
 		sg, ok := subs[gk][sk]
 		if !ok {
 			sg = &RearrSubGroupDTO{
-				Key:     r.StationOper + "|" + r.Index + "|" + r.Naznach,
-				Label:   fmt.Sprintf("%s / %s / %s", orDash(r.StationOper), orDash(r.Index), orDash(r.Naznach)),
-				Naznach: r.Naznach,
+				Key:         r.StationOper + "|" + r.Index + "|" + r.Naznach,
+				StationOper: r.StationOper, Index: r.Index,
+				GruzpolS: r.GruzpolS, Naznach: r.Naznach,
+				RasstStanNazn: r.RasstStanNazn, Status: r.Status,
 			}
 			subs[gk][sk] = sg
 		}
 		sg.VagonCount++
-		sg.Vagons = append(sg.Vagons, RearrVagonDTO{
-			ID: r.ID, Vagon: r.Vagon, NppVag: r.NppVag, Invoice: r.Invoice, Naznach: r.Naznach,
-		})
+		sg.Vagons = append(sg.Vagons, vagonDTO(r))
 	}
 	return assembleGroups(groups, subs)
 }
 
-// groupCollective — режим «по сборному поезду»: индекс + станция операции →
-// подгруппы по родительскому индексу / станции погрузки / получателю / naznach.
+// groupCollective — режим «по сборному поезду»: индекс + станция операции +
+// расстояние + статус → подгруппы по родительскому индексу / станции погрузки /
+// получателю / naznach (эталон gtport).
 func groupCollective(records []domain.Dislocation) []RearrGroupDTO {
 	type subKey struct{ im, sn, gp, nz string }
 	groups := map[string]*RearrGroupDTO{}
 	subs := map[string]map[subKey]*RearrSubGroupDTO{}
 
-	for _, r := range records {
+	for i := range records {
+		r := &records[i]
+		rasst := 0
+		if r.RasstStanNazn != nil {
+			rasst = *r.RasstStanNazn
+		}
 		st := ""
 		if r.Status != nil {
-			st = fmt.Sprintf("статус %d", *r.Status)
+			st = strconv.Itoa(*r.Status)
 		}
-		gk := r.Index + "|" + r.StationOper + "|" + st
+		gk := r.Index + "|" + r.StationOper + "|" + strconv.Itoa(rasst) + "|" + st
 		g, ok := groups[gk]
 		if !ok {
 			g = &RearrGroupDTO{
-				Key: gk, Title: orDash(r.Index), Subtitle: dotJoin(r.StationOper, st),
-				Available: true,
+				Key: gk, Index: r.Index, StationOper: r.StationOper,
+				StanNazn: r.StanNazn, Status: r.Status, Available: true,
 			}
 			groups[gk] = g
 			subs[gk] = map[subKey]*RearrSubGroupDTO{}
@@ -159,16 +215,15 @@ func groupCollective(records []domain.Dislocation) []RearrGroupDTO {
 		sg, ok := subs[gk][sk]
 		if !ok {
 			sg = &RearrSubGroupDTO{
-				Key:     r.IndexMain + "|" + r.StationNach + "|" + r.GruzpolS + "|" + r.Naznach,
-				Label:   fmt.Sprintf("%s / %s / %s / %s", orDash(r.IndexMain), orDash(r.StationNach), orDash(r.GruzpolS), orDash(r.Naznach)),
-				Naznach: r.Naznach,
+				Key:       r.IndexMain + "|" + r.StationNach + "|" + r.GruzpolS + "|" + r.Naznach,
+				IndexMain: r.IndexMain, StationNach: r.StationNach,
+				GruzpolS: r.GruzpolS, Naznach: r.Naznach,
+				RasstStanNazn: r.RasstStanNazn, Status: r.Status,
 			}
 			subs[gk][sk] = sg
 		}
 		sg.VagonCount++
-		sg.Vagons = append(sg.Vagons, RearrVagonDTO{
-			ID: r.ID, Vagon: r.Vagon, NppVag: r.NppVag, Invoice: r.Invoice, Naznach: r.Naznach,
-		})
+		sg.Vagons = append(sg.Vagons, vagonDTO(r))
 	}
 	return assembleGroups(groups, subs)
 }
@@ -187,14 +242,15 @@ func (s *RearrangeService) RedirectionGroups() RearrGroupsDTO {
 	groups := map[string]*RearrGroupDTO{}
 	subs := map[string]map[subKey]*RearrSubGroupDTO{}
 
-	for _, r := range s.proc.actual.All() {
+	all := s.proc.actual.All()
+	for i := range all {
+		r := &all[i]
 		gk := r.IndexMain + "|" + r.PereadrPort + "|" + r.StanNazn + "|" + r.Naznach
 		g, ok := groups[gk]
 		if !ok {
 			g = &RearrGroupDTO{
-				Key: gk, Title: orDash(r.IndexMain),
-				Subtitle: dotJoin(r.StanNazn, r.PereadrPort),
-				Naznach:  r.Naznach,
+				Key: gk, IndexMain: r.IndexMain, PereadrPort: r.PereadrPort,
+				StanNazn: r.StanNazn, StationNach: r.StationNach, Naznach: r.Naznach,
 			}
 			groups[gk] = g
 			subs[gk] = map[subKey]*RearrSubGroupDTO{}
@@ -205,16 +261,14 @@ func (s *RearrangeService) RedirectionGroups() RearrGroupsDTO {
 		sg, ok := subs[gk][sk]
 		if !ok {
 			sg = &RearrSubGroupDTO{
-				Key:     r.StationOper + "|" + r.GruzpolS + "|" + r.Naznach,
-				Label:   fmt.Sprintf("%s / %s / %s", orDash(r.StationOper), orDash(r.GruzpolS), orDash(r.Naznach)),
-				Naznach: r.Naznach,
+				Key:         r.StationOper + "|" + r.GruzpolS + "|" + r.Naznach,
+				StationOper: r.StationOper, GruzpolS: r.GruzpolS, Naznach: r.Naznach,
+				RasstStanNazn: r.RasstStanNazn, Status: r.Status,
 			}
 			subs[gk][sk] = sg
 		}
 		sg.VagonCount++
-		sg.Vagons = append(sg.Vagons, RearrVagonDTO{
-			ID: r.ID, Vagon: r.Vagon, NppVag: r.NppVag, Invoice: r.Invoice, Naznach: r.Naznach,
-		})
+		sg.Vagons = append(sg.Vagons, vagonDTO(r))
 	}
 
 	out := assembleGroups(groups, subs)
@@ -223,7 +277,7 @@ func (s *RearrangeService) RedirectionGroups() RearrGroupsDTO {
 	}
 	return RearrGroupsDTO{
 		GroupBy: "redirection", Groups: out,
-		Targets: s.proc.intake.dir.EnabledTerminals(), Total: len(out),
+		Targets: terminalTargets(s.proc.intake.dir), Total: len(out),
 	}
 }
 
@@ -300,23 +354,65 @@ func sortVagons(v []RearrVagonDTO) {
 	})
 }
 
-func orDash(s string) string {
-	if s == "" {
-		return "—"
-	}
-	return s
+// ── Панель станций (справочник naznach_station, операторская) ───────────────
+
+// NaznachStationDTO — строка панели: пара станций и её дефолтное назначение.
+type NaznachStationDTO struct {
+	DestStation   string `json:"dest_station"`
+	OriginStation string `json:"origin_station"`
+	Naznach       string `json:"naznach"` // пусто = «по назначению» (родному получателю)
+	Univers       bool   `json:"univers"`
+	Enabled       bool   `json:"enabled"`
 }
 
-// dotJoin — склейка непустых частей через « · » (заголовки групп).
-func dotJoin(a, b string) string {
-	switch {
-	case a == "" || a == b:
-		return b
-	case b == "":
-		return a
-	default:
-		return a + " · " + b
+// Stations — все строки справочника naznach_station (включая выключенные и без
+// назначения — колонка «По назначению» панели).
+func (s *RearrangeService) Stations(ctx context.Context) ([]NaznachStationDTO, error) {
+	rows, err := s.proc.intake.dir.NaznachStationRows(ctx)
+	if err != nil {
+		return nil, err
 	}
+	out := make([]NaznachStationDTO, len(rows))
+	for i, r := range rows {
+		out[i] = NaznachStationDTO{
+			DestStation: r.DestStation, OriginStation: r.OriginStation,
+			Naznach: r.Naznach, Univers: r.Univers, Enabled: r.Enabled,
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].OriginStation == out[j].OriginStation {
+			return out[i].DestStation < out[j].DestStation
+		}
+		return out[i].OriginStation < out[j].OriginStation
+	})
+	return out, nil
+}
+
+// StationNaznachUpdate — смена дефолтного назначения пары станций (drag&drop /
+// ПКМ панели). Пустой naznach = «по назначению» (авто-перестановка выключается).
+type StationNaznachUpdate struct {
+	DestStation   string `json:"dest_station"`
+	OriginStation string `json:"origin_station"`
+	Naznach       string `json:"naznach"`
+}
+
+// UpdateStationNaznach валидирует терминал по реестру, пишет справочник и
+// горячо перезагружает DirectoryCache (фильтр перестановок и Stage 2 видят
+// правку сразу; пересчёт уже стоящих вагонов — «Обновить справочники» / тик).
+func (s *RearrangeService) UpdateStationNaznach(ctx context.Context, req StationNaznachUpdate) error {
+	if req.DestStation == "" || req.OriginStation == "" {
+		return fmt.Errorf("%w: не указана пара станций", ErrBadRearrange)
+	}
+	dir := s.proc.intake.dir
+	if req.Naznach != "" {
+		if _, ok := dir.PortByNameS(req.Naznach); !ok {
+			return fmt.Errorf("%w: неизвестный терминал %q", ErrBadRearrange, req.Naznach)
+		}
+	}
+	if err := dir.UpdateNaznachStation(ctx, req.DestStation, req.OriginStation, req.Naznach); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ── Применение (запись в снимок, батчем) ────────────────────────────────────
@@ -338,12 +434,14 @@ type RedirectApplyRequest struct {
 // RearrApplyResult — итог операции.
 type RearrApplyResult struct {
 	Updated          int `json:"updated"`           // вагонов изменено
+	Selected         int `json:"selected"`          // вагонов было выбрано
 	ForecastComputed int `json:"forecast_computed"` // пересчитан ход (Stage 3)
 	ProgComputed     int `json:"prog_computed"`     // пересчитан прогноз порта (Stage 4)
 }
 
 // ApplyRearrangement — перестановка терминала выбранным вагонам. Меняются только
-// вагоны, у которых пара станций разрешена справочником (страховка уровня gtport).
+// вагоны, у которых пара станций разрешена справочником (страховка уровня gtport);
+// уже стоящие на целевом терминале пропускаются (Updated считает реальные правки).
 func (s *RearrangeService) ApplyRearrangement(ctx context.Context, req RearrApplyRequest) (RearrApplyResult, error) {
 	if len(req.VagonIDs) == 0 {
 		return RearrApplyResult{}, fmt.Errorf("%w: не выбраны вагоны", ErrBadRearrange)
@@ -355,7 +453,7 @@ func (s *RearrangeService) ApplyRearrangement(ctx context.Context, req RearrAppl
 
 	ids := toSet(req.VagonIDs)
 	now := clock.Now()
-	return s.mutateSnapshot(ctx, "rearrangement", map[string]any{"new_naznach": req.NewNaznach},
+	res, err := s.mutateSnapshot(ctx, "rearrangement", map[string]any{"new_naznach": req.NewNaznach, "selected": len(req.VagonIDs)},
 		func(all []domain.Dislocation) int {
 			n := 0
 			for i := range all {
@@ -375,6 +473,8 @@ func (s *RearrangeService) ApplyRearrangement(ctx context.Context, req RearrAppl
 			}
 			return n
 		})
+	res.Selected = len(req.VagonIDs)
+	return res, err
 }
 
 // ApplyRedirection — переадресация выбранных вагонов (обычно поезд целиком).
@@ -416,7 +516,7 @@ func (s *RearrangeService) ApplyRedirection(ctx context.Context, req RedirectApp
 
 	ids := toSet(req.VagonIDs)
 	now := clock.Now()
-	return s.mutateSnapshot(ctx, "redirection", map[string]any{"kind": req.Kind, "target": req.Target},
+	res, err := s.mutateSnapshot(ctx, "redirection", map[string]any{"kind": req.Kind, "target": req.Target, "selected": len(req.VagonIDs)},
 		func(all []domain.Dislocation) int {
 			n := 0
 			for i := range all {
@@ -430,6 +530,8 @@ func (s *RearrangeService) ApplyRedirection(ctx context.Context, req RedirectApp
 			}
 			return n
 		})
+	res.Selected = len(req.VagonIDs)
+	return res, err
 }
 
 // ErrBadRearrange — ошибка валидации запроса перестановки/переадресации (→ 400).
@@ -468,6 +570,7 @@ func (s *RearrangeService) mutateSnapshot(ctx context.Context, source string, de
 	}
 
 	if p.journal != nil {
+		detail["count"] = n
 		p.journal.RecordRearrangement(ctx, source, n, detail)
 	}
 	return RearrApplyResult{Updated: n, ForecastComputed: forecastN, ProgComputed: progN}, nil

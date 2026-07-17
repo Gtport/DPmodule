@@ -34,6 +34,10 @@ func (s *stubDirRepo) LoadPorts(context.Context) ([]domain.Ports, error) { retur
 func (s *stubDirRepo) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {
 	return s.routeSpeed, nil
 }
+func (s *stubDirRepo) UpdateNaznachStationNaznach(context.Context, string, string, string) error {
+	return nil
+}
+
 func (s *stubDirRepo) LoadNaznachStation(context.Context) ([]domain.NaznachStation, error) {
 	return s.naznach, nil
 }

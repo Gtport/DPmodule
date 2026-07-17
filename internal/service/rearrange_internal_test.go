@@ -33,17 +33,13 @@ func TestGroupParentIndex(t *testing.T) {
 	require.Len(t, groups, 2)
 
 	g := groups[0] // IM1|ЕРУНАКОВО (сортировка по ключу)
-	assert.Equal(t, "IM1", g.Title)
+	assert.Equal(t, "IM1", g.IndexMain)
+	assert.Equal(t, "ЕРУНАКОВО", g.StationNach)
 	assert.Equal(t, 3, g.VagonCount)
 	require.Len(t, g.SubGroups, 2)
-	// вагоны внутри подгруппы отсортированы по npp_vag
-	first := g.SubGroups[1] // УЛАК|IX1|АЭ после ЧЕГДОМЫН|... по ключу
-	if first.Label == "ЧЕГДОМЫН / IX2 / ГУТ-2" {
-		first = g.SubGroups[0]
-	}
-	_ = first
 	for _, sg := range g.SubGroups {
 		if sg.VagonCount == 2 {
+			assert.Equal(t, "УЛАК", sg.StationOper)
 			assert.Equal(t, "2", sg.Vagons[0].Vagon) // npp 1 раньше npp 2
 			assert.Equal(t, "1", sg.Vagons[1].Vagon)
 		}

@@ -277,7 +277,6 @@ func (c *DirectoryCache) GetMarkaByCompositeKey(okpo, stationKod int64, cargoGro
 	return m, ok
 }
 
-
 // GetNaznach — площадка назначения по (станция назначения, станция отправления).
 // Возвращает только включённые перестановки с непустым naznach; иначе (false)
 // вызывающий откатывается к GruzpolS (§3.17).
@@ -316,6 +315,21 @@ func (c *DirectoryCache) PortByNameS(nameS string) (domain.Ports, bool) {
 	defer c.mu.RUnlock()
 	p, ok := c.portsByNameS[strings.TrimSpace(nameS)]
 	return p, ok
+}
+
+// NaznachStationRows — все строки справочника naznach_station из БД (включая
+// выключенные и без назначения) — для операторской панели станций.
+func (c *DirectoryCache) NaznachStationRows(ctx context.Context) ([]domain.NaznachStation, error) {
+	return c.repo.LoadNaznachStation(ctx)
+}
+
+// UpdateNaznachStation — смена дефолтного назначения пары станций (панель
+// перестановок): запись в БД + горячая перезагрузка кэша справочников.
+func (c *DirectoryCache) UpdateNaznachStation(ctx context.Context, destStation, originStation, naznach string) error {
+	if err := c.repo.UpdateNaznachStationNaznach(ctx, destStation, originStation, naznach); err != nil {
+		return err
+	}
+	return c.Load(ctx)
 }
 
 // EnabledTerminals — краткие имена (NameS) включённых терминалов, отсортированы.

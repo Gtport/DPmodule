@@ -63,6 +63,7 @@ func (s4Dir) LoadMarka(context.Context) ([]domain.Marka, error)                 
 func (s s4Dir) LoadPorts(context.Context) ([]domain.Ports, error)                  { return s.ports, nil }
 func (s4Dir) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error)          { return nil, nil }
 func (s4Dir) LoadNaznachStation(context.Context) ([]domain.NaznachStation, error)  { return nil, nil }
+func (s4Dir) UpdateNaznachStationNaznach(context.Context, string, string, string) error { return nil }
 
 type s4Cfg struct {
 	profiles []domain.PlanProfile
