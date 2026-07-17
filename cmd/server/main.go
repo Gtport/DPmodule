@@ -212,7 +212,9 @@ func run() error {
 			}
 			return err
 		}
-		workers = append(workers, worker.NewCronWorker("asu-pull", cfg.ASU.PullInterval, log, job))
+		// Тики выровнены по стеночным часам: pull_offset от начала часа
+		// (10m/5m → :05, :15, ...), независимо от момента старта процесса.
+		workers = append(workers, worker.NewAlignedCronWorker("asu-pull", cfg.ASU.PullInterval, cfg.ASU.PullOffset, log, job))
 	}
 
 	// Инкремент памяток на подачу/уборку (пока только лог, без сохранения).

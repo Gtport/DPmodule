@@ -147,8 +147,9 @@ sticky-10 против мигания date_prib; доноры перегруза
 
 Интеграции с внешним провайдером (тот же адрес, `X-API-Key`, самоподписанный TLS):
 - **Дислокация АСУ-АСУ** (в `main`): исходящий клиент с `auth_header`/`insecure_tls`;
-  крон-тикер `worker.CronWorker` (config `asu.*`, дефолт 10m); ручка
-  `POST /dislocation/asu/pull`. В бою.
+  крон выровнен по стеночным часам (`worker.NewAlignedCronWorker`, config `asu.*`:
+  `pull_interval` дефолт 10m + `pull_offset`, у нас 5m → :05,:15,...); ручка
+  `POST /dislocation/asu/pull`. В бою, крон включён.
 - **Памятки на подачу/уборку** (в `main`): забор по номеру `GET /reference?number=
   [&client=]` и крон-инкремент `POST /reference/update/pull` (config `reference.*`,
   дефолт 1h); клиенты провайдера (`attis`, `nmtp`) — в пути запроса. Данные пока
