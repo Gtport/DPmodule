@@ -95,6 +95,11 @@ func Build(
 		handler.NewForecastHandler(service.NewForecastBoard(actualCache)).RegisterRoutes(api)
 	}
 
+	// Экран «Пропавшие вагоны»: записи-8 из таблицы кандидатов (status9).
+	if status9Cache != nil {
+		handler.NewMissingHandler(service.NewMissingService(status9Cache)).RegisterRoutes(api)
+	}
+
 	// Памятки на подачу/уборку (внешний провайдер, тот же что дислокация). Не зависит
 	// от БД — на этом этапе данные только логируются, не сохраняются. Ручной забор по
 	// номеру и ручной триггер инкремента — здесь; крон-инкремент запускает main.

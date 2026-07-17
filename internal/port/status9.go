@@ -24,4 +24,7 @@ type Status9Repository interface {
 	// cutoff — кандидаты на автоочистку (сам DELETE — через DeleteByVagons, чтобы
 	// RAM-кэш и БД чистились одним путём).
 	MissingOlderThan(ctx context.Context, cutoff domain.LocalTime) ([]string, error)
+	// LoadMissing возвращает полные записи пропавших (статус 8), свежепропавшие
+	// первыми — для экрана «Пропавшие вагоны».
+	LoadMissing(ctx context.Context) ([]domain.Dislocation, error)
 }

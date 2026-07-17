@@ -33,6 +33,7 @@ export const ADMIN = ['administrator'];
 export const DISPATCHER_NAV: NavItem[] = [
   { path: 'home',           label: 'Главная',               icon: 'home',         theme: 'fill',    roles: [],   external: true },
   { path: 'dislocation',    label: 'Дислокация',            icon: 'environment',  theme: 'fill',    roles: DISP },
+  { path: 'missing',        label: 'Пропавшие вагоны',      icon: 'question-circle', theme: 'outline', roles: DISP },
   { path: 'rearrangement',  label: 'Перестановки',          icon: 'swap',         theme: 'outline', roles: DISP },
   { path: 'plan',           label: 'План подвода',          icon: 'train',        theme: 'fill',    roles: DISP },
   { path: 'cargo-work',     label: 'Грузовая работа',       icon: 'dolly',        theme: 'fill',    roles: DISP },
