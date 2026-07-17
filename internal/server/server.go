@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/Gtport/DPmodule/internal/adapter/asu"
+	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/adapter/reference"
 	"github.com/Gtport/DPmodule/internal/config"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -37,6 +38,7 @@ func Build(
 	historyRepo port.HistoryRepository,
 	planRepo port.PlanRepository,
 	journalRepo port.JournalRepository,
+	adminRepo port.AdminTablesRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -77,6 +79,16 @@ func Build(
 		api.Use(jwtMW.Middleware())
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
+
+	// Админ-редактор справочников (реестр list_tables) — только administrator.
+	// Правки применяются к снимку отдельной кнопкой «Обновить справочники».
+	if adminRepo != nil {
+		adminGrp := api.Group("")
+		if jwtMW != nil {
+			adminGrp.Use(jwtMW.RequireRole(auth.RoleAdministrator))
+		}
+		handler.NewAdminTablesHandler(service.NewAdminTables(adminRepo)).RegisterRoutes(adminGrp)
+	}
 
 	// Экран «Прогнозы»: сводка поездов с прогнозными полями Stage 3/4 из RAM-снимка.
 	if actualCache != nil {

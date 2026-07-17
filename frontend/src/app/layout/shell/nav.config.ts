@@ -24,6 +24,9 @@ export interface NavItem {
 /** Кому доступны рабочие разделы диспетчера (админ видит всё). */
 export const DISP = ['dispatcher', 'administrator'];
 
+/** Только администратор (раздел «Админ»: редактор справочников). */
+export const ADMIN = ['administrator'];
+
 // Иконки подобраны 1:1 с оригиналом GTport (CompactSidebar.tsx): сплошные (fill).
 // train / ship / warehouse — кастомные (см. core/config/custom-icons.ts), т.к. в
 // наборе ant-design их нет; swap/global/line-chart/bar-chart — только outline.
@@ -41,4 +44,5 @@ export const DISPATCHER_NAV: NavItem[] = [
   { path: 'maps',           label: 'Карты',                 icon: 'global',       theme: 'outline', roles: DISP },
   { path: 'forecasts',      label: 'Прогнозы',              icon: 'line-chart',   theme: 'outline', roles: DISP },
   { path: 'reports',        label: 'Справки и отчёты',      icon: 'bar-chart',    theme: 'outline', roles: DISP },
+  { path: 'admin',          label: 'Админ',                 icon: 'setting',      theme: 'fill',    roles: ADMIN },
 ];
