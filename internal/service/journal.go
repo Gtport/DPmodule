@@ -165,15 +165,34 @@ func (j *Journal) RecordDictReload(ctx context.Context, detail any) {
 	}, detail)
 }
 
+// RecordRearrangement фиксирует перестановку/переадресацию: батч-правка снимка
+// оператором. source: rearrangement | redirection; count — изменено вагонов.
+func (j *Journal) RecordRearrangement(ctx context.Context, source string, count int, extra map[string]any) {
+	if j == nil || j.repo == nil {
+		return
+	}
+	now := clock.Now()
+	detail := map[string]any{"count": count}
+	for k, v := range extra {
+		if v != "" && v != nil {
+			detail[k] = v
+		}
+	}
+	j.append(ctx, domain.JournalEvent{
+		EventType: domain.EventRearrange, Source: source,
+		Trigger: domain.TriggerManual, DocTS: &now,
+	}, detail)
+}
+
 // SnapshotUpdates возвращает события перестроения снимка дислокации (обновления
-// ЛК/JSON + загрузки планов + отклонённые гардами попытки) за период [from, to] —
-// источник журнала обновлений дислокации.
+// ЛК/JSON + загрузки планов + отклонённые гардами попытки + перестановки) за
+// период [from, to] — источник журнала обновлений дислокации.
 func (j *Journal) SnapshotUpdates(ctx context.Context, from, to *domain.LocalTime, limit int) ([]domain.JournalEvent, error) {
 	if j == nil || j.repo == nil {
 		return nil, nil
 	}
 	return j.repo.Range(ctx, from, to,
-		[]string{domain.EventDislUpdate, domain.EventDislRejected, domain.EventPlanUpload, domain.EventDictReload}, limit)
+		[]string{domain.EventDislUpdate, domain.EventDislRejected, domain.EventPlanUpload, domain.EventDictReload, domain.EventRearrange}, limit)
 }
 
 // append дописывает событие: проставляет actor из контекста, created_at из clock.Now(),

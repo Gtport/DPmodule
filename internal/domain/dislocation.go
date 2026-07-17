@@ -1,5 +1,15 @@
 package domain
 
+// Переадресация (pereadr_type) и маркер назначения внешнего порта.
+const (
+	PereadrOwn = "own" // переадресован на свой терминал
+	PereadrExt = "ext" // переадресован на внешний порт (имя — в pereadr_port)
+
+	// NaznachExternalPort — значение naznach у вагона, уведённого на внешний
+	// порт (перенос маркера «ВП» gtport; сам порт — в pereadr_port).
+	NaznachExternalPort = "ВП"
+)
+
 // Dislocation — одна запись о текущем местонахождении и состоянии вагона
 // (оперативная дислокация). Данные приходят из выгрузки АСУ РЖД (JSON или xlsx из
 // ЛК) и проходят конвейер обогащения Stage 1–4 (справочники станций/операций,
@@ -131,8 +141,8 @@ type Dislocation struct {
 	// ── Переадресация (операторская, взамен info_1/info_2 gtport) ────────────
 	// Решение оператора увести поезд на другой порт; поток РЖД этих полей не
 	// знает — переносятся carry-over'ом всегда, снимаются только явной отменой.
-	PereadrType string `json:"pereadr_type"` // "" — нет; "own" — на свой терминал; "ext" — на внешний порт
-	PereadrPort string `json:"pereadr_port"` // имя внешнего порта (только при "ext")
+	PereadrType string `json:"pereadr_type"` // "" — нет; PereadrOwn; PereadrExt
+	PereadrPort string `json:"pereadr_port"` // имя внешнего порта (только при PereadrExt)
 
 	// ── Клиент и пользовательские поля (marka) ───────────────────────────────
 	Client  string `json:"client"` // имя клиента (Stage 2 ← marka)

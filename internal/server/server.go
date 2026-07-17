@@ -146,6 +146,10 @@ func Build(
 
 			// Статус-панель: актуальность дислокации и планов из журнала.
 			handler.NewStatusHandler(service.NewStatusService(journal, dirCache)).RegisterRoutes(api)
+
+			// Экран «Перестановки/Переадресация»: группировки из RAM-снимка,
+			// батч-правка naznach/pereadr_* с одним пересчётом Stage 3–4.
+			handler.NewRearrangeHandler(service.NewRearrangeService(proc)).RegisterRoutes(api)
 		}
 	}
 
