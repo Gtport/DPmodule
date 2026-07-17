@@ -13,9 +13,11 @@ export interface AdminTable {
 /** Колонка справочника — для грида и динамической формы. */
 export interface AdminColumn {
   name: string;
+  label: string; // русская подпись (комментарий колонки в БД); пусто → показываем name
   kind: 'number' | 'text' | 'boolean';
   required: boolean;
   pk: boolean;
+  hidden: boolean; // служебная колонка (created_at/updated_at) — не показывается
 }
 
 /** Строка справочника в динамическом виде. */

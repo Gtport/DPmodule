@@ -70,15 +70,19 @@ func (r *AdminTablesRepository) ListTables(ctx context.Context) ([]domain.AdminT
 func (r *AdminTablesRepository) Columns(ctx context.Context, table string) ([]domain.AdminColumn, error) {
 	var rows []struct {
 		Name     string `gorm:"column:column_name"`
+		Label    string `gorm:"column:label"`
 		DataType string `gorm:"column:data_type"`
 		Nullable string `gorm:"column:is_nullable"`
 		Default  *string
 	}
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT column_name, data_type, is_nullable, column_default AS default
-		  FROM information_schema.columns
-		 WHERE table_schema = current_schema() AND table_name = ?
-		 ORDER BY ordinal_position`, table).Scan(&rows).Error
+		SELECT c.column_name, c.data_type, c.is_nullable, c.column_default AS default,
+		       COALESCE(col_description(
+		           (quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))::regclass,
+		           c.ordinal_position), '') AS label
+		  FROM information_schema.columns c
+		 WHERE c.table_schema = current_schema() AND c.table_name = ?
+		 ORDER BY c.ordinal_position`, table).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +100,10 @@ func (r *AdminTablesRepository) Columns(ctx context.Context, table string) ([]do
 		}
 		out[i] = domain.AdminColumn{
 			Name:     c.Name,
+			Label:    c.Label,
 			Kind:     kind,
 			Required: c.Nullable == "NO" && c.Default == nil,
+			Hidden:   c.Name == "created_at" || c.Name == "updated_at",
 		}
 	}
 	return out, nil

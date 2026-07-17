@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
 )
@@ -68,6 +69,13 @@ func (s *AdminTables) Update(ctx context.Context, table, id string, values domai
 	if err != nil {
 		return err
 	}
+	// Штамп правки — если у таблицы есть updated_at (МСК из единого clock — канон).
+	for _, c := range cols {
+		if c.Name == "updated_at" {
+			vals["updated_at"] = clock.Now()
+			break
+		}
+	}
 	return s.repo.Update(ctx, t.Name, t.PK, id, cols, vals)
 }
 
@@ -126,7 +134,7 @@ func coerceValues(cols []domain.AdminColumn, values domain.AdminRow, pk string, 
 		out[name] = cv
 	}
 	for _, c := range cols {
-		if c.Required && !c.PK {
+		if c.Required && !c.PK && !c.Hidden {
 			if _, ok := out[c.Name]; !ok {
 				return nil, fmt.Errorf("поле %s обязательно", c.Name)
 			}

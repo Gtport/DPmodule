@@ -12,9 +12,11 @@ type AdminTable struct {
 // и динамическую форму добавления/правки.
 type AdminColumn struct {
 	Name     string `json:"name"`
+	Label    string `json:"label"`    // русская подпись (COMMENT ON COLUMN); пусто → фронт покажет Name
 	Kind     string `json:"kind"`     // number | text | boolean (из типа Postgres)
 	Required bool   `json:"required"` // NOT NULL без DEFAULT — поле обязательно в форме
 	PK       bool   `json:"pk"`       // колонка-идентификатор (в форме не правится)
+	Hidden   bool   `json:"hidden"`   // служебная (created_at/updated_at) — в редакторе не показывается
 }
 
 // AdminRow — строка редактируемой таблицы в динамическом виде (колонка → значение).
