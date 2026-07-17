@@ -255,7 +255,8 @@ func groupCollective(records []domain.Dislocation) []RearrGroupDTO {
 	return assembleGroups(groups, subs)
 }
 
-// RedirectionGroups — вкладка «Переадресация»: весь снимок, группировка по
+// RedirectionGroups — вкладка «Переадресация»: весь снимок, кроме порожних в
+// пути (статус 6 — грузополучатель затёрт донорством), группировка по
 // index_main + pereadr_port + станция назначения + naznach; available — крупнейшая
 // подгруппа ≥ порога и её накладные уникальны среди прочих подгрупп (эталон gtport).
 // Порог — stage4.min_vagon_count (то же бизнес-значение «минимальный состав», 20).
@@ -272,6 +273,12 @@ func (s *RearrangeService) RedirectionGroups() RearrGroupsDTO {
 	all := s.proc.actual.All()
 	for i := range all {
 		r := &all[i]
+		// Порожние в пути (статус 6) не переадресуются: груз и грузополучатель
+		// затёрты донорством (§3.16) — как и в перестановках, где их отсекает
+		// фильтр по справочнику пар станций.
+		if r.Status != nil && *r.Status == 6 {
+			continue
+		}
 		gk := r.IndexMain + "|" + r.PereadrPort + "|" + r.StanNazn + "|" + r.Naznach
 		g, ok := groups[gk]
 		if !ok {

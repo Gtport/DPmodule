@@ -34,10 +34,10 @@ interface SummaryRow {
   vagon_ids: string[];
 }
 
-/** Карточка-сводка переадресации: направление и его поезда. */
+/** Карточка-сводка переадресации: направление и его поезда (term — терминал-цель). */
 interface RedirectCard {
   title: string;
-  trains: { index_main: string; count: number }[];
+  trains: { index_main: string; count: number; term: string }[];
 }
 
 /**
@@ -119,6 +119,7 @@ interface RedirectCard {
               @for (t of c.trains; track t.index_main) {
                 <div class="card-train" (click)="search.set(t.index_main)">
                   {{ t.index_main }} <span class="mut">({{ t.count }})</span>
+                  @if (t.term) { <span class="mut">→ {{ t.term }}</span> }
                 </div>
               }
               @if (!c.trains.length) { <div class="empty">Нет поездов</div> }
@@ -398,26 +399,27 @@ export class RearrangementComponent implements OnInit {
   readonly redirectCards = computed((): RedirectCard[] => {
     const stationOf = new Map(this.targets().map((t) => [t.name, t.station]));
     const codeOf = new Map(this.targets().map((t) => [t.name, t.station_code]));
-    const buckets = new Map<string, Map<string, number>>();
-    const add = (title: string, g: RearrGroup) => {
-      const m = buckets.get(title) ?? new Map<string, number>();
+    const buckets = new Map<string, Map<string, { count: number; term: string }>>();
+    const add = (title: string, g: RearrGroup, term: string) => {
+      const m = buckets.get(title) ?? new Map<string, { count: number; term: string }>();
       const key = g.index_main || '—';
-      m.set(key, (m.get(key) ?? 0) + g.vagon_count);
+      const prev = m.get(key);
+      m.set(key, { count: (prev?.count ?? 0) + g.vagon_count, term });
       buckets.set(title, m);
     };
     for (const g of this.groups()) {
       if (g.pereadr_port) {
-        add('Внешний порт', g);
+        add('Внешний порт', g, g.pereadr_port);
         continue;
       }
       const termCode = g.naznach ? codeOf.get(g.naznach) : undefined;
       if (termCode && g.stan_nazn_code && termCode !== g.stan_nazn_code) {
-        add(`С ${g.stan_nazn} на ${stationOf.get(g.naznach!) ?? ''}`, g);
+        add(`С ${g.stan_nazn} на ${stationOf.get(g.naznach!) ?? ''}`, g, g.naznach!);
       }
     }
     const cards: RedirectCard[] = [...buckets.entries()].map(([title, m]) => ({
       title,
-      trains: [...m.entries()].map(([index_main, count]) => ({ index_main, count })).sort((a, b) => a.index_main.localeCompare(b.index_main)),
+      trains: [...m.entries()].map(([index_main, t]) => ({ index_main, ...t })).sort((a, b) => a.index_main.localeCompare(b.index_main)),
     }));
     if (!cards.some((c) => c.title === 'Внешний порт')) cards.push({ title: 'Внешний порт', trains: [] });
     cards.sort((a, b) => a.title.localeCompare(b.title));
