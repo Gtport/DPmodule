@@ -116,6 +116,7 @@ func TestCarryOver_NewFields(t *testing.T) {
 	ex := domain.Dislocation{
 		Vagon: "V", Status: &st2, Gruzotpr: "X",
 		CarOwnerName: "СОБСТВЕННИК", GtdNumber: "ГТД777", FreightExactName: "УГОЛЬ КАМЕННЫЙ",
+		CarTrustedName: "АО НТК", CarTrustedOkpo: "46441703",
 	}
 	nw := domain.Dislocation{Vagon: "V"} // ЛК-срез: новые поля пусты
 
@@ -123,6 +124,27 @@ func TestCarryOver_NewFields(t *testing.T) {
 	assert.Equal(t, "СОБСТВЕННИК", nw.CarOwnerName)
 	assert.Equal(t, "ГТД777", nw.GtdNumber)
 	assert.Equal(t, "УГОЛЬ КАМЕННЫЙ", nw.FreightExactName)
+	assert.Equal(t, "АО НТК", nw.CarTrustedName)
+	assert.Equal(t, "46441703", nw.CarTrustedOkpo)
+}
+
+// Переадресация: операторские поля переносятся из актуальной безусловно (поток
+// РЖД их не присылает); пустые в актуальной → пустые в новой (после отмены).
+func TestCarryOver_PereadrCarried(t *testing.T) {
+	st2 := 2
+	ex := domain.Dislocation{Vagon: "V", Status: &st2, PereadrType: "ext", PereadrPort: "ВАНИНО"}
+	nw := domain.Dislocation{Vagon: "V"}
+
+	enrichFromActual(&nw, &ex, now0())
+	assert.Equal(t, "ext", nw.PereadrType)
+	assert.Equal(t, "ВАНИНО", nw.PereadrPort)
+
+	// после отмены (в актуальной пусто) — не «воскресает»
+	ex2 := domain.Dislocation{Vagon: "V", Status: &st2}
+	nw2 := domain.Dislocation{Vagon: "V", PereadrType: "ext", PereadrPort: "ФАНТОМ"}
+	enrichFromActual(&nw2, &ex2, now0())
+	assert.Equal(t, "", nw2.PereadrType)
+	assert.Equal(t, "", nw2.PereadrPort)
 }
 
 // fixZeroRasst: RasstStanNazn=0 и вагон не на станции назначения → из актуальной.

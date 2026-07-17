@@ -49,11 +49,11 @@ type PlanNitka struct {
 	FactMsk       *LocalTime `json:"fact_msk"`
 	Otkl          string     `json:"otkl"`
 	PlanRaw       string     `json:"plan_raw"` // сырой текст «Плана», когда он не время («не подводить»)
-	Wagons        int        `json:"wagons"`         // всего вагонов поезда
-	Activ         int        `json:"activ"`          // вагонов «наших» причалов
-	Ports         []PortCell `json:"ports"`          // ячейки портов (обобщённо, из файла)
-	Sostav        string     `json:"sostav"`         // сматченные группы вагонов («Состав»)
-	Comment       string     `json:"comment"`        // «Примечание» (столбец «Комментарий»)
+	Wagons        int        `json:"wagons"`   // всего вагонов поезда
+	Activ         int        `json:"activ"`    // вагонов «наших» причалов
+	Ports         []PortCell `json:"ports"`    // ячейки портов (обобщённо, из файла)
+	Sostav        string     `json:"sostav"`   // сматченные группы вагонов («Состав»)
+	Comment       string     `json:"comment"`  // «Примечание» (столбец «Комментарий»)
 	Matched       bool       `json:"matched"`
 	MatchedWagons int        `json:"matched_wagons"` // вагонов застолблено этой ниткой
 	IsOstatok     bool       `json:"is_ostatok"`     // служебная строка «Остаток на 18:00»

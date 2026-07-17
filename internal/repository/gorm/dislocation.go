@@ -108,10 +108,15 @@ type dislocationModel struct {
 
 	AlternativeMove int `gorm:"column:alternative_move"`
 
-	CarOwnerName  string `gorm:"column:car_owner_name"`
-	CarOwnerOkpo  string `gorm:"column:car_owner_okpo"`
-	CarTenantName string `gorm:"column:car_tenant_name"`
-	CarTenantOkpo string `gorm:"column:car_tenant_okpo"`
+	CarOwnerName   string `gorm:"column:car_owner_name"`
+	CarOwnerOkpo   string `gorm:"column:car_owner_okpo"`
+	CarTenantName  string `gorm:"column:car_tenant_name"`
+	CarTenantOkpo  string `gorm:"column:car_tenant_okpo"`
+	CarTrustedName string `gorm:"column:car_trusted_name"`
+	CarTrustedOkpo string `gorm:"column:car_trusted_okpo"`
+
+	PereadrType string `gorm:"column:pereadr_type"`
+	PereadrPort string `gorm:"column:pereadr_port"`
 
 	Client  string `gorm:"column:client"`
 	Sms1    string `gorm:"column:sms_1"`

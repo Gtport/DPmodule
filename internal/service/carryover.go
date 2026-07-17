@@ -88,6 +88,11 @@ func copySelectedFromActual(newRec, ex *domain.Dislocation, now domain.LocalTime
 	newRec.PlanJd = ex.PlanJd
 	newRec.PlanMsk = ex.PlanMsk
 
+	// Переадресация — операторское решение: поток РЖД её не знает, переносим
+	// безусловно; снимается только явной отменой (очистка полей в снимке).
+	newRec.PereadrType = ex.PereadrType
+	newRec.PereadrPort = ex.PereadrPort
+
 	// Груз-поля из актуальной, только если там заполнен грузоотправитель (иначе
 	// оставляем как есть — заполнит marka в S2-3).
 	if ex.Gruzotpr != "" {
@@ -188,6 +193,12 @@ func carryNewFields(newRec, ex *domain.Dislocation) {
 	}
 	if ex.CarTenantOkpo != "" {
 		newRec.CarTenantOkpo = ex.CarTenantOkpo
+	}
+	if ex.CarTrustedName != "" {
+		newRec.CarTrustedName = ex.CarTrustedName
+	}
+	if ex.CarTrustedOkpo != "" {
+		newRec.CarTrustedOkpo = ex.CarTrustedOkpo
 	}
 	if ex.GtdNumber != "" {
 		newRec.GtdNumber = ex.GtdNumber

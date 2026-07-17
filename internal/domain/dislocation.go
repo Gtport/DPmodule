@@ -121,10 +121,18 @@ type Dislocation struct {
 	AlternativeMove int `json:"alternative_move"`
 
 	// ── Собственник и оператор вагона ────────────────────────────────────────
-	CarOwnerName  string `json:"car_owner_name"`  // собственник (имя)
-	CarOwnerOkpo  string `json:"car_owner_okpo"`  // собственник (ОКПО)
-	CarTenantName string `json:"car_tenant_name"` // оператор/арендатор (имя)
-	CarTenantOkpo string `json:"car_tenant_okpo"` // оператор/арендатор (ОКПО)
+	CarOwnerName   string `json:"car_owner_name"`   // собственник (имя)
+	CarOwnerOkpo   string `json:"car_owner_okpo"`   // собственник (ОКПО)
+	CarTenantName  string `json:"car_tenant_name"`  // оператор/арендатор (имя)
+	CarTenantOkpo  string `json:"car_tenant_okpo"`  // оператор/арендатор (ОКПО)
+	CarTrustedName string `json:"car_trusted_name"` // доверенное лицо (имя)
+	CarTrustedOkpo string `json:"car_trusted_okpo"` // доверенное лицо (ОКПО)
+
+	// ── Переадресация (операторская, взамен info_1/info_2 gtport) ────────────
+	// Решение оператора увести поезд на другой порт; поток РЖД этих полей не
+	// знает — переносятся carry-over'ом всегда, снимаются только явной отменой.
+	PereadrType string `json:"pereadr_type"` // "" — нет; "own" — на свой терминал; "ext" — на внешний порт
+	PereadrPort string `json:"pereadr_port"` // имя внешнего порта (только при "ext")
 
 	// ── Клиент и пользовательские поля (marka) ───────────────────────────────
 	Client  string `json:"client"` // имя клиента (Stage 2 ← marka)
