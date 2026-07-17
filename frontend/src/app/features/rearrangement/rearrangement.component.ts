@@ -27,6 +27,7 @@ interface SummaryRow {
   gruzpol_s: string;
   naznach: string;
   stan_nazn: string;
+  stan_nazn_code: string;
   rasst: number | null;
   status: number | null;
   vagon_count: number;
@@ -204,7 +205,7 @@ interface RedirectCard {
             <li nz-menu-item (click)="applyRearrange(t, ctxIds())">В {{ t }}</li>
           }
           @if (ctxCanReturn()) {
-            <li nz-menu-item (click)="applyRearrange(ctxGruzpol(), ctxIds())">По назначению</li>
+            <li nz-menu-item (click)="applyByGruzpol(ctxIds())">По назначению</li>
           }
           @if (!ctxRearrTargets().length && !ctxCanReturn()) {
             <li nz-menu-item nzDisabled>Уже на своём назначении</li>
@@ -303,9 +304,9 @@ export class RearrangementComponent implements OnInit {
 
   /** Контекст ПКМ: вагоны и опорные атрибуты элемента под курсором. */
   readonly ctxIds = signal<string[]>([]);
-  readonly ctxStanNazn = signal('');
+  readonly ctxStanCode = signal('');
   readonly ctxNaznach = signal('');
-  readonly ctxGruzpol = signal('');
+  readonly ctxHasForeign = signal(false); // в выделении есть вагоны с gruzpol_s ≠ naznach
 
   ngOnInit(): void {
     void this.load();
@@ -367,6 +368,7 @@ export class RearrangementComponent implements OnInit {
           gruzpol_s: sg.gruzpol_s,
           naznach: sg.naznach,
           stan_nazn: g.stan_nazn,
+          stan_nazn_code: g.stan_nazn_code,
           rasst: sg.rasst_stan_nazn,
           status: sg.status,
           vagon_count: sg.vagon_count,
@@ -385,6 +387,7 @@ export class RearrangementComponent implements OnInit {
   /** Карточки переадресации: направления «С <станции> на <станцию терминала>» + ВП. */
   readonly redirectCards = computed((): RedirectCard[] => {
     const stationOf = new Map(this.targets().map((t) => [t.name, t.station]));
+    const codeOf = new Map(this.targets().map((t) => [t.name, t.station_code]));
     const buckets = new Map<string, Map<string, number>>();
     const add = (title: string, g: RearrGroup) => {
       const m = buckets.get(title) ?? new Map<string, number>();
@@ -397,9 +400,9 @@ export class RearrangementComponent implements OnInit {
         add('Внешний порт', g);
         continue;
       }
-      const termStation = g.naznach ? stationOf.get(g.naznach) : undefined;
-      if (termStation && g.stan_nazn && termStation !== g.stan_nazn) {
-        add(`С ${g.stan_nazn} на ${termStation}`, g);
+      const termCode = g.naznach ? codeOf.get(g.naznach) : undefined;
+      if (termCode && g.stan_nazn_code && termCode !== g.stan_nazn_code) {
+        add(`С ${g.stan_nazn} на ${stationOf.get(g.naznach!) ?? ''}`, g);
       }
     }
     const cards: RedirectCard[] = [...buckets.entries()].map(([title, m]) => ({
@@ -411,49 +414,49 @@ export class RearrangementComponent implements OnInit {
     return cards;
   });
 
-  /** Цели перестановки для текущего выделения: терминалы ТОЙ ЖЕ станции. */
+  /** Цели перестановки для текущего выделения: терминалы ТОЙ ЖЕ станции (по коду). */
   readonly rearrOptionsForSelection = computed(() => {
-    const stan = this.selectionStanNazn();
+    const code = this.selectionStanCode();
     return this.targets()
-      .filter((t) => !stan || t.station === stan)
+      .filter((t) => !code || t.station_code === code)
       .map((t) => t.name);
   });
 
   /** Опции переадресации для выделения: терминалы ДРУГИХ станций + ВП + отмена. */
   readonly redirectOptions = computed(() => {
-    const stan = this.selectionStanNazn();
+    const code = this.selectionStanCode();
     const opts = this.targets()
-      .filter((t) => !stan || (t.station && t.station !== stan))
+      .filter((t) => !code || (t.station_code && t.station_code !== code))
       .map((t) => ({ value: t.name, label: `${t.name} (${t.station})` }));
     opts.push({ value: 'ВП', label: 'Внешний порт' });
     opts.push({ value: 'ОТМЕНА', label: 'Отменить переадресацию' });
     return opts;
   });
 
-  /** Цели ПКМ перестановок: та же станция, не «сам на себя». */
+  /** Цели ПКМ перестановок: та же станция (по коду), не «сам на себя». */
   readonly ctxRearrTargets = computed(() =>
     this.targets()
-      .filter((t) => (!this.ctxStanNazn() || t.station === this.ctxStanNazn()) && t.name !== this.ctxNaznach())
+      .filter((t) => (!this.ctxStanCode() || t.station_code === this.ctxStanCode()) && t.name !== this.ctxNaznach())
       .map((t) => t.name),
   );
 
-  /** Цели ПКМ переадресации: другие станции, не «сам на себя». */
+  /** Цели ПКМ переадресации: другие станции (по коду), не «сам на себя». */
   readonly ctxRedirectTargets = computed(() =>
     this.targets().filter(
-      (t) => t.station && t.station !== this.ctxStanNazn() && t.name !== this.ctxNaznach(),
+      (t) => t.station_code && t.station_code !== this.ctxStanCode() && t.name !== this.ctxNaznach(),
     ),
   );
 
-  /** «По назначению» доступно, только если грузополучатель ≠ назначению. */
-  readonly ctxCanReturn = computed(() => !!this.ctxGruzpol() && this.ctxGruzpol() !== this.ctxNaznach());
+  /** «По назначению»: есть кому возвращаться (хоть один вагон с gruzpol_s ≠ naznach). */
+  readonly ctxCanReturn = computed(() => this.ctxHasForeign());
 
-  /** Станция назначения первой выбранной группы (для опций select). */
-  private selectionStanNazn(): string {
+  /** Код станции назначения первой выбранной группы (для опций select). */
+  private selectionStanCode(): string {
     const sel = this.selected();
     if (!sel.size) return '';
     for (const g of this.groups()) {
       for (const sg of g.sub_groups) {
-        if (sg.vagons.some((v) => sel.has(v.id))) return g.stan_nazn;
+        if (sg.vagons.some((v) => sel.has(v.id))) return g.stan_nazn_code;
       }
     }
     return '';
@@ -471,9 +474,9 @@ export class RearrangementComponent implements OnInit {
   openRearrMenu(ev: MouseEvent, r: SummaryRow, menu: NzDropdownMenuComponent): void {
     ev.preventDefault();
     this.ctxIds.set(r.vagon_ids);
-    this.ctxStanNazn.set(r.stan_nazn);
+    this.ctxStanCode.set(r.stan_nazn_code);
     this.ctxNaznach.set(r.naznach);
-    this.ctxGruzpol.set(r.gruzpol_s);
+    this.ctxHasForeign.set(!!r.gruzpol_s && r.gruzpol_s !== r.naznach);
     this.ctxMenu.create(ev, menu);
   }
 
@@ -489,19 +492,15 @@ export class RearrangementComponent implements OnInit {
 
   private setTreeCtx(e: TreeContextEvent): void {
     this.ctxIds.set(e.ids);
-    this.ctxStanNazn.set(e.group.stan_nazn);
+    this.ctxStanCode.set(e.group.stan_nazn_code);
     const src = e.vagon ?? e.sub;
     this.ctxNaznach.set(src?.naznach ?? e.group.naznach ?? '');
-    // «По назначению» требует единственного грузополучателя в выделении (эталон gtport).
-    const gps = new Set<string>();
-    if (e.vagon) {
-      gps.add(e.vagon.gruzpol_s);
-    } else if (e.sub) {
-      e.sub.vagons.forEach((v) => gps.add(v.gruzpol_s));
-    } else {
-      e.group.sub_groups.forEach((sg) => sg.vagons.forEach((v) => gps.add(v.gruzpol_s)));
-    }
-    this.ctxGruzpol.set(gps.size === 1 ? [...gps][0] : '');
+    // «По назначению» ставит КАЖДОМУ выбранному его родной gruzpol_s (решение
+    // владельца) — достаточно, чтобы хоть одному было куда возвращаться.
+    const vagons = e.vagon ? [e.vagon]
+      : e.sub ? e.sub.vagons
+      : e.group.sub_groups.flatMap((sg) => sg.vagons);
+    this.ctxHasForeign.set(vagons.some((v) => v.gruzpol_s && v.gruzpol_s !== v.naznach));
   }
 
   // ── Применение ─────────────────────────────────────────────────────────
@@ -512,6 +511,22 @@ export class RearrangementComponent implements OnInit {
     try {
       const res = await this.api.applyRearrangement(vagonIds, target);
       this.notifyResult('Переставлено', res.updated, res.selected);
+      await this.load();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.applying.set(false);
+    }
+  }
+
+  /** «По назначению»: каждому выбранному — его родной грузополучатель. */
+  async applyByGruzpol(ids: string[]): Promise<void> {
+    const vagonIds = ids.length ? ids : [...this.selected()];
+    if (!vagonIds.length) return;
+    this.applying.set(true);
+    try {
+      const res = await this.api.applyRearrangement(vagonIds, '', true);
+      this.notifyResult('Возвращено по назначению', res.updated, res.selected);
       await this.load();
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
