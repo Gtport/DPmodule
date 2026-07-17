@@ -39,6 +39,7 @@ type Reference struct {
 type ASU struct {
 	Enabled      bool          `yaml:"enabled"`       // включить фоновый забор по тикеру
 	PullInterval time.Duration `yaml:"pull_interval"` // период забора; дефолт 10m
+	PullOffset   time.Duration `yaml:"pull_offset"`   // сдвиг тиков от начала часа (5m при 10m → :05,:15,...); дефолт 0 → :00,:10,...
 }
 
 // Storage — локальное файловое хранилище на сервере (вне git). Загруженные
