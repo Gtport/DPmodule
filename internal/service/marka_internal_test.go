@@ -32,6 +32,10 @@ func (markaStubRepo) LoadPorts(context.Context) ([]domain.Ports, error)   { retu
 func (s markaStubRepo) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {
 	return s.routeSpeed, nil
 }
+func (markaStubRepo) UpdateNaznachStationNaznach(context.Context, string, string, string) error {
+	return nil
+}
+
 func (s markaStubRepo) LoadNaznachStation(context.Context) ([]domain.NaznachStation, error) {
 	return s.naznach, nil
 }

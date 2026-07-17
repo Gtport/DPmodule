@@ -2,9 +2,11 @@ package gormrepo
 
 import (
 	"context"
+	"fmt"
 
 	"gorm.io/gorm"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
@@ -167,7 +169,7 @@ func (r *DirectoryRepository) LoadMarka(ctx context.Context) ([]domain.Marka, er
 		out[i] = domain.Marka{
 			Okpo: m.Okpo, StationKod: m.StationKod, Station: m.Station,
 			CargoGroup: m.CargoGroup,
-			Shipper: m.Shipper, Client: m.Client, Sms1: m.Sms1, Sms3: m.Sms3,
+			Shipper:    m.Shipper, Client: m.Client, Sms1: m.Sms1, Sms3: m.Sms3,
 			Color: m.Color, Sprav1: m.Sprav1,
 		}
 	}
@@ -204,6 +206,21 @@ func (r *DirectoryRepository) LoadRouteSpeed(ctx context.Context) ([]domain.Rout
 		}
 	}
 	return out, nil
+}
+
+// UpdateNaznachStationNaznach — смена дефолтного назначения пары станций
+// (операторская панель перестановок). Пустой naznach допустим («по назначению»).
+func (r *DirectoryRepository) UpdateNaznachStationNaznach(ctx context.Context, destStation, originStation, naznach string) error {
+	res := r.db.WithContext(ctx).Model(&naznachStationModel{}).
+		Where("dest_station = ? AND origin_station = ?", destStation, originStation).
+		Updates(map[string]any{"naznach": naznach, "updated_at": clock.Now().Time()})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("пара станций (%s, %s) не найдена в naznach_station", destStation, originStation)
+	}
+	return nil
 }
 
 func (r *DirectoryRepository) LoadNaznachStation(ctx context.Context) ([]domain.NaznachStation, error) {

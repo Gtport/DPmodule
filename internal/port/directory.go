@@ -17,4 +17,7 @@ type DirectoryRepository interface {
 	LoadPorts(ctx context.Context) ([]domain.Ports, error)
 	LoadRouteSpeed(ctx context.Context) ([]domain.RouteSpeed, error)
 	LoadNaznachStation(ctx context.Context) ([]domain.NaznachStation, error)
+	// UpdateNaznachStationNaznach меняет дефолтное назначение пары станций
+	// (операторская панель перестановок; пустой naznach = «по назначению»).
+	UpdateNaznachStationNaznach(ctx context.Context, destStation, originStation, naznach string) error
 }
