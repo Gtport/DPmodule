@@ -36,6 +36,7 @@ export interface RearrGroup {
   station_nach?: string;
   station_oper?: string;
   stan_nazn: string;
+  stan_nazn_code: string;
   gruzpol_s?: string;
   naznach?: string;
   pereadr_port?: string;
@@ -49,6 +50,8 @@ export interface RearrGroup {
 export interface RearrTarget {
   name: string;
   station: string;
+  /** 4-значный код станции терминала — правила «своя/чужая станция» по кодам. */
+  station_code: string;
 }
 
 export interface RearrGroups {
@@ -85,11 +88,12 @@ export class RearrangeApiService {
     );
   }
 
-  applyRearrangement(vagonIds: string[], newNaznach: string): Promise<RearrApplyResult> {
+  applyRearrangement(vagonIds: string[], newNaznach: string, byGruzpol = false): Promise<RearrApplyResult> {
     return firstValueFrom(
       this.http.post<RearrApplyResult>(`${this.base}/rearrangement/apply`, {
         vagon_ids: vagonIds,
         new_naznach: newNaznach,
+        by_gruzpol: byGruzpol,
       }),
     );
   }

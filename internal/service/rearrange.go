@@ -59,26 +59,29 @@ type RearrSubGroupDTO struct {
 
 // RearrGroupDTO — первый уровень группировки (обе вкладки и оба режима).
 type RearrGroupDTO struct {
-	Key         string             `json:"key"`
-	IndexMain   string             `json:"index_main,omitempty"`
-	Index       string             `json:"index,omitempty"`
-	StationNach string             `json:"station_nach,omitempty"`
-	StationOper string             `json:"station_oper,omitempty"`
-	StanNazn    string             `json:"stan_nazn"` // станция назначения — опора правил целей
-	GruzpolS    string             `json:"gruzpol_s,omitempty"`
-	Naznach     string             `json:"naznach,omitempty"`
-	PereadrPort string             `json:"pereadr_port,omitempty"`
-	Status      *int               `json:"status,omitempty"`
-	Available   bool               `json:"available"`
-	VagonCount  int                `json:"vagon_count"`
-	SubGroups   []RearrSubGroupDTO `json:"sub_groups"`
+	Key          string             `json:"key"`
+	IndexMain    string             `json:"index_main,omitempty"`
+	Index        string             `json:"index,omitempty"`
+	StationNach  string             `json:"station_nach,omitempty"`
+	StationOper  string             `json:"station_oper,omitempty"`
+	StanNazn     string             `json:"stan_nazn"`      // станция назначения (имя, для показа)
+	StanNaznCode string             `json:"stan_nazn_code"` // 4-значный код — опора правил целей
+	GruzpolS     string             `json:"gruzpol_s,omitempty"`
+	Naznach      string             `json:"naznach,omitempty"`
+	PereadrPort  string             `json:"pereadr_port,omitempty"`
+	Status       *int               `json:"status,omitempty"`
+	Available    bool               `json:"available"`
+	VagonCount   int                `json:"vagon_count"`
+	SubGroups    []RearrSubGroupDTO `json:"sub_groups"`
 }
 
 // TargetDTO — цель перестановки/переадресации: терминал и ЕГО станция (из
-// реестра портов; правила «своя/чужая станция» считает фронт по этим данным).
+// реестра портов; правила «своя/чужая станция» фронт считает по КОДАМ станций —
+// имена в потоке и справочнике могут отличаться написанием).
 type TargetDTO struct {
-	Name    string `json:"name"`    // NameS терминала (значение naznach)
-	Station string `json:"station"` // имя причальной станции терминала
+	Name        string `json:"name"`         // NameS терминала (значение naznach)
+	Station     string `json:"station"`      // имя причальной станции терминала
+	StationCode string `json:"station_code"` // 4-значный код станции (= code4_stan_nazn вагона)
 }
 
 // RearrGroupsDTO — ответ ручек группировок.
@@ -90,20 +93,42 @@ type RearrGroupsDTO struct {
 }
 
 // terminalTargets — включённые терминалы с их станциями (реестр портов;
-// StationCode → имя станции через справочник станций по 4-значному коду).
+// ports.station_code — ШЕСТИзначный код станции → справочник станций по kod,
+// оттуда имя и 4-значный код для сопоставления с code4_stan_nazn вагона).
 func terminalTargets(dir *DirectoryCache) []TargetDTO {
 	names := dir.EnabledTerminals()
 	out := make([]TargetDTO, 0, len(names))
 	for _, n := range names {
 		t := TargetDTO{Name: n}
 		if p, ok := dir.PortByNameS(n); ok {
-			if kod4, err := strconv.Atoi(p.StationCode); err == nil {
-				if st, ok := dir.GetStationByKod4(kod4); ok {
+			if kod, err := strconv.Atoi(p.StationCode); err == nil {
+				if st, ok := dir.GetStationByKod(kod); ok {
 					t.Station = st.Name
+					t.StationCode = strconv.Itoa(st.Kod4)
 				}
 			}
 		}
 		out = append(out, t)
+	}
+	return out
+}
+
+// rearrangeTargets — цели ПЕРЕСТАНОВОК: терминалы только тех станций, где
+// терминалов больше одного (перестановка действует в пределах станции —
+// единственному терминалу станции переставлять не с кем; решение владельца).
+func rearrangeTargets(dir *DirectoryCache) []TargetDTO {
+	all := terminalTargets(dir)
+	perStation := map[string]int{}
+	for _, t := range all {
+		if t.StationCode != "" {
+			perStation[t.StationCode]++
+		}
+	}
+	out := make([]TargetDTO, 0, len(all))
+	for _, t := range all {
+		if perStation[t.StationCode] >= 2 {
+			out = append(out, t)
+		}
 	}
 	return out
 }
@@ -131,7 +156,7 @@ func (s *RearrangeService) RearrangementGroups(groupBy string) RearrGroupsDTO {
 	}
 	return RearrGroupsDTO{
 		GroupBy: groupBy, Groups: groups,
-		Targets: terminalTargets(dir), Total: len(groups),
+		Targets: rearrangeTargets(dir), Total: len(groups),
 	}
 }
 
@@ -156,7 +181,8 @@ func groupParentIndex(records []domain.Dislocation) []RearrGroupDTO {
 		if !ok {
 			g = &RearrGroupDTO{
 				Key: gk, IndexMain: r.IndexMain, StationNach: r.StationNach,
-				StanNazn: r.StanNazn, GruzpolS: r.GruzpolS, Naznach: r.Naznach,
+				StanNazn: r.StanNazn, StanNaznCode: r.Code4StanNazn,
+				GruzpolS: r.GruzpolS, Naznach: r.Naznach,
 				Available: true,
 			}
 			groups[gk] = g
@@ -204,7 +230,8 @@ func groupCollective(records []domain.Dislocation) []RearrGroupDTO {
 		if !ok {
 			g = &RearrGroupDTO{
 				Key: gk, Index: r.Index, StationOper: r.StationOper,
-				StanNazn: r.StanNazn, Status: r.Status, Available: true,
+				StanNazn: r.StanNazn, StanNaznCode: r.Code4StanNazn,
+				Status: r.Status, Available: true,
 			}
 			groups[gk] = g
 			subs[gk] = map[subKey]*RearrSubGroupDTO{}
@@ -250,7 +277,8 @@ func (s *RearrangeService) RedirectionGroups() RearrGroupsDTO {
 		if !ok {
 			g = &RearrGroupDTO{
 				Key: gk, IndexMain: r.IndexMain, PereadrPort: r.PereadrPort,
-				StanNazn: r.StanNazn, StationNach: r.StationNach, Naznach: r.Naznach,
+				StanNazn: r.StanNazn, StanNaznCode: r.Code4StanNazn,
+				StationNach: r.StationNach, Naznach: r.Naznach,
 			}
 			groups[gk] = g
 			subs[gk] = map[subKey]*RearrSubGroupDTO{}
@@ -417,10 +445,12 @@ func (s *RearrangeService) UpdateStationNaznach(ctx context.Context, req Station
 
 // ── Применение (запись в снимок, батчем) ────────────────────────────────────
 
-// RearrApplyRequest — перестановка: выбранные вагоны → новый терминал.
+// RearrApplyRequest — перестановка: выбранные вагоны → новый терминал, либо
+// «по назначению» (by_gruzpol): каждому вагону его родной gruzpol_s.
 type RearrApplyRequest struct {
 	VagonIDs   []string `json:"vagon_ids"`
 	NewNaznach string   `json:"new_naznach"`
+	ByGruzpol  bool     `json:"by_gruzpol"`
 }
 
 // RedirectApplyRequest — переадресация: kind = own (свой терминал, target=NameS) |
@@ -442,18 +472,22 @@ type RearrApplyResult struct {
 // ApplyRearrangement — перестановка терминала выбранным вагонам. Меняются только
 // вагоны, у которых пара станций разрешена справочником (страховка уровня gtport);
 // уже стоящие на целевом терминале пропускаются (Updated считает реальные правки).
+// by_gruzpol («По назначению») — каждому выбранному его родной gruzpol_s.
 func (s *RearrangeService) ApplyRearrangement(ctx context.Context, req RearrApplyRequest) (RearrApplyResult, error) {
 	if len(req.VagonIDs) == 0 {
 		return RearrApplyResult{}, fmt.Errorf("%w: не выбраны вагоны", ErrBadRearrange)
 	}
 	dir := s.proc.intake.dir
-	if _, ok := dir.PortByNameS(req.NewNaznach); !ok {
+	journalTarget := req.NewNaznach
+	if req.ByGruzpol {
+		journalTarget = "по назначению"
+	} else if _, ok := dir.PortByNameS(req.NewNaznach); !ok {
 		return RearrApplyResult{}, fmt.Errorf("%w: неизвестный терминал %q", ErrBadRearrange, req.NewNaznach)
 	}
 
 	ids := toSet(req.VagonIDs)
 	now := clock.Now()
-	res, err := s.mutateSnapshot(ctx, "rearrangement", map[string]any{"new_naznach": req.NewNaznach, "selected": len(req.VagonIDs)},
+	res, err := s.mutateSnapshot(ctx, "rearrangement", map[string]any{"new_naznach": journalTarget, "selected": len(req.VagonIDs)},
 		func(all []domain.Dislocation) int {
 			n := 0
 			for i := range all {
@@ -464,10 +498,14 @@ func (s *RearrangeService) ApplyRearrangement(ctx context.Context, req RearrAppl
 				if _, ok := dir.GetNaznach(r.StanNazn, r.StationNach); !ok {
 					continue // пара станций не разрешена справочником
 				}
-				if r.Naznach == req.NewNaznach {
+				target := req.NewNaznach
+				if req.ByGruzpol {
+					target = r.GruzpolS // родной терминал КАЖДОГО вагона
+				}
+				if target == "" || r.Naznach == target {
 					continue
 				}
-				r.Naznach = req.NewNaznach
+				r.Naznach = target
 				r.UpdatedAt = now
 				n++
 			}
