@@ -102,6 +102,14 @@ type jsonVagon struct {
 	CAR_OWNER_OKPO     string `json:"CAR_OWNER_OKPO"`
 	CAR_TENANT_NAME    string `json:"CAR_TENANT_NAME"`
 	CAR_TENANT_OKPO    string `json:"CAR_TENANT_OKPO"`
+
+	// Доверенное лицо (третий набор сведений о собственнике). В текущем фиде
+	// провайдера ключей ещё нет; документация обещает camelCase (carTrustedOKPO),
+	// остальные ключи фида — UPPER_SNAKE. Маппим оба варианта, берём непустой.
+	CAR_TRUSTED_NAME string `json:"CAR_TRUSTED_NAME"`
+	CAR_TRUSTED_OKPO string `json:"CAR_TRUSTED_OKPO"`
+	CarTrustedNameCC string `json:"carTrustedName"`
+	CarTrustedOkpoCC string `json:"carTrustedOKPO"`
 }
 
 // ParseBytes разбирает сырой JSON (плоский массив вагонов ИЛИ обёртка
@@ -211,6 +219,14 @@ func firstNonSpace(raw []byte) byte {
 	return 0
 }
 
+// firstNonEmpty — первое непустое значение (для полей с двумя вариантами ключа).
+func firstNonEmpty(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}
+
 // cleanNone обрезает пробелы и трактует строковый null-сентинел "None"/"null"
 // (встречается в новом формате) как пустую строку.
 func cleanNone(s string) string {
@@ -298,6 +314,8 @@ func (p *JSONParser) convert(v jsonVagon) domain.Dislocation {
 	r.CarOwnerOkpo = cleanNone(v.CAR_OWNER_OKPO)
 	r.CarTenantName = cleanNone(v.CAR_TENANT_NAME)
 	r.CarTenantOkpo = cleanNone(v.CAR_TENANT_OKPO)
+	r.CarTrustedName = cleanNone(firstNonEmpty(v.CAR_TRUSTED_NAME, v.CarTrustedNameCC))
+	r.CarTrustedOkpo = cleanNone(firstNonEmpty(v.CAR_TRUSTED_OKPO, v.CarTrustedOkpoCC))
 
 	// Служебное
 	r.ID = generateDeterministicID(r.Vagon, r.CodeStationNach, dateNachT)

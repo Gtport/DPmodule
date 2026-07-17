@@ -111,6 +111,8 @@ func buildHistoryRow(r *domain.Dislocation, now domain.LocalTime) domain.VagonHi
 		Client: r.Client, RodVagUch: r.RodVagUch,
 		CarOwnerName: r.CarOwnerName, CarOwnerOkpo: r.CarOwnerOkpo,
 		CarTenantName: r.CarTenantName, CarTenantOkpo: r.CarTenantOkpo,
+		CarTrustedName: r.CarTrustedName, CarTrustedOkpo: r.CarTrustedOkpo,
+		PereadrType: r.PereadrType, PereadrPort: r.PereadrPort,
 		Status: r.Status, DateDostav: r.DateDostav, PlanMsk: r.PlanMsk, PlanJd: r.PlanJd,
 		Frost: r.Frost, Shipments: r.Shipments, Peregruz: r.Peregruz,
 		Info1: r.Info1, Info2: r.Info2, Sms1: r.Sms1, Sms2: r.Sms2, Sms3: r.Sms3,

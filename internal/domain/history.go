@@ -31,6 +31,11 @@ type VagonHistory struct {
 	CarOwnerOkpo     string
 	CarTenantName    string
 	CarTenantOkpo    string
+	CarTrustedName   string
+	CarTrustedOkpo   string
+
+	PereadrType string // переадресация: "" / "own" / "ext" (см. Dislocation)
+	PereadrPort string // имя внешнего порта при "ext"
 
 	Status     *int
 	DateDostav *LocalTime

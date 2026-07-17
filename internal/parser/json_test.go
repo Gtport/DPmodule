@@ -27,7 +27,9 @@ func TestJSONParser_FlatArray_KeyMappings(t *testing.T) {
 		"RASST_STAN_NAZN":"1000",
 		"PROST_CH":"12:30",
 		"INV_CLAIM_NUMBER":"GU12-1",
-		"CAR_OWNER_NAME":"КФС"
+		"CAR_OWNER_NAME":"КФС",
+		"carTrustedName":"АО НТК",
+		"carTrustedOKPO":"46441703"
 	}]`)
 
 	recs, err := parser.NewJSONParser().ParseBytes(raw)
@@ -43,6 +45,8 @@ func TestJSONParser_FlatArray_KeyMappings(t *testing.T) {
 	assert.Equal(t, "01", r.CodeOper)
 	assert.Equal(t, "GU12-1", r.Zayavka)
 	assert.Equal(t, "КФС", r.CarOwnerName)
+	assert.Equal(t, "АО НТК", r.CarTrustedName) // camelCase-ключ новой версии фида
+	assert.Equal(t, "46441703", r.CarTrustedOkpo)
 
 	require.NotNil(t, r.Ves)
 	assert.InDelta(t, 68.0, *r.Ves, 1e-9) // 68000 кг / 1000
