@@ -28,7 +28,7 @@ func (h *rearrangeHandler) RegisterRoutes(g *gin.RouterGroup) {
 }
 
 // stations godoc
-// @Summary  Панель станций перестановок: все пары справочника naznach_station
+// @Summary  Панель станций перестановок: включённые (enabled) пары справочника naznach_station
 // @Tags     dislocation
 // @Security BearerAuth
 // @Success  200 {array} service.NaznachStationDTO

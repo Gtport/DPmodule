@@ -31,7 +31,6 @@ import { NaznachStationRow, RearrTarget, RearrangeApiService } from './rearrange
             <div class="col-title">{{ col.title }} ({{ col.rows.length }})</div>
             @for (r of col.rows; track r.origin_station + r.dest_station) {
               <div class="st" draggable="true"
-                   [class.off]="!r.enabled"
                    (dragstart)="onDragStart($event, r)"
                    (contextmenu)="openMenu($event, r, menu)">
                 <span nz-icon nzType="environment" nzTheme="fill" class="pin"></span>
@@ -76,7 +75,6 @@ import { NaznachStationRow, RearrTarget, RearrangeApiService } from './rearrange
     .col-title { font-size: var(--font-size-sm); font-weight: 600; border-bottom: 1px solid var(--color-border-light, #f0f0f0); padding: 2px 4px 4px; position: sticky; top: 0; background: var(--color-bg-surface, #fff); }
     .st { display: flex; align-items: center; gap: 4px; padding: 2px 4px; font-size: var(--font-size-sm); cursor: grab; border-radius: 4px; }
     .st:hover { background: var(--color-bg-container-secondary, #fafafa); }
-    .st.off { opacity: .5; }
     .pin { color: var(--color-primary, #1677ff); font-size: 12px; }
     /* Название станции — всегда в одну строку, ширину колонке задаёт контент. */
     .st-name { white-space: nowrap; }

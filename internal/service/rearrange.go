@@ -393,19 +393,24 @@ type NaznachStationDTO struct {
 	Enabled       bool   `json:"enabled"`
 }
 
-// Stations — все строки справочника naznach_station (включая выключенные и без
-// назначения — колонка «По назначению» панели).
+// Stations — включённые (enabled) строки справочника naznach_station, в том
+// числе без назначения — колонка «По назначению» панели. Выключенные пары в
+// панель не попадают: перестановки для них запрещены (Stage 2 их тоже не видит),
+// управляют ими через админ-редактор справочников.
 func (s *RearrangeService) Stations(ctx context.Context) ([]NaznachStationDTO, error) {
 	rows, err := s.proc.intake.dir.NaznachStationRows(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]NaznachStationDTO, len(rows))
-	for i, r := range rows {
-		out[i] = NaznachStationDTO{
+	out := make([]NaznachStationDTO, 0, len(rows))
+	for _, r := range rows {
+		if !r.Enabled {
+			continue
+		}
+		out = append(out, NaznachStationDTO{
 			DestStation: r.DestStation, OriginStation: r.OriginStation,
 			Naznach: r.Naznach, Univers: r.Univers, Enabled: r.Enabled,
-		}
+		})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].OriginStation == out[j].OriginStation {
