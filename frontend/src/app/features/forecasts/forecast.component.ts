@@ -80,6 +80,9 @@ import { ForecastApiService, ForecastTrain } from './forecast-api.service';
   styles: [`
     .page { display: flex; flex-direction: column; gap: var(--space-sm); }
     .bar { display: flex; align-items: center; gap: var(--space-sm); }
+    /* Таблица — белая «парящая» карточка на сером фоне (стиль gtport). */
+    nz-table { display: block; background: var(--color-bg-surface); border-radius: var(--radius-card);
+               box-shadow: var(--shadow-card); overflow: hidden; }
     .spacer { flex: 1 1 auto; }
     .count { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); margin: 0; }

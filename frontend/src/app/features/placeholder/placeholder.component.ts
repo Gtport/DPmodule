@@ -26,7 +26,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
     </nz-card>
   `,
   styles: [`
-    .card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+    .card { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     .stub {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: var(--space-sm); padding: var(--space-xl) var(--space-md); text-align: center;

@@ -72,6 +72,11 @@
   --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.15);
   --shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.25);  /* dropdown/role switcher */
 
+  /* Карточка (стиль gtport): белая поверхность «парит» над серым фоном страницы */
+  --radius-card: var(--radius-lg);
+  --shadow-card: var(--shadow-md);
+  --shadow-card-hover: var(--shadow-lg);
+
   /* Фокус-кольцо (§10: = --color-primary @ 20%) */
   --focus-ring: 0 0 0 2px rgba(22, 119, 255, 0.2);
 
@@ -119,3 +124,14 @@ html, body {
   background: var(--color-bg-canvas);
 }
 * { box-sizing: border-box; }
+
+/* --- Глобальные примитивы (стиль gtport) -----------------------------------
+ * .iq-card — единственный канонический вид «карточки»: белая поверхность,
+ * скругление и тень парения над серым фоном. Вешать на блоки-контейнеры
+ * страниц и на <nz-card class="iq-card"> — вместо локальных теней/рамок. */
+.iq-card {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
