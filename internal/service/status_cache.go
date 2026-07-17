@@ -80,6 +80,13 @@ func (c *Status9Cache) UpsertMissing(ctx context.Context, items []domain.Disloca
 	return n, nil
 }
 
+// MissingRows — полные записи пропавших (статус 8) из БД, свежие первыми. RAM
+// хранит только vagon→статус; полные строки нужны только экрану — читаем без
+// кэширования (таблица маленькая, TTL-очистка держит её короткой).
+func (c *Status9Cache) MissingRows(ctx context.Context) ([]domain.Dislocation, error) {
+	return c.repo.LoadMissing(ctx)
+}
+
 // PurgeMissingOlderThan — автоочистка пропавших (статус 8) старше cutoff: выбирает
 // устаревших в БД и удаляет через DeleteByVagons (БД и RAM одним путём). Живые
 // кандидаты (статус 9) не затрагиваются.

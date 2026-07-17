@@ -64,6 +64,10 @@ func (r *s9StubRepo) DeleteByVagons(_ context.Context, vagons []string) (int, er
 	return n, nil
 }
 
+func (r *s9StubRepo) LoadMissing(context.Context) ([]domain.Dislocation, error) {
+	return nil, nil // полные строки в этих тестах не участвуют
+}
+
 func (r *s9StubRepo) MissingOlderThan(_ context.Context, cutoff domain.LocalTime) ([]string, error) {
 	var out []string
 	for v, s := range r.vagons {

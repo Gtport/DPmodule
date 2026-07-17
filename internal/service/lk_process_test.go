@@ -91,6 +91,10 @@ func (f *fakeStatus9Repo) MissingOlderThan(context.Context, domain.LocalTime) ([
 	return nil, nil // возраст записей fake не хранит — автоочистка в этих тестах не участвует
 }
 
+func (f *fakeStatus9Repo) LoadMissing(context.Context) ([]domain.Dislocation, error) {
+	return nil, nil // полные строки в этих тестах не участвуют
+}
+
 // fakeStatus6Repo — in-memory port.Status6Repository.
 type fakeStatus6Repo struct {
 	stored   map[string]domain.Dislocation

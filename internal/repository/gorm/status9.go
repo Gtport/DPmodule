@@ -87,6 +87,18 @@ func (r *Status9Repository) UpsertMissing(ctx context.Context, items []domain.Di
 	return int(res.RowsAffected), nil
 }
 
+func (r *Status9Repository) LoadMissing(ctx context.Context) ([]domain.Dislocation, error) {
+	var ms []status9Model
+	if err := r.db.WithContext(ctx).Where("status = 8").Order("updated_at DESC").Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.Dislocation, len(ms))
+	for i, m := range ms {
+		out[i] = domain.Dislocation(dislocationModel(m))
+	}
+	return out, nil
+}
+
 func (r *Status9Repository) MissingOlderThan(ctx context.Context, cutoff domain.LocalTime) ([]string, error) {
 	var vagons []string
 	err := r.db.WithContext(ctx).Model(&status9Model{}).
