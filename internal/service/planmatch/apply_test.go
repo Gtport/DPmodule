@@ -16,7 +16,7 @@ func TestApply(t *testing.T) {
 	now := domain.LocalTime(time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC))
 	planMsk := time.Date(2026, 7, 9, 15, 0, 0, 0, time.UTC)
 	planJd := time.Date(2026, 7, 9, 15, 0, 0, 0, time.UTC)
-	st10 := 10
+	st10, st12 := 10, 12
 
 	old := domain.NewLocalTime(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC))
 	records := []domain.Dislocation{
@@ -30,6 +30,8 @@ func TestApply(t *testing.T) {
 		{Vagon: "V4", Naznach: "ЧУЖОЙ", GruzpolS: "ЧУЖОЙ", IndexPp: "X"},
 		// целевой без плана, матчится → проставляется
 		{Vagon: "V5", Naznach: "АЭ", GruzpolS: "АЭ"},
+		// статус 12 (выгружен) → очистка не трогает, как и 10
+		{Vagon: "V6", Naznach: "АЭ", GruzpolS: "АЭ", IndexPp: "KEEP12", PlanMsk: old, Status: &st12},
 	}
 	matches := []NitkaMatch{
 		{Matched: true, Vagons: []string{"V1", "V5"},
@@ -38,7 +40,7 @@ func TestApply(t *testing.T) {
 	}
 
 	out, stats := Apply(records, matches, tgt, now)
-	require.Len(t, out, 5)
+	require.Len(t, out, 6)
 
 	byVagon := map[string]domain.Dislocation{}
 	for _, r := range out {
@@ -63,6 +65,10 @@ func TestApply(t *testing.T) {
 
 	// V4: чужой — не тронут.
 	assert.Equal(t, "X", byVagon["V4"].IndexPp)
+
+	// V6: статус 12 (выгружен) — план так же неприкосновенен.
+	assert.Equal(t, "KEEP12", byVagon["V6"].IndexPp)
+	require.NotNil(t, byVagon["V6"].PlanMsk)
 
 	// V5: проставлен.
 	assert.Equal(t, "7438-011-1299", byVagon["V5"].IndexPp)

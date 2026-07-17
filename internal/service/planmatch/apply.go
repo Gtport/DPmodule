@@ -15,7 +15,7 @@ type ApplyStats struct {
 // Apply накладывает результат матча на снимок дислокации и возвращает НОВЫЙ срез
 // (исходный не мутируется). Перенос эталона clearPlanData + applyPlanData:
 //
-//   - Очистка: у «наших» вагонов (Naznach ИЛИ GruzpolS в target) со Status≠10
+//   - Очистка: у «наших» вагонов (Naznach ИЛИ GruzpolS в target) со Status<10
 //     сбрасываются IndexPp/PlanMsk/PlanJd — прежний план не должен «прилипать».
 //   - Простановка: вагонам победивших ниток (m.Vagons) ставится IndexPp нитки и
 //     её плановое время (PlanMsk — с правилом ≥18, PlanJd — без сдвига).
@@ -46,10 +46,12 @@ func Apply(records []domain.Dislocation, matches []NitkaMatch, target map[string
 	var stats ApplyStats
 	out := make([]domain.Dislocation, len(records))
 	for i, r := range records {
-		st10 := r.Status != nil && *r.Status == 10
+		arrived := r.Status != nil && *r.Status >= 10 // прибыл (10) / выгружен (12)
 
-		// Очистка стейла: только «наши» и не статус 10 (эталон clearPlanData).
-		if !st10 && isTarget(r.Naznach, r.GruzpolS, target) {
+		// Очистка стейла: только «наши» и не прибывшие/выгруженные (эталон
+		// clearPlanData расширен с 10 на ≥10 — после снятия заморозки прибывший
+		// переходит в 12, его план так же неприкосновенен).
+		if !arrived && isTarget(r.Naznach, r.GruzpolS, target) {
 			if r.IndexPp != "" || r.PlanMsk != nil || r.PlanJd != nil {
 				r.IndexPp = ""
 				r.PlanMsk = nil
@@ -59,7 +61,7 @@ func Apply(records []domain.Dislocation, matches []NitkaMatch, target map[string
 			}
 		}
 
-		// Простановка плана (вагоны выбраны движком с учётом Status≠10 и target).
+		// Простановка плана (вагоны выбраны движком с учётом Status<10 и target).
 		if s, ok := stampByVagon[r.Vagon]; ok {
 			r.IndexPp = s.indexPp
 			r.PlanMsk = toLocal(s.planMsk)

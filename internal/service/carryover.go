@@ -9,13 +9,13 @@ import (
 type CarryOverStats struct {
 	Matched int // вагонов найдено в актуальной (перенос из снимка)
 	New     int // новых вагонов (первичная установка index/invoice)
-	Sticky  int // статус удержан (4/5 на той же станции операции)
+	Sticky  int // статус удержан (4/5/10 на той же станции операции)
 }
 
 // applyCarryOver — Stage 2 (S2-2): для вагонов, найденных в актуальном снимке,
 // переносит поля из прошлого снимка (§ enrichFromActual gtport); для новых —
 // первичная установка index_main/index_last/invoice_main. Мутирует kept на месте.
-// Идёт ПОСЛЕ Stage 1 и ДО reconcileCandidates (может держать статус 4/5). Marka —
+// Идёт ПОСЛЕ Stage 1 и ДО reconcileCandidates (может держать статус 4/5/10). Marka —
 // отдельный шаг S2-3 (новые вагоны + оставшиеся пустые груз-поля).
 func applyCarryOver(kept []domain.Dislocation, actual *ActualCache) CarryOverStats {
 	now := clock.Now()
@@ -39,7 +39,9 @@ func applyCarryOver(kept []domain.Dislocation, actual *ActualCache) CarryOverSta
 }
 
 // enrichFromActual переносит данные из актуальной записи ex в новую newRec. Возвращает
-// true, если сработал sticky-статус (4/5). Порядок и стратегии — как в gtport.
+// true, если сработал sticky-статус (4/5/10). Заморозки на статусе 10 нет (отход от
+// эталона gtport, решение владельца): прибывший обновляется свежими данными РЖД и
+// после выгрузки честно переходит 10 → 12 (веха выгрузки уходит в vagon_history).
 func enrichFromActual(newRec, ex *domain.Dislocation, now domain.LocalTime) bool {
 	preserveCoordinates(newRec, ex)
 
@@ -56,33 +58,24 @@ func enrichFromActual(newRec, ex *domain.Dislocation, now domain.LocalTime) bool
 		sticky = true
 	}
 
-	if exStatus == 10 {
-		copyAllFromActual(newRec, ex, now) // прибыл → снимок застыл на актуальной
-	} else {
-		copySelectedFromActual(newRec, ex, now) // выборочный перенос
-		fixZeroRasst(newRec, ex)
+	// Sticky 10: вагон прибыл и стоит там же, но свежая выгрузка потеряла date_prib
+	// (новый статус 9). Держим факт прибытия: статус 10, date_prib и date_kon.
+	if exStatus == 10 && newRec.Status != nil && *newRec.Status == 9 &&
+		newRec.CodeStationOper == ex.CodeStationOper {
+		s := 10
+		newRec.Status = &s
+		newRec.DatePrib = ex.DatePrib
+		newRec.DateKon = newRec.DateOpJd // как computeDateKon для статуса 10
+		sticky = true
 	}
+
+	copySelectedFromActual(newRec, ex, now) // выборочный перенос
+	fixZeroRasst(newRec, ex)
 	return sticky
 }
 
-// copyAllFromActual — для прибывшего (актуальный статус 10): полная замена на
-// актуальную запись, кроме свежего prost_dn и новых полей (если в актуальной пусто).
-// invoice_main/created_at берутся из актуальной (стабильны). Index = плановая нитка.
-func copyAllFromActual(newRec, ex *domain.Dislocation, now domain.LocalTime) {
-	prostDn := newRec.ProstDn
-	nf := snapshotNewFields(newRec)
-
-	*newRec = *ex
-	if ex.Status != nil && *ex.Status == 10 && ex.IndexPp != "" {
-		newRec.Index = ex.IndexPp
-	}
-	newRec.ProstDn = prostDn
-	restoreNewFieldsIfEmpty(newRec, nf) // актуальная пусто, новая не пусто → новая
-	newRec.UpdatedAt = now
-}
-
-// copySelectedFromActual — для непрбывшего (актуальный статус ≠ 10): переносим
-// выбранные поля из актуальной, свежие данные РЖД оставляем.
+// copySelectedFromActual — переносим выбранные поля из актуальной, свежие данные
+// РЖД оставляем.
 func copySelectedFromActual(newRec, ex *domain.Dislocation, now domain.LocalTime) {
 	newRec.ID = ex.ID
 	newRec.IndexMain = determineIndexMain(newRec, ex)
@@ -204,45 +197,5 @@ func carryNewFields(newRec, ex *domain.Dislocation) {
 	}
 	if ex.Zayavka != "" {
 		newRec.Zayavka = ex.Zayavka
-	}
-}
-
-// newFields — снимок новых полей для восстановления при полной замене (copyAll).
-type newFields struct {
-	carOwnerName, carOwnerOkpo, carTenantName, carTenantOkpo string
-	gtdNumber, freightExactName, zayavka                     string
-}
-
-func snapshotNewFields(r *domain.Dislocation) newFields {
-	return newFields{
-		carOwnerName: r.CarOwnerName, carOwnerOkpo: r.CarOwnerOkpo,
-		carTenantName: r.CarTenantName, carTenantOkpo: r.CarTenantOkpo,
-		gtdNumber: r.GtdNumber, freightExactName: r.FreightExactName, zayavka: r.Zayavka,
-	}
-}
-
-// restoreNewFieldsIfEmpty: после *newRec = *ex поля равны актуальной; где актуальная
-// была пуста, а новая нет — возвращаем значение новой (правило «actual не пусто → actual»).
-func restoreNewFieldsIfEmpty(r *domain.Dislocation, nf newFields) {
-	if r.CarOwnerName == "" && nf.carOwnerName != "" {
-		r.CarOwnerName = nf.carOwnerName
-	}
-	if r.CarOwnerOkpo == "" && nf.carOwnerOkpo != "" {
-		r.CarOwnerOkpo = nf.carOwnerOkpo
-	}
-	if r.CarTenantName == "" && nf.carTenantName != "" {
-		r.CarTenantName = nf.carTenantName
-	}
-	if r.CarTenantOkpo == "" && nf.carTenantOkpo != "" {
-		r.CarTenantOkpo = nf.carTenantOkpo
-	}
-	if r.GtdNumber == "" && nf.gtdNumber != "" {
-		r.GtdNumber = nf.gtdNumber
-	}
-	if r.FreightExactName == "" && nf.freightExactName != "" {
-		r.FreightExactName = nf.freightExactName
-	}
-	if r.Zayavka == "" && nf.zayavka != "" {
-		r.Zayavka = nf.zayavka
 	}
 }

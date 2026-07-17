@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,26 +45,52 @@ func TestCarryOver_SelectedFields(t *testing.T) {
 	assert.Equal(t, "42.8", nw.Latitude)       // координаты из актуальной (в новой пусто)
 }
 
-// Прибывший (актуальный =10): полная замена, prost_dn свежий, Index=IndexPp.
-func TestCarryOver_CopyAll(t *testing.T) {
-	st10, pd := 10, 3
+// Заморозки на статусе 10 нет: прибывший обновляется свежими данными РЖД
+// (выборочный перенос), переход 10→12 не блокируется, квирк Index=IndexPp упразднён.
+func TestCarryOver_NoFreezeOn10(t *testing.T) {
+	st10, st12 := 10, 12
 	ex := domain.Dislocation{
 		Vagon: "V", ID: "arr-id", IndexPp: "PLAN-NITKA", Status: &st10,
-		GruzpolS: "АЭ", StanNazn: "МЫС АСТАФЬЕВА", StationOper: "МЫС АСТАФЬЕВА",
-		InvoiceMain: "СВОДНАЯ",
+		GruzpolS: "АЭ", Naznach: "АЭ", Gruzotpr: "ОТПР", InvoiceMain: "СВОДНАЯ",
 	}
-	newProst := 7
-	nw := domain.Dislocation{Vagon: "V", Index: "NEW", Invoice: "ЭТ1", ProstDn: &newProst}
+	// Свежая выгрузка: вагон опустел на назначении, Stage 1 дал 12.
+	nw := domain.Dislocation{Vagon: "V", Index: "NEW", Invoice: "ЭТ1", Status: &st12}
 
-	enrichFromActual(&nw, &ex, now0())
+	sticky := enrichFromActual(&nw, &ex, now0())
 
-	assert.Equal(t, "arr-id", nw.ID)        // всё из актуальной
-	assert.Equal(t, "PLAN-NITKA", nw.Index) // Index = IndexPp
+	assert.False(t, sticky)
+	require.NotNil(t, nw.Status)
+	assert.Equal(t, 12, *nw.Status)           // переход 10→12 прошёл
+	assert.Equal(t, "arr-id", nw.ID)          // выборочный перенос из актуальной
+	assert.Equal(t, "NEW", nw.Index)          // фактический индекс, не плановая нитка
+	assert.Equal(t, "PLAN-NITKA", nw.IndexPp) // план-поля сохранены
 	assert.Equal(t, "АЭ", nw.GruzpolS)
-	require.NotNil(t, nw.ProstDn)
-	assert.Equal(t, 7, *nw.ProstDn) // prost_dn свежий из новой
+	assert.Equal(t, "ОТПР", nw.Gruzotpr)
 	assert.Equal(t, "СВОДНАЯ", nw.InvoiceMain)
-	_ = pd
+}
+
+// Sticky 10: на той же станции пропал только date_prib (Stage 1 дал 9) → держим
+// факт прибытия: статус 10, date_prib из актуальной, date_kon = ЖД-сутки операции.
+func TestCarryOver_Sticky10(t *testing.T) {
+	st10, st9a, st9b := 10, 9, 9
+	prib := domain.NewLocalTime(time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC))
+	jd := domain.NewLocalTime(time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC))
+	ex := domain.Dislocation{Vagon: "V", Status: &st10, CodeStationOper: "986005", DatePrib: prib}
+	nw := domain.Dislocation{Vagon: "V", Status: &st9a, CodeStationOper: "986005", DateOpJd: jd}
+
+	sticky := enrichFromActual(&nw, &ex, now0())
+	assert.True(t, sticky)
+	require.NotNil(t, nw.Status)
+	assert.Equal(t, 10, *nw.Status)
+	require.NotNil(t, nw.DatePrib)
+	assert.Equal(t, *prib, *nw.DatePrib)
+	assert.Equal(t, jd, nw.DateKon)
+
+	// станция операции сменилась → удержания нет, статус честный
+	nw2 := domain.Dislocation{Vagon: "V", Status: &st9b, CodeStationOper: "770000"}
+	assert.False(t, enrichFromActual(&nw2, &ex, now0()))
+	assert.Equal(t, 9, *nw2.Status)
+	assert.Nil(t, nw2.DatePrib)
 }
 
 // Sticky статус 5: брошенный на той же станции операции остаётся 5.
