@@ -116,6 +116,7 @@ type LKProcessResult struct {
 	Status9Inserted  int            `json:"status9_inserted"`   // новых кандидатов статуса 9 (S2-1)
 	Status9Removed   int            `json:"status9_removed"`    // снято кандидатов (вернулись в поток)
 	Status8Missing   int            `json:"status8_missing"`    // пропавших → статус 8 (S2-1b)
+	Status8Purged    int            `json:"status8_purged"`     // автоочистка: снято пропавших старше TTL (S2-1c)
 	CarryMatched     int            `json:"carry_matched"`      // вагонов с carry-over из актуальной (S2-2)
 	CarryNew         int            `json:"carry_new"`          // новых вагонов (S2-2)
 	CarrySticky      int            `json:"carry_sticky"`       // статус удержан 4/5 (S2-2)
@@ -277,6 +278,17 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// Stage 2 (S2-1c): автоочистка пропавших (статус 8) старше TTL — таблица
+	// кандидатов не разрастается записями, по которым уже не будет возврата.
+	// Порог — client_settings.extra.status.missing8_ttl_days; 0 → выключена.
+	var s8purged int
+	if p.status9 != nil && sp.Missing8TTLDays > 0 {
+		cutoffTTL := domain.LocalTime(time.Time(clock.Now()).Add(-time.Duration(sp.Missing8TTLDays) * 24 * time.Hour))
+		if s8purged, err = p.status9.PurgeMissingOlderThan(ctx, cutoffTTL); err != nil {
+			return LKProcessResult{}, fmt.Errorf("автоочистка status9: %w", err)
+		}
+	}
+
 	if err := p.repo.ReplaceActual(ctx, all); err != nil {
 		return LKProcessResult{}, fmt.Errorf("замена снимка: %w", err)
 	}
@@ -291,11 +303,12 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
-		CarryMatched: co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
+		Status8Purged: s8purged,
+		CarryMatched:  co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
 		Status6Donors: donors, Status6Matched: donorMatched,
 		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull,
 		MarkaTrainFilled: mk.FilledByTrain,
-		MarkaMissed: mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
+		MarkaMissed:      mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
 		ForecastComputed: forecastN, ProgComputed: progN,
 		HistoryInserted: hist.Inserted, HistoryUpdated: hist.Updated,
 	}, nil

@@ -70,8 +70,9 @@ type ClientSettings struct {
 // StatusPolicy — общепрограмные пороги расчёта статусов дислокации (§3.12/§3.13).
 // Живёт в client_settings.extra.status. Значения GTport: 1 сутки / 12 часов.
 type StatusPolicy struct {
-	ProstDnMin int `json:"prost_dn_min"` // порог простоя в сутках → статус 4
-	ProstChMin int `json:"prost_ch_min"` // порог простоя в часах → статус 4
+	ProstDnMin      int `json:"prost_dn_min"`      // порог простоя в сутках → статус 4
+	ProstChMin      int `json:"prost_ch_min"`      // порог простоя в часах → статус 4
+	Missing8TTLDays int `json:"missing8_ttl_days"` // автоочистка пропавших (статус 8) в status9 старше N суток; 0 → выключена
 }
 
 // IngestPolicy — пороги приёма по категориям (§3.9). Межфайловые/на загрузку
@@ -107,9 +108,9 @@ const (
 type PlanProfile struct {
 	StationCode          string
 	StationName          string
-	Mode                 string   // PlanModePlanned | PlanModeCapacity
-	PlanCode             string   // ma/nk у плановых; "" у бесплановых
-	CorrectionCoef       float64  // поправочный коэф (один на станцию, capacity-режим)
+	Mode                 string  // PlanModePlanned | PlanModeCapacity
+	PlanCode             string  // ma/nk у плановых; "" у бесплановых
+	CorrectionCoef       float64 // поправочный коэф (один на станцию, capacity-режим)
 	MatchRequiresNaznach bool
 	OurTerminals         []string // ключевые слова «наших» колонок плана (вклад в Activ)
 	SlotToleranceH       float64  // допуск слота Stage 4: слот может быть ≥ Rasch − N часов

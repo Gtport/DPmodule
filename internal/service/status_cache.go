@@ -80,6 +80,20 @@ func (c *Status9Cache) UpsertMissing(ctx context.Context, items []domain.Disloca
 	return n, nil
 }
 
+// PurgeMissingOlderThan — автоочистка пропавших (статус 8) старше cutoff: выбирает
+// устаревших в БД и удаляет через DeleteByVagons (БД и RAM одним путём). Живые
+// кандидаты (статус 9) не затрагиваются.
+func (c *Status9Cache) PurgeMissingOlderThan(ctx context.Context, cutoff domain.LocalTime) (int, error) {
+	vagons, err := c.repo.MissingOlderThan(ctx, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	if len(vagons) == 0 {
+		return 0, nil
+	}
+	return c.DeleteByVagons(ctx, vagons)
+}
+
 // DeleteByVagons — снять кандидатов: из БД и из RAM.
 func (c *Status9Cache) DeleteByVagons(ctx context.Context, vagons []string) (int, error) {
 	n, err := c.repo.DeleteByVagons(ctx, vagons)
