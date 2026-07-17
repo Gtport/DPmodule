@@ -148,7 +148,7 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
     /* Страница — на всю ширину (статус-панель и т.п.); карточки приёма — по-прежнему компактные. */
     .page { display: flex; flex-direction: column; gap: var(--space-md); }
     .asu-bar, .card { max-width: 700px; }
-    .card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+    .card { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     /* АСУ — отдельная строка над карточкой ЛК (основной, одношаговый источник). */
     .asu-bar { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
     .asu-hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); }

@@ -67,44 +67,38 @@ interface RedirectCard {
 
       <!-- ══════════ Вкладка «Перестановки» ══════════ -->
       @if (tab() === 0) {
-        <div class="split">
-          <div class="left">
-            <div class="bar">
-              <button nz-button nzType="primary" nzSize="small" (click)="dialogOpen.set(true)">
-                <span nz-icon nzType="swap"></span> Управление назначениями
-              </button>
-              <span class="spacer"></span>
-              <span class="mut">прибывшие</span>
-              <nz-switch nzSize="small" [ngModel]="showArrived()" (ngModelChange)="showArrived.set($event)"></nz-switch>
-              <button nz-button nzSize="small" (click)="load()">
-                <span nz-icon nzType="reload"></span>
-              </button>
-            </div>
+        <div class="bar">
+          <button nz-button nzType="primary" nzSize="small" (click)="dialogOpen.set(true)">
+            <span nz-icon nzType="swap"></span> Управление назначениями
+          </button>
+          <span class="mut">прибывшие</span>
+          <nz-switch nzSize="small" [ngModel]="showArrived()" (ngModelChange)="showArrived.set($event)"></nz-switch>
+        </div>
 
-            <div class="sum-cols">
-              @for (col of summaryColumns(); track col.terminal) {
-                <div class="sum-col">
-                  <div class="col-title">{{ col.terminal }} ({{ col.rows.length }})</div>
-                  @for (r of col.rows; track r.id) {
-                    <div class="sum-row" [class.arrived]="r.status === 10"
-                         (contextmenu)="openRearrMenu($event, r, rearrMenu)">
-                      <span nz-icon nzType="train" nzTheme="fill" class="tiny"
-                            [style.color]="statusColor(r.status)"></span>
-                      <span class="idx">{{ r.index_main || '—' }}</span>
-                      <span class="mut ell" [title]="r.station_nach">{{ r.station_nach }}</span>
-                      <span class="mut">({{ r.vagon_count }})</span>
-                      <span class="spacer"></span>
-                      <span class="mut ell" [title]="'станция операции'">{{ r.station_oper }}</span>
-                      @if (r.rasst != null) { <span class="mut">{{ r.rasst }} км</span> }
-                      @if (r.status === 10) { <span class="ok">прибыл</span> }
-                    </div>
-                  }
-                  @if (!col.rows.length) { <div class="empty">Нет чужого груза</div> }
+        <div class="split">
+          <div class="sum-cols">
+            @for (col of summaryColumns(); track col.terminal) {
+              <div class="sum-col">
+                <div class="col-title">{{ col.terminal }} ({{ col.rows.length }})
+                  @if (col.from) { <span class="mut">— перестановка с {{ col.from }} на {{ col.terminal }}</span> }
                 </div>
-              }
-            </div>
-            <p class="hint">Показан чужой груз, переставленный на терминал (грузополучатель ≠ назначению).
-              ПКМ по строке — «По назначению» и перестановка на другой терминал станции.</p>
+                @for (r of col.rows; track r.id) {
+                  <div class="sum-row" [class.arrived]="r.status === 10"
+                       (contextmenu)="openRearrMenu($event, r, rearrMenu)">
+                    <span nz-icon nzType="train" nzTheme="fill" class="tiny"
+                          [style.color]="statusColor(r.status)"></span>
+                    <span class="idx">{{ r.index_main || '—' }}</span>
+                    <span class="mut ell" [title]="r.station_nach">{{ r.station_nach }}</span>
+                    <span class="mut">({{ r.vagon_count }})</span>
+                    <span class="spacer"></span>
+                    <span class="mut ell" [title]="'станция операции'">{{ r.station_oper }}</span>
+                    @if (r.rasst != null) { <span class="mut">{{ r.rasst }} км</span> }
+                    @if (r.status === 10) { <span class="ok">прибыл</span> }
+                  </div>
+                }
+                @if (!col.rows.length) { <div class="empty">Нет чужого груза</div> }
+              </div>
+            }
           </div>
 
           <app-stations-panel [targets]="targets()"></app-stations-panel>
@@ -160,8 +154,10 @@ interface RedirectCard {
           <span class="mut">групп: {{ filteredGroups().length }} · выбрано: {{ selected().size }}</span>
         </div>
         @if (routesOpen()) {
-          <app-group-tree [groups]="filteredGroups()" [disableUnavailable]="true"
-                          [(selected)]="selected" (ctx)="openRedirectMenu($event, redirectMenu)" />
+          <div class="tree-wrap">
+            <app-group-tree [groups]="filteredGroups()" [disableUnavailable]="true"
+                            [(selected)]="selected" (ctx)="openRedirectMenu($event, redirectMenu)" />
+          </div>
         }
       }
 
@@ -242,7 +238,8 @@ interface RedirectCard {
   styles: [`
     .page { display: flex; flex-direction: column; gap: var(--space-sm); }
     .bar { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
-    .bar.manage { padding: 6px 8px; background: var(--color-bg-container-secondary, #fafafa); border-radius: 6px; }
+    .bar.manage { padding: var(--space-sm) var(--space-md); background: var(--color-bg-surface);
+                  border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     .spacer { flex: 1 1 auto; }
     .mut { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); margin: 0; }
@@ -250,13 +247,20 @@ interface RedirectCard {
     .search { width: 180px; }
     .sel { width: 190px; }
     .sel-wide { width: 210px; }
-    .split { display: grid; grid-template-columns: 1fr auto; gap: var(--space-sm); align-items: start; }
-    .left { display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; }
-    /* Сводные колонки перестановок (стиль gtport: узкие колонки по терминалам) */
-    .sum-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-sm); }
-    .sum-col { border: 1px solid var(--color-border, #f0f0f0); border-radius: 6px; padding: 4px; max-height: 500px; overflow: auto; }
-    .col-title { font-size: var(--font-size-sm); font-weight: 600; border-bottom: 1.5px solid var(--color-border, #f0f0f0);
-                 padding: 2px 6px 4px; position: sticky; top: 0; background: var(--color-bg-container, #fff); z-index: 1; }
+    /* Один ряд на 90% ширины страницы, промежутки --space-md. Панель станций
+       берёт ширину по своему контенту (названия в одну строку, без переноса
+       вниз), карточки портов поровну делят остаток. */
+    .split { display: flex; align-items: flex-start; gap: var(--space-md); width: 90%; }
+    .split > app-stations-panel { flex: 0 0 auto; }
+    /* Сводные колонки перестановок: высота — по контенту, но не выше 80% экрана,
+       дальше внутренний скролл; между собой карточки портов выровнены (stretch). */
+    .sum-cols { display: flex; gap: var(--space-md); flex-wrap: nowrap; align-items: stretch;
+                flex: 1 1 auto; min-width: 0; }
+    .sum-cols > .sum-col { flex: 1 1 0; min-width: 0; }
+    .sum-col { background: var(--color-bg-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card);
+               padding: var(--space-xs) var(--space-sm); max-height: 80vh; overflow: auto; }
+    .col-title { font-size: var(--font-size-sm); font-weight: 600; border-bottom: 1.5px solid var(--color-border-light, #f0f0f0);
+                 padding: 2px 6px 4px; position: sticky; top: 0; background: var(--color-bg-surface, #fff); z-index: 1; }
     .sum-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; font-size: var(--font-size-sm);
                border-radius: 4px; cursor: context-menu; }
     .sum-row:hover { background: var(--color-bg-container-secondary, #fafafa); }
@@ -267,17 +271,20 @@ interface RedirectCard {
     .ok { color: var(--color-success, #52c41a); font-size: var(--font-size-sm); }
     /* Карточки переадресации */
     .cards-head { display: flex; align-items: center; gap: 8px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-sm); }
-    .card { border: 1px solid var(--color-border, #f0f0f0); border-radius: 6px; padding: 6px; min-height: 90px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-md); }
+    .card { background: var(--color-bg-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card);
+            padding: var(--space-sm) var(--space-sm) var(--space-xs); min-height: 90px; }
     .card-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600;
-                 border-bottom: 1px solid var(--color-border, #f0f0f0); padding-bottom: 4px; margin-bottom: 4px; }
+                 border-bottom: 1px solid var(--color-border-light, #f0f0f0); padding-bottom: 4px; margin-bottom: 4px; }
     .cnt-tag { margin: 0; border-radius: 10px; }
     .card-train { padding: 2px 6px; font-size: var(--font-size-sm); font-variant-numeric: tabular-nums;
                   cursor: pointer; border-radius: 4px; }
     .card-train:hover { background: var(--color-primary-bg, #e6f4ff); }
-    .routes-head { display: flex; align-items: center; gap: 8px; padding: 8px;
-                   background: var(--color-bg-container-secondary, #fafafa); border-radius: 6px; cursor: pointer; }
-    .tree-wrap { max-height: 60vh; overflow: auto; border: 1px solid var(--color-border, #f0f0f0); border-radius: 6px; }
+    .routes-head { display: flex; align-items: center; gap: 8px; padding: var(--space-sm) var(--space-md);
+                   background: var(--color-bg-surface); border-radius: var(--radius-card);
+                   box-shadow: var(--shadow-card); cursor: pointer; }
+    .tree-wrap { max-height: 60vh; overflow: auto; background: var(--color-bg-surface);
+                 border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
   `],
 })
 export class RearrangementComponent implements OnInit {
@@ -307,6 +314,7 @@ export class RearrangementComponent implements OnInit {
   readonly ctxStanCode = signal('');
   readonly ctxNaznach = signal('');
   readonly ctxHasForeign = signal(false); // в выделении есть вагоны с gruzpol_s ≠ naznach
+  readonly ctxGruzpol = signal(''); // единогласный грузополучатель выделения ('' — разные)
 
   ngOnInit(): void {
     void this.load();
@@ -380,6 +388,8 @@ export class RearrangementComponent implements OnInit {
     visible.sort((a, b) => (a.rasst ?? 1e9) - (b.rasst ?? 1e9));
     return this.targets().map((t) => ({
       terminal: t.name,
+      // Расшифровка направления: чужой груз пришёл с остальных терминалов (без хардкода имён).
+      from: this.targets().filter((o) => o.name !== t.name).map((o) => o.name).join('/'),
       rows: visible.filter((r) => r.naznach === t.name && r.gruzpol_s !== t.name),
     }));
   });
@@ -433,10 +443,13 @@ export class RearrangementComponent implements OnInit {
     return opts;
   });
 
-  /** Цели ПКМ перестановок: та же станция (по коду), не «сам на себя». */
+  /** Цели ПКМ перестановок: та же станция (по коду), не «сам на себя»;
+   *  терминал, совпадающий с грузополучателем выделения, не дублируем —
+   *  для него есть «По назначению» (то же действие). */
   readonly ctxRearrTargets = computed(() =>
     this.targets()
-      .filter((t) => (!this.ctxStanCode() || t.station_code === this.ctxStanCode()) && t.name !== this.ctxNaznach())
+      .filter((t) => (!this.ctxStanCode() || t.station_code === this.ctxStanCode())
+        && t.name !== this.ctxNaznach() && t.name !== this.ctxGruzpol())
       .map((t) => t.name),
   );
 
@@ -477,6 +490,7 @@ export class RearrangementComponent implements OnInit {
     this.ctxStanCode.set(r.stan_nazn_code);
     this.ctxNaznach.set(r.naznach);
     this.ctxHasForeign.set(!!r.gruzpol_s && r.gruzpol_s !== r.naznach);
+    this.ctxGruzpol.set(r.gruzpol_s);
     this.ctxMenu.create(ev, menu);
   }
 
@@ -501,6 +515,8 @@ export class RearrangementComponent implements OnInit {
       : e.sub ? e.sub.vagons
       : e.group.sub_groups.flatMap((sg) => sg.vagons);
     this.ctxHasForeign.set(vagons.some((v) => v.gruzpol_s && v.gruzpol_s !== v.naznach));
+    const gruzpols = new Set(vagons.map((v) => v.gruzpol_s).filter(Boolean));
+    this.ctxGruzpol.set(gruzpols.size === 1 ? [...gruzpols][0] : '');
   }
 
   // ── Применение ─────────────────────────────────────────────────────────

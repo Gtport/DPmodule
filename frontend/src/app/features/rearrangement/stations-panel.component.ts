@@ -1,6 +1,5 @@
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { NzIconModule } from 'ng-zorro-antd/icon';
-import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 'ng-zorro-antd/dropdown';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
@@ -15,15 +14,11 @@ import { NaznachStationRow, RearrTarget, RearrangeApiService } from './rearrange
  */
 @Component({
   selector: 'app-stations-panel',
-  imports: [NzIconModule, NzButtonModule, NzDropDownModule],
+  imports: [NzIconModule, NzDropDownModule],
   template: `
     <div class="panel">
       <div class="head">
         <b>Станции перестановок</b>
-        <span class="spacer"></span>
-        <button nz-button nzSize="small" (click)="load()">
-          <span nz-icon nzType="reload"></span>
-        </button>
       </div>
       <p class="hint">Перетащите станцию в колонку или используйте правую кнопку мыши</p>
 
@@ -65,19 +60,26 @@ import { NaznachStationRow, RearrTarget, RearrangeApiService } from './rearrange
     </div>
   `,
   styles: [`
-    .panel { border: 1px solid var(--color-border, #f0f0f0); border-radius: 6px; padding: 8px; min-width: 300px; }
+    :host { display: block; }
+    /* Высота панели — по собственному контенту (не выравнивается под карточки портов). */
+    .panel { background: var(--color-bg-surface); border-radius: var(--radius-card);
+             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-md); }
     .head { display: flex; align-items: center; gap: 8px; }
     .spacer { flex: 1 1 auto; }
     .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); margin: 4px 0 8px; }
-    .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
-    .col { border: 1px dashed var(--color-border, #d9d9d9); border-radius: 6px; padding: 4px; min-height: 160px; max-height: 420px; overflow: auto; }
+    /* Колонки-корзины: ширина строго по контенту — самое длинное название станции
+       задаёт ширину колонки, панель в целом получает ширину от контента. */
+    .cols { display: flex; gap: 6px; }
+    .col { flex: 0 0 auto; min-width: 110px; border: 1px dashed var(--color-border, #d9d9d9);
+           border-radius: 6px; padding: 4px; min-height: 160px; max-height: 70vh; overflow: auto; }
     .col.over { border-color: var(--color-primary, #1677ff); background: var(--color-primary-bg, #e6f4ff); }
-    .col-title { font-size: var(--font-size-sm); font-weight: 600; border-bottom: 1px solid var(--color-border, #f0f0f0); padding: 2px 4px 4px; position: sticky; top: 0; background: var(--color-bg-container, #fff); }
+    .col-title { font-size: var(--font-size-sm); font-weight: 600; border-bottom: 1px solid var(--color-border-light, #f0f0f0); padding: 2px 4px 4px; position: sticky; top: 0; background: var(--color-bg-surface, #fff); }
     .st { display: flex; align-items: center; gap: 4px; padding: 2px 4px; font-size: var(--font-size-sm); cursor: grab; border-radius: 4px; }
     .st:hover { background: var(--color-bg-container-secondary, #fafafa); }
     .st.off { opacity: .5; }
     .pin { color: var(--color-primary, #1677ff); font-size: 12px; }
-    .st-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Название станции — всегда в одну строку, ширину колонке задаёт контент. */
+    .st-name { white-space: nowrap; }
     .empty { color: var(--color-text-secondary); font-size: var(--font-size-sm); text-align: center; padding: 12px 0; }
   `],
 })

@@ -293,7 +293,7 @@ function todayMsk(): string {
   `,
   styles: [`
     .page { display: flex; flex-direction: column; gap: var(--space-md); width: 100%; }
-    .card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+    .card { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     .controls { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
     .lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .spacer { flex: 1 1 auto; }

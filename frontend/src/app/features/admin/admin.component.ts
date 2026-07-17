@@ -122,7 +122,7 @@ import { AdminApiService, AdminColumn, AdminRow, AdminTable } from './admin-api.
   `,
   styles: [`
     .page { display: flex; flex-direction: column; gap: var(--space-md); }
-    .card { border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+    .card { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     .toolbar { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-md); }
     .tsel { min-width: 260px; }
     .search { max-width: 260px; }

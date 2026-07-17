@@ -21,7 +21,7 @@ import { environment } from '../../../environments/environment';
     </nz-card>
   `,
   styles: [`
-    .card { max-width: 640px; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+    .card { max-width: 640px; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     p { margin: var(--space-sm) 0; }
     .subtitle { color: var(--color-text-secondary); font-size: var(--font-size-subtitle); }
     .muted { color: var(--color-text-muted); }

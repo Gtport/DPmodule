@@ -37,5 +37,16 @@
 
 @box-shadow-base: 0 2px 8px rgba(0, 0, 0, 0.1);
 
+/* Стиль gtport: чипы (nz-tag) — без заливки, скругление карточек 8px. */
+@tag-default-bg: transparent;
+@card-radius: 8px;
+
+/* Чипы пресетных цветов (nzColor="blue"/"success"/…) Less-переменными не
+ * покрываются — точечное исключение из правила §9.4 «не оверрайдить .ant-*»:
+ * убираем только заливку, контур и цвет текста остаются от пресета. */
+.ant-tag {
+  background: transparent;
+}
+
 /* Токены IQPort для собственных компонентов (CSS custom properties). */
 @import './styles/tokens.css';
