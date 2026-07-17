@@ -57,7 +57,7 @@ import { AdminApiService, AdminColumn, AdminRow, AdminTable } from './admin-api.
                     [nzScroll]="{ x: 'max-content', y: '62vh' }" class="grid">
             <thead>
               <tr>
-                @for (c of columns(); track c.name) {
+                @for (c of visibleColumns(); track c.name) {
                   <th>{{ c.label || c.name }}</th>
                 }
                 <th nzRight nzWidth="120px"></th>
@@ -66,7 +66,7 @@ import { AdminApiService, AdminColumn, AdminRow, AdminTable } from './admin-api.
             <tbody>
               @for (row of tbl.data; track rowKey(row)) {
                 <tr>
-                  @for (c of columns(); track c.name) {
+                  @for (c of visibleColumns(); track c.name) {
                     <td [class.num]="c.kind === 'number'">{{ cell(row, c) }}</td>
                   }
                   <td nzRight class="ops">
@@ -165,8 +165,11 @@ export class AdminComponent implements OnInit {
     return this.copying() ? 'Новая строка (копия)' : 'Новая строка';
   });
 
-  /** Колонки формы: ключ-serial не правится руками. */
-  readonly formColumns = computed(() => this.columns().filter((c) => !c.pk));
+  /** Видимые колонки грида (служебные штампы скрыты). */
+  readonly visibleColumns = computed(() => this.columns().filter((c) => !c.hidden));
+
+  /** Колонки формы: ключ-serial и служебные не правятся руками. */
+  readonly formColumns = computed(() => this.columns().filter((c) => !c.pk && !c.hidden));
 
   readonly filteredRows = computed(() => {
     const q = this.search().trim().toLowerCase();

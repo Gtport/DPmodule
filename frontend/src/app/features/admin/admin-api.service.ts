@@ -17,6 +17,7 @@ export interface AdminColumn {
   kind: 'number' | 'text' | 'boolean';
   required: boolean;
   pk: boolean;
+  hidden: boolean; // служебная колонка (created_at/updated_at) — не показывается
 }
 
 /** Строка справочника в динамическом виде. */

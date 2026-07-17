@@ -103,6 +103,7 @@ func (r *AdminTablesRepository) Columns(ctx context.Context, table string) ([]do
 			Label:    c.Label,
 			Kind:     kind,
 			Required: c.Nullable == "NO" && c.Default == nil,
+			Hidden:   c.Name == "created_at" || c.Name == "updated_at",
 		}
 	}
 	return out, nil

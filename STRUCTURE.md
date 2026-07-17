@@ -219,6 +219,9 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
   `list_tables` (marka, stations; новый справочник в редакторе = INSERT-строка) +
   суррогатный `marka.id` (bigserial: естественный ключ составной, а универсальному
   CRUD нужен одноколоночный).
+- `000035_admin_more_tables.*.sql` — в админ-редактор добавлены sf, naznach_station
+  и cargo (строки реестра + русские подписи колонок); служебные created_at/updated_at
+  в редакторе скрыты, updated_at штампуется автоматически при правке.
 - `000034_admin_column_labels.*.sql` — русские подписи колонок админ-редактора:
   комментарии к колонкам (`COMMENT ON COLUMN`, marka + stations); редактор читает
   их из `pg_description` вместе со схемой — подписи это данные, не хардкод фронта.
