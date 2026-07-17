@@ -87,6 +87,17 @@ func (r *Status9Repository) UpsertMissing(ctx context.Context, items []domain.Di
 	return int(res.RowsAffected), nil
 }
 
+func (r *Status9Repository) MissingOlderThan(ctx context.Context, cutoff domain.LocalTime) ([]string, error) {
+	var vagons []string
+	err := r.db.WithContext(ctx).Model(&status9Model{}).
+		Where("status = 8 AND updated_at < ?", cutoff).
+		Pluck("vagon", &vagons).Error
+	if err != nil {
+		return nil, err
+	}
+	return vagons, nil
+}
+
 func (r *Status9Repository) DeleteByVagons(ctx context.Context, vagons []string) (int, error) {
 	if len(vagons) == 0 {
 		return 0, nil

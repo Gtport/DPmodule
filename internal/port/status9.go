@@ -20,4 +20,8 @@ type Status9Repository interface {
 	UpsertMissing(ctx context.Context, items []domain.Dislocation) (int, error)
 	// DeleteByVagons удаляет кандидатов по номерам вагонов. Возвращает число удалённых.
 	DeleteByVagons(ctx context.Context, vagons []string) (int, error)
+	// MissingOlderThan возвращает номера пропавших (статус 8) с updated_at раньше
+	// cutoff — кандидаты на автоочистку (сам DELETE — через DeleteByVagons, чтобы
+	// RAM-кэш и БД чистились одним путём).
+	MissingOlderThan(ctx context.Context, cutoff domain.LocalTime) ([]string, error)
 }

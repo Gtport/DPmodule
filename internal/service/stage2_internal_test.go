@@ -19,10 +19,11 @@ func (s s9StubDisl) ReplaceActual(context.Context, []domain.Dislocation) error {
 
 // s9StubRepo — in-memory port.Status9Repository (vagon → статус в таблице).
 type s9StubRepo struct {
-	vagons   map[string]int // vagon → статус (8/9)
-	inserted []string
-	deleted  []string
-	missing8 []string
+	vagons    map[string]int              // vagon → статус (8/9)
+	updatedAt map[string]domain.LocalTime // vagon → updated_at (для MissingOlderThan)
+	inserted  []string
+	deleted   []string
+	missing8  []string
 }
 
 func (r *s9StubRepo) VagonStatuses(context.Context) (map[string]int, error) {
@@ -61,6 +62,19 @@ func (r *s9StubRepo) DeleteByVagons(_ context.Context, vagons []string) (int, er
 		}
 	}
 	return n, nil
+}
+
+func (r *s9StubRepo) MissingOlderThan(_ context.Context, cutoff domain.LocalTime) ([]string, error) {
+	var out []string
+	for v, s := range r.vagons {
+		if s != 8 {
+			continue
+		}
+		if ua, ok := r.updatedAt[v]; ok && ua.Time().Before(cutoff.Time()) {
+			out = append(out, v)
+		}
+	}
+	return out, nil
 }
 
 func derefStatus(p *int) int {
@@ -278,6 +292,31 @@ func TestReconcile_Missing8(t *testing.T) {
 	assert.NotContains(t, repo.vagons, "M4") // прибыл и уехал — штатно
 	assert.NotContains(t, repo.vagons, "M5") // выгружен и уехал — штатно
 	assert.ElementsMatch(t, []string{"M1", "M3"}, repo.missing8)
+}
+
+// Автоочистка: пропавшие (8) старше cutoff удаляются из БД и RAM; свежие 8 и
+// живые кандидаты 9 не затрагиваются.
+func TestPurgeMissingOlderThan(t *testing.T) {
+	ctx := context.Background()
+	lt := func(d int) domain.LocalTime {
+		return domain.LocalTime(time.Date(2026, 7, d, 12, 0, 0, 0, time.UTC))
+	}
+	repo := &s9StubRepo{
+		vagons:    map[string]int{"OLD1": 8, "OLD2": 8, "FRESH": 8, "LIVE": 9},
+		updatedAt: map[string]domain.LocalTime{"OLD1": lt(1), "OLD2": lt(5), "FRESH": lt(15), "LIVE": lt(1)},
+	}
+	cache := s9cache(t, repo)
+
+	n, err := cache.PurgeMissingOlderThan(ctx, lt(10)) // cutoff 10.07
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, n) // OLD1, OLD2
+	assert.ElementsMatch(t, []string{"OLD1", "OLD2"}, repo.deleted)
+	assert.NotContains(t, repo.vagons, "OLD1")
+	assert.Contains(t, repo.vagons, "FRESH")        // свежий 8 остался
+	assert.Contains(t, repo.vagons, "LIVE")         // живой 9 не тронут, хоть и старый
+	assert.NotContains(t, cache.Statuses(), "OLD1") // RAM тоже почищен
+	assert.Contains(t, cache.Statuses(), "FRESH")
 }
 
 // Вагон был защищённым 8, вернулся живым кандидатом 9 → снять 8, записать 9.

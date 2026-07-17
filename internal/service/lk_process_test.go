@@ -87,6 +87,10 @@ func (f *fakeStatus9Repo) DeleteByVagons(_ context.Context, vagons []string) (in
 	return n, nil
 }
 
+func (f *fakeStatus9Repo) MissingOlderThan(context.Context, domain.LocalTime) ([]string, error) {
+	return nil, nil // возраст записей fake не хранит — автоочистка в этих тестах не участвует
+}
+
 // fakeStatus6Repo — in-memory port.Status6Repository.
 type fakeStatus6Repo struct {
 	stored   map[string]domain.Dislocation
