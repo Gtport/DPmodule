@@ -82,9 +82,8 @@ function todayMsk(): string {
             }
           </nz-select>
 
-          <app-file-drop compact accept=".xlsx" [busy]="busyUpload()" class="plan-drop"
-                         text="Загрузить план: нажмите или перетащите файл"
-                         (file)="onPlanFile($event)" />
+          <app-file-drop overlay accept=".xlsx" [busy]="busyUpload()"
+                         text="план загрузится" (file)="onPlanFile($event)" />
 
           <button
             nz-button
@@ -293,7 +292,6 @@ function todayMsk(): string {
     .page { display: flex; flex-direction: column; gap: var(--space-md); width: 100%; }
     .card { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     .controls { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
-    .plan-drop { width: 330px; }
     .lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .spacer { flex: 1 1 auto; }
     .summary { color: var(--color-text-secondary); font-size: var(--font-size-sm); }

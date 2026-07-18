@@ -78,9 +78,10 @@
   --shadow-card-hover: var(--shadow-lg);
 
   /* Зона загрузки файлов (app-file-drop, стиль gtport FileUploader):
-     лёгкая синяя подложка = primary @ 2% / 5% (hover) */
+     лёгкая синяя подложка = primary @ 2% / 5% (hover); overlay — затемнение экрана */
   --color-drop-bg: rgba(22, 119, 255, 0.02);
   --color-drop-bg-hover: rgba(22, 119, 255, 0.05);
+  --color-drop-overlay: rgba(22, 119, 255, 0.12);
 
   /* Фокус-кольцо (§10: = --color-primary @ 20%) */
   --focus-ring: 0 0 0 2px rgba(22, 119, 255, 0.2);

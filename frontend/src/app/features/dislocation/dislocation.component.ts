@@ -38,7 +38,12 @@ import { FileDropComponent } from '../../shared/file-drop.component';
       </div>
 
       <!-- ЛК: ручной двухшаговый приём (загрузка → обработка) -->
-      <nz-card nzTitle="Приём ЛК (ручной)" class="card">
+      <nz-card nzTitle="Приём ЛК (ручной)" [nzExtra]="lkReload" class="card">
+        <ng-template #lkReload>
+          <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Обновить список принятых файлов" (click)="loadStatus()">
+            <span nz-icon nzType="reload"></span>
+          </button>
+        </ng-template>
         <p class="hint">Шаг 1 — загрузите xlsx-файлы (по одному на грузополучателя). Шаг 2 — «Обновить дислокацию».</p>
 
         <app-file-drop accept=".xlsx" [multiple]="true" [busy]="busyUpload()"
@@ -46,24 +51,20 @@ import { FileDropComponent } from '../../shared/file-drop.component';
                        hint="xlsx, по одному файлу на грузополучателя; можно несколько сразу"
                        (file)="onLkFile($event)" />
 
-        <div class="toolbar">
-          <button nz-button nz-tooltip nzTooltipTitle="Обновить список принятых файлов" (click)="loadStatus()">
-            <span nz-icon nzType="reload"></span>
-          </button>
-        </div>
-
         <nz-spin [nzSpinning]="loadingStatus()">
           <div class="files">
             @for (f of status()?.files ?? []; track f.filename) {
-              <div class="frow" [class.frow-warn]="issuesFor(f.okpo).length">
-                <span class="forg" [title]="f.organisation">{{ f.organisation || ('ОКПО ' + f.okpo) }}</span>
-                <span class="fterm">{{ f.terminals.join(' · ') || '—' }}</span>
+              <!-- Сокращённое имя (краткие имена терминалов); полное наименование и
+                   имя файла — в подсказке. Замечания — только чипами, без заливки строки. -->
+              <div class="frow">
+                <span class="forg" [title]="f.organisation + ' · ' + f.filename">
+                  {{ f.terminals.join(' · ') || ('ОКПО ' + f.okpo) }}
+                </span>
                 <nz-tag class="chip" [nzColor]="ageColor(f.age_minutes)">{{ fmtTs(f.formation_ts) }} · {{ f.age_minutes }}м</nz-tag>
                 @for (iss of issuesFor(f.okpo); track iss.code) {
                   <nz-tag class="chip" [nzColor]="iss.level === 'block' ? 'error' : 'warning'"
                           nz-tooltip [nzTooltipTitle]="iss.message">{{ issueLabel(iss.code) }}</nz-tag>
                 }
-                <span class="fname" [title]="f.filename">{{ f.filename }}</span>
               </div>
             } @empty {
               <p class="muted">Файлы ЛК не загружены (для ручной загрузки). Основной источник — АСУ выше.</p>
@@ -146,13 +147,12 @@ import { FileDropComponent } from '../../shared/file-drop.component';
   styles: [`
     /* Страница — на всю ширину (статус-панель и т.п.); карточки приёма — по-прежнему компактные. */
     .page { display: flex; flex-direction: column; gap: var(--space-md); }
-    .asu-bar, .card { max-width: 700px; }
+    .asu-bar, .card { max-width: 420px; }
     .card { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     /* АСУ — отдельная строка над карточкой ЛК (основной, одношаговый источник). */
     .asu-bar { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
     .asu-hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); margin: 0 0 var(--space-md); }
-    .toolbar { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
     .spacer { flex: 1 1 auto; }
     /* Шаг 2 — статус + кнопка обработки, отдельной строкой под списком файлов. */
     .step2 {
@@ -164,15 +164,12 @@ import { FileDropComponent } from '../../shared/file-drop.component';
     /* Компактный список файлов ЛК — каждый файл строго в одну строку. */
     .files { margin-top: var(--space-sm); display: flex; flex-direction: column; }
     .frow {
-      display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-md);
+      display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-sm);
       padding: 4px 2px; border-bottom: 1px solid var(--color-border, #f0f0f0); font-size: var(--font-size-sm);
     }
     .frow:last-child { border-bottom: none; }
-    .frow-warn { background: var(--color-warning-bg, #fffbe6); }
     .frow-issue { color: var(--color-text-secondary); }
-    .forg { flex: 0 1 220px; min-width: 120px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .fterm { flex: 0 0 auto; color: var(--color-text-secondary); white-space: nowrap; }
-    .fname { flex: 1 1 auto; min-width: 0; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+    .forg { flex: 1 1 auto; min-width: 60px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .imsg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .chip { margin: 0; white-space: nowrap; }
     /* Сводка результата */
@@ -281,7 +278,7 @@ export class DislocationComponent implements OnInit {
   /** Честный статус «почему не готово» по блокирующим замечаниям (детали — в строках файлов). */
   notReadyReason(st: LKStatus): string {
     const blocks = st.issues.filter((i) => i.level === 'block').map((i) => i.code);
-    if (blocks.includes('stale')) return 'файлы устарели — не годятся для обновления';
+    if (blocks.includes('stale')) return 'файлы устарели';
     if (blocks.includes('missing')) return 'не хватает файлов грузополучателей';
     if (blocks.includes('gap')) return 'файлы из разных срезов';
     return 'есть замечания — обработка невозможна';
