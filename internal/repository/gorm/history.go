@@ -137,3 +137,50 @@ func (r *HistoryRepository) UpdateFields(ctx context.Context, id string, fields 
 	return r.db.WithContext(ctx).Model(&vagonHistoryModel{}).
 		Where("id = ?", id).Updates(fields).Error
 }
+
+// ArrivedRows — строки с фактом прибытия за период (date_prib_d ∈ [from; to]),
+// с фильтром по терминалам naznach (пусто — все). Читает по индексу
+// ix_vagon_history_date_prib_d; сортировка — стабильная, по времени прибытия.
+func (r *HistoryRepository) ArrivedRows(ctx context.Context, from, to domain.LocalTime, naznach []string) ([]domain.VagonHistory, error) {
+	q := r.db.WithContext(ctx).Model(&vagonHistoryModel{}).
+		Where("date_prib IS NOT NULL").
+		Where("date_prib_d BETWEEN ? AND ?", from, to)
+	if len(naznach) > 0 {
+		q = q.Where("naznach IN ?", naznach)
+	}
+	var ms []vagonHistoryModel
+	if err := q.Order("date_prib, index_pp, vagon").Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.VagonHistory, len(ms))
+	for i, m := range ms {
+		out[i] = toHistoryDomain(m)
+	}
+	return out, nil
+}
+
+// toHistoryDomain — обратный маппинг ORM-модели в доменную структуру (полный,
+// зеркало toHistoryModel).
+func toHistoryDomain(m vagonHistoryModel) domain.VagonHistory {
+	return domain.VagonHistory{
+		ID: m.ID, Vagon: m.Vagon, InvoiceMain: m.InvoiceMain, Invoice: m.Invoice,
+		IndexMain: m.IndexMain, IndexPp: m.IndexPp, DateNachD: m.DateNachD,
+		StationNach: m.StationNach, Gruzotpr: m.Gruzotpr, Zayavka: m.Zayavka,
+		StanNazn: m.StanNazn, GruzpolS: m.GruzpolS, Naznach: m.Naznach,
+		CargoS: m.CargoS, CargoGroup: m.CargoGroup,
+		FreightExactName: m.FreightExactName, GtdNumber: m.GtdNumber, Ves: m.Ves,
+		Client: m.Client, RodVagUch: m.RodVagUch,
+		CarOwnerName: m.CarOwnerName, CarOwnerOkpo: m.CarOwnerOkpo,
+		CarTenantName: m.CarTenantName, CarTenantOkpo: m.CarTenantOkpo,
+		CarTrustedName: m.CarTrustedName, CarTrustedOkpo: m.CarTrustedOkpo,
+		Owner:       m.Owner,
+		PereadrType: m.PereadrType, PereadrPort: m.PereadrPort,
+		Status: m.Status, DateDostav: m.DateDostav, PlanMsk: m.PlanMsk, PlanJd: m.PlanJd,
+		Otkl: m.Otkl, Delay: m.Delay,
+		DatePrib: m.DatePrib, DatePribD: m.DatePribD, DateVigr: m.DateVigr,
+		DateVigrD: m.DateVigrD, PlaceVigr: m.PlaceVigr,
+		Frost: m.Frost, Shipments: m.Shipments, Peregruz: m.Peregruz,
+		Info1: m.Info1, Info2: m.Info2, Sms1: m.Sms1, Sms2: m.Sms2, Sms3: m.Sms3,
+		Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+	}
+}

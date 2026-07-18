@@ -41,6 +41,10 @@ func (r *histStubRepo) UpdateFields(_ context.Context, id string, f map[string]a
 	return nil
 }
 
+func (r *histStubRepo) ArrivedRows(_ context.Context, _, _ domain.LocalTime, _ []string) ([]domain.VagonHistory, error) {
+	return nil, nil
+}
+
 func TestBuildHistoryRow(t *testing.T) {
 	now := *ltm(2026, 7, 2, 6, 0)
 

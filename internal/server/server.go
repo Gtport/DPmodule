@@ -150,6 +150,10 @@ func Build(
 			// Экран «Перестановки/Переадресация»: группировки из RAM-снимка,
 			// батч-правка naznach/pereadr_* с одним пересчётом Stage 3–4.
 			handler.NewRearrangeHandler(service.NewRearrangeService(proc)).RegisterRoutes(api)
+
+			// «История прибывших» домашней страницы: чтение vagon_history (веха
+			// прибытия из Stage 2), группировка поездов; только просмотр.
+			handler.NewArrivalsHandler(service.NewArrivalsService(historyRepo, dirCache)).RegisterRoutes(api)
 		}
 	}
 
