@@ -33,6 +33,7 @@ type VagonHistory struct {
 	CarTenantOkpo    string
 	CarTrustedName   string
 	CarTrustedOkpo   string
+	Owner            string // чей вагон: оператор → арендатор → собственник (см. Dislocation)
 
 	PereadrType string // переадресация: "" / "own" / "ext" (см. Dislocation)
 	PereadrPort string // имя внешнего порта при "ext"

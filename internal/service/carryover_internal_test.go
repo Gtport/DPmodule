@@ -163,3 +163,50 @@ func TestCarryOver_FixZeroRasst(t *testing.T) {
 	enrichFromActual(&nw2, &ex, now0())
 	assert.Equal(t, 0, *nw2.RasstStanNazn)
 }
+
+// computeOwner: приоритет оператор (trusted) → арендатор (tenant) → собственник;
+// имя вперёд ОКПО, при пустом имени — ОКПО.
+func TestComputeOwner_Priority(t *testing.T) {
+	r := domain.Dislocation{
+		CarOwnerName: "ПАО «ТФМ»", CarOwnerOkpo: "94490192",
+		CarTenantName: "ООО «Профит Рейл»", CarTenantOkpo: "93464330",
+		CarTrustedName: "ООО «Атлант»", CarTrustedOkpo: "09175636",
+	}
+	assert.Equal(t, "ООО «Атлант»", computeOwner(&r))
+
+	r.CarTrustedName, r.CarTrustedOkpo = "", ""
+	assert.Equal(t, "ООО «Профит Рейл»", computeOwner(&r))
+
+	r.CarTenantName, r.CarTenantOkpo = "", ""
+	assert.Equal(t, "ПАО «ТФМ»", computeOwner(&r))
+
+	// только ОКПО без имени
+	r.CarOwnerName = ""
+	assert.Equal(t, "94490192", computeOwner(&r))
+
+	r.CarOwnerOkpo = ""
+	assert.Equal(t, "", computeOwner(&r))
+}
+
+// owner: наследуется из актуальной; при пустом — вычисляется из car_*-полей
+// (после слияния carryNewFields); новый вагон — сразу из полей.
+func TestCarryOver_Owner(t *testing.T) {
+	st2 := 2
+	// 1) в актуальной owner уже есть → наследуем, даже если поля дают другое
+	ex := domain.Dislocation{Vagon: "V", Status: &st2, Owner: "АО «НТК»",
+		CarTrustedName: "ООО «Атлант»"}
+	nw := domain.Dislocation{Vagon: "V"}
+	enrichFromActual(&nw, &ex, now0())
+	assert.Equal(t, "АО «НТК»", nw.Owner)
+
+	// 2) в актуальной пусто → вычисляем из слитых полей (trusted из актуальной)
+	ex2 := domain.Dislocation{Vagon: "V", Status: &st2, CarTrustedName: "ООО «Атлант»"}
+	nw2 := domain.Dislocation{Vagon: "V", CarOwnerName: "ПАО «ТФМ»"}
+	enrichFromActual(&nw2, &ex2, now0())
+	assert.Equal(t, "ООО «Атлант»", nw2.Owner)
+
+	// 3) новый вагон: из собственных полей, оператора нет → арендатор
+	nw3 := domain.Dislocation{Vagon: "N", CarTenantName: "АО «ПГК»", CarOwnerName: "ПАО «ТФМ»"}
+	initNewVagon(&nw3)
+	assert.Equal(t, "АО «ПГК»", nw3.Owner)
+}

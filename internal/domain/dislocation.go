@@ -58,7 +58,7 @@ type Dislocation struct {
 	Gruzpol       string `json:"gruzpol"`         // имя грузополучателя (Stage 2 ← port.Organisation)
 	GruzpolS      string `json:"gruzpol_s"`       // краткое имя причала (УТ-1/АЭ/ГУТ-2) ← port.NameS
 	Naznach       string `json:"naznach"`         // фактическое назначение (по умолчанию = GruzpolS)
-	Perestanovka  string `json:"perestanovka"`    // признак перестановки (Stage 3)
+	Owner         string `json:"owner"`           // чей вагон: оператор → арендатор → собственник (S2-2, carry-over)
 
 	// ── Груз ─────────────────────────────────────────────────────────────────
 	CodeCargo        string   `json:"code_cargo"`         // код груза ЕТСНГ (ключ marka)
