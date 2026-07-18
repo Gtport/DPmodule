@@ -161,6 +161,10 @@ func (f *fakeHistoryRepo) UpdateFields(_ context.Context, id string, fields map[
 	return nil
 }
 
+func (f *fakeHistoryRepo) ArrivedRows(_ context.Context, _, _ domain.LocalTime, _ []string) ([]domain.VagonHistory, error) {
+	return nil, nil
+}
+
 // s9c/s6c — прогретые кэши поверх fake-репозиториев (для NewLKProcessor).
 func s9c(t *testing.T, repo *fakeStatus9Repo) *service.Status9Cache {
 	t.Helper()
