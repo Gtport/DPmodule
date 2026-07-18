@@ -38,6 +38,7 @@ type vagonHistoryModel struct {
 	CarTenantOkpo    string   `gorm:"column:car_tenant_okpo"`
 	CarTrustedName   string   `gorm:"column:car_trusted_name"`
 	CarTrustedOkpo   string   `gorm:"column:car_trusted_okpo"`
+	Owner            string   `gorm:"column:owner"`
 	PereadrType      string   `gorm:"column:pereadr_type"`
 	PereadrPort      string   `gorm:"column:pereadr_port"`
 
@@ -81,6 +82,7 @@ func toHistoryModel(h domain.VagonHistory) vagonHistoryModel {
 		CarOwnerName: h.CarOwnerName, CarOwnerOkpo: h.CarOwnerOkpo,
 		CarTenantName: h.CarTenantName, CarTenantOkpo: h.CarTenantOkpo,
 		CarTrustedName: h.CarTrustedName, CarTrustedOkpo: h.CarTrustedOkpo,
+		Owner:       h.Owner,
 		PereadrType: h.PereadrType, PereadrPort: h.PereadrPort,
 		Status: h.Status, DateDostav: h.DateDostav, PlanMsk: h.PlanMsk, PlanJd: h.PlanJd,
 		Otkl: h.Otkl, Delay: h.Delay,

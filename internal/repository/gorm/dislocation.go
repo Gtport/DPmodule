@@ -48,7 +48,7 @@ type dislocationModel struct {
 	Gruzpol       string `gorm:"column:gruzpol"`
 	GruzpolS      string `gorm:"column:gruzpol_s"`
 	Naznach       string `gorm:"column:naznach"`
-	Perestanovka  string `gorm:"column:perestanovka"`
+	Owner         string `gorm:"column:owner"`
 
 	CodeCargo        string   `gorm:"column:code_cargo"`
 	CodeCargoGng     string   `gorm:"column:code_cargo_gng"`

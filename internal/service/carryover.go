@@ -115,6 +115,14 @@ func copySelectedFromActual(newRec, ex *domain.Dislocation, now domain.LocalTime
 	}
 
 	carryNewFields(newRec, ex)
+
+	// owner наследуется из снимка; если там пусто — вычисляем из car_*-полей
+	// (уже слитых carryNewFields: снимок вернее потока).
+	newRec.Owner = ex.Owner
+	if newRec.Owner == "" {
+		newRec.Owner = computeOwner(newRec)
+	}
+
 	newRec.CreatedAt = ex.CreatedAt // момент первого появления вагона
 	newRec.UpdatedAt = now
 }
@@ -131,6 +139,28 @@ func initNewVagon(r *domain.Dislocation) {
 	if r.IndexLast == "" {
 		r.IndexLast = r.Index
 	}
+	r.Owner = computeOwner(r)
+}
+
+// computeOwner — «чей вагон»: кто фактически распоряжается. Приоритет (решение
+// владельца, сверено с паспортами ЛК РЖД SPV4659): оператор по доверенности
+// (car_trusted) → арендатор (car_tenant) → собственник (car_owner). Пишем имя;
+// если у конторы пришёл только ОКПО без имени — ОКПО. Все поля пустые → ''
+// (вычислится в следующем снимке, когда данные появятся).
+func computeOwner(r *domain.Dislocation) string {
+	for _, c := range [][2]string{
+		{r.CarTrustedName, r.CarTrustedOkpo},
+		{r.CarTenantName, r.CarTenantOkpo},
+		{r.CarOwnerName, r.CarOwnerOkpo},
+	} {
+		if c[0] != "" {
+			return c[0]
+		}
+		if c[1] != "" {
+			return c[1]
+		}
+	}
+	return ""
 }
 
 // determineIndexMain: у актуальной пусто/«Б/И» → текущий index; иначе актуальный

@@ -73,6 +73,9 @@ func historyUpdateFields(prev, r *domain.Dislocation) map[string]any {
 	if prev.Invoice != r.Invoice {
 		fields["invoice"] = r.Invoice // текущая накладная; invoice_main не трогаем
 	}
+	if prev.Owner != r.Owner && r.Owner != "" {
+		fields["owner"] = r.Owner // owner вычислился/появился после вставки строки рейса
+	}
 	ps, ns := derefInt(prev.Status), derefInt(r.Status)
 	if ps == ns {
 		return fields
@@ -112,6 +115,7 @@ func buildHistoryRow(r *domain.Dislocation, now domain.LocalTime) domain.VagonHi
 		CarOwnerName: r.CarOwnerName, CarOwnerOkpo: r.CarOwnerOkpo,
 		CarTenantName: r.CarTenantName, CarTenantOkpo: r.CarTenantOkpo,
 		CarTrustedName: r.CarTrustedName, CarTrustedOkpo: r.CarTrustedOkpo,
+		Owner:       r.Owner,
 		PereadrType: r.PereadrType, PereadrPort: r.PereadrPort,
 		Status: r.Status, DateDostav: r.DateDostav, PlanMsk: r.PlanMsk, PlanJd: r.PlanJd,
 		Frost: r.Frost, Shipments: r.Shipments, Peregruz: r.Peregruz,
