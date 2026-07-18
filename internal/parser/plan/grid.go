@@ -102,10 +102,29 @@ func (g *GridParser) Parse(rows [][]string, sourceFile string) (*PlanDoc, error)
 		return nil, err
 	}
 	return &PlanDoc{
-		PlanCode:   g.prof.PlanCode,
-		SourceFile: filepath.Base(sourceFile),
-		Nitki:      nitki,
+		PlanCode:    g.prof.PlanCode,
+		SourceFile:  filepath.Base(sourceFile),
+		StationName: titleStation(rows),
+		Nitki:       nitki,
 	}, nil
+}
+
+// titleRe — заголовок файла «План подвода поездов к станции X на DD.MM.YYYY».
+// Имя станции — до « на <дата>» (в имени станции может быть пробел: МЫС АСТАФЬЕВА).
+var titleRe = regexp.MustCompile(`(?i)к\s+станции\s+(.+?)\s+на\s+\d{2}[.\-/]\d{2}[.\-/]\d{4}`)
+
+// titleStation извлекает имя станции из строки-заголовка (первые строки листа,
+// до шапки с «N п/п»). Возвращает имя ВЕРХНИМ регистром; «» — заголовок не найден.
+// Используется гардом «файл не той станции» в сервисе загрузки плана.
+func titleStation(rows [][]string) string {
+	for r := 0; r < min(6, len(rows)); r++ {
+		for c := 0; c < min(8, len(rows[r])); c++ {
+			if m := titleRe.FindStringSubmatch(rows[r][c]); m != nil {
+				return strings.ToUpper(strings.Join(strings.Fields(m[1]), " "))
+			}
+		}
+	}
+	return ""
 }
 
 // findColumns находит строку шапки и ключевые столбцы; классифицирует листовые

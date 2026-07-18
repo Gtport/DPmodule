@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -215,6 +216,37 @@ func (c *DirectoryCache) PlanCodes() []string {
 	out := make([]string, 0, len(c.planTargets))
 	for code := range c.planTargets {
 		out = append(out, code)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// PlanStations — имена причальных станций (ВЕРХНИМ регистром) включённых
+// терминалов с данным plan_code (ports.station_code → справочник станций).
+// Опора гарда «файл плана не той станции»: станция из заголовка файла обязана
+// совпасть с одной из них. Не хардкод — реестр портов.
+func (c *DirectoryCache) PlanStations(planCode string) []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 2)
+	for _, p := range c.portsByNameS {
+		if !p.Enabled || !strings.EqualFold(strings.TrimSpace(p.PlanCode), strings.TrimSpace(planCode)) {
+			continue
+		}
+		kod, err := strconv.Atoi(strings.TrimSpace(p.StationCode))
+		if err != nil {
+			continue
+		}
+		st, ok := c.stations[kod]
+		if !ok {
+			continue
+		}
+		name := strings.ToUpper(strings.Join(strings.Fields(st.Name), " "))
+		if _, dup := seen[name]; name != "" && !dup {
+			seen[name] = struct{}{}
+			out = append(out, name)
+		}
 	}
 	sort.Strings(out)
 	return out

@@ -3,7 +3,6 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzTagModule } from 'ng-zorro-antd/tag';
-import { NzUploadModule, NzUploadFile } from 'ng-zorro-antd/upload';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzDescriptionsModule } from 'ng-zorro-antd/descriptions';
@@ -11,6 +10,7 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { DislocationApiService, LKIssue, LKProcessResult, LKStatus } from './dislocation-api.service';
 import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
+import { FileDropComponent } from '../../shared/file-drop.component';
 
 /**
  * Раздел «Дислокация»: статус-панель системы сверху + компактный приём ЛК
@@ -22,8 +22,8 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
   selector: 'app-dislocation',
   imports: [
     NzButtonModule, NzCardModule, NzTagModule,
-    NzUploadModule, NzIconModule, NzTooltipModule, NzDescriptionsModule, NzSpinModule,
-    PlanStatusPanelComponent,
+    NzIconModule, NzTooltipModule, NzDescriptionsModule, NzSpinModule,
+    PlanStatusPanelComponent, FileDropComponent,
   ],
   template: `
     <div class="page">
@@ -41,13 +41,12 @@ import { PlanStatusPanelComponent } from '../plan/plan-status-panel.component';
       <nz-card nzTitle="Приём ЛК (ручной)" class="card">
         <p class="hint">Шаг 1 — загрузите xlsx-файлы (по одному на грузополучателя). Шаг 2 — «Обновить дислокацию».</p>
 
-        <div class="toolbar">
-          <nz-upload nzAccept=".xlsx" [nzMultiple]="true" [nzShowUploadList]="false" [nzBeforeUpload]="beforeUpload">
-            <button nz-button [nzLoading]="busyUpload()">
-              <span nz-icon nzType="upload"></span> Загрузить ЛК
-            </button>
-          </nz-upload>
+        <app-file-drop accept=".xlsx" [multiple]="true" [busy]="busyUpload()"
+                       text="Нажмите или перетащите файлы ЛК в эту область"
+                       hint="xlsx, по одному файлу на грузополучателя; можно несколько сразу"
+                       (file)="onLkFile($event)" />
 
+        <div class="toolbar">
           <button nz-button nz-tooltip nzTooltipTitle="Обновить список принятых файлов" (click)="loadStatus()">
             <span nz-icon nzType="reload"></span>
           </button>
@@ -205,14 +204,13 @@ export class DislocationComponent implements OnInit {
     this.loadStatus();
   }
 
-  readonly beforeUpload = (file: NzUploadFile, _fileList: NzUploadFile[]): boolean => {
-    const raw = file.originFileObj ?? (file as unknown as File);
+  /** Файл из зоны загрузки (app-file-drop): очередь последовательной отправки. */
+  onLkFile(raw: File): void {
     this.pendingUploads.update((n) => n + 1);
     this.uploadChain = this.uploadChain
       .then(() => this.doUpload(raw))
       .finally(() => this.pendingUploads.update((n) => n - 1));
-    return false;
-  };
+  }
 
   /** Обработать принятые файлы ЛК в снимок (шаг 2). */
   async process(): Promise<void> {

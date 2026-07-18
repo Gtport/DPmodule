@@ -75,6 +75,29 @@ type PreparePlanResult struct {
 	Matched  int             `json:"matched"`
 }
 
+// checkPlanStation — гард «файл плана не той станции»: fileStation — станция из
+// заголовка файла («План подвода поездов к станции X на …»), expected — причальные
+// станции терминалов кода плана (реестр портов). Пустой expected (код без портов
+// со станцией) гард пропускает; пустая fileStation — отказ: без заголовка станцию
+// файла проверить нельзя («падать громко» на целостности данных).
+func checkPlanStation(fileStation string, expected []string) error {
+	if len(expected) == 0 {
+		return nil
+	}
+	if fileStation == "" {
+		return fmt.Errorf("в файле не найден заголовок «План подвода поездов к станции …» — " +
+			"невозможно проверить, той ли станции план; файл отклонён")
+	}
+	for _, e := range expected {
+		if fileStation == e {
+			return nil
+		}
+	}
+	return fmt.Errorf("файл — план станции %s, а выбрана станция %s: загрузка отклонена, "+
+		"выберите вкладку нужной станции или возьмите другой файл",
+		fileStation, strings.Join(expected, "/"))
+}
+
 // Prepare — фаза A. Возвращает токен (для confirm) и с.ф.-строки с кандидатами.
 // Снимок не изменяется. Нет с.ф. → SF пустой (фронт сразу зовёт confirm без диалога).
 func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, data []byte) (PreparePlanResult, error) {
@@ -96,6 +119,12 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 	doc, err := plan.ParseFile(path, planCode)
 	if err != nil {
 		return PreparePlanResult{}, fmt.Errorf("разбор плана: %w", err)
+	}
+	// Гард «файл не той станции»: станция из заголовка файла обязана совпасть с
+	// причальной станцией терминалов выбранного кода плана (защита данных — по
+	// ошибке загруженный план чужой станции портил снимок).
+	if err := checkPlanStation(doc.StationName, p.dir.PlanStations(planCode)); err != nil {
+		return PreparePlanResult{}, err
 	}
 
 	prev, err := p.buildPreview(ctx, doc.Nitki, prof.MatchRequiresNaznach, target)

@@ -8,7 +8,6 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
-import { NzUploadModule, NzUploadFile } from 'ng-zorro-antd/upload';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTabsModule } from 'ng-zorro-antd/tabs';
@@ -18,6 +17,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { PlanApiService, PlanApplyResult, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFCandidate, SFRow } from './plan-api.service';
 import { PlanStatusPanelComponent } from './plan-status-panel.component';
 import { IndexInputComponent } from './index-input.component';
+import { FileDropComponent } from '../../shared/file-drop.component';
 
 /**
  * Станции плана подвода со встроенным профилем на бэке (internal/parser/plan/
@@ -43,9 +43,9 @@ function todayMsk(): string {
   selector: 'app-plan',
   imports: [
     FormsModule, NzButtonModule, NzCardModule, NzTagModule,
-    NzTableModule, NzSelectModule, NzCheckboxModule, NzUploadModule, NzIconModule,
+    NzTableModule, NzSelectModule, NzCheckboxModule, NzIconModule,
     NzSpinModule, NzTabsModule, NzTooltipModule, NzModalModule,
-    PlanStatusPanelComponent, IndexInputComponent,
+    PlanStatusPanelComponent, IndexInputComponent, FileDropComponent,
   ],
   template: `
     <div class="page">
@@ -82,11 +82,9 @@ function todayMsk(): string {
             }
           </nz-select>
 
-          <nz-upload nzAccept=".xlsx" [nzShowUploadList]="false" [nzBeforeUpload]="beforeUpload">
-            <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Загрузить план" [nzLoading]="busyUpload()">
-              <span nz-icon nzType="upload"></span>
-            </button>
-          </nz-upload>
+          <app-file-drop compact accept=".xlsx" [busy]="busyUpload()" class="plan-drop"
+                         text="Загрузить план: нажмите или перетащите файл"
+                         (file)="onPlanFile($event)" />
 
           <button
             nz-button
@@ -295,6 +293,7 @@ function todayMsk(): string {
     .page { display: flex; flex-direction: column; gap: var(--space-md); width: 100%; }
     .card { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     .controls { display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap; }
+    .plan-drop { width: 330px; }
     .lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .spacer { flex: 1 1 auto; }
     .summary { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
@@ -539,11 +538,10 @@ export class PlanComponent implements OnInit, OnDestroy {
     return `загружен ${when}${recalc}`;
   }
 
-  /** Возврат false — сами шлём файл через сервис, штатный XHR nz-upload не нужен. */
-  readonly beforeUpload = (file: NzUploadFile): boolean => {
-    this.doUpload(file.originFileObj ?? (file as unknown as File));
-    return false;
-  };
+  /** Файл из зоны загрузки (app-file-drop). */
+  onPlanFile(file: File): void {
+    void this.doUpload(file);
+  }
 
   dmDate(ts: string | null): string {
     if (!ts || ts.length < 10) return '';
