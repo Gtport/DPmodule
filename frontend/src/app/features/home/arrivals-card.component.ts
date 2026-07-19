@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, input, signal } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
@@ -50,7 +50,7 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
 
     @if (expanded()) {
       <app-arrivals-history [station]="station()" [terminals]="terminals()"
-                            (closed)="expanded.set(false)" />
+                            (closed)="onHistoryClosed()" />
     }
   `,
   styles: [`
@@ -75,7 +75,7 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-sm); }
   `],
 })
-export class ArrivalsCardComponent implements OnInit {
+export class ArrivalsCardComponent implements OnInit, OnDestroy {
   private readonly api = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
 
@@ -89,15 +89,27 @@ export class ArrivalsCardComponent implements OnInit {
   /** Вагонов-кандидатов на прибытие (статус 9, ждут подтверждения). */
   readonly candidatesCount = signal(0);
 
+  /** Автообновление раз в минуту (фоновое, «умное»: без спиннера/перерисовки —
+   *  строки трекаются по ключу, DOM меняется только у изменившихся). */
+  private timer: ReturnType<typeof setInterval> | null = null;
+
   /** Последние 5 прибывших, свежие сверху (группы приходят по возрастанию времени). */
   readonly topGroups = computed(() => [...this.groups()].reverse().slice(0, 5));
 
   ngOnInit(): void {
-    void this.load();
+    void this.load(true);
+    this.timer = setInterval(() => void this.load(), 60_000);
   }
 
-  async load(): Promise<void> {
-    this.loading.set(true);
+  ngOnDestroy(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  /** initial — первая загрузка: показать «Загрузка…» и тост при ошибке.
+   *  Фоновые обновления молчаливые: контент подменяется без мигания, ошибка
+   *  сети не тревожит тостом каждую минуту (данные просто остаются прежними). */
+  async load(initial = false): Promise<void> {
+    if (initial) this.loading.set(true);
     try {
       const names = this.terminals().map((t) => t.name);
       const [res, cands] = await Promise.all([
@@ -107,10 +119,16 @@ export class ArrivalsCardComponent implements OnInit {
       this.groups.set(res.groups);
       this.candidatesCount.set((cands ?? []).reduce((n, c) => n + c.vagon_count, 0));
     } catch (err) {
-      this.msg.error(apiErrorMessage(err));
+      if (initial) this.msg.error(apiErrorMessage(err));
     } finally {
-      this.loading.set(false);
+      if (initial) this.loading.set(false);
     }
+  }
+
+  /** Закрытие модалки истории: подтянуть результат правок (подтверждения и т.п.). */
+  onHistoryClosed(): void {
+    this.expanded.set(false);
+    void this.load();
   }
 
   /** дд.мм чч:мм (компакт — без года). */
