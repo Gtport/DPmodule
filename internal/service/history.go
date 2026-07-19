@@ -97,6 +97,13 @@ func historyUpdateFields(prev, r *domain.Dislocation) map[string]any {
 		fields["plan_msk"] = r.PlanMsk
 		fields["plan_jd"] = r.PlanJd
 		fields["naznach"] = r.Naznach
+		// Индекс поезда на момент прибытия (решение владельца): в историю пишем
+		// ТЕКУЩИЙ индекс дислокации (r.Index — фактический поезд, которым вагон
+		// приехал), а не метку нитки плана. Строка истории создавалась при первом
+		// появлении вагона, когда прибытийного индекса ещё не было.
+		if r.Index != "" {
+			fields["index_pp"] = r.Index
+		}
 	}
 	return fields
 }
