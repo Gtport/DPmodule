@@ -340,3 +340,11 @@ func stageBytes(t *testing.T, baseDir, name string, data []byte) {
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o644))
 }
+
+func (f *fakeHistoryRepo) RowsByIDs(_ context.Context, _ []string) ([]domain.VagonHistory, error) {
+	return nil, nil
+}
+
+func (f *fakeHistoryRepo) UpdateFieldsBatch(_ context.Context, _ map[string]map[string]any) error {
+	return nil
+}

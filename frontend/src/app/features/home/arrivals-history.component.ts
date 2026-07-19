@@ -5,31 +5,40 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzModalModule } from 'ng-zorro-antd/modal';
+import { NzSliderModule } from 'ng-zorro-antd/slider';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
+import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 'ng-zorro-antd/dropdown';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
+import {
+  ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, TerminalTarget,
+} from './arrivals-api.service';
 
 /**
- * Модалка «История прибывших — <станция>» (перенос gtport HistoryTable, только
- * просмотр): таблица Дата / Индекс / План / Факт / Откл + колонка на каждый
- * терминал станции (подгруппы по naznach, клик — разворот вагонов). Фильтры:
- * поиск вагона (локальный), период С/По, «Сегодня/Вчера», обновление, свернуть
- * всё. Окно перемещается по экрану за заголовок (cdkDrag).
+ * Модалка «История прибывших — <станция>» (перенос gtport HistoryTable):
+ * таблица Дата / Индекс / План / Факт / Откл + колонка на каждый терминал
+ * станции (подгруппы по naznach, клик — разворот вагонов). Окно перемещается
+ * за заголовок (cdkDrag).
+ *
+ * Редактирование (перенос механики gtport, решения владельца): все операции —
+ * по ВЫБРАННЫМ вагонам (клик по чипу вагона; ПКМ по группе/подгруппе/вагону
+ * автовыделяет его состав): «Изменить прибытие» (индекс/план ЖД/факт, пересчёт
+ * отклонения на бэке), «Отменить прибытие» (только история, снимок не трогаем),
+ * «Выгрузить» (дата/место/смерзаемость), «В <терминал>» (перераспределение
+ * после прибытия; терминалы станции из реестра). Экспорт в Excel — вся таблица
+ * (листы «Поезда»+«Вагоны») и группа. Судовая партия не переносилась.
  */
 @Component({
   selector: 'app-arrivals-history',
   imports: [
     FormsModule, DragDropModule, NzButtonModule, NzIconModule, NzInputModule,
-    NzModalModule, NzSpinModule, NzTooltipModule,
+    NzModalModule, NzSliderModule, NzSpinModule, NzTooltipModule, NzDropDownModule,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="title" [nzFooter]="null" nzWidth="1250px"
               [nzMask]="false" nzWrapClassName="arrivals-wrap" (nzOnCancel)="closed.emit()">
       <ng-template #title>
-        <!-- Перетаскивание всего окна за заголовок; маска отключена, чтобы окно
-             можно было отодвинуть и смотреть страницу под ним. -->
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
           История прибывших — {{ station() }}
         </div>
@@ -37,6 +46,10 @@ import { ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, TerminalTarget } fro
       <ng-container *nzModalContent>
         <div class="bar">
           <b>Прибывшие {{ terminalNames().join('+') }}</b>
+          @if (selected().size) {
+            <span class="sel-cnt">выбрано: {{ selected().size }}</span>
+            <button nz-button nzSize="small" (click)="clearSelection()">Сбросить</button>
+          }
           <span class="spacer"></span>
           <input nz-input nzSize="small" class="search" placeholder="Поиск вагона…"
                  [ngModel]="search()" (ngModelChange)="onSearch($event)" />
@@ -45,6 +58,10 @@ import { ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, TerminalTarget } fro
           <span class="lbl">По</span>
           <input class="date" type="date" [ngModel]="to()" (ngModelChange)="to.set($event); load()" />
           <button nz-button nzSize="small" (click)="resetDates()">Сегодня/Вчера</button>
+          <button nz-button nzType="text" nzSize="small" nz-tooltip nzTooltipTitle="Скачать таблицу (Excel)"
+                  (click)="exportAll()">
+            <span nz-icon nzType="download"></span>
+          </button>
           <button nz-button nzType="text" nzSize="small" nz-tooltip nzTooltipTitle="Обновить" (click)="load()">
             <span nz-icon nzType="sync"></span>
           </button>
@@ -69,7 +86,7 @@ import { ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, TerminalTarget } fro
               </thead>
               <tbody>
                 @for (g of filteredGroups(); track g.key) {
-                  <tr>
+                  <tr (contextmenu)="openGroupMenu($event, g, menu)">
                     <td class="c-date">{{ fmtD(g.date_prib_d) }}</td>
                     <td class="c-idx num">{{ g.index_pp || '—' }}</td>
                     <td class="c-plan">{{ fmtDT(g.plan_jd) }}</td>
@@ -79,14 +96,18 @@ import { ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, TerminalTarget } fro
                     @for (t of terminals(); track t.name) {
                       <td class="c-term">
                         @for (sg of subsFor(g, t.name); track sg.key) {
-                          <div class="sg" (click)="toggle(g.key, sg.key)">
+                          <div class="sg" (click)="toggle(g.key, sg.key)"
+                               (contextmenu)="openSubMenu($event, g, sg, menu)">
                             <span nz-icon [nzType]="isOpen(g.key, sg.key) ? 'down' : 'right'" class="tw"></span>
                             <span [class.hit]="isHit(sg)">{{ sg.display }}</span>
                           </div>
                           @if (isOpen(g.key, sg.key)) {
                             <div class="vagons">
                               @for (v of sg.vagons; track v.id) {
-                                <span class="chip" [class.hit]="matches(v.vagon)">
+                                <span class="chip" [class.hit]="matches(v.vagon)"
+                                      [class.sel]="selected().has(v.id)"
+                                      (click)="toggleVagon(v.id)"
+                                      (contextmenu)="openVagonMenu($event, g, v.id, menu)">
                                   {{ v.vagon }}@if (v.shipments) { ({{ v.shipments }}) }
                                 </span>
                               }
@@ -103,6 +124,73 @@ import { ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, TerminalTarget } fro
             </table>
           </div>
         </nz-spin>
+
+        <p class="hint">Клик по вагону — выбор; ПКМ по поезду/составу/вагону — операции (применяются к выбранным вагонам).</p>
+      </ng-container>
+    </nz-modal>
+
+    <!-- ПКМ: операции по выбранным вагонам -->
+    <nz-dropdown-menu #menu="nzDropdownMenu">
+      <ul nz-menu>
+        <li nz-menu-item (click)="openEdit()">Изменить прибытие…</li>
+        <li nz-menu-item (click)="openUnload()">Выгрузить…</li>
+        @for (t of terminals(); track t.name) {
+          <li nz-menu-item (click)="applyNaznach(t.name)">В {{ t.name }}</li>
+        }
+        <li nz-menu-item nzDanger (click)="cancelArrival()">Отменить прибытие</li>
+        @if (ctxGroup(); as g) {
+          <li nz-menu-divider></li>
+          <li nz-menu-item (click)="exportGroup(g)">Экспорт группы в Excel</li>
+        }
+      </ul>
+    </nz-dropdown-menu>
+
+    <!-- Диалог «Изменить прибытие» -->
+    <nz-modal [nzVisible]="editOpen()" nzTitle="Изменить прибытие" nzWidth="420px"
+              (nzOnCancel)="editOpen.set(false)" (nzOnOk)="saveEdit()"
+              nzOkText="Сохранить" [nzOkDisabled]="!editValid()" [nzOkLoading]="applying()">
+      <ng-container *nzModalContent>
+        <div class="frm">
+          <label>Индекс поезда
+            <input nz-input [ngModel]="edIndex()" (ngModelChange)="edIndex.set($event)" placeholder="ХХХХ-ХХХ-ХХХХ" />
+          </label>
+          <label>Плановое прибытие (ЖД)
+            <span class="dt">
+              <input class="date" type="date" [ngModel]="edPlanD()" (ngModelChange)="edPlanD.set($event)" />
+              <input class="date" type="time" [ngModel]="edPlanT()" (ngModelChange)="edPlanT.set($event)" />
+            </span>
+          </label>
+          <label>Фактическое прибытие
+            <span class="dt">
+              <input class="date" type="date" [ngModel]="edFactD()" (ngModelChange)="edFactD.set($event)" />
+              <input class="date" type="time" [ngModel]="edFactT()" (ngModelChange)="edFactT.set($event)" />
+            </span>
+          </label>
+          <p class="mut">Вагонов: {{ selected().size }}. Отклонение пересчитается автоматически.</p>
+        </div>
+      </ng-container>
+    </nz-modal>
+
+    <!-- Диалог «Выгрузить» -->
+    <nz-modal [nzVisible]="unloadOpen()" nzTitle="Выгрузить" nzWidth="420px"
+              (nzOnCancel)="unloadOpen.set(false)" (nzOnOk)="saveUnload()"
+              nzOkText="Сохранить" [nzOkDisabled]="!unloadValid()" [nzOkLoading]="applying()">
+      <ng-container *nzModalContent>
+        <div class="frm">
+          <label>Дата и время выгрузки
+            <span class="dt">
+              <input class="date" type="date" [ngModel]="unD()" (ngModelChange)="unD.set($event)" />
+              <input class="date" type="time" [ngModel]="unT()" (ngModelChange)="unT.set($event)" />
+            </span>
+          </label>
+          <label>Место выгрузки
+            <input nz-input [ngModel]="unPlace()" (ngModelChange)="unPlace.set($event)" placeholder="Например: АЭ" />
+          </label>
+          <label>Смерзаемость: {{ unFrost() }}%
+            <nz-slider [ngModel]="unFrost()" (ngModelChange)="unFrost.set($event)" [nzStep]="10" />
+          </label>
+          <p class="mut">Вагонов: {{ selected().size }}.</p>
+        </div>
       </ng-container>
     </nz-modal>
   `,
@@ -110,6 +198,7 @@ import { ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, TerminalTarget } fro
     .ttl { cursor: move; user-select: none; }
     .bar { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-sm); }
     .spacer { flex: 1 1 auto; }
+    .sel-cnt { color: var(--color-primary); font-size: var(--font-size-sm); font-weight: 600; }
     .lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .search { width: 160px; }
     .date { height: 26px; padding: 0 6px; border: 1px solid var(--color-border, #d9d9d9);
@@ -130,15 +219,23 @@ import { ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, TerminalTarget } fro
     .tw { font-size: 10px; color: var(--color-text-muted); }
     .vagons { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 0 4px 18px; }
     .chip { font-variant-numeric: tabular-nums; border: 1px solid var(--color-border-dark);
-            border-radius: var(--radius-sm); padding: 0 4px; }
+            border-radius: var(--radius-sm); padding: 0 4px; cursor: pointer; }
+    .chip.sel { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-bg-surface); }
     .hit { background: var(--color-warning); border-radius: var(--radius-sm); }
+    .chip.sel.hit { background: var(--color-primary); }
     .mut { color: var(--color-text-muted); }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
+    .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+    .frm { display: flex; flex-direction: column; gap: var(--space-sm); }
+    .frm label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-sm);
+                 color: var(--color-text-secondary); }
+    .dt { display: flex; gap: var(--space-sm); }
   `],
 })
 export class ArrivalsHistoryComponent implements OnInit {
   private readonly api = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
+  private readonly ctxMenu = inject(NzContextMenuService);
 
   /** Станция (заголовок окна) и её терминалы (колонки/фильтр naznach). */
   readonly station = input.required<string>();
@@ -146,14 +243,36 @@ export class ArrivalsHistoryComponent implements OnInit {
   readonly closed = output<void>();
 
   readonly loading = signal(false);
+  readonly applying = signal(false);
   readonly groups = signal<ArrivalGroup[]>([]);
   readonly from = signal('');
   readonly to = signal('');
   readonly search = signal('');
   /** Развёрнутые подгруппы: ключ `group.key::sub.key`. */
   readonly open = signal<Set<string>>(new Set());
+  /** Выбранные вагоны (id) — цель всех операций правки. */
+  readonly selected = signal<Set<string>>(new Set());
+  /** Группа под курсором ПКМ (дефолты диалогов, экспорт группы). */
+  readonly ctxGroup = signal<ArrivalGroup | null>(null);
+
+  // Диалог «Изменить прибытие».
+  readonly editOpen = signal(false);
+  readonly edIndex = signal('');
+  readonly edPlanD = signal('');
+  readonly edPlanT = signal('');
+  readonly edFactD = signal('');
+  readonly edFactT = signal('');
+  // Диалог «Выгрузить».
+  readonly unloadOpen = signal(false);
+  readonly unD = signal('');
+  readonly unT = signal('');
+  readonly unPlace = signal('');
+  readonly unFrost = signal(0);
 
   readonly terminalNames = computed(() => this.terminals().map((t) => t.name));
+  readonly editValid = computed(() =>
+    !!this.edIndex().trim() && !!this.edPlanD() && !!this.edPlanT() && !!this.edFactD() && !!this.edFactT());
+  readonly unloadValid = computed(() => !!this.unD() && !!this.unT() && !!this.unPlace().trim());
 
   ngOnInit(): void {
     void this.load();
@@ -166,6 +285,7 @@ export class ArrivalsHistoryComponent implements OnInit {
       this.groups.set(res.groups);
       this.from.set(res.from);
       this.to.set(res.to);
+      this.selected.set(new Set());
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     } finally {
@@ -229,6 +349,160 @@ export class ArrivalsHistoryComponent implements OnInit {
     this.search.set('');
   }
 
+  // ── Выделение и ПКМ ──────────────────────────────────────────────────────
+  toggleVagon(id: string): void {
+    const next = new Set(this.selected());
+    next.has(id) ? next.delete(id) : next.add(id);
+    this.selected.set(next);
+  }
+
+  clearSelection(): void {
+    this.selected.set(new Set());
+  }
+
+  private addToSelection(ids: string[]): void {
+    const next = new Set(this.selected());
+    for (const id of ids) next.add(id);
+    this.selected.set(next);
+  }
+
+  openGroupMenu(ev: MouseEvent, g: ArrivalGroup, menu: NzDropdownMenuComponent): void {
+    ev.preventDefault();
+    this.ctxGroup.set(g);
+    this.addToSelection(g.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id)));
+    this.ctxMenu.create(ev, menu);
+  }
+
+  openSubMenu(ev: MouseEvent, g: ArrivalGroup, sg: ArrivalSubgroup, menu: NzDropdownMenuComponent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    this.ctxGroup.set(g);
+    this.addToSelection(sg.vagons.map((v) => v.id));
+    this.ctxMenu.create(ev, menu);
+  }
+
+  openVagonMenu(ev: MouseEvent, g: ArrivalGroup, id: string, menu: NzDropdownMenuComponent): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    this.ctxGroup.set(g);
+    this.addToSelection([id]);
+    this.ctxMenu.create(ev, menu);
+  }
+
+  // ── Операции ─────────────────────────────────────────────────────────────
+  openEdit(): void {
+    if (!this.requireSelection()) return;
+    const g = this.ctxGroup();
+    this.edIndex.set(g?.index_pp ?? '');
+    this.edPlanD.set(this.datePart(g?.plan_jd) || this.todayStr());
+    this.edPlanT.set(this.timePart(g?.plan_jd) || '00:00');
+    this.edFactD.set(this.datePart(g?.date_prib) || this.todayStr());
+    this.edFactT.set(this.timePart(g?.date_prib) || '00:00');
+    this.editOpen.set(true);
+  }
+
+  saveEdit(): void {
+    void this.applyUpdate({
+      index_pp: this.edIndex().trim(),
+      plan_jd: `${this.edPlanD()}T${this.edPlanT()}:00`,
+      date_prib: `${this.edFactD()}T${this.edFactT()}:00`,
+    }, 'Прибытие изменено', () => this.editOpen.set(false));
+  }
+
+  openUnload(): void {
+    if (!this.requireSelection()) return;
+    const now = new Date();
+    this.unD.set(this.todayStr());
+    this.unT.set(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+    this.unPlace.set(this.ctxGroup()?.sub_groups[0]?.naznach ?? '');
+    this.unFrost.set(0);
+    this.unloadOpen.set(true);
+  }
+
+  saveUnload(): void {
+    void this.applyUpdate({
+      date_vigr: `${this.unD()}T${this.unT()}:00`,
+      place_vigr: this.unPlace().trim(),
+      frost: this.unFrost(),
+    }, 'Выгрузка проставлена', () => this.unloadOpen.set(false));
+  }
+
+  applyNaznach(term: string): void {
+    if (!this.requireSelection()) return;
+    void this.applyUpdate({ naznach: term }, `Назначение: ${term}`);
+  }
+
+  cancelArrival(): void {
+    if (!this.requireSelection()) return;
+    if (!window.confirm(`Отменить прибытие для ${this.selected().size} ваг.? Факт и отклонение будут сброшены (только в истории).`)) return;
+    void this.applyUpdate({ clear_arrival: true }, 'Прибытие отменено');
+  }
+
+  private requireSelection(): boolean {
+    if (!this.selected().size) {
+      this.msg.info('Сначала выберите вагоны (клик по вагону или ПКМ по поезду/составу).');
+      return false;
+    }
+    return true;
+  }
+
+  private async applyUpdate(fields: Omit<ArrivalsUpdate, 'vagon_ids'>, what: string, onDone?: () => void): Promise<void> {
+    this.applying.set(true);
+    try {
+      const res = await this.api.updateVagons({ vagon_ids: [...this.selected()], ...fields });
+      this.msg.success(`${what}: ${res.updated} ваг.`);
+      onDone?.();
+      await this.load();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.applying.set(false);
+    }
+  }
+
+  // ── Экспорт в Excel (в браузере, как gtport) ─────────────────────────────
+  async exportAll(): Promise<void> {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    const trains = this.filteredGroups().map((g) => {
+      const row: Record<string, string | number> = {
+        'Дата': this.fmtD(g.date_prib_d), 'Индекс поезда': g.index_pp,
+        'План (ЖД)': this.fmtDT(g.plan_jd), 'Факт': this.fmtT(g.date_prib),
+        'Отклонение': g.otkl, 'Всего вагонов': g.vagon_count,
+      };
+      for (const t of this.terminals()) {
+        row[t.name] = this.subsFor(g, t.name).map((sg) => sg.display).join('; ');
+      }
+      return row;
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trains), 'Поезда');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(this.vagonRows(this.filteredGroups())), 'Вагоны');
+    XLSX.writeFile(wb, `История_${this.station()}_${this.from()}_${this.to()}.xlsx`);
+  }
+
+  async exportGroup(g: ArrivalGroup): Promise<void> {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(this.vagonRows([g])), 'Вагоны');
+    XLSX.writeFile(wb, `Поезд_${g.index_pp || 'без_индекса'}_${this.fmtD(g.date_prib_d)}.xlsx`);
+  }
+
+  private vagonRows(groups: ArrivalGroup[]): Record<string, string | number>[] {
+    const rows: Record<string, string | number>[] = [];
+    for (const g of groups) {
+      for (const sg of g.sub_groups) {
+        for (const v of sg.vagons) {
+          rows.push({
+            'Вагон': v.vagon, 'Род. индекс': sg.index_main, 'Индекс': g.index_pp,
+            'Грузополучатель': sg.gruzpol_s, 'Назначение': sg.naznach,
+            'Прибытие': this.fmtDT(g.date_prib), 'Группа': sg.display,
+          });
+        }
+      }
+    }
+    return rows;
+  }
+
   // ── Форматы времени (МСК naive, отдаём как пришло — без сдвигов) ──────────
   /** дд.мм.гг */
   fmtD(ts: string | null): string {
@@ -244,5 +518,15 @@ export class ArrivalsHistoryComponent implements OnInit {
   fmtT(ts: string | null): string {
     if (!ts || ts.length < 16) return '—';
     return ts.slice(11, 16);
+  }
+
+  private datePart(ts: string | null | undefined): string {
+    return ts && ts.length >= 10 ? ts.slice(0, 10) : '';
+  }
+  private timePart(ts: string | null | undefined): string {
+    return ts && ts.length >= 16 ? ts.slice(11, 16) : '';
+  }
+  private todayStr(): string {
+    return new Date().toISOString().slice(0, 10);
   }
 }

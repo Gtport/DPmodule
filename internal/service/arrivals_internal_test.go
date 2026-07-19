@@ -1,9 +1,12 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/Gtport/DPmodule/internal/auth"
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
@@ -79,5 +82,82 @@ func TestArrivalsRange(t *testing.T) {
 	}
 	if !from.Time().Before(to.Time()) {
 		t.Errorf("границы не свапнулись: from=%v to=%v", from, to)
+	}
+}
+
+// Пересчёты правки прибытия: date_prib_d, plan_msk (час ≥18 → −сутки), otkl.
+func TestArrivalUpdateFields(t *testing.T) {
+	now := domain.LocalTime(time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC))
+	row := domain.VagonHistory{ID: "1", PlanMsk: domain.NewLocalTime(time.Date(2026, 7, 19, 5, 0, 0, 0, time.UTC))}
+
+	t.Run("изменение факта — otkl от существующего плана", func(t *testing.T) {
+		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{
+			DatePrib: domain.NewLocalTime(time.Date(2026, 7, 19, 7, 30, 0, 0, time.UTC)),
+		}, now)
+		if f["otkl"] != "+02:30" {
+			t.Errorf("otkl = %v, ожидалось +02:30", f["otkl"])
+		}
+		if f["date_prib_d"].(*domain.LocalTime).Time().Hour() != 0 {
+			t.Error("date_prib_d должен быть без времени")
+		}
+	})
+
+	t.Run("план ЖД с часом ≥18 — plan_msk минус сутки", func(t *testing.T) {
+		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{
+			PlanJd: domain.NewLocalTime(time.Date(2026, 7, 19, 21, 0, 0, 0, time.UTC)),
+		}, now)
+		pm := f["plan_msk"].(*domain.LocalTime).Time()
+		if pm.Day() != 18 || pm.Hour() != 21 {
+			t.Errorf("plan_msk = %v, ожидалось 18.07 21:00", pm)
+		}
+	})
+
+	t.Run("отмена прибытия — сброс вехи", func(t *testing.T) {
+		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{ClearArrival: true}, now)
+		for _, k := range []string{"status", "date_prib", "date_prib_d", "delay", "date_dostav"} {
+			if v, ok := f[k]; !ok || v != nil {
+				t.Errorf("%s должен сбрасываться в NULL, получено %v", k, v)
+			}
+		}
+		if f["otkl"] != "" {
+			t.Errorf("otkl должен очищаться")
+		}
+	})
+
+	t.Run("выгрузка", func(t *testing.T) {
+		place := "АЭ"
+		frost := 30
+		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{
+			DateVigr: domain.NewLocalTime(time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC)),
+			PlaceVigr: &place, Frost: &frost,
+		}, now)
+		if f["place_vigr"] != "АЭ" || *(f["frost"].(*int)) != 30 || f["date_vigr"] == nil || f["date_vigr_d"] == nil {
+			t.Errorf("поля выгрузки: %v", f)
+		}
+	})
+}
+
+// Правило дат: не-администратору можно править только сегодня/вчера.
+func TestCheckArrivalsEditAccess(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC))
+	defer restore()
+
+	old := domain.VagonHistory{Vagon: "V", DatePribD: domain.NewLocalTime(time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC))}
+	fresh := domain.VagonHistory{Vagon: "V", DatePribD: domain.NewLocalTime(time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC))}
+
+	disp := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleDispatcher}})
+	admin := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleAdministrator}})
+
+	if err := checkArrivalsEditAccess(disp, []domain.VagonHistory{fresh}); err != nil {
+		t.Errorf("вчера для диспетчера должно быть разрешено: %v", err)
+	}
+	if err := checkArrivalsEditAccess(disp, []domain.VagonHistory{old}); err == nil {
+		t.Error("старое прибытие для диспетчера должно быть запрещено")
+	}
+	if err := checkArrivalsEditAccess(admin, []domain.VagonHistory{old}); err != nil {
+		t.Errorf("администратору можно всё: %v", err)
+	}
+	if err := checkArrivalsEditAccess(context.Background(), []domain.VagonHistory{old}); err != nil {
+		t.Errorf("без claims (auth выключен) — разрешаем: %v", err)
 	}
 }

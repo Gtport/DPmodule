@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -22,6 +23,7 @@ func NewArrivalsHandler(svc *service.ArrivalsService) *arrivalsHandler {
 func (h *arrivalsHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/arrivals", h.groups)
 	g.GET("/dislocation/terminals", h.terminals)
+	g.PUT("/dislocation/arrivals/vagons", h.updateVagons)
 }
 
 // groups godoc
@@ -58,4 +60,29 @@ func (h *arrivalsHandler) groups(c *gin.Context) {
 // @Router   /api/v1/dislocation/terminals [get]
 func (h *arrivalsHandler) terminals(c *gin.Context) {
 	c.JSON(http.StatusOK, h.svc.Terminals())
+}
+
+// updateVagons godoc
+// @Summary  Правка выбранных вагонов истории прибывших (прибытие/отмена/выгрузка/назначение)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    body body service.ArrivalsUpdateRequest true "vagon_ids + применяемые поля"
+// @Success  200 {object} service.ArrivalsUpdateResult
+// @Router   /api/v1/dislocation/arrivals/vagons [put]
+func (h *arrivalsHandler) updateVagons(c *gin.Context) {
+	var req service.ArrivalsUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса: " + err.Error()})
+		return
+	}
+	res, err := h.svc.UpdateVagons(c.Request.Context(), req)
+	if err != nil {
+		if errors.Is(err, service.ErrArrivalsAccess) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }

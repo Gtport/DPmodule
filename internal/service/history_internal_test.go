@@ -156,3 +156,11 @@ func TestApplyHistory(t *testing.T) {
 	assert.Equal(t, "B", repo.inserted[0].ID)
 	assert.Equal(t, 5, repo.updates["A"]["status"])
 }
+
+func (r *histStubRepo) RowsByIDs(_ context.Context, _ []string) ([]domain.VagonHistory, error) {
+	return nil, nil
+}
+
+func (r *histStubRepo) UpdateFieldsBatch(_ context.Context, _ map[string]map[string]any) error {
+	return nil
+}

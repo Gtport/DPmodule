@@ -26,6 +26,7 @@ import {
   BookOutline, CopyOutline, DeleteOutline, EditOutline, PlusOutline, // админ-редактор справочников
   ExpandAltOutline, EyeInvisibleOutline, // «Прибывшие»: разворот в историю, свернуть всё
   LoadingOutline, // спиннер занятости (file-drop, карточки)
+  DownloadOutline, // экспорт истории прибывших в Excel
   // Сплошные (fill) — как в GTport; сайдбар диспетчера использует именно их.
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
   SettingFill, // сайдбар: «Админ»
@@ -48,7 +49,7 @@ const icons = [
   ReloadOutline, PrinterOutline, InfoCircleOutline, SyncOutline, CloudDownloadOutline,
   QuestionCircleOutline, DownOutline, RightOutline,
   CheckOutline, BookOutline, CopyOutline, DeleteOutline, EditOutline, PlusOutline,
-  ExpandAltOutline, EyeInvisibleOutline, LoadingOutline,
+  ExpandAltOutline, EyeInvisibleOutline, LoadingOutline, DownloadOutline,
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill, SettingFill,
   ...CUSTOM_ICONS,
 ];

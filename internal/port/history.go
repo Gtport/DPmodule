@@ -20,4 +20,10 @@ type HistoryRepository interface {
 	// (даты без времени), naznach из набора (пустой набор — все). Для «Истории
 	// прибывших» домашней страницы.
 	ArrivedRows(ctx context.Context, from, to domain.LocalTime, naznach []string) ([]domain.VagonHistory, error)
+	// RowsByIDs — строки истории по id (для правок «Истории прибывших»:
+	// проверка доступа по датам и пересчёты по текущим значениям вагона).
+	RowsByIDs(ctx context.Context, ids []string) ([]domain.VagonHistory, error)
+	// UpdateFieldsBatch — точечные обновления НЕСКОЛЬКИХ строк одной транзакцией
+	// (ключ карты — id, значение — колонки как в UpdateFields).
+	UpdateFieldsBatch(ctx context.Context, updates map[string]map[string]any) error
 }
