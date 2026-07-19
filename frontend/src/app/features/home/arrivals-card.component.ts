@@ -27,16 +27,17 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
       </div>
       <table class="mini">
         <thead>
-          <tr><th>Прибытие</th><th>Индекс</th></tr>
+          <tr><th class="w-dt">Прибытие</th><th class="w-idx">Индекс</th><th>Состав</th></tr>
         </thead>
         <tbody>
           @for (g of topGroups(); track g.key) {
             <tr>
               <td class="c">{{ fmtDT(g.date_prib) }}</td>
               <td class="c num">{{ g.index_pp || '—' }}</td>
+              <td class="sost ell" [title]="sostav(g)">{{ sostav(g) }}</td>
             </tr>
           } @empty {
-            <tr><td colspan="2" class="empty">{{ loading() ? 'Загрузка…' : 'Нет прибывших' }}</td></tr>
+            <tr><td colspan="3" class="empty">{{ loading() ? 'Загрузка…' : 'Нет прибывших' }}</td></tr>
           }
         </tbody>
       </table>
@@ -58,6 +59,10 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
     .mini td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
     .c { text-align: center; white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; font-weight: 500; }
+    .w-dt { width: 92px; }
+    .w-idx { width: 118px; }
+    .sost { max-width: 0; } /* эллипсис в table-cell: ширину задаёт колонка, не контент */
+    .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-sm); }
   `],
 })
@@ -92,9 +97,14 @@ export class ArrivalsCardComponent implements OnInit {
     }
   }
 
-  /** дд.мм.гг чч:мм */
+  /** дд.мм чч:мм (компакт — без года). */
   fmtDT(ts: string | null): string {
     if (!ts || ts.length < 16) return '—';
-    return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(2, 4)} ${ts.slice(11, 16)}`;
+    return `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}`;
+  }
+
+  /** Состав поезда одной строкой: display-строки подгрупп через « · ». */
+  sostav(g: ArrivalGroup): string {
+    return g.sub_groups.map((sg) => sg.display).join(' · ') || '—';
   }
 }

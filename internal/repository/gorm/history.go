@@ -184,3 +184,38 @@ func toHistoryDomain(m vagonHistoryModel) domain.VagonHistory {
 		Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 	}
 }
+
+// RowsByIDs — строки истории по списку id (правки «Истории прибывших»).
+func (r *HistoryRepository) RowsByIDs(ctx context.Context, ids []string) ([]domain.VagonHistory, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var ms []vagonHistoryModel
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.VagonHistory, len(ms))
+	for i, m := range ms {
+		out[i] = toHistoryDomain(m)
+	}
+	return out, nil
+}
+
+// UpdateFieldsBatch — обновления нескольких строк одной транзакцией (правки
+// оператора применяются атомарно: либо весь батч, либо ничего).
+func (r *HistoryRepository) UpdateFieldsBatch(ctx context.Context, updates map[string]map[string]any) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for id, fields := range updates {
+			if len(fields) == 0 {
+				continue
+			}
+			if err := tx.Model(&vagonHistoryModel{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
@@ -93,6 +94,157 @@ func (s *ArrivalsService) Groups(ctx context.Context, fromS, toS string, naznach
 // страницы по станциям (не хардкод — ports).
 func (s *ArrivalsService) Terminals() []TargetDTO {
 	return terminalTargets(s.dir)
+}
+
+// ── Правки истории прибывших (перенос gtport update-by-ids) ─────────────────
+
+// ErrArrivalsAccess — правка запрещена правилом дат (обратиться к администратору).
+var ErrArrivalsAccess = fmt.Errorf("правка запрещена")
+
+// ArrivalsUpdateRequest — правка ВЫБРАННЫХ вагонов истории (все операции — по id
+// вагонов, решение владельца). Заполняются только применяемые поля.
+type ArrivalsUpdateRequest struct {
+	VagonIDs []string `json:"vagon_ids"`
+	// «Отменить прибытие»: сброс статуса/факта/отклонения — вагон снова «в пути».
+	// Меняет ТОЛЬКО историю (как в gtport), снимок дислокации не трогается.
+	ClearArrival bool `json:"clear_arrival,omitempty"`
+	// «Изменить прибытие»: индекс поезда, план (ЖД) и факт; otkl/plan_msk/
+	// date_prib_d пересчитываются на сервере.
+	IndexPp  string            `json:"index_pp,omitempty"`
+	PlanJd   *domain.LocalTime `json:"plan_jd,omitempty"`
+	DatePrib *domain.LocalTime `json:"date_prib,omitempty"`
+	// «Выгрузить»: факт выгрузки, место, смерзаемость %.
+	DateVigr  *domain.LocalTime `json:"date_vigr,omitempty"`
+	PlaceVigr *string           `json:"place_vigr,omitempty"`
+	Frost     *int              `json:"frost,omitempty"`
+	// «Изменить назначение»: перераспределение по терминалам после прибытия
+	// (значение валидируется по реестру портов).
+	Naznach string `json:"naznach,omitempty"`
+}
+
+// ArrivalsUpdateResult — честный итог: сколько строк реально обновлено.
+type ArrivalsUpdateResult struct {
+	Updated  int `json:"updated"`
+	Selected int `json:"selected"`
+}
+
+// UpdateVagons применяет правку к выбранным вагонам истории. Доступ (эталон
+// gtport): administrator — без ограничений; остальным можно править только
+// прибытия за СЕГОДНЯ/ВЧЕРА (МСК). Пересчёты — по каждому вагону (otkl зависит
+// от его plan_msk/date_prib). Атомарно: один батч = одна транзакция.
+func (s *ArrivalsService) UpdateVagons(ctx context.Context, req ArrivalsUpdateRequest) (ArrivalsUpdateResult, error) {
+	if len(req.VagonIDs) == 0 {
+		return ArrivalsUpdateResult{}, fmt.Errorf("не выбраны вагоны")
+	}
+	if !req.ClearArrival && req.IndexPp == "" && req.PlanJd == nil && req.DatePrib == nil &&
+		req.DateVigr == nil && req.PlaceVigr == nil && req.Frost == nil && req.Naznach == "" {
+		return ArrivalsUpdateResult{}, fmt.Errorf("не указано ни одного изменения")
+	}
+	if req.Naznach != "" {
+		if _, ok := s.dir.PortByNameS(req.Naznach); !ok {
+			return ArrivalsUpdateResult{}, fmt.Errorf("неизвестный терминал %q", req.Naznach)
+		}
+	}
+	rows, err := s.repo.RowsByIDs(ctx, req.VagonIDs)
+	if err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	if err := checkArrivalsEditAccess(ctx, rows); err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+
+	now := clock.Now()
+	updates := make(map[string]map[string]any, len(rows))
+	for i := range rows {
+		updates[rows[i].ID] = arrivalUpdateFields(&rows[i], req, now)
+	}
+	if err := s.repo.UpdateFieldsBatch(ctx, updates); err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	return ArrivalsUpdateResult{Updated: len(rows), Selected: len(req.VagonIDs)}, nil
+}
+
+// checkArrivalsEditAccess — правило дат (эталон gtport, строже: проверяем КАЖДЫЙ
+// вагон, не только первый): не-администратору можно править лишь строки с датой
+// прибытия сегодня/вчера (или без неё). Без claims (auth выключен) — разрешаем.
+func checkArrivalsEditAccess(ctx context.Context, rows []domain.VagonHistory) error {
+	cl := auth.ClaimsFromContext(ctx)
+	if cl == nil || cl.HasRole(auth.RoleAdministrator) {
+		return nil
+	}
+	today := clock.Now().Time().Truncate(24 * time.Hour)
+	yesterday := today.AddDate(0, 0, -1)
+	for i := range rows {
+		d := rows[i].DatePribD
+		if d == nil {
+			continue
+		}
+		day := d.Time().Truncate(24 * time.Hour)
+		if !day.Equal(today) && !day.Equal(yesterday) {
+			return fmt.Errorf("%w: править можно только прибытия за сегодня/вчера "+
+				"(вагон %s прибыл %s) — обратитесь к администратору",
+				ErrArrivalsAccess, rows[i].Vagon, d.String()[:10])
+		}
+	}
+	return nil
+}
+
+// arrivalUpdateFields — колонки правки одного вагона. Пересчёты как в Stage 2:
+// date_prib_d = дата факта; plan_msk = plan_jd с правилом «час ≥ 18 → −сутки»
+// (операционный календарь, не таймзона); otkl = факт − план.
+func arrivalUpdateFields(r *domain.VagonHistory, req ArrivalsUpdateRequest, now domain.LocalTime) map[string]any {
+	fields := map[string]any{"updated_at": &now}
+	if req.ClearArrival {
+		fields["status"] = nil
+		fields["date_prib"] = nil
+		fields["date_prib_d"] = nil
+		fields["otkl"] = ""
+		fields["delay"] = nil
+		fields["date_dostav"] = nil
+		return fields
+	}
+	if req.IndexPp != "" {
+		fields["index_pp"] = req.IndexPp
+	}
+	planMsk := r.PlanMsk
+	if req.PlanJd != nil {
+		planMsk = planMskFromJd(req.PlanJd)
+		fields["plan_jd"] = req.PlanJd
+		fields["plan_msk"] = planMsk
+	}
+	datePrib := r.DatePrib
+	if req.DatePrib != nil {
+		datePrib = req.DatePrib
+		fields["date_prib"] = req.DatePrib
+		fields["date_prib_d"] = dateOnly(req.DatePrib)
+	}
+	if req.PlanJd != nil || req.DatePrib != nil {
+		fields["otkl"] = calculateOtkl(datePrib, planMsk)
+	}
+	if req.DateVigr != nil {
+		fields["date_vigr"] = req.DateVigr
+		fields["date_vigr_d"] = dateOnly(req.DateVigr)
+	}
+	if req.PlaceVigr != nil {
+		fields["place_vigr"] = *req.PlaceVigr
+	}
+	if req.Frost != nil {
+		fields["frost"] = req.Frost
+	}
+	if req.Naznach != "" {
+		fields["naznach"] = req.Naznach
+	}
+	return fields
+}
+
+// planMskFromJd — МСК-календарь нитки из ЖД-времени: «час ≥ 18 → предыдущие
+// операционные сутки» (бизнес-правило, эталон парсера плана applyMskRule).
+func planMskFromJd(jd *domain.LocalTime) *domain.LocalTime {
+	t := jd.Time()
+	if t.Hour() >= 18 {
+		t = t.AddDate(0, 0, -1)
+	}
+	return domain.NewLocalTime(t)
 }
 
 // arrivalsRange — границы периода из строк yyyy-MM-dd; дефолт «вчера — сегодня»

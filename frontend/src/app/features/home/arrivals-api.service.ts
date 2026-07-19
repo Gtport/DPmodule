@@ -71,4 +71,27 @@ export class ArrivalsApiService {
   getTerminals(): Promise<TerminalTarget[]> {
     return firstValueFrom(this.http.get<TerminalTarget[]>(`${this.base}/terminals`));
   }
+
+  /** Правка выбранных вагонов истории (прибытие/отмена/выгрузка/назначение). */
+  updateVagons(body: ArrivalsUpdate): Promise<ArrivalsUpdateResult> {
+    return firstValueFrom(this.http.put<ArrivalsUpdateResult>(`${this.base}/arrivals/vagons`, body));
+  }
+}
+
+/** Тело правки: vagon_ids + только применяемые поля (времена — МСК без TZ). */
+export interface ArrivalsUpdate {
+  vagon_ids: string[];
+  clear_arrival?: boolean;
+  index_pp?: string;
+  plan_jd?: string;
+  date_prib?: string;
+  date_vigr?: string;
+  place_vigr?: string;
+  frost?: number;
+  naznach?: string;
+}
+
+export interface ArrivalsUpdateResult {
+  updated: number;
+  selected: number;
 }
