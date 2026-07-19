@@ -24,6 +24,9 @@ func (h *arrivalsHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/arrivals", h.groups)
 	g.GET("/dislocation/terminals", h.terminals)
 	g.PUT("/dislocation/arrivals/vagons", h.updateVagons)
+	g.GET("/dislocation/arrivals/candidates", h.candidates)
+	g.POST("/dislocation/arrivals/confirm", h.confirm)
+	g.POST("/dislocation/arrivals/dismiss", h.dismiss)
 }
 
 // groups godoc
@@ -60,6 +63,77 @@ func (h *arrivalsHandler) groups(c *gin.Context) {
 // @Router   /api/v1/dislocation/terminals [get]
 func (h *arrivalsHandler) terminals(c *gin.Context) {
 	c.JSON(http.StatusOK, h.svc.Terminals())
+}
+
+// candidates godoc
+// @Summary  Кандидаты в прибывшие (статус 9 из снимка, минус отклонённые)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    naznach query string false "терминалы через запятую; пусто — все"
+// @Success  200 {array} service.CandidateGroupDTO
+// @Router   /api/v1/dislocation/arrivals/candidates [get]
+func (h *arrivalsHandler) candidates(c *gin.Context) {
+	var naznach []string
+	if raw := strings.TrimSpace(c.Query("naznach")); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				naznach = append(naznach, s)
+			}
+		}
+	}
+	res, err := h.svc.Candidates(c.Request.Context(), naznach)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// confirm godoc
+// @Summary  Подтверждение прибытия кандидатов (в снимок: статус 10 + date_prib; веха в историю)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    body body service.ConfirmArrivalRequest true "vagon_ids + фактическое время"
+// @Success  200 {object} service.ArrivalsUpdateResult
+// @Router   /api/v1/dislocation/arrivals/confirm [post]
+func (h *arrivalsHandler) confirm(c *gin.Context) {
+	var req service.ConfirmArrivalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса: " + err.Error()})
+		return
+	}
+	res, err := h.svc.ConfirmArrival(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// dismissRequest — тело отклонения кандидатов.
+type dismissRequest struct {
+	VagonIDs []string `json:"vagon_ids"`
+}
+
+// dismiss godoc
+// @Summary  Отклонение кандидатов («скрыть до новых данных», вагоны остаются 9)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    body body dismissRequest true "vagon_ids"
+// @Success  200 {object} service.ArrivalsUpdateResult
+// @Router   /api/v1/dislocation/arrivals/dismiss [post]
+func (h *arrivalsHandler) dismiss(c *gin.Context) {
+	var req dismissRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса: " + err.Error()})
+		return
+	}
+	res, err := h.svc.DismissCandidates(c.Request.Context(), req.VagonIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 // updateVagons godoc

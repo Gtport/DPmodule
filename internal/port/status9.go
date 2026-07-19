@@ -27,4 +27,10 @@ type Status9Repository interface {
 	// LoadMissing возвращает полные записи пропавших (статус 8), свежепропавшие
 	// первыми — для экрана «Пропавшие вагоны».
 	LoadMissing(ctx context.Context) ([]domain.Dislocation, error)
+	// SetDismissed помечает живых кандидатов (статус 9) отклонёнными оператором
+	// («скрыть до новых данных»). Возвращает число помеченных.
+	SetDismissed(ctx context.Context, vagons []string, at domain.LocalTime) (int, error)
+	// DismissedVagons — номера вагонов с пометкой «отклонён» (для фильтра списка
+	// кандидатов). Пометка живёт вместе с записью и снимается reconcile'ом.
+	DismissedVagons(ctx context.Context) (map[string]struct{}, error)
 }

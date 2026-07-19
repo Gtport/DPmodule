@@ -19,6 +19,11 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
     <div class="card">
       <div class="head">
         <b>Прибывшие</b>
+        @if (candidatesCount()) {
+          <span class="cand-badge" nz-tooltip
+                nzTooltipTitle="Кандидаты на прибытие — АСУ не дала дату, требуется подтверждение (открыть историю)"
+                (click)="expanded.set(true)">кандидаты: {{ candidatesCount() }}</span>
+        }
         <span class="spacer"></span>
         <button nz-button nzType="text" nzSize="small" nz-tooltip
                 nzTooltipTitle="История прибывших (полная таблица)" (click)="expanded.set(true)">
@@ -53,6 +58,10 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-md); }
     .head { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); }
     .spacer { flex: 1 1 auto; }
+    /* Чип-предупреждение (канон: без заливки, контур и текст в цвете). */
+    .cand-badge { border: 1px solid var(--color-warning); color: var(--color-warning);
+                  border-radius: 10px; padding: 0 8px; font-size: var(--font-size-sm);
+                  font-weight: 600; cursor: pointer; white-space: nowrap; }
     .mini { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
     .mini th { background: var(--color-bg-subtle); font-weight: 600; padding: 3px 8px;
                border: 1px solid var(--color-border-light); }
@@ -77,6 +86,8 @@ export class ArrivalsCardComponent implements OnInit {
   readonly loading = signal(false);
   readonly groups = signal<ArrivalGroup[]>([]);
   readonly expanded = signal(false);
+  /** Вагонов-кандидатов на прибытие (статус 9, ждут подтверждения). */
+  readonly candidatesCount = signal(0);
 
   /** Последние 5 прибывших, свежие сверху (группы приходят по возрастанию времени). */
   readonly topGroups = computed(() => [...this.groups()].reverse().slice(0, 5));
@@ -88,8 +99,13 @@ export class ArrivalsCardComponent implements OnInit {
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const res = await this.api.getArrivals(this.terminals().map((t) => t.name));
+      const names = this.terminals().map((t) => t.name);
+      const [res, cands] = await Promise.all([
+        this.api.getArrivals(names),
+        this.api.getCandidates(names),
+      ]);
       this.groups.set(res.groups);
+      this.candidatesCount.set((cands ?? []).reduce((n, c) => n + c.vagon_count, 0));
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     } finally {

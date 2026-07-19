@@ -19,13 +19,19 @@ import (
 // группа = index_pp + date_prib → подгруппы по index_main/naznach/gruzpol_s/sms_1
 // → вагоны. Станция на фронте — это набор её терминалов (реестр ports, не хардкод):
 // фильтр по naznach, как в gtport (Мыс = АЭ+ГУТ-2, Находка = УТ-1).
+//
+// Кандидаты в прибывшие (наше отличие от gtport): вагоны статуса 9 (на станции
+// назначения, АСУ не дала date_prib) оператор подтверждает или отклоняет вручную;
+// подтверждение пишет факт в СНИМОК (статус 10, дальше держится sticky-10) и веху
+// в историю; отклонение — пометка «скрыт до новых данных» на записи-кандидате.
 type ArrivalsService struct {
 	repo port.HistoryRepository
 	dir  *DirectoryCache
+	proc *LKProcessor // снимок/мьютекс/кандидаты для Confirm/Dismiss (nil в тестах чтения)
 }
 
-func NewArrivalsService(repo port.HistoryRepository, dir *DirectoryCache) *ArrivalsService {
-	return &ArrivalsService{repo: repo, dir: dir}
+func NewArrivalsService(repo port.HistoryRepository, dir *DirectoryCache, proc *LKProcessor) *ArrivalsService {
+	return &ArrivalsService{repo: repo, dir: dir, proc: proc}
 }
 
 // ArrivalVagonDTO — вагон подгруппы (разворот по клику).
@@ -245,6 +251,201 @@ func planMskFromJd(jd *domain.LocalTime) *domain.LocalTime {
 		t = t.AddDate(0, 0, -1)
 	}
 	return domain.NewLocalTime(t)
+}
+
+// ── Кандидаты в прибывшие (статус 9 — ручное подтверждение оператором) ──────
+
+// CandidateGroupDTO — поезд-кандидат: вагоны статуса 9 одного индекса.
+type CandidateGroupDTO struct {
+	Key         string               `json:"key"`
+	Index       string               `json:"index"`
+	StanNazn    string               `json:"stan_nazn"`
+	StationNach string               `json:"station_nach"`
+	TimeOp      *domain.LocalTime    `json:"time_op"` // последняя операция (момент постановки)
+	VagonCount  int                  `json:"vagon_count"`
+	SubGroups   []ArrivalSubgroupDTO `json:"sub_groups"`
+}
+
+// Candidates — живые кандидаты из снимка (статус 9) минус отклонённые оператором,
+// с фильтром по терминалам naznach; группы по текущему индексу поезда.
+func (s *ArrivalsService) Candidates(ctx context.Context, naznach []string) ([]CandidateGroupDTO, error) {
+	dismissed, err := s.proc.status9.DismissedVagons(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nz := map[string]struct{}{}
+	for _, n := range naznach {
+		nz[n] = struct{}{}
+	}
+
+	type subKey struct{ im, nzn, gp string }
+	var order []string
+	groups := map[string]*CandidateGroupDTO{}
+	subs := map[string]map[subKey]*ArrivalSubgroupDTO{}
+	subOrder := map[string][]subKey{}
+
+	for _, r := range s.proc.actual.All() {
+		if r.Status == nil || *r.Status != 9 {
+			continue
+		}
+		if len(nz) > 0 {
+			if _, ok := nz[r.Naznach]; !ok {
+				continue
+			}
+		}
+		if _, off := dismissed[r.Vagon]; off {
+			continue
+		}
+		gk := r.Index + "|" + r.StanNazn
+		g, ok := groups[gk]
+		if !ok {
+			g = &CandidateGroupDTO{
+				Key: gk, Index: r.Index, StanNazn: r.StanNazn, StationNach: r.StationNach,
+				TimeOp: r.TimeOp,
+			}
+			groups[gk] = g
+			subs[gk] = map[subKey]*ArrivalSubgroupDTO{}
+			order = append(order, gk)
+		}
+		g.VagonCount++
+		if r.TimeOp != nil && (g.TimeOp == nil || g.TimeOp.Time().Before(r.TimeOp.Time())) {
+			g.TimeOp = r.TimeOp // самая свежая операция поезда
+		}
+
+		sk := subKey{r.IndexMain, r.Naznach, r.GruzpolS}
+		sg, ok := subs[gk][sk]
+		if !ok {
+			sg = &ArrivalSubgroupDTO{
+				Key:       r.IndexMain + "|" + r.Naznach + "|" + r.GruzpolS,
+				IndexMain: r.IndexMain, StationNach: r.StationNach,
+				Naznach: r.Naznach, GruzpolS: r.GruzpolS,
+			}
+			subs[gk][sk] = sg
+			subOrder[gk] = append(subOrder[gk], sk)
+		}
+		sg.VagonCount++
+		sg.Vagons = append(sg.Vagons, ArrivalVagonDTO{ID: r.ID, Vagon: r.Vagon, Status: r.Status})
+	}
+
+	out := make([]CandidateGroupDTO, 0, len(order))
+	for _, gk := range order {
+		g := groups[gk]
+		for _, sk := range subOrder[gk] {
+			sg := subs[gk][sk]
+			sg.Display = arrivalDisplay(sg)
+			g.SubGroups = append(g.SubGroups, *sg)
+		}
+		sort.SliceStable(g.SubGroups, func(i, j int) bool { return g.SubGroups[i].Key < g.SubGroups[j].Key })
+		out = append(out, *g)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out, nil
+}
+
+// ConfirmArrivalRequest — подтверждение прибытия кандидатов: выбранные вагоны +
+// фактическое время (дефолт на фронте — время операции поезда). Index — правка
+// индекса поезда оператором (пусто — оставить индекс из снимка).
+type ConfirmArrivalRequest struct {
+	VagonIDs []string          `json:"vagon_ids"`
+	DatePrib *domain.LocalTime `json:"date_prib"`
+	Index    string            `json:"index,omitempty"`
+}
+
+// ConfirmArrival — подтверждение прибытия: в СНИМОК проставляются date_prib,
+// статус 10 и date_kon (дальше факт держится sticky-10 при пересборках, запись-
+// кандидат снимается reconcile'ом), пересчёт Stage 3–4 и подмена — одним батчем
+// (каркас MutateSnapshot); веха прибытия пишется в vagon_history здесь же
+// (следующие пересборки перехода 9→10 уже не увидят).
+func (s *ArrivalsService) ConfirmArrival(ctx context.Context, req ConfirmArrivalRequest) (ArrivalsUpdateResult, error) {
+	if len(req.VagonIDs) == 0 {
+		return ArrivalsUpdateResult{}, fmt.Errorf("не выбраны вагоны")
+	}
+	if req.DatePrib == nil || req.DatePrib.IsZero() {
+		return ArrivalsUpdateResult{}, fmt.Errorf("не указано время прибытия")
+	}
+	ids := map[string]struct{}{}
+	for _, id := range req.VagonIDs {
+		ids[id] = struct{}{}
+	}
+
+	now := clock.Now()
+	var confirmed []domain.Dislocation
+	n, _, _, err := s.proc.MutateSnapshot(ctx, "arrival_confirm",
+		map[string]any{"selected": len(req.VagonIDs), "date_prib": req.DatePrib.String()},
+		func(all []domain.Dislocation) int {
+			cnt := 0
+			for i := range all {
+				r := &all[i]
+				if _, sel := ids[r.ID]; !sel {
+					continue
+				}
+				if r.Status == nil || *r.Status != 9 {
+					continue // подтверждаются только кандидаты
+				}
+				st := 10
+				r.Status = &st
+				r.DatePrib = req.DatePrib
+				r.DateKon = r.DateOpJd // как computeDateKon для статуса 10
+				if req.Index != "" {
+					r.Index = req.Index // правка индекса поезда оператором
+				}
+				r.UpdatedAt = now
+				confirmed = append(confirmed, *r)
+				cnt++
+			}
+			return cnt
+		})
+	if err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+
+	// Веха прибытия в историю — те же поля, что пишет Stage 2 на переходе в 10.
+	updates := make(map[string]map[string]any, len(confirmed))
+	for i := range confirmed {
+		r := &confirmed[i]
+		fields := map[string]any{
+			"status":      10,
+			"date_prib":   r.DatePrib,
+			"date_prib_d": dateOnly(r.DatePrib),
+			"delay":       calculateHistoryDelay(dateOnly(r.DatePrib), r.DateDostav),
+			"otkl":        calculateOtkl(r.DatePrib, r.PlanMsk),
+			"plan_msk":    r.PlanMsk,
+			"plan_jd":     r.PlanJd,
+			"naznach":     r.Naznach,
+			"updated_at":  &now,
+		}
+		if r.Index != "" {
+			fields["index_pp"] = r.Index // фактический поезд прибытия (решение владельца)
+		}
+		updates[r.ID] = fields
+	}
+	if err := s.repo.UpdateFieldsBatch(ctx, updates); err != nil {
+		return ArrivalsUpdateResult{}, fmt.Errorf("веха прибытия в историю: %w", err)
+	}
+	return ArrivalsUpdateResult{Updated: n, Selected: len(req.VagonIDs)}, nil
+}
+
+// DismissCandidates — «скрыть до новых данных»: пометка на записях-кандидатах;
+// вагоны остаются в статусе 9, при появлении date_prib из АСУ станут 10 сами.
+func (s *ArrivalsService) DismissCandidates(ctx context.Context, vagonIDs []string) (ArrivalsUpdateResult, error) {
+	if len(vagonIDs) == 0 {
+		return ArrivalsUpdateResult{}, fmt.Errorf("не выбраны вагоны")
+	}
+	ids := map[string]struct{}{}
+	for _, id := range vagonIDs {
+		ids[id] = struct{}{}
+	}
+	var vagons []string
+	for _, r := range s.proc.actual.All() {
+		if _, sel := ids[r.ID]; sel && r.Status != nil && *r.Status == 9 && r.Vagon != "" {
+			vagons = append(vagons, r.Vagon)
+		}
+	}
+	n, err := s.proc.status9.SetDismissed(ctx, vagons, clock.Now())
+	if err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	return ArrivalsUpdateResult{Updated: n, Selected: len(vagonIDs)}, nil
 }
 
 // arrivalsRange — границы периода из строк yyyy-MM-dd; дефолт «вчера — сегодня»

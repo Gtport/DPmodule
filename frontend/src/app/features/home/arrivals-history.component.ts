@@ -12,7 +12,7 @@ import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import {
-  ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, TerminalTarget,
+  ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, CandidateGroup, TerminalTarget,
 } from './arrivals-api.service';
 
 /**
@@ -70,6 +70,31 @@ import {
             <span nz-icon nzType="eye-invisible"></span>
           </button>
         </div>
+
+        <!-- Кандидаты в прибывшие (статус 9): подтверждение/отклонение оператором -->
+        @if (candidates().length) {
+          <div class="cands">
+            <div class="cands-title">
+              <span nz-icon nzType="question-circle"></span>
+              <b>Кандидаты на прибытие ({{ candidates().length }})</b>
+              <span class="mut">АСУ не дала дату — подтвердите или скройте</span>
+            </div>
+            @for (c of candidates(); track c.key) {
+              <div class="cand">
+                <span class="num b">{{ c.index || '—' }}</span>
+                <span class="mut">{{ c.station_nach }}</span>
+                <span class="mut">({{ c.vagon_count }})</span>
+                <span class="cand-sost ell" [title]="candSostav(c)">{{ candSostav(c) }}</span>
+                <span class="mut nowrap">оп. {{ fmtDT(c.time_op) }}</span>
+                <span class="spacer"></span>
+                <button nz-button nzType="primary" nzSize="small" (click)="openConfirm(c)">Подтвердить…</button>
+                <button nz-button nzSize="small" nz-tooltip
+                        nzTooltipTitle="Скрыть до новых данных (вагоны остаются кандидатами)"
+                        (click)="dismiss(c)">Скрыть</button>
+              </div>
+            }
+          </div>
+        }
 
         <nz-spin [nzSpinning]="loading()">
           <div class="tbl-wrap">
@@ -146,9 +171,12 @@ import {
     </nz-dropdown-menu>
 
     <!-- Диалог «Изменить прибытие» -->
-    <nz-modal [nzVisible]="editOpen()" nzTitle="Изменить прибытие" nzWidth="420px"
+    <nz-modal [nzVisible]="editOpen()" [nzTitle]="edTtl" nzWidth="420px"
               (nzOnCancel)="editOpen.set(false)" (nzOnOk)="saveEdit()"
               nzOkText="Сохранить" [nzOkDisabled]="!editValid()" [nzOkLoading]="applying()">
+      <ng-template #edTtl>
+        <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>Изменить прибытие</div>
+      </ng-template>
       <ng-container *nzModalContent>
         <div class="frm">
           <label>Индекс поезда
@@ -171,10 +199,39 @@ import {
       </ng-container>
     </nz-modal>
 
+    <!-- Диалог «Подтвердить прибытие» (кандидаты-9) -->
+    <nz-modal [nzVisible]="confirmOpen()" [nzTitle]="cfTtl" nzWidth="420px"
+              (nzOnCancel)="confirmOpen.set(false)" (nzOnOk)="saveConfirm()"
+              nzOkText="Подтвердить" [nzOkDisabled]="!cfD() || !cfT()" [nzOkLoading]="applying()">
+      <ng-template #cfTtl>
+        <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
+          Подтвердить прибытие — {{ cfGroup()?.index || '—' }}
+        </div>
+      </ng-template>
+      <ng-container *nzModalContent>
+        <div class="frm">
+          <p>{{ cfGroup()?.station_nach }} · вагонов: {{ cfGroup()?.vagon_count }}</p>
+          <label>Индекс поезда
+            <input nz-input [ngModel]="cfIndex()" (ngModelChange)="cfIndex.set($event)" placeholder="ХХХХ-ХХХ-ХХХХ" />
+          </label>
+          <label>Фактическое прибытие
+            <span class="dt">
+              <input class="date" type="date" [ngModel]="cfD()" (ngModelChange)="cfD.set($event)" />
+              <input class="date" type="time" [ngModel]="cfT()" (ngModelChange)="cfT.set($event)" />
+            </span>
+          </label>
+          <p class="mut">Вагоны станут «прибыл» (статус 10), веха уйдёт в историю; отклонение от плана пересчитается.</p>
+        </div>
+      </ng-container>
+    </nz-modal>
+
     <!-- Диалог «Выгрузить» -->
-    <nz-modal [nzVisible]="unloadOpen()" nzTitle="Выгрузить" nzWidth="420px"
+    <nz-modal [nzVisible]="unloadOpen()" [nzTitle]="unTtl" nzWidth="420px"
               (nzOnCancel)="unloadOpen.set(false)" (nzOnOk)="saveUnload()"
               nzOkText="Сохранить" [nzOkDisabled]="!unloadValid()" [nzOkLoading]="applying()">
+      <ng-template #unTtl>
+        <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>Выгрузить</div>
+      </ng-template>
       <ng-container *nzModalContent>
         <div class="frm">
           <label>Дата и время выгрузки
@@ -226,6 +283,17 @@ import {
     .mut { color: var(--color-text-muted); }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+    /* Кандидаты на прибытие — жёлтая секция над таблицей. */
+    .cands { background: var(--color-warning-bg); border: 1px solid var(--color-warning);
+             border-radius: var(--radius-md); padding: var(--space-xs) var(--space-sm);
+             margin-bottom: var(--space-sm); display: flex; flex-direction: column; gap: 2px; }
+    .cands-title { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--font-size-sm); }
+    .cand { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--font-size-sm);
+            padding: 2px 0; min-width: 0; }
+    .cand .b { font-weight: 600; }
+    .cand-sost { flex: 1 1 auto; min-width: 0; }
+    .nowrap { white-space: nowrap; }
+    .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .frm { display: flex; flex-direction: column; gap: var(--space-sm); }
     .frm label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-sm);
                  color: var(--color-text-secondary); }
@@ -262,6 +330,13 @@ export class ArrivalsHistoryComponent implements OnInit {
   readonly edPlanT = signal('');
   readonly edFactD = signal('');
   readonly edFactT = signal('');
+  // Кандидаты в прибывшие + диалог подтверждения.
+  readonly candidates = signal<CandidateGroup[]>([]);
+  readonly confirmOpen = signal(false);
+  readonly cfGroup = signal<CandidateGroup | null>(null);
+  readonly cfIndex = signal('');
+  readonly cfD = signal('');
+  readonly cfT = signal('');
   // Диалог «Выгрузить».
   readonly unloadOpen = signal(false);
   readonly unD = signal('');
@@ -281,8 +356,12 @@ export class ArrivalsHistoryComponent implements OnInit {
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const res = await this.api.getArrivals(this.terminalNames(), this.from(), this.to());
+      const [res, cands] = await Promise.all([
+        this.api.getArrivals(this.terminalNames(), this.from(), this.to()),
+        this.api.getCandidates(this.terminalNames()),
+      ]);
       this.groups.set(res.groups);
+      this.candidates.set(cands ?? []);
       this.from.set(res.from);
       this.to.set(res.to);
       this.selected.set(new Set());
@@ -436,6 +515,50 @@ export class ArrivalsHistoryComponent implements OnInit {
     if (!this.requireSelection()) return;
     if (!window.confirm(`Отменить прибытие для ${this.selected().size} ваг.? Факт и отклонение будут сброшены (только в истории).`)) return;
     void this.applyUpdate({ clear_arrival: true }, 'Прибытие отменено');
+  }
+
+  // ── Кандидаты: подтверждение / отклонение ────────────────────────────────
+  candSostav(c: CandidateGroup): string {
+    return c.sub_groups.map((sg) => sg.display).join(' · ') || '—';
+  }
+
+  private candVagonIds(c: CandidateGroup): string[] {
+    return c.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id));
+  }
+
+  openConfirm(c: CandidateGroup): void {
+    this.cfGroup.set(c);
+    this.cfIndex.set(c.index);
+    this.cfD.set(this.datePart(c.time_op) || this.todayStr());
+    this.cfT.set(this.timePart(c.time_op) || '00:00');
+    this.confirmOpen.set(true);
+  }
+
+  async saveConfirm(): Promise<void> {
+    const c = this.cfGroup();
+    if (!c) return;
+    this.applying.set(true);
+    try {
+      const res = await this.api.confirmArrival(
+        this.candVagonIds(c), `${this.cfD()}T${this.cfT()}:00`, this.cfIndex().trim());
+      this.msg.success(`Прибытие подтверждено: ${res.updated} ваг. Поезд ушёл в прибывшие.`);
+      this.confirmOpen.set(false);
+      await this.load();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.applying.set(false);
+    }
+  }
+
+  async dismiss(c: CandidateGroup): Promise<void> {
+    try {
+      const res = await this.api.dismissCandidates(this.candVagonIds(c));
+      this.msg.info(`Скрыто кандидатов: ${res.updated} ваг. (до новых данных АСУ).`);
+      await this.load();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    }
   }
 
   private requireSelection(): boolean {

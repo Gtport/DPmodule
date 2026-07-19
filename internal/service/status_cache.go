@@ -189,3 +189,15 @@ func (c *Status6Cache) DeleteByVagons(ctx context.Context, vagons []string) (int
 	c.mu.Unlock()
 	return n, nil
 }
+
+// SetDismissed — пометка «кандидат отклонён оператором» (скрыть до новых данных).
+// RAM-кэш статусов не меняется (вагон остаётся 9) — пометка живёт только в БД.
+func (c *Status9Cache) SetDismissed(ctx context.Context, vagons []string, at domain.LocalTime) (int, error) {
+	return c.repo.SetDismissed(ctx, vagons, at)
+}
+
+// DismissedVagons — отклонённые кандидаты (фильтр списка на чтении; редкая
+// операция, читаем из БД без кэша).
+func (c *Status9Cache) DismissedVagons(ctx context.Context) (map[string]struct{}, error) {
+	return c.repo.DismissedVagons(ctx)
+}
