@@ -133,11 +133,18 @@ func groupArrivals(rows []domain.VagonHistory) []ArrivalGroupDTO {
 
 	for i := range rows {
 		r := &rows[i]
-		gk := r.IndexPp + "|" + ltKey(r.DatePrib)
+		// Метка поезда: index_pp (нитка плана); для строк без матча с планом —
+		// родительский индекс (иначе группа безымянная: старые записи истории
+		// создавались до фиксации index_pp на прибытии).
+		label := r.IndexPp
+		if label == "" {
+			label = r.IndexMain
+		}
+		gk := label + "|" + ltKey(r.DatePrib)
 		g, ok := groups[gk]
 		if !ok {
 			g = &ArrivalGroupDTO{
-				Key: gk, IndexPp: r.IndexPp, StanNazn: r.StanNazn,
+				Key: gk, IndexPp: label, StanNazn: r.StanNazn,
 				DatePribD: r.DatePribD, DatePrib: r.DatePrib,
 				PlanMsk: r.PlanMsk, PlanJd: r.PlanJd, Otkl: r.Otkl,
 			}
