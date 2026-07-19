@@ -120,3 +120,29 @@ func (r *Status9Repository) DeleteByVagons(ctx context.Context, vagons []string)
 	}
 	return int(res.RowsAffected), nil
 }
+
+// SetDismissed — пометка «отклонён оператором» на живых кандидатах (статус 9).
+// Колонка dismissed_at вне ORM-модели (LIKE dislocation) — пишем адресно.
+func (r *Status9Repository) SetDismissed(ctx context.Context, vagons []string, at domain.LocalTime) (int, error) {
+	if len(vagons) == 0 {
+		return 0, nil
+	}
+	res := r.db.WithContext(ctx).Table("status9").
+		Where("vagon IN ? AND status = 9", vagons).
+		Update("dismissed_at", &at)
+	return int(res.RowsAffected), res.Error
+}
+
+// DismissedVagons — вагоны с пометкой «отклонён» (фильтр списка кандидатов).
+func (r *Status9Repository) DismissedVagons(ctx context.Context) (map[string]struct{}, error) {
+	var vagons []string
+	if err := r.db.WithContext(ctx).Table("status9").
+		Where("dismissed_at IS NOT NULL").Pluck("vagon", &vagons).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(vagons))
+	for _, v := range vagons {
+		out[v] = struct{}{}
+	}
+	return out, nil
+}

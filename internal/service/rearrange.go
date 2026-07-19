@@ -587,41 +587,13 @@ func (s *RearrangeService) ApplyRedirection(ctx context.Context, req RedirectApp
 // ErrBadRearrange — ошибка валидации запроса перестановки/переадресации (→ 400).
 var ErrBadRearrange = fmt.Errorf("некорректный запрос перестановки")
 
-// mutateSnapshot — общий каркас записи: одна операция = мьютекс конвейера →
-// правка копии RAM-снимка → ОДИН пересчёт Stage 3–4 → атомарная подмена →
-// перечитка RAM → одно событие журнала (rearrangement). Ничего не изменилось →
-// снимок не трогаем.
+// mutateSnapshot — обёртка над общим каркасом LKProcessor.MutateSnapshot
+// (мьютекс → правка копии снимка → один пересчёт Stage 3–4 → атомарная подмена
+// → журнал), в терминах результата перестановок.
 func (s *RearrangeService) mutateSnapshot(ctx context.Context, source string, detail map[string]any, mutate func([]domain.Dislocation) int) (RearrApplyResult, error) {
-	p := s.proc
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.actual == nil {
-		return RearrApplyResult{}, fmt.Errorf("%w: снимок дислокации не загружен", ErrNotReady)
-	}
-	all := p.actual.All()
-	n := mutate(all)
-	if n == 0 {
-		return RearrApplyResult{}, nil
-	}
-
-	var cutoff int
-	if ds, ok := p.intake.cfg.DataSource("lk"); ok {
-		cutoff = ds.Config.DateCutoffHour
-	}
-	forecastN := applyForecast(all, p.intake.dir, cutoff)
-	progN := applyStage4(all, p.intake.dir, p.intake.cfg, cutoff)
-
-	if err := p.repo.ReplaceActual(ctx, all); err != nil {
-		return RearrApplyResult{}, fmt.Errorf("замена снимка: %w", err)
-	}
-	if err := p.actual.Load(ctx); err != nil {
-		return RearrApplyResult{}, fmt.Errorf("перечитывание актуальной мапы: %w", err)
-	}
-
-	if p.journal != nil {
-		detail["count"] = n
-		p.journal.RecordRearrangement(ctx, source, n, detail)
+	n, forecastN, progN, err := s.proc.MutateSnapshot(ctx, source, detail, mutate)
+	if err != nil {
+		return RearrApplyResult{}, err
 	}
 	return RearrApplyResult{Updated: n, ForecastComputed: forecastN, ProgComputed: progN}, nil
 }

@@ -42,6 +42,7 @@
 
   /* Спец-нейтрали */
   --color-tooltip-bg: #43454a;  /* §10: тёмный фон тултипа */
+  --color-warning-bg: #fffbe6;  /* подложка предупреждения (кандидаты, stale-строки) */
 
   /* --- Типографика (§3) --- */
   --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,

@@ -132,13 +132,14 @@ func (f *fakeStatus6Repo) DeleteByVagons(_ context.Context, vagons []string) (in
 
 // fakeHistoryRepo — in-memory port.HistoryRepository.
 type fakeHistoryRepo struct {
-	existing map[string]struct{}
-	inserted []domain.VagonHistory
-	updated  map[string]map[string]any
+	existing     map[string]struct{}
+	inserted     []domain.VagonHistory
+	updated      map[string]map[string]any
+	updatedBatch map[string]map[string]any
 }
 
 func newFakeHistory() *fakeHistoryRepo {
-	return &fakeHistoryRepo{existing: map[string]struct{}{}, updated: map[string]map[string]any{}}
+	return &fakeHistoryRepo{existing: map[string]struct{}{}, updated: map[string]map[string]any{}, updatedBatch: map[string]map[string]any{}}
 }
 func (f *fakeHistoryRepo) ExistingIDs(_ context.Context, ids []string) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
@@ -345,6 +346,17 @@ func (f *fakeHistoryRepo) RowsByIDs(_ context.Context, _ []string) ([]domain.Vag
 	return nil, nil
 }
 
-func (f *fakeHistoryRepo) UpdateFieldsBatch(_ context.Context, _ map[string]map[string]any) error {
+func (f *fakeHistoryRepo) UpdateFieldsBatch(_ context.Context, updates map[string]map[string]any) error {
+	for id, fields := range updates {
+		f.updatedBatch[id] = fields
+	}
 	return nil
+}
+
+func (f *fakeStatus9Repo) SetDismissed(context.Context, []string, domain.LocalTime) (int, error) {
+	return 0, nil
+}
+
+func (f *fakeStatus9Repo) DismissedVagons(context.Context) (map[string]struct{}, error) {
+	return nil, nil
 }

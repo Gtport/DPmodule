@@ -185,6 +185,45 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 	return res, nil
 }
 
+// MutateSnapshot — общий каркас операторской записи в снимок (перестановки,
+// переадресация, подтверждение прибытия): одна операция = мьютекс конвейера →
+// правка копии RAM-снимка → ОДИН пересчёт Stage 3–4 → атомарная подмена →
+// перечитка RAM → одно событие журнала. Ничего не изменилось (updated=0) —
+// снимок не трогается. mutate возвращает число реально изменённых записей.
+func (p *LKProcessor) MutateSnapshot(ctx context.Context, journalSource string, detail map[string]any, mutate func([]domain.Dislocation) int) (updated, forecastN, progN int, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.actual == nil {
+		return 0, 0, 0, fmt.Errorf("%w: снимок дислокации не загружен", ErrNotReady)
+	}
+	all := p.actual.All()
+	updated = mutate(all)
+	if updated == 0 {
+		return 0, 0, 0, nil
+	}
+
+	var cutoff int
+	if ds, ok := p.intake.cfg.DataSource("lk"); ok {
+		cutoff = ds.Config.DateCutoffHour
+	}
+	forecastN = applyForecast(all, p.intake.dir, cutoff)
+	progN = applyStage4(all, p.intake.dir, p.intake.cfg, cutoff)
+
+	if err := p.repo.ReplaceActual(ctx, all); err != nil {
+		return 0, 0, 0, fmt.Errorf("замена снимка: %w", err)
+	}
+	if err := p.actual.Load(ctx); err != nil {
+		return 0, 0, 0, fmt.Errorf("перечитывание актуальной мапы: %w", err)
+	}
+
+	if p.journal != nil {
+		detail["count"] = updated
+		p.journal.RecordRearrangement(ctx, journalSource, updated, detail)
+	}
+	return updated, forecastN, progN, nil
+}
+
 // ProcessRecords — общий конвейер для уже распарсенного батча: Stage 1 → Stage 2/3
 // (carry-over, marka, доноры, донорство, расчёт хода, vagon_history, кандидаты) →
 // подмена снимка → перечитывание. Переиспользуется приёмом ЛК и будущим JSON-ingest.

@@ -76,6 +76,39 @@ export class ArrivalsApiService {
   updateVagons(body: ArrivalsUpdate): Promise<ArrivalsUpdateResult> {
     return firstValueFrom(this.http.put<ArrivalsUpdateResult>(`${this.base}/arrivals/vagons`, body));
   }
+
+  /** Кандидаты в прибывшие (статус 9, минус отклонённые) по терминалам. */
+  getCandidates(naznach: string[]): Promise<CandidateGroup[]> {
+    const params: Record<string, string> = {};
+    if (naznach.length) params['naznach'] = naznach.join(',');
+    return firstValueFrom(this.http.get<CandidateGroup[]>(`${this.base}/arrivals/candidates`, { params }));
+  }
+
+  /** Подтверждение прибытия: снимок получает статус 10 + date_prib, веха — в историю.
+   *  index — правка индекса поезда оператором (пусто — оставить как в снимке). */
+  confirmArrival(vagonIds: string[], datePrib: string, index = ''): Promise<ArrivalsUpdateResult> {
+    return firstValueFrom(this.http.post<ArrivalsUpdateResult>(`${this.base}/arrivals/confirm`, {
+      vagon_ids: vagonIds, date_prib: datePrib, index: index || undefined,
+    }));
+  }
+
+  /** Отклонение кандидатов («скрыть до новых данных»). */
+  dismissCandidates(vagonIds: string[]): Promise<ArrivalsUpdateResult> {
+    return firstValueFrom(this.http.post<ArrivalsUpdateResult>(`${this.base}/arrivals/dismiss`, {
+      vagon_ids: vagonIds,
+    }));
+  }
+}
+
+/** Поезд-кандидат в прибывшие (вагоны статуса 9 одного индекса). */
+export interface CandidateGroup {
+  key: string;
+  index: string;
+  stan_nazn: string;
+  station_nach: string;
+  time_op: string | null;
+  vagon_count: number;
+  sub_groups: ArrivalSubgroup[];
 }
 
 /** Тело правки: vagon_ids + только применяемые поля (времена — МСК без TZ). */
