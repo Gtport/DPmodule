@@ -155,6 +155,10 @@ func Build(
 			// прибытия из Stage 2), правки истории и подтверждение/отклонение
 			// кандидатов прибытия (статус 9) через конвейер proc.
 			handler.NewArrivalsHandler(service.NewArrivalsService(historyRepo, dirCache, proc)).RegisterRoutes(api)
+
+			// «Ближайшие поезда» домашней страницы: подходящие поезда из снимка
+			// (план → прогноз → расчёт), только чтение.
+			handler.NewNearestHandler(service.NewNearestService(actualCache, dirCache)).RegisterRoutes(api)
 		}
 	}
 

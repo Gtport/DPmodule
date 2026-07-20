@@ -20,6 +20,7 @@ func (s s9StubDisl) ReplaceActual(context.Context, []domain.Dislocation) error {
 // s9StubRepo — in-memory port.Status9Repository (vagon → статус в таблице).
 type s9StubRepo struct {
 	vagons    map[string]int              // vagon → статус (8/9)
+	rows      map[string]domain.Dislocation // vagon → полная запись (для LoadMissing)
 	updatedAt map[string]domain.LocalTime // vagon → updated_at (для MissingOlderThan)
 	inserted  []string
 	deleted   []string
@@ -48,6 +49,10 @@ func (r *s9StubRepo) InsertNew(_ context.Context, items []domain.Dislocation) (i
 func (r *s9StubRepo) UpsertMissing(_ context.Context, items []domain.Dislocation) (int, error) {
 	for _, it := range items {
 		r.vagons[it.Vagon] = derefStatus(it.Status) // insert или update статуса (→8)
+		if r.rows == nil {
+			r.rows = map[string]domain.Dislocation{}
+		}
+		r.rows[it.Vagon] = it
 		r.missing8 = append(r.missing8, it.Vagon)
 	}
 	return len(items), nil
@@ -65,7 +70,11 @@ func (r *s9StubRepo) DeleteByVagons(_ context.Context, vagons []string) (int, er
 }
 
 func (r *s9StubRepo) LoadMissing(context.Context) ([]domain.Dislocation, error) {
-	return nil, nil // полные строки в этих тестах не участвуют
+	out := make([]domain.Dislocation, 0, len(r.rows))
+	for _, it := range r.rows {
+		out = append(out, it)
+	}
+	return out, nil
 }
 
 func (r *s9StubRepo) MissingOlderThan(_ context.Context, cutoff domain.LocalTime) ([]string, error) {
@@ -375,4 +384,55 @@ func (r *s9StubRepo) SetDismissed(context.Context, []string, domain.LocalTime) (
 
 func (r *s9StubRepo) DismissedVagons(context.Context) (map[string]struct{}, error) {
 	return nil, nil
+}
+
+// Возврат пропавшего вагона (запись-8): родословная рейса восстанавливается из
+// сохранённой записи (переформированный в пропаже поезд снова матчится с планом).
+func TestReconcileRestoresLineage(t *testing.T) {
+	ctx := context.Background()
+	st2, st8 := 2, 8
+
+	// Запись-8 в таблице кандидатов: старый рейс с родословной и планом.
+	old := domain.Dislocation{
+		ID: "V1/8631/10.07", Vagon: "V1", Status: &st8,
+		Index: "8649-880-9857", IndexMain: "8649-880-9857", InvoiceMain: "ЭА1",
+		PlanMsk: ltm(2026, 7, 21, 21, 6), PlanJd: ltm(2026, 7, 21, 21, 6), IndexPp: "8649-880-9857",
+	}
+	repo := &s9StubRepo{vagons: map[string]int{}}
+	cache := NewStatus9Cache(repo)
+	require.NoError(t, cache.Load(ctx))
+	_, err := cache.UpsertMissing(ctx, []domain.Dislocation{old})
+	require.NoError(t, err)
+
+	actual := NewActualCache(s9StubDisl{}) // прошлый снимок пуст — вагона там не было
+	require.NoError(t, actual.Load(ctx))
+
+	// Вернулся тем же рейсом (тот же ID), но переформированным поездом: после
+	// carry-over/initNewVagon родословная затёрта новым индексом.
+	kept := []domain.Dislocation{{
+		ID: "V1/8631/10.07", Vagon: "V1", Status: &st2,
+		Index: "9552-248-9857", IndexMain: "9552-248-9857", IndexLast: "9552-248-9857",
+		InvoiceMain: "ЭБ2",
+	}}
+	_, err = reconcileCandidates(ctx, kept, actual, cache)
+	require.NoError(t, err)
+
+	r := kept[0]
+	assert.Equal(t, "8649-880-9857", r.IndexMain, "родительский индекс восстановлен")
+	assert.Equal(t, "8649-880-9857", r.IndexLast, "предыдущий индекс — старый поезд")
+	assert.Equal(t, "9552-248-9857", r.Index, "текущий индекс не трогаем")
+	assert.Equal(t, "ЭА1", r.InvoiceMain, "накладная формирования стабильна")
+	assert.NotNil(t, r.PlanMsk, "план-поля возвращены")
+	assert.Equal(t, "8649-880-9857", r.IndexPp)
+
+	// Чужой рейс (другой ID) родословную не наследует.
+	kept2 := []domain.Dislocation{{
+		ID: "V1/9999/20.07", Vagon: "V1", Status: &st2,
+		Index: "9552-248-9857", IndexMain: "9552-248-9857",
+	}}
+	_, err = cache.UpsertMissing(ctx, []domain.Dislocation{old}) // вернуть запись-8
+	require.NoError(t, err)
+	_, err = reconcileCandidates(ctx, kept2, actual, cache)
+	require.NoError(t, err)
+	assert.Equal(t, "9552-248-9857", kept2[0].IndexMain, "новый рейс — без чужой родословной")
 }
