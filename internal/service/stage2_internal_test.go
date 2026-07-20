@@ -397,6 +397,7 @@ func TestReconcileRestoresLineage(t *testing.T) {
 		ID: "V1/8631/10.07", Vagon: "V1", Status: &st8,
 		Index: "8649-880-9857", IndexMain: "8649-880-9857", InvoiceMain: "ЭА1",
 		PlanMsk: ltm(2026, 7, 21, 21, 6), PlanJd: ltm(2026, 7, 21, 21, 6), IndexPp: "8649-880-9857",
+		Naznach: "ГУТ-2", PereadrType: "own", PereadrPort: "",
 	}
 	repo := &s9StubRepo{vagons: map[string]int{}}
 	cache := NewStatus9Cache(repo)
@@ -424,6 +425,8 @@ func TestReconcileRestoresLineage(t *testing.T) {
 	assert.Equal(t, "ЭА1", r.InvoiceMain, "накладная формирования стабильна")
 	assert.NotNil(t, r.PlanMsk, "план-поля возвращены")
 	assert.Equal(t, "8649-880-9857", r.IndexPp)
+	assert.Equal(t, "ГУТ-2", r.Naznach, "операторская перестановка восстановлена")
+	assert.Equal(t, "own", r.PereadrType, "переадресация восстановлена")
 
 	// Чужой рейс (другой ID) родословную не наследует.
 	kept2 := []domain.Dislocation{{
