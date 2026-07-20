@@ -65,6 +65,65 @@ func applyHistory(ctx context.Context, kept []domain.Dislocation, actual *Actual
 	return st, nil
 }
 
+// applyUnloadOnLeave — дополнение к S2-6 (решение владельца): вагон со статусом 10
+// (прибыл, не выгружен) исчез из нового батча — штатное выбытие, но переход 10→12
+// мы не застали (выгружен и уехал из зоны наблюдения между снимками). Без этого
+// рейс навсегда остаётся «не выгружен» (случай АЭ 143/144). Дописываем веху
+// выгрузки в историю: date_vigr = момент выбытия, ЖД-сутки по правилу «час ≥ 18 →
+// +1», place_vigr = терминал назначения, статус 12 (рейс завершён). Точное время
+// правится оператором в «Истории прибывших». Строки, где выгрузка уже внесена
+// вручную (date_vigr заполнен — снимок держал 10 по sticky), НЕ трогаем: ручная
+// веха вернее автоматической. Вызывается ДО подмены снимка (actual — прежний).
+func applyUnloadOnLeave(ctx context.Context, kept []domain.Dislocation, actual *ActualCache, repo port.HistoryRepository) (int, error) {
+	seen := make(map[string]struct{}, len(kept))
+	for i := range kept {
+		if kept[i].Vagon != "" {
+			seen[kept[i].Vagon] = struct{}{}
+		}
+	}
+	naznachByID := map[string]string{}
+	var ids []string
+	for _, v := range actual.All() {
+		if v.Vagon == "" || v.ID == "" || v.Status == nil || *v.Status != 10 {
+			continue
+		}
+		if _, present := seen[v.Vagon]; present {
+			continue
+		}
+		naznachByID[v.ID] = v.Naznach
+		ids = append(ids, v.ID)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	rows, err := repo.RowsByIDs(ctx, ids)
+	if err != nil {
+		return 0, fmt.Errorf("строки истории выбывших: %w", err)
+	}
+	now := clock.Now()
+	jd := dateOnly(jdFromFact(&now))
+	updates := map[string]map[string]any{}
+	for i := range rows {
+		if rows[i].DateVigr != nil {
+			continue // выгрузка уже внесена (обычно вручную) — не перетирать
+		}
+		updates[rows[i].ID] = map[string]any{
+			"status":      12,
+			"date_vigr":   now,
+			"date_vigr_d": jd,
+			"place_vigr":  naznachByID[rows[i].ID],
+			"updated_at":  now,
+		}
+	}
+	if len(updates) == 0 {
+		return 0, nil
+	}
+	if err := repo.UpdateFieldsBatch(ctx, updates); err != nil {
+		return 0, fmt.Errorf("веха выгрузки выбывших: %w", err)
+	}
+	return len(updates), nil
+}
+
 // historyUpdateFields — точечные обновления по переходам (actual → new): накладная,
 // статус, index_main (0→другой), выгрузка (→12), прибытие (→10). Пустая карта = нет
 // изменений.

@@ -132,6 +132,7 @@ type LKProcessResult struct {
 	ProgComputed     int            `json:"prog_computed"`      // записей с прогнозным прибытием ProgMsk (Stage 4)
 	HistoryInserted  int            `json:"history_inserted"`   // новых рейсов в vagon_history (S2-6)
 	HistoryUpdated   int            `json:"history_updated"`    // обновлённых строк истории по переходам
+	UnloadOnLeave    int            `json:"unload_on_leave"`    // авто-вех выгрузки по выбытию статуса-10
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -309,6 +310,15 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// Выбытие без выгрузки: статус-10 исчез из батча (перехода 10→12 не застали) —
+	// авто-веха выгрузки в историю моментом выбытия. ДО подмены снимка.
+	var unloadLeft int
+	if p.actual != nil && p.history != nil {
+		if unloadLeft, err = applyUnloadOnLeave(ctx, all, p.actual, p.history); err != nil {
+			return LKProcessResult{}, fmt.Errorf("выбытие-10 без выгрузки: %w", err)
+		}
+	}
+
 	// «Бесплановые в подходе» (Оперативка): смена станции без плана ближе порога —
 	// ДО подмены снимка (сравнение с прежним). Ошибка не валит пересборку.
 	if p.actual != nil && p.unplanned != nil {
@@ -359,6 +369,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		MarkaMissed:      mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
 		ForecastComputed: forecastN, ProgComputed: progN,
 		HistoryInserted: hist.Inserted, HistoryUpdated: hist.Updated,
+		UnloadOnLeave: unloadLeft,
 	}, nil
 }
 
