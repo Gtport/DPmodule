@@ -62,7 +62,7 @@ func TestProblemRows(t *testing.T) {
 		{Matched: false},
 		{Matched: false},
 	}
-	probs := problemRows(nitki, matches)
+	probs := problemRows(nitki, matches, planmatch.AggResult{})
 
 	require.Len(t, probs, 1)
 	assert.Equal(t, 0, probs[0].Ord)

@@ -93,7 +93,7 @@ func TestMatch_BaseIndexAndVagons(t *testing.T) {
 
 	// Нитка с тем же базовым индексом (последние 2 символа отличаются), Activ=3.
 	nitki := []plan.PlanNitka{{Index: "7438-011-1299", IndexPp: "7438-011-1299", Activ: 3}}
-	res := Match(nitki, agg, false)
+	res := Match(nitki, agg, false, nil)
 
 	require.Len(t, res, 1)
 	m := res[0]
@@ -109,7 +109,7 @@ func TestMatch_NoMatchWhenBaseDiffers(t *testing.T) {
 	tgt := targetSet("АЭ")
 	agg := Aggregate([]domain.Dislocation{disl("V1", "7438-011-1234", "7438-011-1234", "АЭ")}, tgt)
 	nitki := []plan.PlanNitka{{Index: "1111-011-1234", IndexPp: "1111-011-1234", Activ: 1}}
-	res := Match(nitki, agg, false)
+	res := Match(nitki, agg, false, nil)
 	require.Len(t, res, 1)
 	assert.False(t, res[0].Matched)
 	assert.Empty(t, res[0].Vagons)
@@ -124,7 +124,7 @@ func TestMatch_Status10Excluded(t *testing.T) {
 	}
 	agg := Aggregate(records, tgt)
 	nitki := []plan.PlanNitka{{Index: "7438-011-1234", IndexPp: "7438-011-1234", Activ: 2}}
-	res := Match(nitki, agg, false)
+	res := Match(nitki, agg, false, nil)
 
 	require.True(t, res[0].Matched)
 	assert.Equal(t, 2, res[0].MaWagons, "статус 10 считается в агрегации (эталон)")
@@ -144,13 +144,44 @@ func TestMatch_RequiresNaznach_NKvsMA(t *testing.T) {
 	agg := Aggregate(records, tgt)
 	nitki := []plan.PlanNitka{{Index: "7438-011-1150", IndexPp: "7438-011-1150", Activ: 2}}
 
-	ma := Match(nitki, agg, false)[0]
+	ma := Match(nitki, agg, false, nil)[0]
 	require.True(t, ma.Matched)
 	sort.Strings(ma.Vagons)
 	assert.Equal(t, []string{"V1", "V2", "V3"}, ma.Vagons, "MA: по IdDisl+IndexMain, Naznach не сверяется")
 
-	nk := Match(nitki, agg, true)[0]
+	nk := Match(nitki, agg, true, nil)[0]
 	require.True(t, nk.Matched)
 	sort.Strings(nk.Vagons)
 	assert.Equal(t, []string{"V1", "V2"}, nk.Vagons, "NK: только Naznach совпадающие с подгруппой")
+}
+
+// Ручная привязка (forced): нитка ждёт много (Activ ≥ порога), приехал недокомплект
+// — автоматика отбраковывает по activThreshold, но выбор оператора матчит в обход
+// фильтра. Кандидаты для выбора отдаёт CandidatesFor (включая отбракованных).
+func TestMatch_ForcedBind(t *testing.T) {
+	tgt := targetSet("АЭ")
+	var records []domain.Dislocation
+	for i := 0; i < 9; i++ { // наших только 9 — меньше activThreshold (15)
+		records = append(records, disl("V"+string(rune('0'+i)), "9722-421-9838", "9722-421-9838", "АЭ"))
+	}
+	agg := Aggregate(records, tgt)
+	nitki := []plan.PlanNitka{{Index: "9722-421-9838", IndexPp: "9722-421-9838", Activ: 17}}
+
+	// Автоматика — пусто (порог), но кандидат виден.
+	auto := Match(nitki, agg, false, nil)
+	require.False(t, auto[0].Matched, "автоматика должна отбраковать недокомплект")
+	cands := CandidatesFor("9722-421-9838", agg, 17)
+	require.Len(t, cands, 1)
+	assert.Equal(t, 9, cands[0].MaWagons)
+
+	// Оператор привязал — матч в обход фильтра, вагоны собраны.
+	forcedRes := Match(nitki, agg, false, map[int]string{0: cands[0].Key})
+	require.True(t, forcedRes[0].Matched)
+	assert.Equal(t, "forced_by_index", forcedRes[0].Source)
+	assert.Equal(t, 9, forcedRes[0].MaWagons)
+	assert.Len(t, forcedRes[0].Vagons, 9)
+
+	// Неизвестный ключ (снимок сменился) — падаем в обычный матч (пусто), не в панику.
+	gone := Match(nitki, agg, false, map[int]string{0: "НЕТ|ТАКОГО"})
+	assert.False(t, gone[0].Matched)
 }

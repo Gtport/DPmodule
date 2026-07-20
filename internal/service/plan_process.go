@@ -142,7 +142,7 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 
 	records := p.actual.All()
 	agg := planmatch.Aggregate(records, target)
-	matches := planmatch.Match(doc.Nitki, agg, prof.MatchRequiresNaznach)
+	matches := planmatch.Match(doc.Nitki, agg, prof.MatchRequiresNaznach, nil)
 
 	out, stats := planmatch.Apply(records, matches, target, clock.Now())
 	applyStage4(out, p.dir, p.cfg, 0) // план поставил новый PlanMsk → пересчёт прогноза ProgMsk

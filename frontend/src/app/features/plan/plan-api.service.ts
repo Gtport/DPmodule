@@ -94,6 +94,17 @@ export interface ProblemRow {
   plan_msk: string | null;
   activ: number;
   ports: PortCell[] | null;
+  /** Поезда-кандидаты для ручной привязки (в т.ч. не прошедшие количественный фильтр). */
+  candidates?: TrainCandidate[];
+}
+
+/** Поезд-кандидат ручной привязки к проблемной нитке. */
+export interface TrainCandidate {
+  key: string;       // "index|id_disl" — значение для forced
+  index: string;
+  id_disl: string;
+  ma_wagons: number; // «наших» вагонов в поезде
+  total: number;     // всего вагонов
 }
 
 /** Ответ prepare/revalidate: токен + с.ф.-строки + проблемные нитки + превью.
@@ -201,9 +212,13 @@ export class PlanApiService {
 
   /** Сухой пересчёт превью с ручными правками индексов (overrides: ord → индекс 4-3-4).
    *  Снимок не трогаем, токен не расходуем — для итеративной коррекции перед confirm. */
-  revalidate(token: string, overrides: Record<number, string>): Promise<PreparePlanResult> {
+  revalidate(
+    token: string,
+    overrides: Record<number, string>,
+    forced: Record<number, string> = {},
+  ): Promise<PreparePlanResult> {
     return firstValueFrom(
-      this.http.post<PreparePlanResult>(`${this.base}/revalidate`, { token, overrides }),
+      this.http.post<PreparePlanResult>(`${this.base}/revalidate`, { token, overrides, forced }),
     );
   }
 
@@ -213,9 +228,10 @@ export class PlanApiService {
     token: string,
     overrides: Record<number, string>,
     selections: Record<number, string[]>,
+    forced: Record<number, string> = {},
   ): Promise<PlanApplyResult> {
     return firstValueFrom(
-      this.http.post<PlanApplyResult>(`${this.base}/confirm`, { token, overrides, selections }),
+      this.http.post<PlanApplyResult>(`${this.base}/confirm`, { token, overrides, selections, forced }),
     );
   }
 
