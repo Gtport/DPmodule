@@ -61,3 +61,63 @@ func TestConfirmArrival(t *testing.T) {
 	assert.Equal(t, 10, hist.updatedBatch["C1"]["status"])
 	assert.NotNil(t, hist.updatedBatch["C1"]["date_prib"])
 }
+
+// Отмена прибытия: снимок 10→9 (вагон снова кандидат), веха истории очищена;
+// выгруженный (12) — запрет.
+func TestCancelArrival(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC))
+	defer restore()
+
+	s10, s12 := 10, 12
+	timeOp := domain.NewLocalTime(time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC))
+	prib := domain.NewLocalTime(time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC))
+	mk := func(id, vagon string, st *int) domain.Dislocation {
+		return domain.Dislocation{ID: id, Vagon: vagon, Status: st, DatePrib: prib, TimeOp: timeOp, Naznach: "АЭ"}
+	}
+
+	t.Run("10 → 9, веха очищена", func(t *testing.T) {
+		repo := &fakeDislRepo{current: []domain.Dislocation{mk("A1", "111", &s10)}}
+		proc, _ := newProcessor(t, repo)
+		hist := newFakeHistory()
+		svc := service.NewArrivalsService(hist, nil, proc)
+
+		res, err := svc.CancelArrival(context.Background(), []string{"A1"})
+		require.NoError(t, err)
+		assert.Equal(t, 1, res.Updated)
+
+		var a1 domain.Dislocation
+		for _, r := range repo.replaced {
+			if r.ID == "A1" {
+				a1 = r
+			}
+		}
+		require.NotNil(t, a1.Status)
+		assert.Equal(t, 9, *a1.Status)
+		assert.Nil(t, a1.DatePrib)
+		assert.Equal(t, timeOp.String(), a1.DateKon.String()) // date_kon = time_op (правило не-10)
+
+		require.Contains(t, hist.updatedBatch, "A1")
+		assert.Nil(t, hist.updatedBatch["A1"]["date_prib"])
+		assert.Equal(t, "", hist.updatedBatch["A1"]["otkl"])
+	})
+
+	t.Run("выгруженный — запрет", func(t *testing.T) {
+		repo := &fakeDislRepo{current: []domain.Dislocation{mk("B1", "222", &s12)}}
+		proc, _ := newProcessor(t, repo)
+		svc := service.NewArrivalsService(newFakeHistory(), nil, proc)
+
+		_, err := svc.CancelArrival(context.Background(), []string{"B1"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "выгружен")
+	})
+
+	t.Run("нет в снимке — понятная ошибка", func(t *testing.T) {
+		repo := &fakeDislRepo{current: []domain.Dislocation{mk("A1", "111", &s10)}}
+		proc, _ := newProcessor(t, repo)
+		svc := service.NewArrivalsService(newFakeHistory(), nil, proc)
+
+		_, err := svc.CancelArrival(context.Background(), []string{"НЕТ_ТАКОГО"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "нет в текущем снимке")
+	})
+}

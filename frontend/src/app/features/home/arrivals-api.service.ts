@@ -98,6 +98,13 @@ export class ArrivalsApiService {
       vagon_ids: vagonIds,
     }));
   }
+
+  /** Отмена прибытия: снимок 10→9 (вагон снова кандидат) + очистка вехи в истории. */
+  cancelArrival(vagonIds: string[]): Promise<ArrivalsUpdateResult> {
+    return firstValueFrom(this.http.post<ArrivalsUpdateResult>(`${this.base}/arrivals/cancel`, {
+      vagon_ids: vagonIds,
+    }));
+  }
 }
 
 /** Поезд-кандидат в прибывшие (вагоны статуса 9 одного индекса). */
@@ -114,7 +121,6 @@ export interface CandidateGroup {
 /** Тело правки: vagon_ids + только применяемые поля (времена — МСК без TZ). */
 export interface ArrivalsUpdate {
   vagon_ids: string[];
-  clear_arrival?: boolean;
   index_pp?: string;
   plan_jd?: string;
   date_prib?: string;
