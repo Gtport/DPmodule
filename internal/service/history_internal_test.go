@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
@@ -14,6 +16,8 @@ type histStubRepo struct {
 	existing map[string]struct{}
 	inserted []domain.VagonHistory
 	updates  map[string]map[string]any
+	rows     map[string]domain.VagonHistory // для RowsByIDs
+	batch    map[string]map[string]any      // записи UpdateFieldsBatch
 }
 
 func newHistStub(existing ...string) *histStubRepo {
@@ -157,14 +161,67 @@ func TestApplyHistory(t *testing.T) {
 	assert.Equal(t, 5, repo.updates["A"]["status"])
 }
 
-func (r *histStubRepo) RowsByIDs(_ context.Context, _ []string) ([]domain.VagonHistory, error) {
-	return nil, nil
+func (r *histStubRepo) RowsByIDs(_ context.Context, ids []string) ([]domain.VagonHistory, error) {
+	var out []domain.VagonHistory
+	for _, id := range ids {
+		if row, ok := r.rows[id]; ok {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
-func (r *histStubRepo) UpdateFieldsBatch(_ context.Context, _ map[string]map[string]any) error {
+func (r *histStubRepo) UpdateFieldsBatch(_ context.Context, updates map[string]map[string]any) error {
+	if r.batch == nil {
+		r.batch = map[string]map[string]any{}
+	}
+	for id, f := range updates {
+		r.batch[id] = f
+	}
 	return nil
 }
 
 func (r *histStubRepo) DailyTerminalCounts(_ context.Context, _, _ domain.LocalTime) (map[string]int, map[string]int, error) {
 	return nil, nil, nil
+}
+
+// TestApplyUnloadOnLeave — авто-веха выгрузки при выбытии статуса-10 из батча
+// (случай АЭ 143/144: выгружен и уехал между снимками, перехода 10→12 не было).
+func TestApplyUnloadOnLeave(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 7, 21, 19, 30, 0, 0, time.UTC))
+	defer restore()
+
+	st10, st2 := 10, 2
+	actual := &ActualCache{byVagon: map[string]domain.Dislocation{
+		"111": {ID: "A", Vagon: "111", Status: &st10, Naznach: "АЭ"},    // исчез → веха
+		"222": {ID: "B", Vagon: "222", Status: &st10, Naznach: "ГУТ-2"}, // остался в батче
+		"333": {ID: "C", Vagon: "333", Status: &st2},                    // исчез, но в пути — не наш случай
+		"444": {ID: "D", Vagon: "444", Status: &st10, Naznach: "АЭ"},    // исчез, выгрузка уже внесена вручную
+	}}
+	manual := domain.NewLocalTime(time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC))
+	repo := newHistStub()
+	repo.rows = map[string]domain.VagonHistory{
+		"A": {ID: "A", Vagon: "111"},
+		"D": {ID: "D", Vagon: "444", DateVigr: manual},
+	}
+
+	kept := []domain.Dislocation{{ID: "B2", Vagon: "222", Status: &st10}}
+	n, err := applyUnloadOnLeave(context.Background(), kept, actual, repo)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "веха только для выбывшего без выгрузки")
+
+	f := repo.batch["A"]
+	require.NotNil(t, f, "выбывший 111 получил веху")
+	assert.Equal(t, 12, f["status"])
+	assert.Equal(t, "АЭ", f["place_vigr"])
+	assert.Equal(t, "2026-07-21T19:30:00", f["date_vigr"].(domain.LocalTime).String())
+	// час 19 ≥ 18 → ЖД-сутки следующего дня
+	assert.Equal(t, "2026-07-22T00:00:00", f["date_vigr_d"].(*domain.LocalTime).String())
+
+	_, hasB := repo.batch["B"]
+	_, hasC := repo.batch["C"]
+	_, hasD := repo.batch["D"]
+	assert.False(t, hasB, "оставшийся в батче не трогается")
+	assert.False(t, hasC, "исчезнувший в пути — путь записи-8, не выгрузка")
+	assert.False(t, hasD, "ручная выгрузка не перетирается")
 }
