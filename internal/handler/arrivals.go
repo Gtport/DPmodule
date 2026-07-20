@@ -27,6 +27,7 @@ func (h *arrivalsHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/arrivals/candidates", h.candidates)
 	g.POST("/dislocation/arrivals/confirm", h.confirm)
 	g.POST("/dislocation/arrivals/dismiss", h.dismiss)
+	g.POST("/dislocation/arrivals/cancel", h.cancel)
 }
 
 // groups godoc
@@ -130,6 +131,31 @@ func (h *arrivalsHandler) dismiss(c *gin.Context) {
 	}
 	res, err := h.svc.DismissCandidates(c.Request.Context(), req.VagonIDs)
 	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// cancel godoc
+// @Summary  Отмена прибытия: снимок 10→9 (вагон снова кандидат) + очистка вехи в истории
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    body body dismissRequest true "vagon_ids"
+// @Success  200 {object} service.ArrivalsUpdateResult
+// @Router   /api/v1/dislocation/arrivals/cancel [post]
+func (h *arrivalsHandler) cancel(c *gin.Context) {
+	var req dismissRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса: " + err.Error()})
+		return
+	}
+	res, err := h.svc.CancelArrival(c.Request.Context(), req.VagonIDs)
+	if err != nil {
+		if errors.Is(err, service.ErrArrivalsAccess) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

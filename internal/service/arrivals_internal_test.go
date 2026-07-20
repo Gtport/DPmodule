@@ -112,18 +112,6 @@ func TestArrivalUpdateFields(t *testing.T) {
 		}
 	})
 
-	t.Run("отмена прибытия — сброс вехи", func(t *testing.T) {
-		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{ClearArrival: true}, now)
-		for _, k := range []string{"status", "date_prib", "date_prib_d", "delay", "date_dostav"} {
-			if v, ok := f[k]; !ok || v != nil {
-				t.Errorf("%s должен сбрасываться в NULL, получено %v", k, v)
-			}
-		}
-		if f["otkl"] != "" {
-			t.Errorf("otkl должен очищаться")
-		}
-	})
-
 	t.Run("выгрузка", func(t *testing.T) {
 		place := "АЭ"
 		frost := 30

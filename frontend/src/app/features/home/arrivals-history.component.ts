@@ -511,10 +511,23 @@ export class ArrivalsHistoryComponent implements OnInit {
     void this.applyUpdate({ naznach: term }, `Назначение: ${term}`);
   }
 
-  cancelArrival(): void {
+  async cancelArrival(): Promise<void> {
     if (!this.requireSelection()) return;
-    if (!window.confirm(`Отменить прибытие для ${this.selected().size} ваг.? Факт и отклонение будут сброшены (только в истории).`)) return;
-    void this.applyUpdate({ clear_arrival: true }, 'Прибытие отменено');
+    const ok = window.confirm(
+      `Отменить прибытие для ${this.selected().size} ваг.? Вагоны вернутся в кандидаты ` +
+      `(факт и отклонение сброшены в снимке и истории). Если дату прибытия давала АСУ, ` +
+      `ближайшее обновление (~10 мин) снова отметит их прибывшими.`);
+    if (!ok) return;
+    this.applying.set(true);
+    try {
+      const res = await this.api.cancelArrival([...this.selected()]);
+      this.msg.success(`Прибытие отменено: ${res.updated} ваг. — вагоны снова в кандидатах.`);
+      await this.load();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.applying.set(false);
+    }
   }
 
   // ── Кандидаты: подтверждение / отклонение ────────────────────────────────

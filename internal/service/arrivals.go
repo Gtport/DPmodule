@@ -109,11 +109,9 @@ var ErrArrivalsAccess = fmt.Errorf("правка запрещена")
 
 // ArrivalsUpdateRequest — правка ВЫБРАННЫХ вагонов истории (все операции — по id
 // вагонов, решение владельца). Заполняются только применяемые поля.
+// «Отменить прибытие» — отдельная операция CancelArrival (снимок + история).
 type ArrivalsUpdateRequest struct {
 	VagonIDs []string `json:"vagon_ids"`
-	// «Отменить прибытие»: сброс статуса/факта/отклонения — вагон снова «в пути».
-	// Меняет ТОЛЬКО историю (как в gtport), снимок дислокации не трогается.
-	ClearArrival bool `json:"clear_arrival,omitempty"`
 	// «Изменить прибытие»: индекс поезда, план (ЖД) и факт; otkl/plan_msk/
 	// date_prib_d пересчитываются на сервере.
 	IndexPp  string            `json:"index_pp,omitempty"`
@@ -142,7 +140,7 @@ func (s *ArrivalsService) UpdateVagons(ctx context.Context, req ArrivalsUpdateRe
 	if len(req.VagonIDs) == 0 {
 		return ArrivalsUpdateResult{}, fmt.Errorf("не выбраны вагоны")
 	}
-	if !req.ClearArrival && req.IndexPp == "" && req.PlanJd == nil && req.DatePrib == nil &&
+	if req.IndexPp == "" && req.PlanJd == nil && req.DatePrib == nil &&
 		req.DateVigr == nil && req.PlaceVigr == nil && req.Frost == nil && req.Naznach == "" {
 		return ArrivalsUpdateResult{}, fmt.Errorf("не указано ни одного изменения")
 	}
@@ -200,15 +198,6 @@ func checkArrivalsEditAccess(ctx context.Context, rows []domain.VagonHistory) er
 // (операционный календарь, не таймзона); otkl = факт − план.
 func arrivalUpdateFields(r *domain.VagonHistory, req ArrivalsUpdateRequest, now domain.LocalTime) map[string]any {
 	fields := map[string]any{"updated_at": &now}
-	if req.ClearArrival {
-		fields["status"] = nil
-		fields["date_prib"] = nil
-		fields["date_prib_d"] = nil
-		fields["otkl"] = ""
-		fields["delay"] = nil
-		fields["date_dostav"] = nil
-		return fields
-	}
 	if req.IndexPp != "" {
 		fields["index_pp"] = req.IndexPp
 	}
@@ -423,6 +412,92 @@ func (s *ArrivalsService) ConfirmArrival(ctx context.Context, req ConfirmArrival
 		return ArrivalsUpdateResult{}, fmt.Errorf("веха прибытия в историю: %w", err)
 	}
 	return ArrivalsUpdateResult{Updated: n, Selected: len(req.VagonIDs)}, nil
+}
+
+// CancelArrival — «Отменить прибытие» (переосмысление gtport по решению
+// владельца, симметрия с ConfirmArrival): в СНИМКЕ вагон возвращается из 10 в 9
+// (сброс date_prib; date_kon — по правилу не-10 из time_op), снова становясь
+// кандидатом; веха прибытия в истории очищается. С потоком не спорим: если АСУ
+// снова принесёт date_prib, ближайший пул вернёт вагон в прибывшие.
+//
+// Ограничения: отменять можно только статус 10 (выгрузка-12 доказывает прибытие
+// — запрет), и только вагоны текущего снимка; права — как у остальных правок
+// (не-админам лишь прибытия за сегодня/вчера).
+func (s *ArrivalsService) CancelArrival(ctx context.Context, vagonIDs []string) (ArrivalsUpdateResult, error) {
+	if len(vagonIDs) == 0 {
+		return ArrivalsUpdateResult{}, fmt.Errorf("не выбраны вагоны")
+	}
+	ids := map[string]struct{}{}
+	for _, id := range vagonIDs {
+		ids[id] = struct{}{}
+	}
+
+	// Предпроверка по снимку: выгруженные и отсутствующие — понятная ошибка ДО правки.
+	inSnapshot := 0
+	for _, r := range s.proc.actual.All() {
+		if _, sel := ids[r.ID]; !sel {
+			continue
+		}
+		inSnapshot++
+		if r.Status != nil && *r.Status >= 12 {
+			return ArrivalsUpdateResult{}, fmt.Errorf(
+				"вагон %s уже выгружен — отмена прибытия недоступна (выгрузка доказывает прибытие)", r.Vagon)
+		}
+	}
+	if inSnapshot == 0 {
+		return ArrivalsUpdateResult{}, fmt.Errorf(
+			"выбранных вагонов нет в текущем снимке — отменить можно только свежие прибытия")
+	}
+
+	// Права по датам — по строкам истории (как у остальных правок).
+	rows, err := s.repo.RowsByIDs(ctx, vagonIDs)
+	if err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	if err := checkArrivalsEditAccess(ctx, rows); err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+
+	now := clock.Now()
+	var cancelled []string
+	n, _, _, err := s.proc.MutateSnapshot(ctx, "arrival_cancel",
+		map[string]any{"selected": len(vagonIDs)},
+		func(all []domain.Dislocation) int {
+			cnt := 0
+			for i := range all {
+				r := &all[i]
+				if _, sel := ids[r.ID]; !sel {
+					continue
+				}
+				if r.Status == nil || *r.Status != 10 {
+					continue // отменяется только подтверждённое прибытие
+				}
+				st := 9
+				r.Status = &st
+				r.DatePrib = nil
+				r.DateKon = r.TimeOp // computeDateKon для не-10
+				r.UpdatedAt = now
+				cancelled = append(cancelled, r.ID)
+				cnt++
+			}
+			return cnt
+		})
+	if err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+
+	// Очистка вехи прибытия в истории (сброс полей перехода-10).
+	updates := make(map[string]map[string]any, len(cancelled))
+	for _, id := range cancelled {
+		updates[id] = map[string]any{
+			"status": 9, "date_prib": nil, "date_prib_d": nil,
+			"otkl": "", "delay": nil, "updated_at": &now,
+		}
+	}
+	if err := s.repo.UpdateFieldsBatch(ctx, updates); err != nil {
+		return ArrivalsUpdateResult{}, fmt.Errorf("очистка вехи прибытия в истории: %w", err)
+	}
+	return ArrivalsUpdateResult{Updated: n, Selected: len(vagonIDs)}, nil
 }
 
 // DismissCandidates — «скрыть до новых данных»: пометка на записях-кандидатах;
