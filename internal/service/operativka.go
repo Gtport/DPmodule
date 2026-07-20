@@ -178,13 +178,37 @@ func (s *OperativkaService) DismissUnplanned(ctx context.Context, vagons []strin
 	if s.unplanned == nil || len(vagons) == 0 {
 		return 0, nil
 	}
+	// Индексы скрываемых поездов — в журнал (до удаления записей).
+	var idxs []string
+	if s.journal != nil {
+		if rows, lerr := s.unplanned.LoadAll(ctx); lerr == nil {
+			want := map[string]struct{}{}
+			for _, v := range vagons {
+				want[v] = struct{}{}
+			}
+			seen := map[string]struct{}{}
+			for i := range rows {
+				if _, ok := want[rows[i].Vagon]; !ok {
+					continue
+				}
+				idx := rows[i].Index
+				if idx == "" {
+					idx = rows[i].IndexMain
+				}
+				if _, dup := seen[idx]; idx != "" && !dup {
+					seen[idx] = struct{}{}
+					idxs = append(idxs, idx)
+				}
+			}
+		}
+	}
 	n, err := s.unplanned.DeleteByVagons(ctx, vagons)
 	if err != nil {
 		return 0, err
 	}
 	if s.journal != nil {
 		s.journal.RecordArrivalsEdit(ctx, "dismiss_unplanned", n,
-			map[string]any{"selected": len(vagons)})
+			map[string]any{"selected": len(vagons), "trains": idxs})
 	}
 	return n, nil
 }
