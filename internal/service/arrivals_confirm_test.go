@@ -121,3 +121,40 @@ func TestCancelArrival(t *testing.T) {
 		assert.Contains(t, err.Error(), "нет в текущем снимке")
 	})
 }
+
+// «Изменить назначение» из истории прибывших — сквозная операция: правит naznach
+// и в снимке (вагоны текущего снимка), и в истории; чужие вагоны не трогаются.
+func TestUpdateNaznachTouchesSnapshot(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC))
+	defer restore()
+
+	s10 := 10
+	prib := domain.NewLocalTime(time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC))
+	repo := &fakeDislRepo{current: []domain.Dislocation{
+		{ID: "A1", Vagon: "111", Status: &s10, Naznach: "АЭ", DatePrib: prib},
+		{ID: "B1", Vagon: "222", Status: &s10, Naznach: "АЭ", DatePrib: prib},
+	}}
+	proc, _ := newProcessor(t, repo)
+	hist := newFakeHistory()
+	dir := service.NewDirectoryCache(&stubDirRepo{ports: []domain.Ports{
+		{Okpo: 1, NameS: "АЭ", Enabled: true},
+		{Okpo: 2, NameS: "ГУТ-2", Enabled: true},
+	}})
+	require.NoError(t, dir.Load(context.Background()))
+	svc := service.NewArrivalsService(hist, dir, proc)
+
+	res, err := svc.UpdateVagons(context.Background(), service.ArrivalsUpdateRequest{
+		VagonIDs: []string{"A1"}, Naznach: "ГУТ-2",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Updated)
+
+	byID := map[string]domain.Dislocation{}
+	for _, r := range repo.replaced {
+		byID[r.ID] = r
+	}
+	assert.Equal(t, "ГУТ-2", byID["A1"].Naznach, "снимок: назначение переставлено")
+	assert.Equal(t, "АЭ", byID["B1"].Naznach, "чужой вагон не тронут")
+	require.Contains(t, hist.updatedBatch, "A1")
+	assert.Equal(t, "ГУТ-2", hist.updatedBatch["A1"]["naznach"], "история: назначение переставлено")
+}

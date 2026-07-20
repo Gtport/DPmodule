@@ -342,8 +342,13 @@ func stageBytes(t *testing.T, baseDir, name string, data []byte) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o644))
 }
 
-func (f *fakeHistoryRepo) RowsByIDs(_ context.Context, _ []string) ([]domain.VagonHistory, error) {
-	return nil, nil
+func (f *fakeHistoryRepo) RowsByIDs(_ context.Context, ids []string) ([]domain.VagonHistory, error) {
+	// Синтетические строки по запрошенным id (для правок истории в тестах).
+	out := make([]domain.VagonHistory, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, domain.VagonHistory{ID: id, Vagon: id})
+	}
+	return out, nil
 }
 
 func (f *fakeHistoryRepo) UpdateFieldsBatch(_ context.Context, updates map[string]map[string]any) error {
