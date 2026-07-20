@@ -267,6 +267,20 @@ function todayMsk(): string {
                   <span class="sf-terms">план {{ row.activ }} ваг</span>
                   <span class="sf-cnt">вагоны не найдены</span>
                 </div>
+                @if (row.candidates?.length) {
+                  <div class="ovr">
+                    <span class="ovr-lbl">Привязать поезд:</span>
+                    <nz-select nzSize="small" class="cand-sel" nzAllowClear
+                               nzPlaceHolder="выберите поезд (в обход фильтра)"
+                               [ngModel]="forced()[row.ord] ?? null"
+                               (ngModelChange)="onForced(row.ord, $event ?? '')">
+                      @for (c of row.candidates ?? []; track c.key) {
+                        <nz-option [nzValue]="c.key"
+                                   [nzLabel]="c.index + ' — наших ' + c.ma_wagons + ' из ' + row.activ + ' (в поезде ' + c.total + ')'" />
+                      }
+                    </nz-select>
+                  </div>
+                }
                 <div class="ovr">
                   <span class="ovr-lbl">Исправьте индекс:</span>
                   <app-index-input [value]="row.index_pp" (valueChange)="onOverride(row.ord, $event)" (completed)="revalidate()" />
@@ -346,6 +360,7 @@ function todayMsk(): string {
     /* Строка ручного ввода индекса (переопределение с.ф./исправление опечатки). */
     .ovr { display: flex; align-items: center; gap: var(--space-sm); margin: var(--space-xs) 0; flex-wrap: wrap; }
     .ovr-lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .cand-sel { min-width: 320px; }
     /* Счётчик «сопоставлено N / M» в футере — слева, поодаль от кнопок. */
     .foot-cnt { margin-right: auto; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
   `],
@@ -695,6 +710,7 @@ export class PlanComponent implements OnInit, OnDestroy {
   readonly sfPrepare = signal<PreparePlanResult | null>(null);
   readonly sfSel = signal<Record<number, string[]>>({});       // ord с.ф.-нитки → выбранные id_disl
   readonly overrides = signal<Record<number, string>>({});     // ord нитки → вписанный индекс 4-3-4
+  readonly forced = signal<Record<number, string>>({});        // ord нитки → ключ поезда «index|id_disl» (ручная привязка)
   readonly sfBusy = signal(false);
   readonly revalBusy = signal(false);                          // идёт сухой пересчёт (revalidate)
   // Как заново получить превью с тем же источником (загрузка файла ИЛИ пересчёт по id) —
@@ -726,6 +742,15 @@ export class PlanComponent implements OnInit, OnDestroy {
     this.resubmit = null;
   }
 
+  /** Ручная привязка поезда к проблемной нитке («человек решил — фильтр не спорит»). */
+  onForced(ord: number, key: string): void {
+    const m = { ...this.forced() };
+    if (key) m[ord] = key;
+    else delete m[ord];
+    this.forced.set(m);
+    void this.revalidate();
+  }
+
   /** Записать/снять ручную правку индекса нитки (ord → индекс; пусто — снятие). */
   onOverride(ord: number, value: string): void {
     const m = { ...this.overrides() };
@@ -743,11 +768,11 @@ export class PlanComponent implements OnInit, OnDestroy {
     try {
       let res: PreparePlanResult;
       try {
-        res = await this.api.revalidate(prep.token, this.overrides());
+        res = await this.api.revalidate(prep.token, this.overrides(), this.forced());
       } catch (err) {
         if (this.resubmit && err instanceof HttpErrorResponse && err.status === 410) {
           const fresh = await this.resubmit();
-          res = await this.api.revalidate(fresh.token, this.overrides());
+          res = await this.api.revalidate(fresh.token, this.overrides(), this.forced());
         } else {
           throw err;
         }
@@ -787,7 +812,7 @@ export class PlanComponent implements OnInit, OnDestroy {
   /** «Применить» — confirm с правками индексов и выбранными группами. */
   sfApply(): void {
     const prep = this.sfPrepare();
-    if (prep) void this.applyConfirm(prep.token, this.overrides(), this.sfSel());
+    if (prep) void this.applyConfirm(prep.token, this.overrides(), this.sfSel(), this.forced());
   }
 
   /** «Отмена» / закрытие — применить план как есть, без правок и с.ф. (решение владельца). */
@@ -829,6 +854,7 @@ export class PlanComponent implements OnInit, OnDestroy {
       } else {
         this.sfSel.set({});
         this.overrides.set({});
+        this.forced.set({});
         this.sfPrepare.set(prep);  // открыть диалог: выбор групп с.ф. + правки индексов
         this.startSfHeartbeat();   // продлевать токен, пока окно открыто
       }
@@ -844,18 +870,19 @@ export class PlanComponent implements OnInit, OnDestroy {
     token: string,
     overrides: Record<number, string>,
     selections: Record<number, string[]>,
+    forced: Record<number, string> = {},
   ): Promise<void> {
     this.sfBusy.set(true);
     try {
       let res: PlanApplyResult;
       try {
-        res = await this.api.confirm(token, overrides, selections);
+        res = await this.api.confirm(token, overrides, selections, forced);
       } catch (err) {
         // Токен истёк/потерян (диалог висел дольше TTL или бэкенд перезапускался):
         // прозрачно пере-подготавливаем тот же файл и повторяем один раз.
         if (this.resubmit && err instanceof HttpErrorResponse && err.status === 410) {
           const prep = await this.resubmit();
-          res = await this.api.confirm(prep.token, overrides, selections);
+          res = await this.api.confirm(prep.token, overrides, selections, forced);
         } else {
           throw err;
         }

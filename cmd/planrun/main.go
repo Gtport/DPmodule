@@ -87,7 +87,7 @@ func runMatch(doc *plan.PlanDoc, code, dislPath string) error {
 	}
 
 	agg := planmatch.Aggregate(records, target)
-	res := planmatch.Match(doc.Nitki, agg, prof.MatchRequiresNaznach)
+	res := planmatch.Match(doc.Nitki, agg, prof.MatchRequiresNaznach, nil)
 
 	fmt.Printf("\n\nМатч по дампу %q (%d записей дислокации)\n", dislPath, len(records))
 	fmt.Printf("Целевые площадки (%s): %s\n\n", code, keys(target))

@@ -14,6 +14,7 @@ package planmatch
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -248,12 +249,29 @@ func score(maCount, subGroupCount, activValue int) float64 {
 	return exact + sizeScore + sg
 }
 
-// Match сопоставляет каждую нитку с лучшей агрегацией и вычисляет вагоны к записи.
-// requiresNaznach — доп. условие NK (совпадение Naznach при выборке вагонов).
-func Match(nitki []plan.PlanNitka, agg AggResult, requiresNaznach bool) []NitkaMatch {
+// Match сопоставляет каждую нитку с лучшей агрегацией. forced (ord нитки → ключ
+// кандидата "index|id_disl") — ПРИНУДИТЕЛЬНЫЕ привязки оператора: агрегация
+// берётся в обход количественного фильтра isValid (человек решил — фильтр не
+// спорит; кейс «нитка ждёт 17, приехало 9»). nil — обычный автоматический матч.
+func Match(nitki []plan.PlanNitka, agg AggResult, requiresNaznach bool, forced map[int]string) []NitkaMatch {
 	out := make([]NitkaMatch, 0, len(nitki))
-	for _, n := range nitki {
+	for i, n := range nitki {
 		m := NitkaMatch{Nitka: n}
+		if key, ok := forced[i]; ok && key != "" {
+			if picked, src := aggByKey(agg, key); picked != nil {
+				m.Matched = true
+				m.Source = "forced_" + src
+				m.Index = picked.Index
+				m.IdDisl = picked.IdDisl
+				m.MaWagons = picked.maWagons(agg.target)
+				m.Score = score(m.MaWagons, len(picked.SubGroups), n.Activ)
+				m.SubGroups = picked.SubGroups
+				m.Vagons = collectVagons(agg, *picked, requiresNaznach)
+				out = append(out, m)
+				continue
+			}
+			// ключ не найден (снимок сменился) — падаем в обычный матч
+		}
 		if n.IsSf {
 			// с.ф. индексно не матчатся — группы выбирает пользователь (отдельный поток);
 			// пустой матч сохраняет соответствие 1:1 с nitki.
@@ -275,6 +293,71 @@ func Match(nitki []plan.PlanNitka, agg AggResult, requiresNaznach bool) []NitkaM
 		out = append(out, m)
 	}
 	return out
+}
+
+// Candidate — поезд-кандидат для ручной привязки проблемной нитки: агрегация с
+// совпадающим базовым индексом, показанная оператору БЕЗ количественного фильтра.
+type Candidate struct {
+	Key      string  `json:"key"` // "index|id_disl" — идентификатор для forced
+	Index    string  `json:"index"`
+	IdDisl   string  `json:"id_disl"`
+	MaWagons int     `json:"ma_wagons"` // «наших» вагонов в поезде
+	Total    int     `json:"total"`    // всего вагонов в поезде
+	Score    float64 `json:"score"`
+}
+
+// CandidatesFor — кандидаты ручной привязки для нитки: агрегации всех трёх карт
+// (по текущему/прошлому/родительскому индексу) с базовым индексом нитки, включая
+// НЕ прошедшие фильтр isValid (ради них список и существует). Сорт по score.
+func CandidatesFor(indexPp string, agg AggResult, activValue int) []Candidate {
+	base := baseIndex(indexPp)
+	seen := map[string]struct{}{}
+	var out []Candidate
+	for _, m := range []map[string]Aggregation{agg.ByIndex, agg.ByIndexLast, agg.ByIndexMain} {
+		for key, a := range m {
+			parts := strings.SplitN(key, "|", 2)
+			if len(parts) < 2 || baseIndex(parts[0]) != base {
+				continue
+			}
+			ma := a.maWagons(agg.target)
+			if ma == 0 {
+				continue // совсем без наших — привязывать нечего
+			}
+			ck := a.Index + "|" + a.IdDisl
+			if _, dup := seen[ck]; dup {
+				continue
+			}
+			seen[ck] = struct{}{}
+			out = append(out, Candidate{
+				Key: ck, Index: a.Index, IdDisl: a.IdDisl,
+				MaWagons: ma, Total: a.TotalCount,
+				Score: score(ma, len(a.SubGroups), activValue),
+			})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	return out
+}
+
+// aggByKey — поиск агрегации по ключу кандидата "index|id_disl" во всех картах.
+func aggByKey(agg AggResult, key string) (*Aggregation, string) {
+	order := []struct {
+		m   map[string]Aggregation
+		src string
+	}{
+		{agg.ByIndex, "by_index"},
+		{agg.ByIndexLast, "by_index_last"},
+		{agg.ByIndexMain, "by_index_main"},
+	}
+	for _, o := range order {
+		for _, a := range o.m {
+			if a.Index+"|"+a.IdDisl == key {
+				b := a
+				return &b, o.src
+			}
+		}
+	}
+	return nil, ""
 }
 
 // findBest перебирает карты ByIndex→ByIndexLast→ByIndexMain до первого успеха и в

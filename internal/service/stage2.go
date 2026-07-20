@@ -139,6 +139,33 @@ func transferFromDonor(r, d *domain.Dislocation) {
 	r.DateDostav = d.DateDostav
 }
 
+// restoreLineage — восстановление родословной рейса вернувшемуся из пропажи
+// вагону из его записи-8: родительский индекс (index_main — индекс формирования),
+// предыдущий индекс, накладная формирования и план-поля. Только для ТОГО ЖЕ
+// рейса (совпадает ID = вагон+станция+дата погрузки) — новый рейс после новой
+// погрузки чужую родословную не наследует.
+func restoreLineage(r, old *domain.Dislocation) {
+	if old.ID != r.ID {
+		return
+	}
+	if old.IndexMain != "" && old.IndexMain != r.IndexMain {
+		r.IndexMain = old.IndexMain
+	}
+	if (r.IndexLast == "" || r.IndexLast == r.Index) && old.Index != "" && old.Index != r.Index {
+		r.IndexLast = old.Index
+	}
+	if old.InvoiceMain != "" {
+		r.InvoiceMain = old.InvoiceMain
+	}
+	if r.PlanMsk == nil && old.PlanMsk != nil {
+		r.PlanMsk = old.PlanMsk
+		r.PlanJd = old.PlanJd
+	}
+	if r.IndexPp == "" {
+		r.IndexPp = old.IndexPp
+	}
+}
+
 // Status9Stats — диагностика согласования таблицы кандидатов (S2-1).
 type Status9Stats struct {
 	Inserted int // новых живых кандидатов статуса 9 (первое появление)
@@ -170,6 +197,23 @@ func reconcileCandidates(
 	inTable := cache.Statuses() // из RAM
 	var err error
 
+	// Полные записи-8 — лениво, только если в батче есть вернувшиеся пропавшие:
+	// им нужно восстановить родословную (см. restoreLineage).
+	var missingByVagon map[string]*domain.Dislocation
+	loadMissing := func() {
+		if missingByVagon != nil {
+			return
+		}
+		missingByVagon = map[string]*domain.Dislocation{}
+		rows, lerr := cache.MissingRows(ctx)
+		if lerr != nil {
+			return // не смогли прочитать — возврат работает как раньше, без восстановления
+		}
+		for i := range rows {
+			missingByVagon[rows[i].Vagon] = &rows[i]
+		}
+	}
+
 	seen := make(map[string]struct{}, len(kept))
 	var toInsert9 []domain.Dislocation
 	var toDelete []string
@@ -181,6 +225,18 @@ func reconcileCandidates(
 		}
 		seen[r.Vagon] = struct{}{}
 		tblStatus, has := inTable[r.Vagon]
+
+		// Возврат пропавшего (запись-8): восстановить родословную рейса из
+		// сохранённой записи ДО снятия — carry-over вагона не видел (его не было
+		// в прошлом снимке), и index_main/план инициализировались заново. Без
+		// этого переформированный в пропаже поезд теряет связь с ниткой плана.
+		if has && tblStatus == 8 {
+			loadMissing()
+			if old := missingByVagon[r.Vagon]; old != nil {
+				restoreLineage(&kept[i], old)
+				r = kept[i]
+			}
+		}
 
 		if r.Status != nil && *r.Status == 9 {
 			prev, ok := actual.FindVagonInActual(r.Vagon)

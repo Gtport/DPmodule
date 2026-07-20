@@ -9,7 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"fmt"
 	"github.com/Gtport/DPmodule/internal/service"
+	"strings"
 )
 
 // indexFormat — индекс поезда 4-3-4 (13 символов): «7438-011-1234». Форму 4-3-4 задаёт
@@ -27,14 +29,14 @@ func NewPlanUploadHandler(proc *service.PlanProcessor) *planUploadHandler {
 }
 
 func (h *planUploadHandler) RegisterRoutes(g *gin.RouterGroup) {
-	g.POST("/dislocation/plan/upload", h.upload)            // одношаговая загрузка (без выбора с.ф.)
-	g.POST("/dislocation/plan/prepare", h.prepare)          // фаза A: разбор + кандидаты с.ф. + проблемные нитки (снимок не трогаем)
-	g.POST("/dislocation/plan/recalc", h.recalc)            // пересчёт по сохранённой сетке на текущей дислокации (без Excel)
-	g.POST("/dislocation/plan/revalidate", h.revalidate)    // сухой пересчёт с правками индексов (снимок не трогаем)
-	g.POST("/dislocation/plan/confirm", h.confirm)          // фаза B: применить с правками индексов и выбором групп с.ф.
-	g.POST("/dislocation/plan/touch", h.touch)              // heartbeat: продлить токен, пока открыт диалог с.ф.
-	g.GET("/dislocation/plan/:code", h.get)                 // ?id=N — конкретная загрузка, иначе свежая
-	g.GET("/dislocation/plan/:code/history", h.history)     // список загрузок станции
+	g.POST("/dislocation/plan/upload", h.upload)         // одношаговая загрузка (без выбора с.ф.)
+	g.POST("/dislocation/plan/prepare", h.prepare)       // фаза A: разбор + кандидаты с.ф. + проблемные нитки (снимок не трогаем)
+	g.POST("/dislocation/plan/recalc", h.recalc)         // пересчёт по сохранённой сетке на текущей дислокации (без Excel)
+	g.POST("/dislocation/plan/revalidate", h.revalidate) // сухой пересчёт с правками индексов (снимок не трогаем)
+	g.POST("/dislocation/plan/confirm", h.confirm)       // фаза B: применить с правками индексов и выбором групп с.ф.
+	g.POST("/dislocation/plan/touch", h.touch)           // heartbeat: продлить токен, пока открыт диалог с.ф.
+	g.GET("/dislocation/plan/:code", h.get)              // ?id=N — конкретная загрузка, иначе свежая
+	g.GET("/dislocation/plan/:code/history", h.history)  // список загрузок станции
 }
 
 // get godoc
@@ -221,6 +223,7 @@ func (h *planUploadHandler) recalc(c *gin.Context) {
 type revalidateRequest struct {
 	Token     string            `json:"token"`
 	Overrides map[string]string `json:"overrides"` // ключ — ord нитки (строкой), значение — индекс
+	Forced    map[string]string `json:"forced"`    // ключ — ord нитки, значение — ключ поезда "index|id_disl" (ручная привязка)
 }
 
 // revalidate — сухой пересчёт превью с ручными правками индексов; снимок НЕ изменяется,
@@ -242,7 +245,13 @@ func (h *planUploadHandler) revalidate(c *gin.Context) {
 		return
 	}
 
-	res, err := h.proc.Revalidate(c.Request.Context(), req.Token, overrides)
+	forced, err := parseForced(req.Forced)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	res, err := h.proc.Revalidate(c.Request.Context(), req.Token, overrides, forced)
 	if err != nil {
 		if errors.Is(err, service.ErrPendingNotFound) {
 			c.JSON(http.StatusGone, gin.H{"error": err.Error()}) // 410 — фронт перезагрузит план
@@ -259,6 +268,7 @@ type confirmRequest struct {
 	Token      string              `json:"token"`
 	Overrides  map[string]string   `json:"overrides"`  // ключ — ord нитки (строкой), значение — индекс 4-3-4
 	Selections map[string][]string `json:"selections"` // ключ — ord нитки (строкой), значение — id_disl
+	Forced     map[string]string   `json:"forced"`     // ключ — ord нитки, значение — ключ поезда "index|id_disl" (ручная привязка)
 }
 
 // confirm — фаза B: применить план с ручными правками индексов и выбранными группами с.ф.
@@ -287,7 +297,13 @@ func (h *planUploadHandler) confirm(c *gin.Context) {
 		selections[ord] = v
 	}
 
-	res, err := h.proc.Confirm(c.Request.Context(), req.Token, overrides, selections)
+	forced, err := parseForced(req.Forced)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	res, err := h.proc.Confirm(c.Request.Context(), req.Token, overrides, selections, forced)
 	if err != nil {
 		if errors.Is(err, service.ErrPendingNotFound) {
 			c.JSON(http.StatusGone, gin.H{"error": err.Error()}) // 410 — фронт перезагрузит план
@@ -337,4 +353,21 @@ func (h *planUploadHandler) touch(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// parseForced переводит тело {ord(строкой): ключ поезда} в map[int]string —
+// ручные привязки поездов к ниткам (значение — ключ кандидата "index|id_disl").
+func parseForced(m map[string]string) (map[int]string, error) {
+	out := make(map[int]string, len(m))
+	for k, v := range m {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		ord, err := strconv.Atoi(k)
+		if err != nil {
+			return nil, fmt.Errorf("некорректный ключ привязки (ожидался ord нитки): %s", k)
+		}
+		out[ord] = strings.TrimSpace(v)
+	}
+	return out, nil
 }

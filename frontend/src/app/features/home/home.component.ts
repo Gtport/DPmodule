@@ -3,6 +3,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
 import { ArrivalsCardComponent } from './arrivals-card.component';
+import { NearestCardComponent } from './nearest-card.component';
 
 /** Половина рабочей зоны: станция и её терминалы (из реестра ports). */
 interface StationHalf {
@@ -21,7 +22,7 @@ interface StationHalf {
  */
 @Component({
   selector: 'app-home',
-  imports: [ArrivalsCardComponent],
+  imports: [ArrivalsCardComponent, NearestCardComponent],
   template: `
     <div class="cols">
       <section class="col">
@@ -35,7 +36,8 @@ interface StationHalf {
         <section class="col">
           <h2 class="st-title">{{ title(st.name) }}</h2>
           <app-arrivals-card [station]="title(st.name)" [terminals]="st.terminals" />
-          <div class="soon">Ближайшие поезда · Информация — скоро</div>
+          <app-nearest-card [station]="title(st.name)" [terminals]="st.terminals" />
+          <div class="soon">Информация — скоро</div>
         </section>
       } @empty {
         @if (!loading()) { <p class="mut">Нет терминалов в реестре ports.</p> }
