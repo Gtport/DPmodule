@@ -109,6 +109,7 @@ func run() error {
 		status9Repo  port.Status9Repository
 		status6Repo  port.Status6Repository
 		historyRepo  port.HistoryRepository
+		unplRepo     port.UnplannedMoveRepository
 		planRepo     port.PlanRepository
 		journalRepo  port.JournalRepository
 		adminRepo    port.AdminTablesRepository
@@ -120,6 +121,7 @@ func run() error {
 		status9Repo = gormrepo.NewStatus9Repository(db)
 		status6Repo = gormrepo.NewStatus6Repository(db)
 		historyRepo = gormrepo.NewHistoryRepository(db)
+		unplRepo = gormrepo.NewUnplannedMoveRepository(db)
 		planRepo = gormrepo.NewPlanRepository(db)
 		journalRepo = gormrepo.NewJournalRepository(db)
 		adminRepo = gormrepo.NewAdminTablesRepository(db)
@@ -188,7 +190,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, planRepo, journalRepo, adminRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {

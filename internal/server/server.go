@@ -36,6 +36,7 @@ func Build(
 	status9Cache *service.Status9Cache,
 	status6Cache *service.Status6Cache,
 	historyRepo port.HistoryRepository,
+	unplannedRepo port.UnplannedMoveRepository,
 	planRepo port.PlanRepository,
 	journalRepo port.JournalRepository,
 	adminRepo port.AdminTablesRepository,
@@ -121,6 +122,10 @@ func Build(
 
 			proc := service.NewLKProcessor(lkIntake, dislRepo, actualCache, status9Cache, status6Cache, historyRepo)
 			proc.SetJournal(journal)
+			// «Бесплановые в подходе» (Оперативка): трекинг на сравнении снимков.
+			if unplannedRepo != nil {
+				proc.SetUnplannedRepo(unplannedRepo)
+			}
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
 
 			// «Обновить справочники»: горячая перезагрузка словарей + гибридный
@@ -162,7 +167,7 @@ func Build(
 
 			// «Оперативка» домашней страницы: суточные счётчики по терминалам
 			// (вехи истории + статус 10 из снимка), только чтение.
-			handler.NewOperativkaHandler(service.NewOperativkaService(historyRepo, actualCache, dirCache)).RegisterRoutes(api)
+			handler.NewOperativkaHandler(service.NewOperativkaService(historyRepo, actualCache, dirCache, unplannedRepo)).RegisterRoutes(api)
 		}
 	}
 

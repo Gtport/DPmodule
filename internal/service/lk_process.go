@@ -20,15 +20,16 @@ import (
 // атомарно заменяет снимок (ReplaceActual, «вариант B»). Обогащение Stage 1–4 —
 // отдельными слоями (пока снимок «сырой»: коды без имён станций/портов).
 type LKProcessor struct {
-	intake   *LKIntake
-	repo     port.DislocationRepository
-	actual   *ActualCache
-	status9  *Status9Cache
-	status6  *Status6Cache
-	history  port.HistoryRepository
-	enricher *Enricher
-	journal  *Journal   // единый журнал событий (может быть nil — cmd-утилиты)
-	mu       sync.Mutex // сериализует пересборку снимка (ручной ЛК vs cron-АСУ идут через один proc)
+	intake    *LKIntake
+	repo      port.DislocationRepository
+	actual    *ActualCache
+	status9   *Status9Cache
+	status6   *Status6Cache
+	history   port.HistoryRepository
+	unplanned port.UnplannedMoveRepository // «бесплановые в подходе» (nil — выключено/тесты)
+	enricher  *Enricher
+	journal   *Journal   // единый журнал событий (может быть nil — cmd-утилиты)
+	mu        sync.Mutex // сериализует пересборку снимка (ручной ЛК vs cron-АСУ идут через один proc)
 }
 
 func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *ActualCache, status9 *Status9Cache, status6 *Status6Cache, history port.HistoryRepository) *LKProcessor {
@@ -308,6 +309,14 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// «Бесплановые в подходе» (Оперативка): смена станции без плана ближе порога —
+	// ДО подмены снимка (сравнение с прежним). Ошибка не валит пересборку.
+	if p.actual != nil && p.unplanned != nil {
+		if _, _, uerr := trackUnplannedMoves(ctx, all, p.actual, p.unplanned, p.intake.dir, sp.UnplannedMoveKm); uerr != nil {
+			return LKProcessResult{}, fmt.Errorf("unplanned_move: %w", uerr)
+		}
+	}
+
 	// Stage 2 (S2-1): согласование таблицы кандидатов (статус 9 из живого батча +
 	// статус 8 для пропавших) — ДО подмены снимка (actual = прежний снимок).
 	var s9 Status9Stats
@@ -370,4 +379,10 @@ func dataLossPct(current, next int) int {
 		return 0
 	}
 	return (current - next) * 100 / current
+}
+
+// SetUnplannedRepo подключает таблицу «бесплановых в подходе» (Оперативка);
+// nil — трекинг выключен (cmd-утилиты, тесты).
+func (p *LKProcessor) SetUnplannedRepo(repo port.UnplannedMoveRepository) {
+	p.unplanned = repo
 }

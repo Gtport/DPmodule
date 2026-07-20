@@ -1,9 +1,21 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { apiErrorMessage } from '../../core/api/api-error';
+
+/** Поезд «бесплановых в подходе» (сигнал: движется без плана ближе порога). */
+export interface UnplannedTrain {
+  index: string;
+  station_oper: string;
+  rasst: number | null;
+  vagon_count: number;
+  sostav: string[];
+  vagons: string[];
+}
 
 /** Строка «Оперативки»: терминал и суточные счётчики. */
 export interface OperativkaRow {
@@ -21,6 +33,7 @@ export interface Operativka {
   yesterday: string;
   today: string;
   rows: OperativkaRow[];
+  unplanned: UnplannedTrain[];
 }
 
 /**
@@ -31,7 +44,7 @@ export interface Operativka {
  */
 @Component({
   selector: 'app-operativka-card',
-  imports: [],
+  imports: [NzButtonModule, NzTooltipModule],
   template: `
     <div class="card">
       <table class="mini">
@@ -64,6 +77,26 @@ export interface Operativka {
           }
         </tbody>
       </table>
+
+      <!-- Бесплановые в подходе: сменили станцию без плана ближе порога.
+           Живут до «Скрыть» (или пока не получат план / не прибудут). -->
+      @if (data()?.unplanned?.length) {
+        <div class="unpl">
+          <div class="unpl-title"><b>Без плана в подходе ({{ data()!.unplanned.length }})</b>
+            <span class="mut">двигаются, плана нет</span></div>
+          @for (u of data()!.unplanned; track u.index) {
+            <div class="unpl-row">
+              <span class="num b">{{ u.index || '—' }}</span>
+              <span class="mut">({{ u.vagon_count }})</span>
+              <span class="unpl-sost ell" [title]="u.sostav.join(' · ')">{{ u.sostav.join(' · ') }}</span>
+              <span class="mut nowrap">{{ u.station_oper }}@if (u.rasst != null) { · {{ u.rasst }} км }</span>
+              <button nz-button nzSize="small" nz-tooltip
+                      nzTooltipTitle="Скрыть (появится снова при следующей смене станции без плана)"
+                      (click)="dismiss(u)">Скрыть</button>
+            </div>
+          }
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -79,6 +112,19 @@ export interface Operativka {
     .nu-val { font-weight: 600; }
     .st-row td { background: var(--color-bg-subtle); font-weight: 600; padding: 2px 8px; }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-sm); }
+    /* Бесплановые в подходе — жёлтая секция-сигнал. */
+    .unpl { background: var(--color-warning-bg); border: 1px solid var(--color-warning);
+            border-radius: var(--radius-md); padding: var(--space-xs) var(--space-sm);
+            margin-top: var(--space-sm); display: flex; flex-direction: column; gap: 2px; }
+    .unpl-title { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--font-size-sm); }
+    .unpl-row { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--font-size-sm);
+                padding: 2px 0; min-width: 0; }
+    .b { font-weight: 600; }
+    .num { font-variant-numeric: tabular-nums; }
+    .mut { color: var(--color-text-secondary); }
+    .nowrap { white-space: nowrap; }
+    .unpl-sost { flex: 1 1 auto; min-width: 0; }
+    .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   `],
 })
 export class OperativkaCardComponent implements OnInit, OnDestroy {
@@ -118,6 +164,17 @@ export class OperativkaCardComponent implements OnInit, OnDestroy {
       if (initial) this.msg.error(apiErrorMessage(err));
     } finally {
       if (initial) this.loading.set(false);
+    }
+  }
+
+  /** «Скрыть» бесплановых (указание оператора). */
+  async dismiss(u: UnplannedTrain): Promise<void> {
+    try {
+      await firstValueFrom(this.http.post(`${this.url}/unplanned/dismiss`, { vagons: u.vagons }));
+      this.msg.info(`Скрыто: поезд ${u.index || '—'} (${u.vagon_count} ваг.).`);
+      await this.load();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
     }
   }
 
