@@ -194,38 +194,76 @@ func (s *ArrivalsService) UpdateVagons(ctx context.Context, req ArrivalsUpdateRe
 	if err := s.repo.UpdateFieldsBatch(ctx, updates); err != nil {
 		return ArrivalsUpdateResult{}, err
 	}
-	s.journalEdit(ctx, req, len(rows))
+	s.journalEdit(ctx, req, rows)
 	return ArrivalsUpdateResult{Updated: len(rows), Selected: len(req.VagonIDs)}, nil
 }
 
-// journalEdit — запись операторского действия с прибывшими в единый журнал
-// (кто/что/сколько): код действия по заполненным полям запроса.
-func (s *ArrivalsService) journalEdit(ctx context.Context, req ArrivalsUpdateRequest, count int) {
+// journalEdit — запись операторского действия с прибывшими в единый журнал:
+// кто/что/сколько, индексы затронутых поездов и ВСЕ новые значения полей
+// (просьба владельца — журнал должен восстанавливать картину правки).
+func (s *ArrivalsService) journalEdit(ctx context.Context, req ArrivalsUpdateRequest, rows []domain.VagonHistory) {
 	if s.proc == nil || s.proc.journal == nil {
 		return
 	}
 	var actions []string
-	extra := map[string]any{"selected": len(req.VagonIDs)}
+	extra := map[string]any{
+		"selected": len(req.VagonIDs),
+		"trains":   trainIndexes(rows),
+	}
 	if req.IndexPp != "" || req.PlanJd != nil || req.DatePrib != nil {
 		actions = append(actions, "edit_arrival")
 		if req.IndexPp != "" {
-			extra["index_pp"] = req.IndexPp
+			extra["new_index"] = req.IndexPp
+		}
+		if req.PlanJd != nil {
+			extra["new_plan_jd"] = req.PlanJd.String()
+		}
+		if req.DatePrib != nil {
+			extra["new_date_prib"] = req.DatePrib.String()
 		}
 	}
 	if req.DateVigr != nil || req.PlaceVigr != nil || req.Frost != nil {
 		actions = append(actions, "unload")
+		if req.DateVigr != nil {
+			extra["new_date_vigr"] = req.DateVigr.String()
+		}
 		if req.PlaceVigr != nil {
-			extra["place_vigr"] = *req.PlaceVigr
+			extra["new_place_vigr"] = *req.PlaceVigr
+		}
+		if req.Frost != nil {
+			extra["new_frost"] = *req.Frost
 		}
 	}
 	if req.Naznach != "" {
 		actions = append(actions, "set_naznach")
-		extra["naznach"] = req.Naznach
+		extra["new_naznach"] = req.Naznach
 	}
 	if len(actions) == 0 {
 		return
 	}
-	s.proc.journal.RecordArrivalsEdit(ctx, strings.Join(actions, "+"), count, extra)
+	s.proc.journal.RecordArrivalsEdit(ctx, strings.Join(actions, "+"), len(rows), extra)
+}
+
+// trainIndexes — уникальные индексы поездов затронутых строк истории
+// (index_pp; фолбэк — родительский), в порядке появления.
+func trainIndexes(rows []domain.VagonHistory) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for i := range rows {
+		idx := rows[i].IndexPp
+		if idx == "" {
+			idx = rows[i].IndexMain
+		}
+		if idx == "" {
+			continue
+		}
+		if _, dup := seen[idx]; dup {
+			continue
+		}
+		seen[idx] = struct{}{}
+		out = append(out, idx)
+	}
+	return out
 }
 
 // checkArrivalsEditAccess — правило дат (эталон gtport, строже: проверяем КАЖДЫЙ
@@ -430,9 +468,13 @@ func (s *ArrivalsService) ConfirmArrival(ctx context.Context, req ConfirmArrival
 	}
 
 	now := clock.Now()
+	detail := map[string]any{"selected": len(req.VagonIDs), "new_date_prib": req.DatePrib.String()}
+	if req.Index != "" {
+		detail["new_index"] = req.Index
+	}
 	var confirmed []domain.Dislocation
 	n, _, _, err := s.proc.MutateSnapshot(ctx, "arrival_confirm",
-		map[string]any{"selected": len(req.VagonIDs), "date_prib": req.DatePrib.String()},
+		detail,
 		func(all []domain.Dislocation) int {
 			cnt := 0
 			for i := range all {
@@ -453,6 +495,21 @@ func (s *ArrivalsService) ConfirmArrival(ctx context.Context, req ConfirmArrival
 				r.UpdatedAt = now
 				confirmed = append(confirmed, *r)
 				cnt++
+			}
+			// Индексы подтверждённых поездов — в журнал (detail по ссылке,
+			// запись происходит после мутации).
+			var idxs []string
+			seen := map[string]struct{}{}
+			for i := range confirmed {
+				if idx := confirmed[i].Index; idx != "" {
+					if _, dup := seen[idx]; !dup {
+						seen[idx] = struct{}{}
+						idxs = append(idxs, idx)
+					}
+				}
+			}
+			if len(idxs) > 0 {
+				detail["trains"] = idxs
 			}
 			return cnt
 		})
@@ -531,9 +588,10 @@ func (s *ArrivalsService) CancelArrival(ctx context.Context, vagonIDs []string) 
 	}
 
 	now := clock.Now()
+	cancelDetail := map[string]any{"selected": len(vagonIDs)}
 	var cancelled []string
 	n, _, _, err := s.proc.MutateSnapshot(ctx, "arrival_cancel",
-		map[string]any{"selected": len(vagonIDs)},
+		cancelDetail,
 		func(all []domain.Dislocation) int {
 			cnt := 0
 			for i := range all {
@@ -550,6 +608,11 @@ func (s *ArrivalsService) CancelArrival(ctx context.Context, vagonIDs []string) 
 				r.DateKon = r.TimeOp // computeDateKon для не-10
 				r.UpdatedAt = now
 				cancelled = append(cancelled, r.ID)
+				if idx := r.Index; idx != "" {
+					if cur, _ := cancelDetail["trains"].([]string); !containsStr(cur, idx) {
+						cancelDetail["trains"] = append(cur, idx)
+					}
+				}
 				cnt++
 			}
 			return cnt
@@ -583,9 +646,13 @@ func (s *ArrivalsService) DismissCandidates(ctx context.Context, vagonIDs []stri
 		ids[id] = struct{}{}
 	}
 	var vagons []string
+	var dismissIdxs []string
 	for _, r := range s.proc.actual.All() {
 		if _, sel := ids[r.ID]; sel && r.Status != nil && *r.Status == 9 && r.Vagon != "" {
 			vagons = append(vagons, r.Vagon)
+			if r.Index != "" && !containsStr(dismissIdxs, r.Index) {
+				dismissIdxs = append(dismissIdxs, r.Index)
+			}
 		}
 	}
 	n, err := s.proc.status9.SetDismissed(ctx, vagons, clock.Now())
@@ -594,7 +661,7 @@ func (s *ArrivalsService) DismissCandidates(ctx context.Context, vagonIDs []stri
 	}
 	if s.proc.journal != nil {
 		s.proc.journal.RecordArrivalsEdit(ctx, "dismiss_candidate", n,
-			map[string]any{"selected": len(vagonIDs)})
+			map[string]any{"selected": len(vagonIDs), "trains": dismissIdxs})
 	}
 	return ArrivalsUpdateResult{Updated: n, Selected: len(vagonIDs)}, nil
 }
