@@ -33,7 +33,7 @@ keycloak:
 
 log:
   level: debug
-  # file: logs/service.log  # раскомментировать для записи в файл
+  file: logs/service.log   # лог-файл с ротацией (100 МБ × 5 бэкапов × 30 дней); stdout/journald остаётся
   max_size_mb: 100
   max_backups: 5
   max_age_days: 30

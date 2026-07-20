@@ -26,4 +26,8 @@ type HistoryRepository interface {
 	// UpdateFieldsBatch — точечные обновления НЕСКОЛЬКИХ строк одной транзакцией
 	// (ключ карты — id, значение — колонки как в UpdateFields).
 	UpdateFieldsBatch(ctx context.Context, updates map[string]map[string]any) error
+	// DailyTerminalCounts — счётчики «Оперативки»: сколько вагонов прибыло
+	// (date_prib_d, по naznach) и выгружено (date_vigr_d, по place_vigr) за
+	// каждые ЖД-сутки диапазона [from; to]. Ключи карт: "yyyy-MM-dd|терминал".
+	DailyTerminalCounts(ctx context.Context, from, to domain.LocalTime) (prib, vigr map[string]int, err error)
 }

@@ -164,3 +164,7 @@ func (r *histStubRepo) RowsByIDs(_ context.Context, _ []string) ([]domain.VagonH
 func (r *histStubRepo) UpdateFieldsBatch(_ context.Context, _ map[string]map[string]any) error {
 	return nil
 }
+
+func (r *histStubRepo) DailyTerminalCounts(_ context.Context, _, _ domain.LocalTime) (map[string]int, map[string]int, error) {
+	return nil, nil, nil
+}
