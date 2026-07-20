@@ -218,7 +218,9 @@ func arrivalUpdateFields(r *domain.VagonHistory, req ArrivalsUpdateRequest, now 
 	}
 	if req.DateVigr != nil {
 		fields["date_vigr"] = req.DateVigr
-		fields["date_vigr_d"] = dateOnly(req.DateVigr)
+		// ЖД-сутки выгрузки — как у автоматики (dateOnly от ЖД-времени):
+		// вечерняя выгрузка (час ≥ 18) относится к следующим операционным суткам.
+		fields["date_vigr_d"] = dateOnly(jdFromFact(req.DateVigr))
 	}
 	if req.PlaceVigr != nil {
 		fields["place_vigr"] = *req.PlaceVigr
@@ -238,6 +240,16 @@ func planMskFromJd(jd *domain.LocalTime) *domain.LocalTime {
 	t := jd.Time()
 	if t.Hour() >= 18 {
 		t = t.AddDate(0, 0, -1)
+	}
+	return domain.NewLocalTime(t)
+}
+
+// jdFromFact — ЖД-время из фактического МСК: «час ≥ 18 → следующие операционные
+// сутки» (обратное правило; для ЖД-суток ручных вех — как date_op_jd автоматики).
+func jdFromFact(fact *domain.LocalTime) *domain.LocalTime {
+	t := fact.Time()
+	if t.Hour() >= 18 {
+		t = t.AddDate(0, 0, 1)
 	}
 	return domain.NewLocalTime(t)
 }

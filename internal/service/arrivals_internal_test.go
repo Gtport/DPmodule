@@ -122,6 +122,21 @@ func TestArrivalUpdateFields(t *testing.T) {
 		if f["place_vigr"] != "АЭ" || *(f["frost"].(*int)) != 30 || f["date_vigr"] == nil || f["date_vigr_d"] == nil {
 			t.Errorf("поля выгрузки: %v", f)
 		}
+		if d := f["date_vigr_d"].(*domain.LocalTime).Time().Day(); d != 19 {
+			t.Errorf("утренняя выгрузка: ЖД-сутки должны совпадать с датой, получено %d", d)
+		}
+	})
+
+	t.Run("вечерняя выгрузка — ЖД-сутки следующие (час ≥ 18)", func(t *testing.T) {
+		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{
+			DateVigr: domain.NewLocalTime(time.Date(2026, 7, 19, 20, 39, 0, 0, time.UTC)),
+		}, now)
+		if d := f["date_vigr_d"].(*domain.LocalTime).Time().Day(); d != 20 {
+			t.Errorf("вечерняя выгрузка 19.07 20:39: ЖД-сутки должны быть 20.07, получено %d", d)
+		}
+		if f["date_vigr"].(*domain.LocalTime).Time().Hour() != 20 {
+			t.Error("date_vigr должен остаться фактическим временем (20:39)")
+		}
 	})
 }
 
