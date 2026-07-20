@@ -12,10 +12,12 @@ import (
 // не на станции назначения (статусы 9/10/12 исключены — они «Прибывшие»/
 // кандидаты), фильтр по терминалам станции (naznach), группа = поезд (IdDisl).
 //
-// Отличие от gtport (решение владельца): показываются не только плановые —
-// время прибытия берётся «план → прогноз Stage 4 → расчётный ход», плановые
-// помечены has_plan (зелёная метка в UI). Собственник вагона — наше поле owner
-// (в gtport колонка была пустой).
+// Отличие от gtport (решение владельца): показываются все поезда С ПРОГНОЗОМ
+// Stage 4 (не только плановые); у плановых прогноз равен плану, поэтому
+// сортировка по прогнозу сохраняет порядок прогнозной очереди («нитки в порядке
+// плана, бесплановые — за планом»). Поезда без прогноза не показываются.
+// Плановые помечены has_plan (зелёная метка в UI). Собственник вагона — наше
+// поле owner (в gtport колонка была пустой).
 type NearestService struct {
 	actual *ActualCache
 	dir    *DirectoryCache
@@ -121,16 +123,15 @@ func (s *NearestService) Trains(_ context.Context, naznach []string, limit int) 
 		if st == 5 {
 			t.Broshen = true
 		}
-		// Лучшее время прибытия: план → прогноз Stage 4 → расчётный ход.
-		if t.TimeMsk == nil || (!t.HasPlan && r.PlanMsk != nil) {
-			switch {
-			case r.PlanMsk != nil:
-				t.TimeMsk, t.TimeJd, t.HasPlan = r.PlanMsk, firstLT(r.PlanJd, r.PlanMsk), true
-			case r.ProgMsk != nil:
-				t.TimeMsk, t.TimeJd = r.ProgMsk, firstLT(r.ProgJd, r.ProgMsk)
-			case r.RaschMsk != nil:
-				t.TimeMsk, t.TimeJd = r.RaschMsk, firstLT(r.RaschJd, r.RaschMsk)
-			}
+		// Время прибытия — ТОЛЬКО прогноз Stage 4 (правило владельца: без
+		// прогноза поезд в «Ближайшие» не попадает). У плановых прогноз равен
+		// плану, поэтому сортировка по прогнозу сама даёт «нитки в порядке
+		// плана, бесплановые — за планом». has_plan — зелёная метка нитки.
+		if t.TimeMsk == nil && r.ProgMsk != nil {
+			t.TimeMsk, t.TimeJd = r.ProgMsk, firstLT(r.ProgJd, r.ProgMsk)
+		}
+		if r.PlanMsk != nil {
+			t.HasPlan = true
 		}
 
 		sk := subKey{r.IndexMain, r.Naznach, r.GruzpolS, r.Sms1}
@@ -155,6 +156,9 @@ func (s *NearestService) Trains(_ context.Context, naznach []string, limit int) 
 	out := make([]NearestTrainDTO, 0, len(order))
 	for _, id := range order {
 		t := trains[id]
+		if t.TimeMsk == nil {
+			continue // без прогноза Stage 4 — не «ближайший» (правило владельца)
+		}
 		for _, sk := range subOrder[id] {
 			sg := subs[id][sk]
 			sg.Display = arrivalDisplay(&ArrivalSubgroupDTO{
@@ -168,23 +172,10 @@ func (s *NearestService) Trains(_ context.Context, naznach []string, limit int) 
 		out = append(out, *t)
 	}
 
-	// Ближайшие сверху: по времени (без времени — в конец, там по остатку км).
+	// Ближайшие сверху — по прогнозу (у плановых прогноз = план, порядок
+	// прогнозной очереди сохраняется сам собой).
 	sort.SliceStable(out, func(i, j int) bool {
-		ti, tj := out[i].TimeMsk, out[j].TimeMsk
-		switch {
-		case ti != nil && tj != nil:
-			return ti.Time().Before(tj.Time())
-		case ti != nil:
-			return true
-		case tj != nil:
-			return false
-		default:
-			ri, rj := out[i].Rasst, out[j].Rasst
-			if ri != nil && rj != nil {
-				return *ri < *rj
-			}
-			return ri != nil
-		}
+		return out[i].TimeMsk.Time().Before(out[j].TimeMsk.Time())
 	})
 	if len(out) > limit {
 		out = out[:limit]
