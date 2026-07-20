@@ -15,13 +15,14 @@ import (
 // текущие ЖД-сутки (вехи vagon_history: date_prib_d × naznach, date_vigr_d ×
 // place_vigr) плюс «не выгружено» — вагоны статуса 10 в текущем снимке.
 type OperativkaService struct {
-	repo   port.HistoryRepository
-	actual *ActualCache
-	dir    *DirectoryCache
+	repo      port.HistoryRepository
+	actual    *ActualCache
+	dir       *DirectoryCache
+	unplanned port.UnplannedMoveRepository // «бесплановые в подходе» (nil — секции нет)
 }
 
-func NewOperativkaService(repo port.HistoryRepository, actual *ActualCache, dir *DirectoryCache) *OperativkaService {
-	return &OperativkaService{repo: repo, actual: actual, dir: dir}
+func NewOperativkaService(repo port.HistoryRepository, actual *ActualCache, dir *DirectoryCache, unplanned port.UnplannedMoveRepository) *OperativkaService {
+	return &OperativkaService{repo: repo, actual: actual, dir: dir, unplanned: unplanned}
 }
 
 // OperativkaRowDTO — строка карточки: терминал и его суточные счётчики.
@@ -36,11 +37,23 @@ type OperativkaRowDTO struct {
 	NotUnloaded   int    `json:"not_unloaded"` // сейчас в статусе 10 (прибыл, не выгружен)
 }
 
-// OperativkaDTO — ответ ручки: даты суток и строки по терминалам.
+// UnplannedTrainDTO — поезд из «бесплановых в подходе»: агрегация записей
+// unplanned_move по индексу (сигнал «движется без плана ближе порога»).
+type UnplannedTrainDTO struct {
+	Index       string   `json:"index"`
+	StationOper string   `json:"station_oper"` // последняя известная станция
+	Rasst       *int     `json:"rasst"`
+	VagonCount  int      `json:"vagon_count"`
+	Sostav      []string `json:"sostav"` // display-строки подгрупп (как в «Ближайших»)
+	Vagons      []string `json:"vagons"` // номера вагонов (для «Скрыть»)
+}
+
+// OperativkaDTO — ответ ручки: даты суток, строки по терминалам и бесплановые.
 type OperativkaDTO struct {
-	Yesterday string             `json:"yesterday"` // yyyy-MM-dd (ЖД-сутки)
-	Today     string             `json:"today"`
-	Rows      []OperativkaRowDTO `json:"rows"`
+	Yesterday string              `json:"yesterday"` // yyyy-MM-dd (ЖД-сутки)
+	Today     string              `json:"today"`
+	Rows      []OperativkaRowDTO  `json:"rows"`
+	Unplanned []UnplannedTrainDTO `json:"unplanned"` // «бесплановые в подходе» (до «Скрыть»)
 }
 
 // Snapshot — счётчики за вчера/сегодня (ЖД-сутки от МСК-«сейчас») по всем
@@ -84,5 +97,82 @@ func (s *OperativkaService) Snapshot(ctx context.Context) (OperativkaDTO, error)
 			NotUnloaded:   notUnloaded[t.Name],
 		})
 	}
-	return OperativkaDTO{Yesterday: yestS, Today: todayS, Rows: rows}, nil
+	unplanned, err := s.unplannedTrains(ctx)
+	if err != nil {
+		return OperativkaDTO{}, err
+	}
+	return OperativkaDTO{Yesterday: yestS, Today: todayS, Rows: rows, Unplanned: unplanned}, nil
+}
+
+// unplannedTrains — агрегация «бесплановых в подходе» по индексу поезда:
+// кол-во, состав (display подгрупп по index_main/naznach/gruzpol_s, как в
+// «Ближайших») и номера вагонов для «Скрыть».
+func (s *OperativkaService) unplannedTrains(ctx context.Context) ([]UnplannedTrainDTO, error) {
+	out := []UnplannedTrainDTO{} // не nil — фронт ждёт массив
+	if s.unplanned == nil {
+		return out, nil
+	}
+	rows, err := s.unplanned.LoadAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type subKey struct{ im, nz, gp string }
+	type train struct {
+		dto      *UnplannedTrainDTO
+		subs     map[subKey]*ArrivalSubgroupDTO
+		subOrder []subKey
+	}
+	var order []string
+	trains := map[string]*train{}
+	for i := range rows {
+		r := rows[i]
+		key := r.Index
+		if key == "" {
+			key = r.IndexMain
+		}
+		t, ok := trains[key]
+		if !ok {
+			t = &train{dto: &UnplannedTrainDTO{Index: key}, subs: map[subKey]*ArrivalSubgroupDTO{}}
+			trains[key] = t
+			order = append(order, key)
+		}
+		t.dto.VagonCount++
+		t.dto.Vagons = append(t.dto.Vagons, r.Vagon)
+		// Последняя известная позиция (записи одного поезда обновляются вместе —
+		// берём любую свежую).
+		if t.dto.StationOper == "" || !r.UpdatedAt.IsZero() {
+			t.dto.StationOper = r.StationOper
+			t.dto.Rasst = r.RasstStanNazn
+		}
+		sk := subKey{r.IndexMain, r.Naznach, r.GruzpolS}
+		sg, ok := t.subs[sk]
+		if !ok {
+			sg = &ArrivalSubgroupDTO{
+				IndexMain: r.IndexMain, StationNach: r.StationNach,
+				Naznach: r.Naznach, GruzpolS: r.GruzpolS,
+			}
+			t.subs[sk] = sg
+			t.subOrder = append(t.subOrder, sk)
+		}
+		sg.VagonCount++
+	}
+
+	for _, key := range order {
+		t := trains[key]
+		for _, sk := range t.subOrder {
+			sg := t.subs[sk]
+			t.dto.Sostav = append(t.dto.Sostav, arrivalDisplay(sg))
+		}
+		out = append(out, *t.dto)
+	}
+	return out, nil
+}
+
+// DismissUnplanned — «Скрыть» (указание оператора): удаление записей по вагонам.
+func (s *OperativkaService) DismissUnplanned(ctx context.Context, vagons []string) (int, error) {
+	if s.unplanned == nil || len(vagons) == 0 {
+		return 0, nil
+	}
+	return s.unplanned.DeleteByVagons(ctx, vagons)
 }

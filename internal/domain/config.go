@@ -73,6 +73,9 @@ type StatusPolicy struct {
 	ProstDnMin      int `json:"prost_dn_min"`      // порог простоя в сутках → статус 4
 	ProstChMin      int `json:"prost_ch_min"`      // порог простоя в часах → статус 4
 	Missing8TTLDays int `json:"missing8_ttl_days"` // автоочистка пропавших (статус 8) в status9 старше N суток; 0 → выключена
+	// «Бесплановые в подходе» (Оперативка): порог км до станции назначения, ближе
+	// которого смена станции бесплановым вагоном фиксируется как сигнал; 0 → 1000.
+	UnplannedMoveKm int `json:"unplanned_move_km"`
 }
 
 // IngestPolicy — пороги приёма по категориям (§3.9). Межфайловые/на загрузку
