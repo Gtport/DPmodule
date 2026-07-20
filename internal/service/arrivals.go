@@ -158,6 +158,35 @@ func (s *ArrivalsService) UpdateVagons(ctx context.Context, req ArrivalsUpdateRe
 	}
 
 	now := clock.Now()
+
+	// «Изменить назначение» — СКВОЗНАЯ операция (решение владельца): перестановка
+	// прибывшего отражается и в СНИМКЕ (для вагонов текущего снимка — иначе
+	// «Не выгружено» Оперативки и экраны снимка не видят перестановку; дальше
+	// живёт carry-over), и в истории. Вагоны старых рейсов — только история.
+	if req.Naznach != "" && s.proc != nil {
+		ids := map[string]struct{}{}
+		for _, id := range req.VagonIDs {
+			ids[id] = struct{}{}
+		}
+		if _, _, _, err := s.proc.MutateSnapshot(ctx, "arrival_rearrange",
+			map[string]any{"naznach": req.Naznach, "selected": len(req.VagonIDs)},
+			func(all []domain.Dislocation) int {
+				n := 0
+				for i := range all {
+					r := &all[i]
+					if _, sel := ids[r.ID]; !sel || r.Naznach == req.Naznach {
+						continue
+					}
+					r.Naznach = req.Naznach
+					r.UpdatedAt = now
+					n++
+				}
+				return n
+			}); err != nil {
+			return ArrivalsUpdateResult{}, fmt.Errorf("перестановка в снимке: %w", err)
+		}
+	}
+
 	updates := make(map[string]map[string]any, len(rows))
 	for i := range rows {
 		updates[rows[i].ID] = arrivalUpdateFields(&rows[i], req, now)
