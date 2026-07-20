@@ -219,3 +219,42 @@ func (r *HistoryRepository) UpdateFieldsBatch(ctx context.Context, updates map[s
 		return nil
 	})
 }
+
+// DailyTerminalCounts — агрегаты «Оперативки» (сырой SQL — канон для аналитики):
+// прибывшие по ЖД-суткам/терминалам (date_prib_d × naznach) и выгруженные
+// (date_vigr_d × place_vigr) за диапазон ЖД-суток.
+func (r *HistoryRepository) DailyTerminalCounts(ctx context.Context, from, to domain.LocalTime) (map[string]int, map[string]int, error) {
+	type row struct {
+		Day  domain.LocalTime `gorm:"column:day"`
+		Term string           `gorm:"column:term"`
+		N    int              `gorm:"column:n"`
+	}
+	key := func(d domain.LocalTime, term string) string { return d.String()[:10] + "|" + term }
+
+	var pribRows []row
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT date_prib_d AS day, naznach AS term, count(*) AS n
+		  FROM vagon_history
+		 WHERE date_prib_d BETWEEN ? AND ? AND naznach <> ''
+		 GROUP BY date_prib_d, naznach`, from, to).Scan(&pribRows).Error; err != nil {
+		return nil, nil, err
+	}
+	var vigrRows []row
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT date_vigr_d AS day, place_vigr AS term, count(*) AS n
+		  FROM vagon_history
+		 WHERE date_vigr_d BETWEEN ? AND ? AND place_vigr <> ''
+		 GROUP BY date_vigr_d, place_vigr`, from, to).Scan(&vigrRows).Error; err != nil {
+		return nil, nil, err
+	}
+
+	prib := make(map[string]int, len(pribRows))
+	for _, x := range pribRows {
+		prib[key(x.Day, x.Term)] = x.N
+	}
+	vigr := make(map[string]int, len(vigrRows))
+	for _, x := range vigrRows {
+		vigr[key(x.Day, x.Term)] = x.N
+	}
+	return prib, vigr, nil
+}

@@ -4,6 +4,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
 import { ArrivalsCardComponent } from './arrivals-card.component';
 import { NearestCardComponent } from './nearest-card.component';
+import { OperativkaCardComponent } from './operativka-card.component';
 
 /** Половина рабочей зоны: станция и её терминалы (из реестра ports). */
 interface StationHalf {
@@ -22,14 +23,12 @@ interface StationHalf {
  */
 @Component({
   selector: 'app-home',
-  imports: [ArrivalsCardComponent, NearestCardComponent],
+  imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent],
   template: `
     <div class="cols">
       <section class="col">
         <h2 class="st-title">Оперативка</h2>
-        <div class="iq-card oper">
-          <div class="oper-empty">Наполнение — следующая итерация</div>
-        </div>
+        <app-operativka-card />
       </section>
 
       @for (st of stations(); track st.code) {

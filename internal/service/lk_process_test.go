@@ -360,3 +360,7 @@ func (f *fakeStatus9Repo) SetDismissed(context.Context, []string, domain.LocalTi
 func (f *fakeStatus9Repo) DismissedVagons(context.Context) (map[string]struct{}, error) {
 	return nil, nil
 }
+
+func (f *fakeHistoryRepo) DailyTerminalCounts(_ context.Context, _, _ domain.LocalTime) (map[string]int, map[string]int, error) {
+	return nil, nil, nil
+}

@@ -159,6 +159,10 @@ func Build(
 			// «Ближайшие поезда» домашней страницы: подходящие поезда из снимка
 			// (план → прогноз → расчёт), только чтение.
 			handler.NewNearestHandler(service.NewNearestService(actualCache, dirCache)).RegisterRoutes(api)
+
+			// «Оперативка» домашней страницы: суточные счётчики по терминалам
+			// (вехи истории + статус 10 из снимка), только чтение.
+			handler.NewOperativkaHandler(service.NewOperativkaService(historyRepo, actualCache, dirCache)).RegisterRoutes(api)
 		}
 	}
 
