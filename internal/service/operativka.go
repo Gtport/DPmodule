@@ -19,7 +19,11 @@ type OperativkaService struct {
 	actual    *ActualCache
 	dir       *DirectoryCache
 	unplanned port.UnplannedMoveRepository // «бесплановые в подходе» (nil — секции нет)
+	journal   *Journal                     // единый журнал (может быть nil)
 }
+
+// SetJournal подключает журнал событий (nil-safe).
+func (s *OperativkaService) SetJournal(j *Journal) { s.journal = j }
 
 func NewOperativkaService(repo port.HistoryRepository, actual *ActualCache, dir *DirectoryCache, unplanned port.UnplannedMoveRepository) *OperativkaService {
 	return &OperativkaService{repo: repo, actual: actual, dir: dir, unplanned: unplanned}
@@ -174,5 +178,13 @@ func (s *OperativkaService) DismissUnplanned(ctx context.Context, vagons []strin
 	if s.unplanned == nil || len(vagons) == 0 {
 		return 0, nil
 	}
-	return s.unplanned.DeleteByVagons(ctx, vagons)
+	n, err := s.unplanned.DeleteByVagons(ctx, vagons)
+	if err != nil {
+		return 0, err
+	}
+	if s.journal != nil {
+		s.journal.RecordArrivalsEdit(ctx, "dismiss_unplanned", n,
+			map[string]any{"selected": len(vagons)})
+	}
+	return n, nil
 }

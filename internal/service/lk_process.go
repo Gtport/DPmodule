@@ -218,7 +218,7 @@ func (p *LKProcessor) MutateSnapshot(ctx context.Context, journalSource string, 
 		return 0, 0, 0, fmt.Errorf("перечитывание актуальной мапы: %w", err)
 	}
 
-	if p.journal != nil {
+	if p.journal != nil && detail != nil {
 		detail["count"] = updated
 		p.journal.RecordRearrangement(ctx, journalSource, updated, detail)
 	}

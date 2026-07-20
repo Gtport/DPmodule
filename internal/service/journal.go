@@ -184,6 +184,27 @@ func (j *Journal) RecordRearrangement(ctx context.Context, source string, count 
 	}, detail)
 }
 
+// RecordArrivalsEdit фиксирует операторские действия с прибывшими и кандидатами
+// (правки истории прибытий/выгрузок, скрытия кандидатов и бесплановых): action —
+// код действия (edit_arrival / unload / set_naznach / dismiss_candidate /
+// dismiss_unplanned), count — затронуто вагонов, extra — детали.
+func (j *Journal) RecordArrivalsEdit(ctx context.Context, action string, count int, extra map[string]any) {
+	if j == nil || j.repo == nil {
+		return
+	}
+	now := clock.Now()
+	detail := map[string]any{"count": count}
+	for k, v := range extra {
+		if v != "" && v != nil {
+			detail[k] = v
+		}
+	}
+	j.append(ctx, domain.JournalEvent{
+		EventType: domain.EventArrivalsEdit, Source: action,
+		Trigger: domain.TriggerManual, DocTS: &now,
+	}, detail)
+}
+
 // SnapshotUpdates возвращает события перестроения снимка дислокации (обновления
 // ЛК/JSON + загрузки планов + отклонённые гардами попытки + перестановки) за
 // период [from, to] — источник журнала обновлений дислокации.
@@ -192,7 +213,7 @@ func (j *Journal) SnapshotUpdates(ctx context.Context, from, to *domain.LocalTim
 		return nil, nil
 	}
 	return j.repo.Range(ctx, from, to,
-		[]string{domain.EventDislUpdate, domain.EventDislRejected, domain.EventPlanUpload, domain.EventDictReload, domain.EventRearrange}, limit)
+		[]string{domain.EventDislUpdate, domain.EventDislRejected, domain.EventPlanUpload, domain.EventDictReload, domain.EventRearrange, domain.EventArrivalsEdit}, limit)
 }
 
 // append дописывает событие: проставляет actor из контекста, created_at из clock.Now(),
