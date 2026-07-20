@@ -169,7 +169,7 @@ func (s *ArrivalsService) UpdateVagons(ctx context.Context, req ArrivalsUpdateRe
 			ids[id] = struct{}{}
 		}
 		if _, _, _, err := s.proc.MutateSnapshot(ctx, "arrival_rearrange",
-			map[string]any{"naznach": req.Naznach, "selected": len(req.VagonIDs)},
+			nil, // журнал — единой записью arrivals_edit ниже (без дублей)
 			func(all []domain.Dislocation) int {
 				n := 0
 				for i := range all {
@@ -194,7 +194,38 @@ func (s *ArrivalsService) UpdateVagons(ctx context.Context, req ArrivalsUpdateRe
 	if err := s.repo.UpdateFieldsBatch(ctx, updates); err != nil {
 		return ArrivalsUpdateResult{}, err
 	}
+	s.journalEdit(ctx, req, len(rows))
 	return ArrivalsUpdateResult{Updated: len(rows), Selected: len(req.VagonIDs)}, nil
+}
+
+// journalEdit — запись операторского действия с прибывшими в единый журнал
+// (кто/что/сколько): код действия по заполненным полям запроса.
+func (s *ArrivalsService) journalEdit(ctx context.Context, req ArrivalsUpdateRequest, count int) {
+	if s.proc == nil || s.proc.journal == nil {
+		return
+	}
+	var actions []string
+	extra := map[string]any{"selected": len(req.VagonIDs)}
+	if req.IndexPp != "" || req.PlanJd != nil || req.DatePrib != nil {
+		actions = append(actions, "edit_arrival")
+		if req.IndexPp != "" {
+			extra["index_pp"] = req.IndexPp
+		}
+	}
+	if req.DateVigr != nil || req.PlaceVigr != nil || req.Frost != nil {
+		actions = append(actions, "unload")
+		if req.PlaceVigr != nil {
+			extra["place_vigr"] = *req.PlaceVigr
+		}
+	}
+	if req.Naznach != "" {
+		actions = append(actions, "set_naznach")
+		extra["naznach"] = req.Naznach
+	}
+	if len(actions) == 0 {
+		return
+	}
+	s.proc.journal.RecordArrivalsEdit(ctx, strings.Join(actions, "+"), count, extra)
 }
 
 // checkArrivalsEditAccess — правило дат (эталон gtport, строже: проверяем КАЖДЫЙ
@@ -560,6 +591,10 @@ func (s *ArrivalsService) DismissCandidates(ctx context.Context, vagonIDs []stri
 	n, err := s.proc.status9.SetDismissed(ctx, vagons, clock.Now())
 	if err != nil {
 		return ArrivalsUpdateResult{}, err
+	}
+	if s.proc.journal != nil {
+		s.proc.journal.RecordArrivalsEdit(ctx, "dismiss_candidate", n,
+			map[string]any{"selected": len(vagonIDs)})
 	}
 	return ArrivalsUpdateResult{Updated: n, Selected: len(vagonIDs)}, nil
 }

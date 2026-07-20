@@ -9,6 +9,7 @@ const (
 	EventPlanUpload   = "plan_upload"   // загружен план подвода (МА/НК)
 	EventDictReload   = "dict_reload"   // «Обновить справочники»: перезагрузка словарей + пересчёт снимка
 	EventRearrange    = "rearrangement" // перестановка/переадресация: правка naznach/pereadr_* оператором
+	EventArrivalsEdit = "arrivals_edit" // операторские действия с прибывшими: правки истории, подтверждения-скрытия
 )
 
 // Триггеры обновления снимка дислокации (event_journal.trigger).
