@@ -1,5 +1,7 @@
 import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
+import { NzRadioModule } from 'ng-zorro-antd/radio';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzModalModule } from 'ng-zorro-antd/modal';
@@ -22,8 +24,8 @@ import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.ser
 @Component({
   selector: 'app-nearest-modal',
   imports: [
-    DragDropModule, NzButtonModule, NzIconModule, NzModalModule, NzSpinModule,
-    NzTooltipModule, NzDropDownModule,
+    FormsModule, DragDropModule, NzRadioModule, NzButtonModule, NzIconModule,
+    NzModalModule, NzSpinModule, NzTooltipModule, NzDropDownModule,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="title" [nzFooter]="null" nzWidth="1100px"
@@ -36,7 +38,11 @@ import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.ser
       <ng-container *nzModalContent>
         <div class="bar">
           <b>Подход {{ terminalNames().join('+') }}</b>
-          <span class="mut">поездов: {{ trains().length }}</span>
+          <span class="mut">поездов: {{ shown().length }}</span>
+          <nz-radio-group [ngModel]="mode()" (ngModelChange)="mode.set($event)" nzSize="small">
+            <label nz-radio-button nzValue="plan">Только план</label>
+            <label nz-radio-button nzValue="all">Весь прогноз</label>
+          </nz-radio-group>
           <span class="spacer"></span>
           <button nz-button nzType="text" nzSize="small" nz-tooltip nzTooltipTitle="Печать таблицы"
                   (click)="printTable()">
@@ -59,7 +65,7 @@ import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.ser
                 </tr>
               </thead>
               <tbody>
-                @for (t of trains(); track t.key) {
+                @for (t of shown(); track t.key) {
                   <tr (contextmenu)="openMenu($event, t, menu)">
                     <td class="c" [class.plan]="t.has_plan"
                         [title]="t.has_plan ? 'по нитке плана' : 'прогноз/расчёт'">{{ fmtDT(t.time_jd) }}</td>
@@ -180,6 +186,10 @@ export class NearestModalComponent implements OnInit {
 
   readonly loading = signal(false);
   readonly trains = signal<NearestTrain[]>([]);
+  /** Режим показа: только плановые нитки (дефолт) либо весь прогноз. */
+  readonly mode = signal<'plan' | 'all'>('plan');
+  readonly shown = computed(() =>
+    this.mode() === 'plan' ? this.trains().filter((t) => t.has_plan) : this.trains());
   /** Поезд под курсором ПКМ — цель действий. */
   readonly ctx = signal<NearestTrain | null>(null);
   readonly naturOpen = signal(false);
@@ -312,7 +322,7 @@ export class NearestModalComponent implements OnInit {
   // ── Печать всей таблицы ──────────────────────────────────────────────────
   printTable(): void {
     const head = ['Прибытие', 'Индекс', 'Станция', ...this.terminalNames()];
-    const rows = this.trains().map((t) => {
+    const rows = this.shown().map((t) => {
       const cells = [
         this.fmtDT(t.time_jd) + (t.has_plan ? ' (план)' : ''),
         t.index || '—',

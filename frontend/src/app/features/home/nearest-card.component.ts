@@ -10,10 +10,10 @@ import { NearestModalComponent } from './nearest-modal.component';
 
 /**
  * Компактный блок «Ближайшие поезда» половины станции (перенос gtport
- * TrainsMini «Подход»): топ-5 подходящих поездов (Прибытие · Индекс · Состав),
- * время — план (зелёная метка) либо прогноз/расчёт (решение владельца — шире
- * эталона, где были только плановые). Автообновление раз в минуту, «умное»
- * (без перерисовки); разворот — перемещаемая модалка с действиями.
+ * TrainsMini «Подход»): ВСЕ нитки плана (has_plan; решение владельца —
+ * миниатюра показывает план целиком, бесплановый прогноз — в модалке по
+ * переключателю). Автообновление раз в минуту, «умное» (без перерисовки);
+ * разворот — перемещаемая модалка с действиями.
  */
 @Component({
   selector: 'app-nearest-card',
@@ -28,23 +28,24 @@ import { NearestModalComponent } from './nearest-modal.component';
           <span nz-icon nzType="expand-alt"></span>
         </button>
       </div>
-      <table class="mini">
-        <thead>
-          <tr><th class="w-dt">Прибытие</th><th class="w-idx">Индекс</th><th>Состав</th></tr>
-        </thead>
-        <tbody>
-          @for (t of topTrains(); track t.key) {
-            <tr>
-              <td class="c" [class.plan]="t.has_plan"
-                  [title]="t.has_plan ? 'по нитке плана' : 'прогноз/расчёт'">{{ fmtDT(t.time_jd) }}</td>
-              <td class="c num" [class.danger]="t.broshen">{{ t.index || '—' }}</td>
-              <td class="sost ell" [title]="sostav(t)">{{ sostav(t) }}</td>
-            </tr>
-          } @empty {
-            <tr><td colspan="3" class="empty">{{ loading() ? 'Загрузка…' : 'Нет поездов в подходе' }}</td></tr>
-          }
-        </tbody>
-      </table>
+      <div class="mini-wrap">
+        <table class="mini">
+          <thead>
+            <tr><th class="w-dt">Прибытие</th><th class="w-idx">Индекс</th><th>Состав</th></tr>
+          </thead>
+          <tbody>
+            @for (t of planTrains(); track t.key) {
+              <tr>
+                <td class="c plan">{{ fmtDT(t.time_jd) }}</td>
+                <td class="c num" [class.danger]="t.broshen">{{ t.index || '—' }}</td>
+                <td class="sost ell" [title]="sostav(t)">{{ sostav(t) }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="3" class="empty">{{ loading() ? 'Загрузка…' : 'Нет плановых ниток в подходе' }}</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
     </div>
 
     @if (expanded()) {
@@ -57,9 +58,11 @@ import { NearestModalComponent } from './nearest-modal.component';
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-md); }
     .head { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); }
     .spacer { flex: 1 1 auto; }
+    /* Все нитки плана; при длинном плане — внутренний скролл, шапка липкая. */
+    .mini-wrap { max-height: 44vh; overflow: auto; }
     .mini { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
     .mini th { background: var(--color-bg-subtle); font-weight: 600; padding: 3px 8px;
-               border: 1px solid var(--color-border-light); }
+               border: 1px solid var(--color-border-light); position: sticky; top: 0; z-index: 1; }
     .mini td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
     .c { text-align: center; white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; font-weight: 500; }
@@ -84,7 +87,8 @@ export class NearestCardComponent implements OnInit, OnDestroy {
   readonly expanded = signal(false);
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  readonly topTrains = computed(() => this.trains().slice(0, 5));
+  /** Миниатюра показывает ВСЕ нитки плана (has_plan); бесплановый прогноз — в модалке. */
+  readonly planTrains = computed(() => this.trains().filter((t) => t.has_plan));
 
   ngOnInit(): void {
     void this.load(true);
