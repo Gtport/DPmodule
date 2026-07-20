@@ -52,6 +52,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `plan.go` | Типы плана подвода: заголовок загрузки `Plan`, карточка списка `PlanSummary`, нитка `PlanNitka`, ячейка порта `PortCell`. |
 | `directory.go` | Справочники обогащения: станции, операции, словарь грузов (cargo), marka, порты, скоростные профили, назначения. |
 | `history.go` | `VagonHistory` — строка бизнес-истории рейса (вехи погрузки/прибытия/выгрузки), таблица `vagon_history`. |
+| `pamyatka.go` | `Pamyatka`/`PamyatkaVagon` — памятка на подачу/уборку от провайдера (контракт `reference/update`); времена вагонов уже с восстановленным годом. |
 | `config.go` | Настроечная таблица: реестр каналов ввода (`DataSource`), клиентские параметры (`ClientSettings`), настроечный портрет станции плана (`PlanProfile`: режим planned/capacity, коэф, наши терминалы). |
 | `localtime.go` | Тип `LocalTime` — время без часового пояса (без `Z`), единый формат в JSON и БД (инвариант «МСК naive»). |
 | `journal.go` | Типы единого журнала событий: `JournalEvent`, типы событий (`disl_update`/`disl_rejected`/`plan_upload`/`dict_reload`) и триггеры (`manual`/`scheduled`/`actualization`/`plan`). |
@@ -142,6 +143,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `parser.go` | Общий каркас парсеров: профиль источника (`SourceProfile`), детерминированные id, нормализация текста. |
 | `lk.go` | `LKParser` — разбор Excel-выгрузки дислокации из ЛК РЖД → `[]domain.Dislocation`. |
 | `json.go` | `JSONParser` — разбор JSON-выгрузки дислокации АСУ РЖД → `[]domain.Dislocation`. |
+| `reference.go` | `ParseReferenceUpdate` — разбор ответа `reference/update` (памятки) → `[]domain.Pamyatka`: конверт `{LAST_UPDATE, PAMYATKI}`, `DATE_CREATE` в MM-DD-YYYY, сборка времён вагона из пар «дд.мм»+«чч:мм» с восстановлением года по дате создания (корректно на стыке лет). Курсор `LastUpdate` возвращается как пришёл. |
 | `xlsx.go` | Вспомогательное открытие xlsx-файлов (excelize). |
 
 Подпакет `internal/parser/plan/` — план подвода (станция = данные, не код):
