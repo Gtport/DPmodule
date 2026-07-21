@@ -69,6 +69,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `config.go` | `ConfigRepository`: загрузка настроечной таблицы (`data_source`, `client_settings`, `plan_profile`). |
 | `status9.go` | `Status9Repository`: кандидаты в прибытие (статусы 8/9), сохранение операторских правок. |
 | `unplanned.go` | `UnplannedMoveRepository`: «бесплановые в подходе» (upsert по вагону, удаление, полная выборка). |
+| `vagonop.go` | `VagonOperationRepository` — трейл продвижения (`vagon_operation`: `ReplaceForTrip` — полная перезапись рейса) и очередь запросов 601 (`vagon_op_request`: upsert-дедуп по `trip_key`, выборка пачки, снятие/неудача). `WagonHistoryClient` — исходящий запрос 601 к провайдеру. |
 | `status6.go` | `Status6Repository`: доноры перегруза (наполнение при статусе 6, удаление после использования). |
 | `journal.go` | `JournalRepository`: append-запись событий, выборки по типам/диапазону. |
 | `admin_tables.go` | `AdminTablesRepository`: универсальный CRUD справочников по реестру `list_tables` (админ-редактор). |
@@ -77,7 +78,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 ### `internal/adapter/` — адаптеры внешних интеграций
 | Файл | За что отвечает |
 |---|---|
-| `asu/http_client.go` | HTTP-реализация `port.ASUClient`: GET к сервису АСУ (`<base_url>/<client>/dislocation`), секрет из `SecretSource` в заголовке `auth_header` (напр. `X-API-Key`; пусто → `Bearer`), опция `insecure_tls` (самоподписанный серт). Сырые байты; разбор — в `parser.JSONParser`. |
+| `asu/http_client.go` | HTTP-реализация `port.ASUClient`: GET к сервису АСУ (`<base_url>/<client>/dislocation`), секрет из `SecretSource` в заголовке `auth_header` (напр. `X-API-Key`; пусто → `Bearer`), опция `insecure_tls` (самоподписанный серт). Плюс `PullWagonHistory` — запрос 601 «История продвижения вагона» (`/wagons/{vagon}/history/{client}?from=&to=`, тот же провайдер/ключ). Сырые байты; разбор — в `parser`. |
 | `reference/http_client.go` | HTTP-реализация `port.ReferenceClient`: забор памяток у того же провайдера (`/reference?number=` и `/reference/update/{client}?last_update=`), `X-API-Key` из `SecretSource`, `insecure_tls`. Сырые байты (разбор пока не подключён). |
 
 ### `internal/service/` — бизнес-логика
@@ -95,6 +96,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `forecast_board.go` | `ForecastBoard` — сводка прогнозов для экрана «Прогнозы»: агрегация активных поездов по `IdDisl` из `ActualCache` (состав, `Rasch/Prog Msk/Jd`, `Mistake`, флаг `has_plan`); только поезда с прогнозом или ниткой. |
 | `missing.go` | `MissingService` — экран «Пропавшие вагоны»: записи-8 из `status9` (последняя известная позиция, давность пропажи в сутках от МСК-«сейчас»). Только чтение. |
 | `nearest.go` | `NearestService` — блок «Ближайшие поезда» домашней страницы (перенос gtport Nearest): агрегация подходящих поездов из `ActualCache` (статусы 9/10/12 исключены — они «Прибывшие»/кандидаты), группа = `IdDisl`, время «план → прогноз Stage 4 → расчётный ход» + `has_plan`, флаг «брошен» (в составе статус 5), подгруппы с display-строкой и вагонами (№, накладная, груз, вес, `owner` — собственник, в gtport был пуст). Только чтение. |
+| `vagonop.go` | `VagonOpService` — история продвижения вагона (601): триггеры конвейера (прибытие →10 / пропажа незавершённого / выбытие прибывшего) кладут заявки в очередь `vagon_op_request` (upsert по `trip_key` — групповые смены статусов без дублей), интервал всегда `date_nach−1…сегодня`; фоновый воркер разгребает пачками с паузой (пороги `config wagonops`: 50/500мс/5 попыток), каждая история затирает предыдущую (`ReplaceForTrip`); ручной запрос оператора — синхронно мимо очереди. Клиент провайдера — из `ports.provider_client` по ОКПО грузополучателя. |
 | `operativka.go` | `OperativkaService` — карточка «Оперативка»: суточные счётчики по терминалам (репо-агрегат `DailyTerminalCounts` по вехам vagon_history: прибытие date_prib_d × naznach, выгрузка date_vigr_d × place_vigr, за вчера+сегодня ЖД) + «не выгружено» (статус 10 из RAM-снимка) + агрегация «бесплановых в подходе» (unplanned_move, по индексу поезда с display-составом) и `DismissUnplanned` («Скрыть» оператора). Порядок — станции по коду по убыванию. |
 | `arrivals.go` | `ArrivalsService` — «История прибывших» домашней страницы (перенос gtport HistoryTable): чтение `vagon_history` (веха прибытия из Stage 2), группировка поездов «index_pp+date_prib → подгруппы index_main/naznach/gruzpol_s/sms_1 → вагоны», display-строка состава «(N)-783-Челутай АЭ» (переставленный чужой груз — «ГУТ-2 → АЭ»); период — дефолт «вчера/сегодня» от МСК. Правки (`UpdateVagons`, перенос gtport update-by-ids, только история — снимок не трогается): по выбранным vagon_ids — изменить прибытие (index_pp/plan_jd/date_prib, пересчёт plan_msk «час ≥18 → −сутки»/otkl/date_prib_d), отменить прибытие (сброс вехи), выгрузка (date_vigr/place_vigr/frost), назначение (валидация по реестру портов); доступ — administrator без границ, остальным только прибытия за сегодня/вчера (проверка КАЖДОГО вагона). Кандидаты прибытия (статус 9, отличие от gtport): `Candidates` (снимок минус отклонённые), `ConfirmArrival` (в снимок статус 10+date_prib+date_kon через `MutateSnapshot`, дальше живёт sticky-10; веха — в историю здесь же), `DismissCandidates` («скрыть до новых данных», пометка dismissed_at в status9), `CancelArrival` (отмена прибытия: снимок 10→9 — вагон снова кандидат, веха истории очищается; только статус 10 текущего снимка, выгруженным-12 запрет; с потоком не спорим — новая дата из АСУ вернёт 10). |
 | `rearrange.go` | `RearrangeService` — экран «Перестановки/Переадресация»: группировки из RAM-снимка (по родительскому индексу / сборному поезду; фильтр — пары станций из `naznach_station`, без хардкода), цели-терминалы с их станциями из реестра портов, правило available переадресации (крупнейшая подгруппа ≥ порога + уникальные накладные), панель станций (чтение/правка `naznach_station`), батч-применение (`naznach`/`pereadr_*`) с ОДНИМ пересчётом Stage 3–4, подменой снимка и событием журнала `rearrangement`. |
@@ -139,6 +141,8 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `status9.go` | Таблица `status9`: чтение, вставка без перезаписи правок, upsert пропавших, удаление, выборка пропавших (полные строки и устаревшие для TTL-очистки). |
 | `status6.go` | Таблица `status6`: чтение, upsert по вагону, удаление по вагонам. |
 | `journal.go` | Таблица `event_journal`: append-запись событий, последнее по типу (`LatestByType`), последние N (`Recent`); detail jsonb↔text. |
+| `unplanned.go` | Таблица `unplanned_move`: upsert по вагону, удаление по вагонам, полная выборка. |
+| `vagonop.go` | Трейл продвижения `vagon_operation` (транзакционный `ReplaceForTrip`: DELETE+батч-INSERT, дедуп по времени операции) и очередь `vagon_op_request` (upsert `ON CONFLICT (trip_key)` со сбросом попыток, выборка `priority DESC, created_at`, снятие/учёт неудач). Сырой SQL по канону. |
 | `admin_tables.go` | Универсальный CRUD админ-редактора: имена таблиц только из реестра `list_tables`, колонки и русские подписи из `information_schema`/`pg_description`, идентификаторы квотируются, значения — параметрами (канон динамического SQL). |
 
 ### `internal/parser/` — разбор входных файлов
@@ -147,6 +151,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `parser.go` | Общий каркас парсеров: профиль источника (`SourceProfile`), детерминированные id, нормализация текста. |
 | `lk.go` | `LKParser` — разбор Excel-выгрузки дислокации из ЛК РЖД → `[]domain.Dislocation`. |
 | `json.go` | `JSONParser` — разбор JSON-выгрузки дислокации АСУ РЖД → `[]domain.Dislocation`. |
+| `history601.go` | `Parse601` — разбор ответа 601 «История продвижения вагона»: из ~35 полей операции берутся код операции/время/станция/индекс поезда; нулевой индекс «000…0» → пусто; `trip_key` проставляет вызывающий. Golden-тест на живом ответе провайдера (`testdata/history601.json`). |
 | `reference.go` | `ParseReferenceUpdate` — разбор ответа `reference/update` (памятки) → `[]domain.Pamyatka`: конверт `{LAST_UPDATE, PAMYATKI}`, `DATE_CREATE` в MM-DD-YYYY, сборка времён вагона из пар «дд.мм»+«чч:мм» с восстановлением года по дате создания (корректно на стыке лет). Курсор `LastUpdate` возвращается как пришёл. |
 | `xlsx.go` | Вспомогательное открытие xlsx-файлов (excelize). |
 
@@ -174,6 +179,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `missing.go` | `GET /dislocation/missing` — пропавшие вагоны (статус 8) для одноимённого экрана (из `MissingService`). |
 | `arrivals.go` | `GET /dislocation/arrivals?from&to&naznach` — прибывшие поезда за период (группы из `vagon_history`); `GET /dislocation/terminals` — реестр терминалов с их станциями (раскладка домашней страницы); `PUT /dislocation/arrivals/vagons` — правка выбранных вагонов истории (403 при нарушении правила дат); `GET /dislocation/arrivals/candidates` + `POST /dislocation/arrivals/confirm|dismiss|cancel` — кандидаты прибытия (статус 9): список, подтверждение в снимок, отклонение; cancel — отмена прибытия (10→9 + очистка вехи). |
 | `nearest.go` | `GET /dislocation/nearest?naznach&limit` — ближайшие поезда в подходе (агрегация снимка, время план→прогноз→расчёт) для блока домашней страницы. |
+| `vagonops.go` | История продвижения вагона: `GET /dislocation/vagons/{vagon}/operations` — сохранённый трейл текущего рейса; `POST .../operations/pull` — ручной запрос 601 у провайдера (синхронно). |
 | `operativka.go` | `GET /dislocation/operativka` — суточные счётчики «Оперативки» по терминалам (вчера/сегодня ЖД + не выгружено) и «бесплановые в подходе»; `POST /dislocation/operativka/unplanned/dismiss` — «Скрыть». |
 | `rearrange.go` | Перестановки/переадресация: `GET/POST /dislocation/rearrangement/{groups,apply}`, `GET/PATCH .../rearrangement/stations` (панель станций), `GET/POST /dislocation/redirection/{groups,apply}` (валидация → 400, снимок не загружен → 409). |
 | `me.go` | `/me`: данные текущего пользователя из JWT-claims. |
@@ -201,7 +207,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `pkg/metrics/service.go` | `ServiceMetrics`: счётчики операций/ошибок и гистограмма длительности для сервисного слоя. |
 
 ### `migrations/` — SQL-миграции (golang-migrate, `cmd/migrate`)
-Пары `up`/`down` с последовательной нумерацией `000001–000037`: инициализация схемы
+Пары `up`/`down` с последовательной нумерацией `000001–000040`: инициализация схемы
 `dpport`, справочников и конфигурации, расширения портов, скоростные профили, пороги
 статусов, таблицы `status9`/`status6`, назначения, план подвода, словарь cargo,
 админ-редактор, поля переадресации и доверенного лица, поле `owner` («чей вагон»:

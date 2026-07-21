@@ -110,6 +110,7 @@ func run() error {
 		status6Repo  port.Status6Repository
 		historyRepo  port.HistoryRepository
 		unplRepo     port.UnplannedMoveRepository
+		vagonOpRepo  port.VagonOperationRepository
 		planRepo     port.PlanRepository
 		journalRepo  port.JournalRepository
 		adminRepo    port.AdminTablesRepository
@@ -122,6 +123,7 @@ func run() error {
 		status6Repo = gormrepo.NewStatus6Repository(db)
 		historyRepo = gormrepo.NewHistoryRepository(db)
 		unplRepo = gormrepo.NewUnplannedMoveRepository(db)
+		vagonOpRepo = gormrepo.NewVagonOperationRepository(db)
 		planRepo = gormrepo.NewPlanRepository(db)
 		journalRepo = gormrepo.NewJournalRepository(db)
 		adminRepo = gormrepo.NewAdminTablesRepository(db)
@@ -190,7 +192,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, vagonOpRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
@@ -222,6 +224,12 @@ func run() error {
 	// Инкремент памяток на подачу/уборку (пока только лог, без сохранения).
 	if cfg.Reference.Enabled && refSvc != nil {
 		workers = append(workers, worker.NewCronWorker("reference-update", cfg.Reference.PullInterval, log, refSvc.PullUpdates))
+	}
+
+	// Очередь запросов 601 «История продвижения вагона»: частый лёгкий тик,
+	// внутри — пачка с паузой между HTTP-запросами (пороги в config wagonops).
+	if cfg.WagonOps.Enabled && vagonOps != nil {
+		workers = append(workers, worker.NewCronWorker("vagonops-drain", cfg.WagonOps.DrainInterval, log, vagonOps.DrainQueue))
 	}
 
 	if len(workers) > 0 {

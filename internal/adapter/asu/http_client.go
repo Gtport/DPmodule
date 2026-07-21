@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	defaultPathTemplate = "/{client}/dislocation"
-	defaultTimeout      = 30 * time.Second
+	defaultPathTemplate        = "/{client}/dislocation"
+	defaultHistoryPathTemplate = "/wagons/{vagon}/history/{client}"
+	defaultTimeout             = 30 * time.Second
 )
 
 // HTTPClient реализует port.ASUClient: GET к сервису АСУ, авторизация секретом из
@@ -29,6 +30,7 @@ const (
 type HTTPClient struct {
 	baseURL      string
 	pathTemplate string
+	historyPath  string // шаблон пути запроса 601 ({vagon}, {client})
 	method       string
 	authKey      string
 	authHeader   string
@@ -57,9 +59,14 @@ func NewHTTPClient(cfg domain.DataSourceConfig, secrets port.SecretSource) *HTTP
 	if cfg.InsecureTLS {
 		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
+	historyPath := cfg.HistoryPathTemplate
+	if historyPath == "" {
+		historyPath = defaultHistoryPathTemplate
+	}
 	return &HTTPClient{
 		baseURL:      strings.TrimRight(cfg.BaseURL, "/"),
 		pathTemplate: pathTemplate,
+		historyPath:  historyPath,
 		method:       method,
 		authKey:      cfg.AuthSecretKey,
 		authHeader:   cfg.AuthHeader,
@@ -71,7 +78,19 @@ func NewHTTPClient(cfg domain.DataSourceConfig, secrets port.SecretSource) *HTTP
 // Pull забирает сырой снимок дислокации по коду клиента провайдера (resource →
 // {client} в шаблоне пути). Возвращает тело ответа как есть; парсинг — выше.
 func (c *HTTPClient) Pull(ctx context.Context, resource string) ([]byte, error) {
-	url := c.baseURL + strings.ReplaceAll(c.pathTemplate, "{client}", resource)
+	return c.get(ctx, c.baseURL+strings.ReplaceAll(c.pathTemplate, "{client}", resource), resource)
+}
+
+// PullWagonHistory — запрос 601 «История продвижения вагона»:
+// GET <base_url>/wagons/{vagon}/history/{client}?from=YYYY-MM-DD&to=YYYY-MM-DD.
+// Тот же провайдер/авторизация, что и снимок дислокации; парсинг — parser.Parse601.
+func (c *HTTPClient) PullWagonHistory(ctx context.Context, client, vagon, from, to string) ([]byte, error) {
+	path := strings.NewReplacer("{vagon}", vagon, "{client}", client).Replace(c.historyPath)
+	return c.get(ctx, c.baseURL+path+"?from="+from+"&to="+to, "601 "+vagon)
+}
+
+func (c *HTTPClient) get(ctx context.Context, url, label string) ([]byte, error) {
+	resource := label
 	req, err := http.NewRequestWithContext(ctx, c.method, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("АСУ %q: сборка запроса: %w", resource, err)

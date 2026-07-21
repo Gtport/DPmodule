@@ -86,6 +86,10 @@ type Ports struct {
 	Color       string // цвет отображения
 	Enabled     bool   // at_work
 	SortOrder   int
+	// ProviderClient — клиент провайдера АСУ (attis/nmtp) для запросов истории
+	// продвижения (601): вагон в базе РЖД строго за грузополучателем, поэтому
+	// маппинг по ОКПО порта, а не по naznach (его переставляют).
+	ProviderClient string
 }
 
 // NaznachStation — настроечная таблица «перестановок назначения» (Stage 2, §3.17).

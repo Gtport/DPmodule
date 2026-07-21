@@ -27,6 +27,7 @@ type LKProcessor struct {
 	status6   *Status6Cache
 	history   port.HistoryRepository
 	unplanned port.UnplannedMoveRepository // «бесплановые в подходе» (nil — выключено/тесты)
+	vagonOps  *VagonOpService              // очередь запросов 601 (nil — выключено/тесты)
 	enricher  *Enricher
 	journal   *Journal   // единый журнал событий (может быть nil — cmd-утилиты)
 	mu        sync.Mutex // сериализует пересборку снимка (ручной ЛК vs cron-АСУ идут через один proc)
@@ -133,6 +134,7 @@ type LKProcessResult struct {
 	HistoryInserted  int            `json:"history_inserted"`   // новых рейсов в vagon_history (S2-6)
 	HistoryUpdated   int            `json:"history_updated"`    // обновлённых строк истории по переходам
 	UnloadOnLeave    int            `json:"unload_on_leave"`    // авто-вех выгрузки по выбытию статуса-10
+	VagonOpsQueued   int            `json:"vagon_ops_queued"`   // заявок 601 в очередь (прибытие/пропажа/выбытие)
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -319,6 +321,14 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// Заявки на историю продвижения (601): прибытие / пропажа / выбытие-10 —
+	// только постановка в очередь (HTTP — у фонового воркера). ДО подмены
+	// снимка. Отказ очереди пересборку не валит: трейл — вторичные данные.
+	var opQueued int
+	if p.actual != nil && p.vagonOps != nil {
+		opQueued, _ = p.vagonOps.EnqueueTransitions(ctx, all, p.actual) // отказ логирует сервис
+	}
+
 	// «Бесплановые в подходе» (Оперативка): смена станции без плана ближе порога —
 	// ДО подмены снимка (сравнение с прежним). Ошибка не валит пересборку.
 	if p.actual != nil && p.unplanned != nil {
@@ -369,7 +379,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		MarkaMissed:      mk.MissedMarka, NaznachOverride: mk.NaznachOverride,
 		ForecastComputed: forecastN, ProgComputed: progN,
 		HistoryInserted: hist.Inserted, HistoryUpdated: hist.Updated,
-		UnloadOnLeave: unloadLeft,
+		UnloadOnLeave: unloadLeft, VagonOpsQueued: opQueued,
 	}, nil
 }
 
@@ -397,3 +407,7 @@ func dataLossPct(current, next int) int {
 func (p *LKProcessor) SetUnplannedRepo(repo port.UnplannedMoveRepository) {
 	p.unplanned = repo
 }
+
+// SetVagonOps подключает очередь запросов истории продвижения (601);
+// nil — триггеры выключены (cmd-утилиты, тесты).
+func (p *LKProcessor) SetVagonOps(svc *VagonOpService) { p.vagonOps = svc }
