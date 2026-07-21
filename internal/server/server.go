@@ -158,6 +158,7 @@ func Build(
 				if ds, ok := cfgCache.DataSource("asu"); ok && ds.Enabled {
 					histClient := asu.NewHTTPClient(ds.Config, secrets)
 					vagonOps = service.NewVagonOpService(vagonOpRepo, histClient, dirCache, actualCache, log)
+					vagonOps.SetHistory(historyRepo) // «История движения вагона»: рейс из vagon_history
 					vagonOps.SetLimits(cfg.WagonOps.Batch, cfg.WagonOps.Pause, cfg.WagonOps.MaxAttempts)
 					proc.SetVagonOps(vagonOps)
 					handler.NewVagonOpsHandler(vagonOps).RegisterRoutes(api)

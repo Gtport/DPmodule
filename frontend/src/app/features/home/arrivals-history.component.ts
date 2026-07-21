@@ -12,8 +12,9 @@ import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import {
-  ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, CandidateGroup, TerminalTarget,
+  ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, ArrivalVagon, CandidateGroup, TerminalTarget,
 } from './arrivals-api.service';
+import { VagonTrailModalComponent } from './vagon-trail-modal.component';
 
 /**
  * Модалка «История прибывших — <станция>» (перенос gtport HistoryTable):
@@ -34,6 +35,7 @@ import {
   imports: [
     FormsModule, DragDropModule, NzButtonModule, NzIconModule, NzInputModule,
     NzModalModule, NzSliderModule, NzSpinModule, NzTooltipModule, NzDropDownModule,
+    VagonTrailModalComponent,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="title" [nzFooter]="null" nzWidth="1250px"
@@ -132,7 +134,7 @@ import {
                                 <span class="chip" [class.hit]="matches(v.vagon)"
                                       [class.sel]="selected().has(v.id)"
                                       (click)="toggleVagon(v.id)"
-                                      (contextmenu)="openVagonMenu($event, g, v.id, menu)">
+                                      (contextmenu)="openVagonMenu($event, g, v, menu)">
                                   {{ v.vagon }}@if (v.shipments) { ({{ v.shipments }}) }
                                 </span>
                               }
@@ -157,6 +159,10 @@ import {
     <!-- ПКМ: операции по выбранным вагонам -->
     <nz-dropdown-menu #menu="nzDropdownMenu">
       <ul nz-menu>
+        @if (ctxVagon(); as v) {
+          <li nz-menu-item (click)="openTrail(v)">История движения вагона {{ v.vagon }}…</li>
+          <li nz-menu-divider></li>
+        }
         <li nz-menu-item (click)="openEdit()">Изменить прибытие…</li>
         <li nz-menu-item (click)="openUnload()">Выгрузить…</li>
         @for (t of terminals(); track t.name) {
@@ -169,6 +175,11 @@ import {
         }
       </ul>
     </nz-dropdown-menu>
+
+    <!-- «История движения вагона» (ПКМ по вагону): база → при пустой АСУ -->
+    @if (trailVagon(); as tv) {
+      <app-vagon-trail-modal [vagonId]="tv.id" [vagon]="tv.vagon" (closed)="trailVagon.set(null)" />
+    }
 
     <!-- Диалог «Изменить прибытие» -->
     <nz-modal [nzVisible]="editOpen()" [nzTitle]="edTtl" nzWidth="420px"
@@ -322,6 +333,10 @@ export class ArrivalsHistoryComponent implements OnInit {
   readonly selected = signal<Set<string>>(new Set());
   /** Группа под курсором ПКМ (дефолты диалогов, экспорт группы). */
   readonly ctxGroup = signal<ArrivalGroup | null>(null);
+  /** Вагон под курсором ПКМ (null — ПКМ был по поезду/составу). */
+  readonly ctxVagon = signal<ArrivalVagon | null>(null);
+  /** Вагон, для которого открыта «История движения». */
+  readonly trailVagon = signal<ArrivalVagon | null>(null);
 
   // Диалог «Изменить прибытие».
   readonly editOpen = signal(false);
@@ -448,6 +463,7 @@ export class ArrivalsHistoryComponent implements OnInit {
   openGroupMenu(ev: MouseEvent, g: ArrivalGroup, menu: NzDropdownMenuComponent): void {
     ev.preventDefault();
     this.ctxGroup.set(g);
+    this.ctxVagon.set(null);
     this.addToSelection(g.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id)));
     this.ctxMenu.create(ev, menu);
   }
@@ -456,16 +472,23 @@ export class ArrivalsHistoryComponent implements OnInit {
     ev.preventDefault();
     ev.stopPropagation();
     this.ctxGroup.set(g);
+    this.ctxVagon.set(null);
     this.addToSelection(sg.vagons.map((v) => v.id));
     this.ctxMenu.create(ev, menu);
   }
 
-  openVagonMenu(ev: MouseEvent, g: ArrivalGroup, id: string, menu: NzDropdownMenuComponent): void {
+  openVagonMenu(ev: MouseEvent, g: ArrivalGroup, v: ArrivalVagon, menu: NzDropdownMenuComponent): void {
     ev.preventDefault();
     ev.stopPropagation();
     this.ctxGroup.set(g);
-    this.addToSelection([id]);
+    this.ctxVagon.set(v); // ПКМ именно по вагону — только здесь есть «История движения»
+    this.addToSelection([v.id]);
     this.ctxMenu.create(ev, menu);
+  }
+
+  /** История движения вагона — по рейсу (id строки истории), не по снимку. */
+  openTrail(v: ArrivalVagon): void {
+    this.trailVagon.set(v);
   }
 
   // ── Операции ─────────────────────────────────────────────────────────────
