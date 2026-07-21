@@ -51,6 +51,7 @@ type VagonOpService struct {
 	client port.WagonHistoryClient
 	dir    *DirectoryCache
 	actual *ActualCache
+	hist   port.HistoryRepository // рейс для «Истории движения вагона» (см. vagontrail.go)
 	log    *zap.Logger
 
 	batch       int

@@ -434,6 +434,14 @@ func parseJSONDate(s string) *time.Time {
 // АСУ, dislocation_contract.example.json: INDEX_POEZD = "1234-567-8901").
 var formattedIndexRe = regexp.MustCompile(`^\d{4}-\d{3}-\d{4}$`)
 
+// FormatTrainIndex — нормализация индекса поезда для показа (трейл продвижения,
+// запрос 601): 15 цифр → XXXX-XXX-XXXX, «Б/И» — пусто либо не 15 цифр. Проверок
+// по станциям здесь нет: в операции 601 станций отправления/операции индекса нет,
+// а сам индекс хранится сырым (нормализуем на выходе, старые строки не трогаем).
+func FormatTrainIndex(indexStr string) string {
+	return parseJSONIndex(indexStr, "", "")
+}
+
 // parseJSONIndex форматирует 15-значный INDEX_POEZD в XXXX-XXX-XXXX. «Б/И» —
 // без индекса (вагон не в поезде) либо индекс не проходит проверки. Уже
 // отформатированный источником индекс 4-3-4 принимается как есть.
