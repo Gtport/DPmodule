@@ -621,7 +621,7 @@ export class ArrivalsHistoryComponent implements OnInit {
 
   // ── Экспорт в Excel (в браузере, как gtport) ─────────────────────────────
   async exportAll(): Promise<void> {
-    const XLSX = await import('xlsx');
+    const XLSX = await import('xlsx-js-style');
     const wb = XLSX.utils.book_new();
     const trains = this.filteredGroups().map((g) => {
       const row: Record<string, string | number> = {
@@ -640,7 +640,7 @@ export class ArrivalsHistoryComponent implements OnInit {
   }
 
   async exportGroup(g: ArrivalGroup): Promise<void> {
-    const XLSX = await import('xlsx');
+    const XLSX = await import('xlsx-js-style');
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(this.vagonRows([g])), 'Вагоны');
     XLSX.writeFile(wb, `Поезд_${g.index_pp || 'без_индекса'}_${this.fmtD(g.date_prib_d)}.xlsx`);
