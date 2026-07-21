@@ -1,0 +1,33 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      # Первичный админ (создаётся только при пустой БД). Значения — из .env, см. .env.example.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?задай в deployments/keycloak/.env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?задай в deployments/keycloak/.env}
+
+      # Работаем за nginx: доверяем X-Forwarded-* (иначе Keycloak видит http и ломает redirect_uri).
+      KC_PROXY_HEADERS: xforwarded
+
+      # ⚠️ КЛЮЧЕВОЕ. Фиксированный публичный адрес приложения.
+      # Без него Keycloak берёт хост и схему из входящего запроса и кладёт их в claim `iss`
+      # выданного токена. Бэкенд (pkg/middleware/jwt.go) сверяет issuer ТОЧНОЙ строкой,
+      # поэтому смена IP, домена или переход на https молча ломали авторизацию:
+      # на всех страницах «invalid token», в логе «token has invalid issuer» (случилось 2026-07-21).
+      # Здесь значение обязано совпадать с `keycloak.issuer` в config.yaml бэкенда.
+      KC_HOSTNAME: ${KC_HOSTNAME:?публичный URL приложения, например https://app.example.com}
+    ports:
+      # Только петля: наружу — исключительно через nginx (location /realms/ → :8180).
+      - "127.0.0.1:8180:8080"
+    volumes:
+      # Экспорт реалма. Вне git (внутри учётки пользователей) — положить файл вручную, см. README.
+      - ./import:/opt/keycloak/data/import:ro
+      # БД dev-режима (H2) + ключи подписи токенов. Терять нельзя: с новыми ключами
+      # разлогинятся все, а реалм придётся импортировать заново.
+      - kc_data:/opt/keycloak/data
+    restart: unless-stopped
+
+volumes:
+  kc_data:

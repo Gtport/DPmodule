@@ -1,6 +1,9 @@
 # секреты и локальная конфигурация
 .env
 *.env
+
+# Экспорт реалма Keycloak — внутри пользователи с credentials
+/deployments/keycloak/import/
 !.env.example
 
 # собранные бинарники (якорь к корню — иначе матчит cmd/server, cmd/migrate, internal/server)
