@@ -80,6 +80,8 @@ type portsModel struct {
 	Color       string `gorm:"column:color"`
 	Enabled     bool   `gorm:"column:enabled"`
 	SortOrder   int    `gorm:"column:sort_order"`
+	// Клиент провайдера АСУ для запросов 601 по вагонам этого грузополучателя.
+	ProviderClient string `gorm:"column:provider_client"`
 }
 
 func (portsModel) TableName() string { return "ports" }
@@ -189,6 +191,7 @@ func (r *DirectoryRepository) LoadPorts(ctx context.Context) ([]domain.Ports, er
 			PlanCode: m.PlanCode, StationCode: m.StationCode,
 			PcCoal: m.PcCoal, PcMetal: m.PcMetal, PcOther: m.PcOther, PcTotal: m.PcTotal,
 			Front: m.Front, Color: m.Color, Enabled: m.Enabled, SortOrder: m.SortOrder,
+			ProviderClient: m.ProviderClient,
 		}
 	}
 	return out, nil

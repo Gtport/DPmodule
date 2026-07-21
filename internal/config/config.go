@@ -18,6 +18,7 @@ type Config struct {
 	Storage   Storage   `yaml:"storage"`
 	ASU       ASU       `yaml:"asu"`
 	Reference Reference `yaml:"reference"`
+	WagonOps  WagonOps  `yaml:"wagonops"`
 }
 
 // Reference — забор памяток на подачу/уборку из внешнего сервиса (тот же провайдер,
@@ -40,6 +41,17 @@ type ASU struct {
 	Enabled      bool          `yaml:"enabled"`       // включить фоновый забор по тикеру
 	PullInterval time.Duration `yaml:"pull_interval"` // период забора; дефолт 10m
 	PullOffset   time.Duration `yaml:"pull_offset"`   // сдвиг тиков от начала часа (5m при 10m → :05,:15,...); дефолт 0 → :00,:10,...
+}
+
+// WagonOps — фоновый воркер очереди запросов 601 «История продвижения вагона»
+// (тот же провайдер, что дислокация; сам источник — data_source id=asu). Пороги
+// подтверждены владельцем: пачка 50, пауза 500 мс (~2 мин на 200 вагонов).
+type WagonOps struct {
+	Enabled       bool          `yaml:"enabled"`        // включить фоновый разбор очереди
+	DrainInterval time.Duration `yaml:"drain_interval"` // период тика воркера; дефолт 15s
+	Batch         int           `yaml:"batch"`          // заявок за тик; дефолт 50
+	Pause         time.Duration `yaml:"pause"`          // пауза между запросами; дефолт 500ms
+	MaxAttempts   int           `yaml:"max_attempts"`   // неудач до снятия заявки; дефолт 5
 }
 
 // Storage — локальное файловое хранилище на сервере (вне git). Загруженные
@@ -208,6 +220,18 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Reference.AuthSecretKey == "" {
 		cfg.Reference.AuthSecretKey = "ASU_TOKEN" // тот же провайдер/ключ, что и АСУ
+	}
+	if cfg.WagonOps.DrainInterval == 0 {
+		cfg.WagonOps.DrainInterval = 15 * time.Second
+	}
+	if cfg.WagonOps.Batch == 0 {
+		cfg.WagonOps.Batch = 50
+	}
+	if cfg.WagonOps.Pause == 0 {
+		cfg.WagonOps.Pause = 500 * time.Millisecond
+	}
+	if cfg.WagonOps.MaxAttempts == 0 {
+		cfg.WagonOps.MaxAttempts = 5
 	}
 }
 

@@ -44,14 +44,15 @@ type DataSourceConfig struct {
 	// api_pull (АСУ-АСУ). Провайдер отдаёт снимок по маршруту <base_url>/<client>/dislocation
 	// в формате {timestamp,count,wagons} (envelope, см. parser.JSONParser). Один источник
 	// перечисляет всех своих клиентов; ingest тянет их за один проход и сверяет метки.
-	BaseURL       string   `json:"base_url,omitempty"`        // базовый URL сервиса АСУ (без хвостового пути)
-	Clients       []string `json:"clients,omitempty"`         // коды клиентов провайдера: ["attis","nmtp"]
-	PathTemplate  string   `json:"path_template,omitempty"`   // шаблон пути, {client} → код; дефолт "/{client}/dislocation"
-	Method        string   `json:"method,omitempty"`          // HTTP-метод, дефолт GET
-	AuthSecretKey string   `json:"auth_secret_key,omitempty"` // ключ секрета в SecretSource; пусто — без авторизации
-	AuthHeader    string   `json:"auth_header,omitempty"`     // заголовок для секрета (напр. "X-API-Key"); пусто — "Authorization: Bearer <секрет>"
-	InsecureTLS   bool     `json:"insecure_tls,omitempty"`    // не проверять TLS-сертификат провайдера (самоподписанный серт на IP); по умолчанию проверяем
-	TimeoutSecs   int      `json:"timeout_secs,omitempty"`    // таймаут одного запроса, дефолт 30
+	BaseURL             string   `json:"base_url,omitempty"`              // базовый URL сервиса АСУ (без хвостового пути)
+	Clients             []string `json:"clients,omitempty"`               // коды клиентов провайдера: ["attis","nmtp"]
+	PathTemplate        string   `json:"path_template,omitempty"`         // шаблон пути, {client} → код; дефолт "/{client}/dislocation"
+	HistoryPathTemplate string   `json:"history_path_template,omitempty"` // шаблон запроса 601 ({vagon},{client}); дефолт "/wagons/{vagon}/history/{client}"
+	Method              string   `json:"method,omitempty"`                // HTTP-метод, дефолт GET
+	AuthSecretKey       string   `json:"auth_secret_key,omitempty"`       // ключ секрета в SecretSource; пусто — без авторизации
+	AuthHeader          string   `json:"auth_header,omitempty"`           // заголовок для секрета (напр. "X-API-Key"); пусто — "Authorization: Bearer <секрет>"
+	InsecureTLS         bool     `json:"insecure_tls,omitempty"`          // не проверять TLS-сертификат провайдера (самоподписанный серт на IP); по умолчанию проверяем
+	TimeoutSecs         int      `json:"timeout_secs,omitempty"`          // таймаут одного запроса, дефолт 30
 }
 
 // Идентификация «чей файл»/терминала — НЕ здесь: ОКПО грузополучателя проверяется

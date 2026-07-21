@@ -40,14 +40,16 @@ func Build(
 	planRepo port.PlanRepository,
 	journalRepo port.JournalRepository,
 	adminRepo port.AdminTablesRepository,
+	vagonOpRepo port.VagonOperationRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
-) (*http.Server, *service.ASUIngest, *service.ReferenceService) {
+) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.VagonOpService) {
 	// asuIngest и refSvc отдаём наружу: их фоновые крон-воркеры живут в main
 	// (жизненный цикл процесса), а ручки остаются здесь. asuIngest = nil, если нет
 	// БД/справочников (тогда воркер не запускается).
 	var asuIngest *service.ASUIngest
+	var vagonOps *service.VagonOpService
 
 	if cfg.App.Env != "dev" {
 		gin.SetMode(gin.ReleaseMode)
@@ -149,6 +151,19 @@ func Build(
 			asuIngest.SetJournal(journal)
 			handler.NewASUPullHandler(asuIngest).RegisterRoutes(api)
 
+			// История продвижения вагона (запрос 601, тот же провайдер): очередь
+			// заявок из конвейера (прибытие/пропажа/выбытие-10) + ручной запрос.
+			// Клиент собирается из того же источника data_source id=asu.
+			if vagonOpRepo != nil {
+				if ds, ok := cfgCache.DataSource("asu"); ok && ds.Enabled {
+					histClient := asu.NewHTTPClient(ds.Config, secrets)
+					vagonOps = service.NewVagonOpService(vagonOpRepo, histClient, dirCache, actualCache, log)
+					vagonOps.SetLimits(cfg.WagonOps.Batch, cfg.WagonOps.Pause, cfg.WagonOps.MaxAttempts)
+					proc.SetVagonOps(vagonOps)
+					handler.NewVagonOpsHandler(vagonOps).RegisterRoutes(api)
+				}
+			}
+
 			// Статус-панель: актуальность дислокации и планов из журнала.
 			handler.NewStatusHandler(service.NewStatusService(journal, dirCache)).RegisterRoutes(api)
 
@@ -178,7 +193,7 @@ func Build(
 		Handler:      router,
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
-	}, asuIngest, refSvc
+	}, asuIngest, refSvc, vagonOps
 }
 
 // NewMetricsServer returns a minimal http.Server that serves /metrics only,
