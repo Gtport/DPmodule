@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -210,7 +211,11 @@ func (s *VagonOpService) DrainQueue(ctx context.Context) error {
 			failed++
 			s.log.Warn("601: запрос истории не удался",
 				zap.String("vagon", q.Vagon), zap.Int("attempts", q.Attempts+1), zap.Error(err))
-			if ferr := s.repo.Fail(ctx, q.TripKey, err.Error(), s.maxAttempts, clock.Now()); ferr != nil {
+			// Текст ошибки может прийти в битой кодировке (внешний провайдер) —
+			// чистим, иначе UPDATE last_error упадёт и заявка застрянет навечно
+			// (attempts не вырастет). Поймано стресс-тестом 200 вагонов.
+			msg := strings.ToValidUTF8(err.Error(), "\uFFFD")
+			if ferr := s.repo.Fail(ctx, q.TripKey, msg, s.maxAttempts, clock.Now()); ferr != nil {
 				s.log.Warn("601: фиксация неудачи", zap.Error(ferr))
 			}
 			continue
