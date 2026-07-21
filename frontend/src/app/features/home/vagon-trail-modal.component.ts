@@ -10,6 +10,13 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { TrailOp, TrailVisit, VagonTrail, VagonTrailApiService } from './vagon-trail-api.service';
 
 /**
+ * Ширины колонок выгрузки в единицах Excel — порядок как в строке экспорта:
+ * Вагон, Станция, Код станции, Дорога, Время операции, Код операции, Операция,
+ * Операция (кратко), Индекс поезда (значения задал владелец).
+ */
+const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
+
+/**
  * Модалка «История движения вагона» (ПКМ по вагону в истории прибывших).
  *
  * Порядок (решение владельца): сначала показываем то, что уже сохранено в базе,
@@ -206,7 +213,7 @@ export class VagonTrailModalComponent implements OnInit {
   async exportExcel(): Promise<void> {
     const t = this.trail();
     if (!t?.count) return;
-    const XLSX = await import('xlsx');
+    const XLSX = await import('xlsx-js-style');
     const rows = t.visits.flatMap((v: TrailVisit) => v.ops.map((o) => ({
       'Вагон': t.vagon,
       'Станция': v.station || '',
@@ -218,8 +225,19 @@ export class VagonTrailModalComponent implements OnInit {
       'Операция (кратко)': o.oper_s,
       'Индекс поезда': o.index,
     })));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // Ширины — в единицах Excel (поле width, а не wch: wch добавляет отступ).
+    ws['!cols'] = TRAIL_COL_WIDTHS.map((width) => ({ width }));
+    // Выравнивание по центру: и заголовки, и данные.
+    const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1');
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (cell) cell.s = { alignment: { horizontal: 'center', vertical: 'center' } };
+      }
+    }
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'История движения');
+    XLSX.utils.book_append_sheet(wb, ws, 'История движения');
     XLSX.writeFile(wb, `История_движения_${t.vagon}.xlsx`);
   }
 

@@ -300,7 +300,7 @@ export class NearestModalComponent implements OnInit {
   async exportTrain(): Promise<void> {
     const t = this.ctx();
     if (!t) return;
-    const XLSX = await import('xlsx');
+    const XLSX = await import('xlsx-js-style');
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{
       'Индекс': t.index, 'Прибытие': this.fmtDT(t.time_jd),
