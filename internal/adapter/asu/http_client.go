@@ -132,8 +132,15 @@ func (c *HTTPClient) Push(context.Context, string, []byte) error {
 func snippet(b []byte) string {
 	const max = 200
 	s := strings.TrimSpace(string(b))
-	if len(s) > max {
-		return s[:max] + "…"
+	cut := len(s) > max
+	if cut {
+		s = s[:max]
+	}
+	// Обрез мог попасть на середину многобайтовой руны (русский текст ошибки
+	// провайдера) — чистим до валидного UTF-8, иначе текст не ляжет в Postgres.
+	s = strings.ToValidUTF8(s, "")
+	if cut {
+		s += "…"
 	}
 	return s
 }
