@@ -19,6 +19,18 @@ type Config struct {
 	ASU       ASU       `yaml:"asu"`
 	Reference Reference `yaml:"reference"`
 	WagonOps  WagonOps  `yaml:"wagonops"`
+	MAX       MAX       `yaml:"max"`
+}
+
+// MAX — исходящая рассылка форм («План подвода»/оперативка) в мессенджер MAX.
+// Токен бота — только из env MAX_BOT_TOKEN (не в файле). Сами чаты и маршруты
+// «терминал → чат» живут в БД (таблица max_chat), здесь — только транспорт.
+// Крон-автоотправки для форм нет: рассылка по кнопке диспетчера (решение владельца).
+type MAX struct {
+	Enabled     bool          `yaml:"enabled"`      // false → ручки рассылки отвечают «отключено»
+	BaseURL     string        `yaml:"base_url"`     // Bot API; дефолт https://platform-api.max.ru
+	TimeoutSecs int           `yaml:"timeout_secs"` // таймаут HTTP; дефолт 120
+	SendDelay   time.Duration `yaml:"send_delay"`   // пауза между чатами (лимит API 30 rps); дефолт 500ms
 }
 
 // Reference — забор памяток на подачу/уборку из внешнего сервиса (тот же провайдер,
@@ -232,6 +244,15 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.WagonOps.MaxAttempts == 0 {
 		cfg.WagonOps.MaxAttempts = 5
+	}
+	if cfg.MAX.BaseURL == "" {
+		cfg.MAX.BaseURL = "https://platform-api.max.ru"
+	}
+	if cfg.MAX.TimeoutSecs == 0 {
+		cfg.MAX.TimeoutSecs = 120
+	}
+	if cfg.MAX.SendDelay == 0 {
+		cfg.MAX.SendDelay = 500 * time.Millisecond
 	}
 }
 

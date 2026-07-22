@@ -57,3 +57,9 @@ reference:              # памятки на подачу/уборку (тот 
   pull_interval: 1h     # период крон-инкремента
   clients: [attis, nmtp] # коды клиентов провайдера: памятки разнесены по клиентам, у каждого свои номера
   # auth_secret_key по умолчанию ASU_TOKEN (env) — ключ X-API-Key того же провайдера
+
+max:                    # рассылка форм в мессенджер MAX (токен бота — env MAX_BOT_TOKEN)
+  enabled: false        # true → ручки рассылки активны; чаты/маршруты — в БД (таблица max_chat)
+  base_url: https://platform-api.max.ru  # Bot API MAX (CA Минцифры вшит в бинарь)
+  timeout_secs: 120     # таймаут HTTP (заливка картинок бывает долгой)
+  send_delay: 500ms     # пауза между чатами (лимит API 30 rps)

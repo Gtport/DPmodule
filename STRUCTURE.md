@@ -76,12 +76,14 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `cargowork.go` | `CargoWorkRepository`: справочник линий учёта (`Lines`), чтение/upsert суточных листов выгрузки и погрузки по естественному ключу (дата, терминал, линия), удаление суток. |
 | `admin_tables.go` | `AdminTablesRepository`: универсальный CRUD справочников по реестру `list_tables` (админ-редактор). |
 | `external.go` | Внешние интеграции: `SecretSource` (секреты — env сейчас, Vault позже), `ASUClient` (АСУ, pull/push) и `ReferenceClient` (памятки: по номеру / инкремент). |
+| `max.go` | `MessengerSender` — исходящий канал рассылки в мессенджер MAX: `Ping` (health), `SendText`, `SendImage`, `SendFile`. Реализация — `adapter/max`. |
 
 ### `internal/adapter/` — адаптеры внешних интеграций
 | Файл | За что отвечает |
 |---|---|
 | `asu/http_client.go` | HTTP-реализация `port.ASUClient`: GET к сервису АСУ (`<base_url>/<client>/dislocation`), секрет из `SecretSource` в заголовке `auth_header` (напр. `X-API-Key`; пусто → `Bearer`), опция `insecure_tls` (самоподписанный серт). Плюс `PullWagonHistory` — запрос 601 «История продвижения вагона» (`/wagons/{vagon}/history/{client}?from=&to=`, тот же провайдер/ключ). Сырые байты; разбор — в `parser`. |
 | `reference/http_client.go` | HTTP-реализация `port.ReferenceClient`: забор памяток у того же провайдера (`/reference?number=` и `/reference/update/{client}?last_update=`), `X-API-Key` из `SecretSource`, `insecure_tls`. Сырые байты (разбор пока не подключён). |
+| `max/client.go` | HTTP-реализация `port.MessengerSender`: исходящая рассылка форм в мессенджер MAX (Bot API `platform-api.max.ru`). Токен бота — из `SecretSource` (env `MAX_BOT_TOKEN`) в заголовке `Authorization` (голый, без `Bearer`). `Ping` (`GET /me`) для health; `SendText`; `SendImage`/`SendFile` — трёхшаговой заливкой (URL → тело → сообщение с токеном вложения) с паузой и retry на `attachment.not.ready`. Корневой CA Минцифры вшит через `go:embed` (`certs/russian_trusted_ca.pem`) и добавлен в пул TLS поверх системного. |
 
 ### `internal/service/` — бизнес-логика
 | Файл | За что отвечает |
@@ -189,6 +191,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `cargowork.go` | `GET /cargo-work/{date}/{terminal}` — учётный лист суток; `PUT` — правка ручных полей; `POST .../recalc` — пересчёт авто-слоя; `DELETE` — удаление суток. Терминал в пути — имя из реестра `ports`, а не код порта. Запрет по датам отдаётся как 403. |
 | `operativka.go` | `GET /dislocation/operativka` — суточные счётчики «Оперативки» по терминалам (вчера/сегодня ЖД + не выгружено) и «бесплановые в подходе»; `POST /dislocation/operativka/unplanned/dismiss` — «Скрыть». |
 | `rearrange.go` | Перестановки/переадресация: `GET/POST /dislocation/rearrangement/{groups,apply}`, `GET/PATCH .../rearrangement/stations` (панель станций), `GET/POST /dislocation/redirection/{groups,apply}` (валидация → 400, снимок не загружен → 409). |
+| `max.go` | `GET /max/health` — состояние канала MAX: `enabled=false` (канал выключен в конфиге) отдаётся как 200, а не ошибка; при включённом — `Ping` (`GET /me`) провайдера, недоступность/невалидный токен → 502. Рассылка текста/картинки — следующие ветки. |
 | `me.go` | `/me`: данные текущего пользователя из JWT-claims. |
 | `health.go` | `/health`, `/ready` — liveness/readiness с проверкой БД. |
 | `response.go` | Стандартный конверт ошибки (`ErrorResponse`) для всех не-2xx ответов. |
