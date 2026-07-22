@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -11,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/Gtport/DPmodule/internal/adapter/asu"
+	"github.com/Gtport/DPmodule/internal/adapter/max"
 	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/adapter/reference"
 	"github.com/Gtport/DPmodule/internal/config"
@@ -110,6 +112,20 @@ func Build(
 	refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS, cfg.Reference.AuthSecretKey, secret.NewEnvSource())
 	refSvc := service.NewReferenceService(refClient, cfg.Reference.Clients, cfg.Reference.PullInterval, log)
 	handler.NewReferenceHandler(refSvc).RegisterRoutes(api)
+
+	// Исходящая рассылка форм в мессенджер MAX (токен — env MAX_BOT_TOKEN, CA
+	// Минцифры вшит в адаптер). enabled=false → sender=nil, health отвечает
+	// «выключено». Чаты/маршруты и сами рассылки — следующие ветки.
+	var maxSender port.MessengerSender
+	if cfg.MAX.Enabled {
+		mc, err := max.NewClient(cfg.MAX.BaseURL, "", time.Duration(cfg.MAX.TimeoutSecs)*time.Second, secret.NewEnvSource())
+		if err != nil {
+			log.Error("MAX: клиент не собран, канал отключён", zap.Error(err))
+		} else {
+			maxSender = mc
+		}
+	}
+	handler.NewMaxHandler(maxSender).RegisterRoutes(api)
 
 	// Приём файлов ЛК (шаг 1) — только если справочники и настроечная таблица
 	// загружены (требует БД). Формат — из ConfigCache, «чей файл» (ОКПО→терминалы)
