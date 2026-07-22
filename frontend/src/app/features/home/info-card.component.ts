@@ -5,6 +5,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { MissingApiService, MissingVagon, Status6Vagon } from '../missing/missing-api.service';
 import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.component';
+import { CargoWorkModalComponent } from './cargo-work-modal.component';
 
 /**
  * Карточка «Информация» рядом со «Статусом системы» (правая половина верхней
@@ -15,7 +16,7 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Информация</b></div>
@@ -33,12 +34,21 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
         <span class="cnt">{{ donors().length }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
+
+      <button class="row" type="button" (click)="openCargoWork()"
+              nz-tooltip nzTooltipTitle="Суточный учёт выгрузки и погрузки по терминалам — открыть">
+        <span class="lbl">Грузовая работа</span>
+        <span nz-icon nzType="right" class="go ml"></span>
+      </button>
     </div>
 
     @if (showMissing()) {
       <app-vagon-list-modal title="Пропавшие вагоны" sinceLabel="Пропал"
                             hint="Исчезли из выгрузки до завершения рейса; показана последняя известная позиция."
                             [rows]="missingRows()" (reload)="load()" (closed)="showMissing.set(false)" />
+    }
+    @if (showCargoWork()) {
+      <app-cargo-work-modal (closed)="showCargoWork.set(false)" />
     }
     @if (showDonors()) {
       <app-vagon-list-modal title="Перегруз — доноры (статус 6)" sinceLabel="Донор с"
@@ -60,6 +70,8 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
     .cnt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
     .cnt.warn { color: var(--color-danger); }
     .go { font-size: 10px; color: var(--color-text-muted); }
+    /* У «Грузовой работы» нет счётчика — стрелку прижимаем сами. */
+    .go.ml { margin-left: auto; }
   `],
 })
 export class InfoCardComponent implements OnInit, OnDestroy {
@@ -70,6 +82,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   readonly donors = signal<Status6Vagon[]>([]);
   readonly showMissing = signal(false);
   readonly showDonors = signal(false);
+  readonly showCargoWork = signal(false);
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -95,6 +108,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
 
   openMissing(): void { this.showMissing.set(true); }
   openDonors(): void { this.showDonors.set(true); }
+  openCargoWork(): void { this.showCargoWork.set(true); }
 
   /** Пропавшие → общая форма строки таблицы. */
   missingRows(): VagonListRow[] {

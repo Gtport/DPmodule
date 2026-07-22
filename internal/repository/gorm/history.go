@@ -258,3 +258,30 @@ func (r *HistoryRepository) DailyTerminalCounts(ctx context.Context, from, to do
 	}
 	return prib, vigr, nil
 }
+
+// DailyCargoUnloaded — выгружено по ЖД-суткам/терминалу/группе груза (сырой SQL —
+// канон для аналитики). Отдельный запрос, а не расширение DailyTerminalCounts:
+// «Оперативке» разбивка не нужна, и менять её контракт ради «Грузовой работы»
+// значило бы трогать работающий экран.
+func (r *HistoryRepository) DailyCargoUnloaded(ctx context.Context, from, to domain.LocalTime) (map[string]int, error) {
+	var rows []struct {
+		Day   domain.LocalTime `gorm:"column:day"`
+		Term  string           `gorm:"column:term"`
+		Group string           `gorm:"column:grp"`
+		N     int              `gorm:"column:n"`
+	}
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT date_vigr_d AS day, place_vigr AS term,
+		       COALESCE(cargo_group, '') AS grp, count(*) AS n
+		  FROM vagon_history
+		 WHERE date_vigr_d BETWEEN ? AND ? AND place_vigr <> ''
+		 GROUP BY date_vigr_d, place_vigr, COALESCE(cargo_group, '')`,
+		from, to).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]int, len(rows))
+	for _, x := range rows {
+		out[x.Day.String()[:10]+"|"+x.Term+"|"+x.Group] = x.N
+	}
+	return out, nil
+}
