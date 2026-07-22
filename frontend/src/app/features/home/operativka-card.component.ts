@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
@@ -60,18 +60,17 @@ export interface Operativka {
           </tr>
         </thead>
         <tbody>
-          @for (g of grouped(); track g.code) {
-            <tr class="st-row"><td colspan="6">{{ g.station }}</td></tr>
-            @for (r of g.rows; track r.terminal) {
-              <tr>
-                <td class="t-col">{{ r.terminal }}</td>
-                <td class="c">{{ r.prib_yesterday || '—' }}</td>
-                <td class="c">{{ r.vigr_yesterday || '—' }}</td>
-                <td class="c">{{ r.prib_today || '—' }}</td>
-                <td class="c">{{ r.vigr_today || '—' }}</td>
-                <td class="c nu-val">{{ r.not_unloaded || '—' }}</td>
-              </tr>
-            }
+          <!-- Подзаголовки станций убраны (решение владельца): порядок строк тот же,
+               терминалы идут группами станций, но без строк-разделителей. -->
+          @for (r of data()?.rows ?? []; track r.terminal) {
+            <tr>
+              <td class="t-col">{{ r.terminal }}</td>
+              <td class="c">{{ r.prib_yesterday || '—' }}</td>
+              <td class="c">{{ r.vigr_yesterday || '—' }}</td>
+              <td class="c">{{ r.prib_today || '—' }}</td>
+              <td class="c">{{ r.vigr_today || '—' }}</td>
+              <td class="c nu-val">{{ r.not_unloaded || '—' }}</td>
+            </tr>
           } @empty {
             <tr><td colspan="6" class="empty">{{ loading() ? 'Загрузка…' : 'Нет терминалов' }}</td></tr>
           }
@@ -83,7 +82,7 @@ export interface Operativka {
       @if (data()?.unplanned?.length) {
         <div class="unpl">
           <div class="unpl-title"><b>Без плана в подходе ({{ data()!.unplanned.length }})</b>
-            <span class="mut">двигаются, плана нет</span></div>
+            <span class="hint">двигаются, плана нет</span></div>
           @for (u of data()!.unplanned; track u.index) {
             <div class="unpl-row">
               <span class="num b">{{ u.index || '—' }}</span>
@@ -110,7 +109,6 @@ export interface Operativka {
     .c { text-align: center; font-variant-numeric: tabular-nums; }
     .nu { max-width: 64px; }
     .nu-val { font-weight: 600; }
-    .st-row td { background: var(--color-bg-subtle); font-weight: 600; padding: 2px 8px; }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-sm); }
     /* Бесплановые в подходе — жёлтая секция-сигнал. */
     .unpl { background: var(--color-warning-bg); border: 1px solid var(--color-warning);
@@ -121,7 +119,9 @@ export interface Operativka {
                 padding: 2px 0; min-width: 0; }
     .b { font-weight: 600; }
     .num { font-variant-numeric: tabular-nums; }
-    .mut { color: var(--color-text-secondary); }
+    /* Данные — основным цветом (как в «Прибывших»/«Ближайших»), серый только для пояснения. */
+    .mut { color: inherit; }
+    .hint { color: var(--color-text-secondary); }
     .nowrap { white-space: nowrap; }
     .unpl-sost { flex: 1 1 auto; min-width: 0; }
     .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -135,17 +135,6 @@ export class OperativkaCardComponent implements OnInit, OnDestroy {
   readonly loading = signal(false);
   readonly data = signal<Operativka | null>(null);
   private timer: ReturnType<typeof setInterval> | null = null;
-
-  /** Группировка строк по станциям (порядок с бэка сохранён). */
-  readonly grouped = computed(() => {
-    const out: { code: string; station: string; rows: OperativkaRow[] }[] = [];
-    for (const r of this.data()?.rows ?? []) {
-      const last = out[out.length - 1];
-      if (last && last.code === r.station_code) last.rows.push(r);
-      else out.push({ code: r.station_code, station: this.title(r.station), rows: [r] });
-    }
-    return out;
-  });
 
   ngOnInit(): void {
     void this.load(true);
@@ -176,11 +165,6 @@ export class OperativkaCardComponent implements OnInit, OnDestroy {
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     }
-  }
-
-  /** «МЫС АСТАФЬЕВА» → «Мыс Астафьева». */
-  private title(name: string): string {
-    return name.toLowerCase().replace(/(^|[\s-])\p{L}/gu, (m) => m.toUpperCase());
   }
 
   /** дд.мм из yyyy-MM-dd. */
