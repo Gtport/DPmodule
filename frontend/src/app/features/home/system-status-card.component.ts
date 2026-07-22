@@ -33,7 +33,7 @@ import {
   template: `
     <div class="card">
       <div class="head">
-        <b class="ttl">Статус системы</b>
+        <b>Статус системы</b>
         <span class="spacer"></span>
         @if (canUpdate()) {
           <!-- Только иконки (решение владельца): в половине колонки подписи не помещаются. -->
@@ -111,10 +111,11 @@ import {
   styles: [`
     .card { background: var(--color-bg-surface); border-radius: var(--radius-card);
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-sm); }
+    /* Шапка — как у карточек «Прибывшие»/«Ближайшие поезда»: один размер на странице. */
     .head { display: flex; align-items: center; gap: 4px; margin-bottom: var(--space-xs); }
-    .ttl { font-size: var(--font-size-sm); }
     .spacer { flex: 1 1 auto; }
-    .act { padding: 0 6px; }
+    /* Кнопки-иконки без подписей: иконка крупнее кегля текста, иначе теряется. */
+    .act { padding: 0 6px; font-size: 18px; line-height: 1; }
     .rows { display: flex; flex-direction: column; gap: 3px; }
     /* Узкая (половинная) карточка: длинные пары «метка + чипы» переносим, а не режем. */
     .row { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap;
