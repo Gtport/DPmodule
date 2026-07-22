@@ -1,12 +1,14 @@
-import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
 import { ArrivalsCardComponent } from './arrivals-card.component';
 import { NearestCardComponent } from './nearest-card.component';
+import { OperativkaApiService } from './operativka-api.service';
 import { OperativkaCardComponent } from './operativka-card.component';
 import { SystemStatusCardComponent } from './system-status-card.component';
 import { InfoCardComponent } from './info-card.component';
+import { UnplannedCardComponent } from './unplanned-card.component';
 
 /** Половина рабочей зоны: станция и её терминалы (из реестра ports). */
 interface StationHalf {
@@ -32,16 +34,20 @@ interface StationHalf {
  */
 @Component({
   selector: 'app-home',
-  imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent, SystemStatusCardComponent, InfoCardComponent],
+  imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent, SystemStatusCardComponent,
+            InfoCardComponent, UnplannedCardComponent],
   template: `
     <div class="cols">
       <section class="col">
         <h2 class="st-title">Оперативка</h2>
         <div class="duo">
           <app-system-status-card (refreshed)="onSnapshotRebuilt()" />
-          <app-info-card />
+          <div class="stack">
+            <app-info-card />
+            <app-operativka-card />
+          </div>
         </div>
-        <app-operativka-card />
+        <app-unplanned-card />
       </section>
 
       @for (st of stations(); track st.code) {
@@ -59,8 +65,10 @@ interface StationHalf {
   styles: [`
     .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); align-items: start; }
     .col { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
-    /* Верх «Оперативки»: статус системы и информация — по половине ширины колонки. */
+    /* Верх «Оперативки»: слева статус системы, справа стопка «Информация» +
+       «Прибытие/выгрузка» (обе карточки в половину ширины колонки). */
     .duo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); align-items: start; }
+    .stack { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
     .st-title { margin: 0; font-size: var(--font-size-card-title); font-weight: 600; text-align: center; }
     .oper { padding: var(--space-sm) var(--space-md) var(--space-md); }
     .oper-empty { color: var(--color-text-muted); font-size: var(--font-size-sm); text-align: center;
@@ -74,8 +82,9 @@ export class HomeComponent implements OnInit {
   private readonly api = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
 
-  /** Счётчики «Оперативки» — освежаем сразу после пересборки снимка. */
-  private readonly operativka = viewChild(OperativkaCardComponent);
+  /** Счётчики «Оперативки» (прибытие/выгрузка и «без плана») — освежаем сразу
+   *  после пересборки снимка, обе карточки живут от одного сервиса. */
+  private readonly operativka = inject(OperativkaApiService);
 
   readonly loading = signal(false);
   readonly terminals = signal<TerminalTarget[]>([]);
@@ -111,7 +120,7 @@ export class HomeComponent implements OnInit {
 
   /** Дислокация пересобрана (АСУ/ЛК из статус-панели) — счётчики устарели. */
   onSnapshotRebuilt(): void {
-    void this.operativka()?.load();
+    void this.operativka.load();
   }
 
   /** «МЫС АСТАФЬЕВА» → «Мыс Астафьева» (заголовок половины). */

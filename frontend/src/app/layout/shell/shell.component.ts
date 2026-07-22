@@ -96,8 +96,11 @@ import { environment } from '../../../environments/environment';
     .user { display: inline-flex; align-items: center; gap: var(--space-xs); color: var(--color-text); cursor: pointer; }
     .username { margin-left: var(--space-xs); }
     .sidebar { background: var(--color-bg-surface); border-right: 1px solid var(--color-border-light); }
-    /* Иконки меню — нейтрально-серые (§2.2), синие на активном пункте. */
-    .nav-icon { color: var(--color-icon-default); transition: color .2s ease; }
+    /* Иконки меню — нейтрально-серые (§2.2), синие на активном пункте.
+       Размер на 20% больше базового (--layout-icon-size 16px → 19.2px, решение
+       владельца); !important — перебиваем размер из темы ant-menu. */
+    .nav-icon { color: var(--color-icon-default); transition: color .2s ease;
+                font-size: calc(var(--layout-icon-size) * 1.2) !important; }
     .ant-menu-item-selected .nav-icon { color: var(--color-primary); }
     .content { display: flex; flex-direction: column; overflow: auto; }
     main { flex: 1 1 auto; padding: var(--space-md); }

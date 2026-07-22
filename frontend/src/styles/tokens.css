@@ -36,7 +36,7 @@
   --color-border-dark: #d9d9d9;
 
   /* Иконки (§2.2): нейтральный серый по умолчанию, синий на hover/active */
-  --color-icon-default: #898484;
+  --color-icon-default: #666161;  /* темнее исходного #898484 — читаемость в сайдбаре */
   --color-icon-hover: #40a9ff;
   --color-icon-active: #096dd9;
 
