@@ -297,7 +297,7 @@ func (s *CargoWorkService) rebuild(ctx context.Context, day time.Time, terminal 
 			DateJd: d, Terminal: terminal, CargoKey: ln.CargoKey,
 			Ost18:     prevOst[ln.CargoKey],
 			OstSt:     ostSt[ln.CargoKey],
-			VigrStan:  unloaded[dayKey+"|"+terminal+"|"+ln.CargoKey],
+			VigrStan:  cargoWorkUnloaded(unloaded, dayKey, terminal, ln.CargoKey),
 			CreatedAt: &now, UpdatedAt: &now,
 		}
 		if old, ok := manual[ln.CargoKey]; ok {
@@ -508,6 +508,27 @@ func (s *CargoWorkService) assemble(ctx context.Context, day time.Time, terminal
 		})
 	}
 	return out, nil
+}
+
+// cargoWorkUnloaded — «выгружено по станции» для линии из счётчиков вех
+// (ключ "дата|терминал|группа").
+//
+// Пустой ключ линии означает «терминал ведёт учёт одной строкой» — тогда
+// суммируем ВСЕ группы груза терминала, как это делает cargoWorkTrains для
+// прибытия. Прямое обращение по пустому ключу давало ноль: в истории у вагона
+// стоит реальная группа («УГОЛЬ»), а не пустая строка.
+func cargoWorkUnloaded(counts map[string]int, dayKey, terminal, cargoKey string) int {
+	if cargoKey != "" {
+		return counts[dayKey+"|"+terminal+"|"+cargoKey]
+	}
+	prefix := dayKey + "|" + terminal + "|"
+	total := 0
+	for k, v := range counts {
+		if strings.HasPrefix(k, prefix) {
+			total += v
+		}
+	}
+	return total
 }
 
 // cargoWorkTrains — поезда линии из вех прибытия: группировка по индексу

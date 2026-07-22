@@ -342,6 +342,54 @@ func TestCargoWorkAccess_OperatorOnlyYesterday(t *testing.T) {
 	require.ErrorIs(t, err, ErrCargoWorkAccess, "править прошлые сутки оператору нельзя")
 }
 
+// Терминал БЕЗ разбивки (пустой cargo_key) должен собирать выгрузку по всем
+// группам груза — в истории у вагона стоит реальная группа («УГОЛЬ»), пустой
+// ключ есть только у линии. Прямое обращение по пустому ключу давало ноль:
+// у АЭ и УТ-1 «Выгрузка станция» всегда была 0, у ГУТ-2 (с разбивкой) — верной.
+func TestCargoWorkUnloaded_NoSplitSumsAllGroups(t *testing.T) {
+	counts := map[string]int{
+		"2026-07-20|АЭ|УГОЛЬ":    125,
+		"2026-07-20|АЭ|МЕТАЛЛ":   5,
+		"2026-07-20|АЭ|":         2, // вагоны без группы груза
+		"2026-07-20|УТ-1|УГОЛЬ":  161,
+		"2026-07-20|ГУТ-2|УГОЛЬ": 63,
+	}
+
+	require.Equal(t, 132, cargoWorkUnloaded(counts, "2026-07-20", "АЭ", ""),
+		"линия без разбивки собирает все группы своего терминала")
+	require.Equal(t, 63, cargoWorkUnloaded(counts, "2026-07-20", "ГУТ-2", "УГОЛЬ"),
+		"линия с разбивкой берёт только свою группу")
+	require.Equal(t, 0, cargoWorkUnloaded(counts, "2026-07-20", "ГУТ-2", "ЧУГУН"),
+		"группы не было — ноль")
+	require.Equal(t, 0, cargoWorkUnloaded(counts, "2026-07-19", "АЭ", ""),
+		"чужие сутки не подмешиваются")
+}
+
+// Терминал без разбивки: прибытие и выгрузка считаются по одному правилу —
+// обе цифры собирают все группы груза (раньше расходились).
+func TestCargoWorkDay_NoSplitTerminalCountsBoth(t *testing.T) {
+	repo := newCwRepo([]domain.PortCargoLine{
+		{Terminal: "ГУТ-2", Kind: domain.CargoLineUnload, CargoKey: "", Label: "Уголь",
+			Pc: cwPtr(144), SortOrder: 10, Enabled: true},
+	})
+	svc := cwService(t, repo, cwHist{
+		arrived: []domain.VagonHistory{
+			cwVagon("A", "УГОЛЬ", 10, 0),
+			cwVagon("A", "МЕТАЛЛ", 10, 0),
+		},
+		unloaded: map[string]int{
+			"2026-07-20|ГУТ-2|УГОЛЬ":  7,
+			"2026-07-20|ГУТ-2|МЕТАЛЛ": 3,
+		},
+	})
+
+	got, err := svc.Day(context.Background(), cwDate(), "ГУТ-2")
+	require.NoError(t, err)
+	require.Len(t, got.Lines, 1)
+	require.Equal(t, 2, got.Lines[0].Prib, "прибыло — все группы")
+	require.Equal(t, 10, got.Lines[0].VigrStan, "выгружено — тоже все группы")
+}
+
 func cwStr(s string) *string { return &s }
 
 func max1(v int) int {
