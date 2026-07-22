@@ -55,7 +55,8 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
            padding: 3px 4px; border: none; background: none; cursor: pointer; text-align: left;
            border-radius: var(--radius-sm); font-size: var(--font-size-sm); color: inherit; }
     .row:hover { background: var(--color-bg-hover); }
-    .lbl { color: var(--color-text-secondary); }
+    /* Текст — как в таблицах «Прибывшие»/«Ближайшие»: основной цвет, не серый. */
+    .lbl { color: inherit; }
     .cnt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
     .cnt.warn { color: var(--color-danger); }
     .go { font-size: 10px; color: var(--color-text-muted); }

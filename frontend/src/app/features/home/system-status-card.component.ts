@@ -1,6 +1,5 @@
 import { Component, OnDestroy, OnInit, computed, inject, output, signal } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
-import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
@@ -20,43 +19,34 @@ import {
  *
  * Вид — вертикальный, как у gtport StatusPanel: строка = метка + чип, цвет чипа
  * по возрасту метки (дислокация 60/180 мин, планы 720/1440). Наше добавление к
- * оригиналу — строка «Сейчас» с часами МСК и ЖД-сутками. Автообновление раз в
- * минуту, часы — раз в 10 секунд без сети.
+ * оригиналу — две строки часов: МСК и ЖД-сутки (метка слева, в чипе только
+ * дата/время). Автообновление раз в минуту, часы — раз в 10 секунд без сети.
  *
- * В шапке — два действия (только для роли диспетчера/администратора):
- * «Обновить из АСУ» (один клик, сразу пересобирает снимок) и «Приём ЛК»
- * (перемещаемая модалка с двухшаговым приёмом файлов).
+ * Внизу карточки — два действия в одну строку (только для роли диспетчера/
+ * администратора): «Обновить АСУ» (один клик, сразу пересобирает снимок) и
+ * «Обновить ЛК» (перемещаемая модалка с двухшаговым приёмом файлов).
  */
 @Component({
   selector: 'app-system-status-card',
-  imports: [NzButtonModule, NzIconModule, NzTagModule, NzTooltipModule, LkIntakeModalComponent],
+  imports: [NzButtonModule, NzTagModule, NzTooltipModule, LkIntakeModalComponent],
   template: `
     <div class="card">
       <div class="head">
         <b>Статус системы</b>
-        <span class="spacer"></span>
-        @if (canUpdate()) {
-          <!-- Только иконки (решение владельца): в половине колонки подписи не помещаются. -->
-          <button nz-button nzType="text" nzSize="small" class="act" [nzLoading]="busyAsu()"
-                  nz-tooltip nzTooltipTitle="Обновить из АСУ: заберёт данные и сразу пересоберёт дислокацию"
-                  (click)="asuPull()">
-            <span nz-icon nzType="cloud-download"></span>
-          </button>
-          <button nz-button nzType="text" nzSize="small" class="act"
-                  nz-tooltip nzTooltipTitle="Приём ЛК: загрузка файлов грузополучателей вручную"
-                  (click)="lkOpen.set(true)">
-            <span nz-icon nzType="file-excel"></span>
-          </button>
-        }
       </div>
 
       <div class="rows">
-        <!-- Сейчас: МСК и операционные ЖД-сутки (час ≥ 18 → дата +1) -->
-        <div class="row" nz-tooltip nzTooltipTitle="ЖД-сутки: с 18:00 МСК начинается следующая дата">
-          <span class="lbl">Сейчас</span>
+        <!-- Часы: московские и операционные ЖД-сутки (час ≥ 18 → дата +1) -->
+        <div class="row">
+          <span class="lbl">МСК</span>
           <span class="vals">
-            <nz-tag class="chip clk" nzColor="default">МСК {{ nowMsk() }}</nz-tag>
-            <nz-tag class="chip clk" nzColor="default">ЖД {{ nowJd() }}</nz-tag>
+            <nz-tag class="chip clk" nzColor="default">{{ nowMsk() }}</nz-tag>
+          </span>
+        </div>
+        <div class="row" nz-tooltip nzTooltipTitle="ЖД-сутки: с 18:00 МСК начинается следующая дата">
+          <span class="lbl">ЖД</span>
+          <span class="vals">
+            <nz-tag class="chip clk" nzColor="default">{{ nowJd() }}</nz-tag>
           </span>
         </div>
 
@@ -101,6 +91,18 @@ import {
           </div>
         }
       </div>
+
+      <!-- Действия диспетчера — внизу карточки, в одну строку (решение владельца). -->
+      @if (canUpdate()) {
+        <div class="acts">
+          <button nz-button nzSize="small" class="act" [nzLoading]="busyAsu()"
+                  nz-tooltip nzTooltipTitle="Обновить из АСУ: заберёт данные и сразу пересоберёт дислокацию"
+                  (click)="asuPull()">Обновить АСУ</button>
+          <button nz-button nzSize="small" class="act"
+                  nz-tooltip nzTooltipTitle="Обновить из ЛК: загрузка файлов грузополучателей вручную"
+                  (click)="lkOpen.set(true)">Обновить ЛК</button>
+        </div>
+      }
     </div>
 
     <!-- Приём ЛК — перемещаемая модалка (решение владельца) -->
@@ -113,15 +115,16 @@ import {
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-sm); }
     /* Шапка — как у карточек «Прибывшие»/«Ближайшие поезда»: один размер на странице. */
     .head { display: flex; align-items: center; gap: 4px; margin-bottom: var(--space-xs); }
-    .spacer { flex: 1 1 auto; }
-    /* Кнопки-иконки без подписей: иконка крупнее кегля текста, иначе теряется. */
-    .act { padding: 0 6px; font-size: 18px; line-height: 1; }
+    /* Две кнопки в одну строку, равной ширины; кегль — как у текста карточек. */
+    .acts { display: flex; gap: var(--space-sm); margin-top: var(--space-sm); }
+    .act { flex: 1 1 0; min-width: 0; font-size: var(--font-size-sm); }
     .rows { display: flex; flex-direction: column; gap: 3px; }
     /* Узкая (половинная) карточка: длинные пары «метка + чипы» переносим, а не режем. */
     .row { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap;
            font-size: var(--font-size-sm); }
-    .lbl { color: var(--color-text-secondary); white-space: nowrap; }
-    .lbl.sub { color: var(--color-text-muted); padding-left: var(--space-sm); }
+    /* Текст — как в таблицах «Прибывшие»/«Ближайшие»: основной цвет, не серый. */
+    .lbl { white-space: nowrap; }
+    .lbl.sub { padding-left: var(--space-sm); }
     .vals { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;
             justify-content: flex-end; }
     .chip { margin: 0; }
