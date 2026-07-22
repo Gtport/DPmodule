@@ -43,6 +43,7 @@ export interface TerminalTarget {
   name: string;
   station: string;
   station_code: string;
+  color: string;
 }
 
 export interface ArrivalsResponse {

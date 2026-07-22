@@ -82,6 +82,7 @@ type TargetDTO struct {
 	Name        string `json:"name"`         // NameS терминала (значение naznach)
 	Station     string `json:"station"`      // имя причальной станции терминала
 	StationCode string `json:"station_code"` // 4-значный код станции (= code4_stan_nazn вагона)
+	Color       string `json:"color"`        // ports.color — цвет терминала в шапках таблиц
 }
 
 // RearrGroupsDTO — ответ ручек группировок.
@@ -101,6 +102,7 @@ func terminalTargets(dir *DirectoryCache) []TargetDTO {
 	for _, n := range names {
 		t := TargetDTO{Name: n}
 		if p, ok := dir.PortByNameS(n); ok {
+			t.Color = p.Color
 			if kod, err := strconv.Atoi(p.StationCode); err == nil {
 				if st, ok := dir.GetStationByKod(kod); ok {
 					t.Station = st.Name
