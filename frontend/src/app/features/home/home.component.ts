@@ -6,6 +6,7 @@ import { ArrivalsCardComponent } from './arrivals-card.component';
 import { NearestCardComponent } from './nearest-card.component';
 import { OperativkaCardComponent } from './operativka-card.component';
 import { SystemStatusCardComponent } from './system-status-card.component';
+import { InfoCardComponent } from './info-card.component';
 
 /** Половина рабочей зоны: станция и её терминалы (из реестра ports). */
 interface StationHalf {
@@ -26,16 +27,20 @@ interface StationHalf {
  * функционал бывшей страницы «Дислокация» (решение владельца): актуальность
  * снимка и планов, «Обновить из АСУ» и «Приём ЛК» перемещаемой модалкой. После
  * пересборки снимка счётчики «Оперативки» перечитываются сразу, не дожидаясь
- * минутного автообновления.
+ * минутного автообновления. Справа от статуса — карточка «Информация»
+ * (пропавшие и доноры перегруза со списками по клику).
  */
 @Component({
   selector: 'app-home',
-  imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent, SystemStatusCardComponent],
+  imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent, SystemStatusCardComponent, InfoCardComponent],
   template: `
     <div class="cols">
       <section class="col">
         <h2 class="st-title">Оперативка</h2>
-        <app-system-status-card (refreshed)="onSnapshotRebuilt()" />
+        <div class="duo">
+          <app-system-status-card (refreshed)="onSnapshotRebuilt()" />
+          <app-info-card />
+        </div>
         <app-operativka-card />
       </section>
 
@@ -54,6 +59,8 @@ interface StationHalf {
   styles: [`
     .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); align-items: start; }
     .col { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
+    /* Верх «Оперативки»: статус системы и информация — по половине ширины колонки. */
+    .duo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); align-items: start; }
     .st-title { margin: 0; font-size: var(--font-size-card-title); font-weight: 600; text-align: center; }
     .oper { padding: var(--space-sm) var(--space-md) var(--space-md); }
     .oper-empty { color: var(--color-text-muted); font-size: var(--font-size-sm); text-align: center;

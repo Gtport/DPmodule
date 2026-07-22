@@ -19,6 +19,7 @@ func NewMissingHandler(svc *service.MissingService) *missingHandler {
 
 func (h *missingHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/missing", h.list)
+	g.GET("/dislocation/status6", h.donors)
 }
 
 // list godoc
@@ -34,4 +35,15 @@ func (h *missingHandler) list(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, rows)
+}
+
+// donors godoc
+// @Summary  Доноры перегруза (статус 6): последняя позиция и груз
+// @Tags     dislocation
+// @Security BearerAuth
+// @Produce  json
+// @Success  200 {array} service.Status6VagonDTO
+// @Router   /api/v1/dislocation/status6 [get]
+func (h *missingHandler) donors(c *gin.Context) {
+	c.JSON(http.StatusOK, h.svc.Donors())
 }

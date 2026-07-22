@@ -36,15 +36,16 @@ import {
         <b class="ttl">Статус системы</b>
         <span class="spacer"></span>
         @if (canUpdate()) {
-          <button nz-button nzType="text" nzSize="small" [nzLoading]="busyAsu()"
+          <!-- Только иконки (решение владельца): в половине колонки подписи не помещаются. -->
+          <button nz-button nzType="text" nzSize="small" class="act" [nzLoading]="busyAsu()"
                   nz-tooltip nzTooltipTitle="Обновить из АСУ: заберёт данные и сразу пересоберёт дислокацию"
                   (click)="asuPull()">
-            <span nz-icon nzType="cloud-download"></span> АСУ
+            <span nz-icon nzType="cloud-download"></span>
           </button>
-          <button nz-button nzType="text" nzSize="small"
+          <button nz-button nzType="text" nzSize="small" class="act"
                   nz-tooltip nzTooltipTitle="Приём ЛК: загрузка файлов грузополучателей вручную"
                   (click)="lkOpen.set(true)">
-            <span nz-icon nzType="file-excel"></span> ЛК
+            <span nz-icon nzType="file-excel"></span>
           </button>
         }
       </div>
@@ -113,11 +114,15 @@ import {
     .head { display: flex; align-items: center; gap: 4px; margin-bottom: var(--space-xs); }
     .ttl { font-size: var(--font-size-sm); }
     .spacer { flex: 1 1 auto; }
+    .act { padding: 0 6px; }
     .rows { display: flex; flex-direction: column; gap: 3px; }
-    .row { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--font-size-sm); }
+    /* Узкая (половинная) карточка: длинные пары «метка + чипы» переносим, а не режем. */
+    .row { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap;
+           font-size: var(--font-size-sm); }
     .lbl { color: var(--color-text-secondary); white-space: nowrap; }
     .lbl.sub { color: var(--color-text-muted); padding-left: var(--space-sm); }
-    .vals { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+    .vals { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;
+            justify-content: flex-end; }
     .chip { margin: 0; }
     .clk { font-variant-numeric: tabular-nums; font-weight: 600; }
     :host ::ng-deep .chip.ant-tag { margin: 0; padding: 0 6px; line-height: 18px; }

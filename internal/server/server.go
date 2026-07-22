@@ -100,7 +100,7 @@ func Build(
 
 	// Экран «Пропавшие вагоны»: записи-8 из таблицы кандидатов (status9).
 	if status9Cache != nil {
-		handler.NewMissingHandler(service.NewMissingService(status9Cache)).RegisterRoutes(api)
+		handler.NewMissingHandler(service.NewMissingService(status9Cache, status6Cache)).RegisterRoutes(api)
 	}
 
 	// Памятки на подачу/уборку (внешний провайдер, тот же что дислокация). Не зависит
