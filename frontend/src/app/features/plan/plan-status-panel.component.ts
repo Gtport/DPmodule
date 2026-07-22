@@ -2,10 +2,9 @@ import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { PlanApiService, DislTermStatus, PlanStatus, SystemStatus } from './plan-api.service';
-
-/** Понятные подписи станций планов и способов обновления дислокации для панели. */
-const PLAN_LABELS: Record<string, string> = { ma: 'ПП Мыс', nk: 'ПП Находка' };
-const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ', asu: 'АСУ' };
+import {
+  DISL_AGE, PLAN_AGE, ageColor, fmtStamp, nowJd, nowMsk, planLabel, sourceLabel,
+} from '../../shared/status-format';
 
 /**
  * Статус-панель актуальности (по образцу gtport StatusPanel): способ и время
@@ -33,14 +32,14 @@ const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ', asu:
           <nz-tag class="chip" nzColor="default">{{ sourceLabel(d.source) }}</nz-tag>
           <nz-tag
             class="chip"
-            [nzColor]="ageColor(d.age_minutes, 60, 180)"
+            [nzColor]="ageColor(d.age_minutes, DISL_AGE.warn, DISL_AGE.danger)"
             nz-tooltip
             [nzTooltipTitle]="d.actor ? 'обновил: ' + d.actor : ''"
           >{{ fmt(d.doc_ts) }}</nz-tag>
           @for (t of d.terminals; track t.organisation) {
             <span class="term">
               <span class="tlbl">{{ termLabel(t) }}</span>
-              <nz-tag class="chip" [nzColor]="ageColor(t.age_minutes, 60, 180)">{{ fmt(t.formation_ts) }}</nz-tag>
+              <nz-tag class="chip" [nzColor]="ageColor(t.age_minutes, DISL_AGE.warn, DISL_AGE.danger)">{{ fmt(t.formation_ts) }}</nz-tag>
             </span>
           }
         } @else {
@@ -55,7 +54,7 @@ const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ', asu:
           @if (p.loaded) {
             <nz-tag
               class="chip"
-              [nzColor]="ageColor(p.age_minutes, 720, 1440)"
+              [nzColor]="ageColor(p.age_minutes, PLAN_AGE.warn, PLAN_AGE.danger)"
               nz-tooltip
               [nzTooltipTitle]="planTip(p)"
             >{{ fmt(p.updated_at) }}</nz-tag>
@@ -100,27 +99,6 @@ export class PlanStatusPanelComponent implements OnInit, OnDestroy {
     if (this.clock) clearInterval(this.clock);
   }
 
-  /** Компоненты текущего времени МСК: «ГГГГ-ММ-ДД ЧЧ:ММ:СС» (независимо от пояса браузера). */
-  private mskString(): string {
-    return this.now().toLocaleString('sv-SE', { timeZone: 'Europe/Moscow' });
-  }
-
-  /** Текущее время МСК: «дд.мм чч:мм». */
-  nowMsk(): string {
-    const s = this.mskString();
-    return `${s.slice(8, 10)}.${s.slice(5, 7)} ${s.slice(11, 16)}`;
-  }
-
-  /** ЖД-время: то же чч:мм, но при часе МСК ≥ 18 дата +1 (операционные ЖД-сутки). */
-  nowJd(): string {
-    const s = this.mskString();
-    const d = new Date(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)));
-    if (+s.slice(11, 13) >= 18) d.setUTCDate(d.getUTCDate() + 1);
-    const dd = String(d.getUTCDate()).padStart(2, '0');
-    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-    return `${dd}.${mm} ${s.slice(11, 16)}`;
-  }
-
   /** Публичный ре-фетч (плановая загрузка меняет актуальность — дёргаем извне). */
   async load(): Promise<void> {
     try {
@@ -130,11 +108,19 @@ export class PlanStatusPanelComponent implements OnInit, OnDestroy {
     }
   }
 
-  sourceLabel(s: string): string { return SOURCE_LABELS[s] ?? s ?? '—'; }
-  planLabel(code: string): string { return PLAN_LABELS[code] ?? code.toUpperCase(); }
+  /** Пороги свежести и форматы — общие с карточкой главного экрана. */
+  protected readonly DISL_AGE = DISL_AGE;
+  protected readonly PLAN_AGE = PLAN_AGE;
+  readonly ageColor = ageColor;
+
+  nowMsk(): string { return nowMsk(this.now()); }
+  nowJd(): string { return nowJd(this.now()); }
+  sourceLabel(src: string): string { return sourceLabel(src); }
+  planLabel(code: string): string { return planLabel(code); }
+  fmt(ts: string | null): string { return fmtStamp(ts); }
 
   termLabel(t: DislTermStatus): string {
-    return t.terminals?.length ? t.terminals.join('·') : t.organisation;
+    return t.terminals?.length ? t.terminals.join('\u00b7') : t.organisation;
   }
 
   planTip(p: PlanStatus): string {
@@ -142,19 +128,6 @@ export class PlanStatusPanelComponent implements OnInit, OnDestroy {
     if (p.doc_ts) parts.push('план на ' + this.fmt(p.doc_ts));
     if (p.actor) parts.push('загрузил: ' + p.actor);
     if (p.filename) parts.push(p.filename);
-    return parts.join(' · ');
-  }
-
-  /** Цвет чипа по возрасту (мин): ≤warn — синий, ≤danger — оранжевый, иначе красный. */
-  ageColor(age: number, warn: number, danger: number): string {
-    if (age <= warn) return 'blue';
-    if (age <= danger) return 'orange';
-    return 'red';
-  }
-
-  /** «2026-07-12T08:10:00» → «12.07 08:10»; пусто → «--.-- --:--». */
-  fmt(ts: string | null): string {
-    if (!ts || ts.length < 16) return '--.-- --:--';
-    return `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}`;
+    return parts.join(' \u00b7 ');
   }
 }

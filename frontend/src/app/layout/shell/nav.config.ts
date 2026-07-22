@@ -32,7 +32,9 @@ export const ADMIN = ['administrator'];
 // наборе ant-design их нет; swap/global/line-chart/bar-chart — только outline.
 export const DISPATCHER_NAV: NavItem[] = [
   { path: 'home',           label: 'Главная',               icon: 'home',         theme: 'fill',    roles: [],   external: true },
-  { path: 'dislocation',    label: 'Дислокация',            icon: 'environment',  theme: 'fill',    roles: DISP },
+  // «Дислокация» убрана из меню (решение владельца): статус системы, «Обновить
+  // из АСУ» и «Приём ЛК» переехали на главную, в колонку «Оперативка». Маршрут
+  // /dislocation жив (прямой ссылкой) — страница осталась как запасной путь.
   { path: 'missing',        label: 'Пропавшие вагоны',      icon: 'question-circle', theme: 'outline', roles: DISP },
   { path: 'rearrangement',  label: 'Перестановки',          icon: 'swap',         theme: 'outline', roles: DISP },
   { path: 'plan',           label: 'План подвода',          icon: 'train',        theme: 'fill',    roles: DISP },
