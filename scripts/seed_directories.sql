@@ -29,7 +29,7 @@ TRUNCATE stations, cargo_operations, cargo, marka, ports, route_speed, naznach_s
 \copy route_speed(station_nach,is_bam,from_km,speed) FROM '_reference/seed/route_speed.csv' WITH (FORMAT csv, HEADER true)
 \copy naznach_station(dest_station,origin_station,naznach,univers,enabled) FROM '_reference/seed/naznach_station.csv' WITH (FORMAT csv, HEADER true)
 \copy sf(sinonim,station,quantity) FROM '_reference/seed/sf.csv' WITH (FORMAT csv, HEADER true)
-\copy port_cargo_line(terminal,kind,cargo_key,label,pc,sort_order,enabled) FROM '_reference/seed/port_cargo_line.csv' WITH (FORMAT csv, HEADER true)
+\copy port_cargo_line(terminal,kind,cargo_key,label,pc,sort_order,enabled,plan_label) FROM '_reference/seed/port_cargo_line.csv' WITH (FORMAT csv, HEADER true)
 
 -- Контроль загрузки:
 SELECT 'stations' AS tbl, count(*) FROM stations

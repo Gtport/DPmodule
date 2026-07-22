@@ -30,4 +30,9 @@ type HistoryRepository interface {
 	// (date_prib_d, по naznach) и выгружено (date_vigr_d, по place_vigr) за
 	// каждые ЖД-сутки диапазона [from; to]. Ключи карт: "yyyy-MM-dd|терминал".
 	DailyTerminalCounts(ctx context.Context, from, to domain.LocalTime) (prib, vigr map[string]int, err error)
+	// DailyCargoUnloaded — то же «выгружено», но с разбивкой ПО ГРУППЕ ГРУЗА:
+	// «Грузовой работе» нужна отдельная цифра на каждую линию учёта терминала
+	// (уголь/металл/чугун), тогда как «Оперативке» достаточно суммы. Ключ карты:
+	// "yyyy-MM-dd|терминал|группа" (группа пустая, если у вагона её нет).
+	DailyCargoUnloaded(ctx context.Context, from, to domain.LocalTime) (map[string]int, error)
 }

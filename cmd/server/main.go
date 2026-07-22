@@ -102,20 +102,21 @@ func run() error {
 	// отсюда. Пока — прогрев и валидация цепочки (схема → seed → загрузка); ссылку
 	// получит движок дислокации при переносе обогащения.
 	var (
-		cfgCache     *service.ConfigCache
-		dirCache     *service.DirectoryCache
-		actualCache  *service.ActualCache
-		dislRepo     port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
-		status9Repo  port.Status9Repository
-		status6Repo  port.Status6Repository
-		historyRepo  port.HistoryRepository
-		unplRepo     port.UnplannedMoveRepository
-		vagonOpRepo  port.VagonOperationRepository
-		planRepo     port.PlanRepository
-		journalRepo  port.JournalRepository
-		adminRepo    port.AdminTablesRepository
-		status9Cache *service.Status9Cache
-		status6Cache *service.Status6Cache
+		cfgCache      *service.ConfigCache
+		dirCache      *service.DirectoryCache
+		actualCache   *service.ActualCache
+		dislRepo      port.DislocationRepository // интерфейс: при db==nil остаётся истинным nil
+		status9Repo   port.Status9Repository
+		status6Repo   port.Status6Repository
+		historyRepo   port.HistoryRepository
+		unplRepo      port.UnplannedMoveRepository
+		vagonOpRepo   port.VagonOperationRepository
+		planRepo      port.PlanRepository
+		journalRepo   port.JournalRepository
+		adminRepo     port.AdminTablesRepository
+		cargoWorkRepo port.CargoWorkRepository
+		status9Cache  *service.Status9Cache
+		status6Cache  *service.Status6Cache
 	)
 	if db != nil {
 		dislRepo = gormrepo.NewDislocationRepository(db)
@@ -127,6 +128,7 @@ func run() error {
 		planRepo = gormrepo.NewPlanRepository(db)
 		journalRepo = gormrepo.NewJournalRepository(db)
 		adminRepo = gormrepo.NewAdminTablesRepository(db)
+		cargoWorkRepo = gormrepo.NewCargoWorkRepository(db)
 		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
@@ -192,7 +194,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, vagonOpRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, vagonOpRepo, cargoWorkRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {

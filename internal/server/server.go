@@ -41,6 +41,7 @@ func Build(
 	journalRepo port.JournalRepository,
 	adminRepo port.AdminTablesRepository,
 	vagonOpRepo port.VagonOperationRepository,
+	cargoWorkRepo port.CargoWorkRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -186,6 +187,15 @@ func Build(
 			opSvc := service.NewOperativkaService(historyRepo, actualCache, dirCache, unplannedRepo)
 			opSvc.SetJournal(journal)
 			handler.NewOperativkaHandler(opSvc).RegisterRoutes(api)
+
+			// «Грузовая работа»: суточный учётный лист терминала. Авто-слой —
+			// вехи истории + остаток из плана подвода + движок аналитики;
+			// ручной слой правит диспетчер (вчерашние сутки) или админ (любые).
+			if cargoWorkRepo != nil {
+				cwSvc := service.NewCargoWorkService(cargoWorkRepo, historyRepo, planRepo, dirCache, cfgCache)
+				cwSvc.SetJournal(journal)
+				handler.NewCargoWorkHandler(cwSvc).RegisterRoutes(api)
+			}
 		}
 	}
 
