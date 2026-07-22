@@ -133,7 +133,7 @@ export interface VagonListRow {
               padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; }
     .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
     .c-vag { width: 90px; } .c-idx { width: 120px; } .c-op { width: 130px; }
-    .c-dt { width: 100px; } .c-term { width: 80px; } .c-cargo { width: 130px; }
+    .c-dt { width: 118px; } .c-term { width: 80px; } .c-cargo { width: 130px; }
     .c-ves { width: 60px; } .c-days { width: 56px; }
     .num { font-variant-numeric: tabular-nums; }
     .idx, .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -178,9 +178,9 @@ export class VagonListModalComponent {
     return r.doroga_oper ? `${r.station_oper} (${r.doroga_oper})` : r.station_oper;
   }
 
-  /** «2026-07-15T08:49:00» → «15.07 08:49»; пусто → «—». */
+  /** «2026-07-15T08:49:00» → «15.07.26 08:49» (с годом, решение владельца); пусто → «—». */
   fmt(ts: string | null): string {
     if (!ts || ts.length < 16) return '—';
-    return `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}`;
+    return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(2, 4)} ${ts.slice(11, 16)}`;
   }
 }

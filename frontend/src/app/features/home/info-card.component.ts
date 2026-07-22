@@ -18,7 +18,7 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
   imports: [NzIconModule, NzTooltipModule, VagonListModalComponent],
   template: `
     <div class="card">
-      <div class="head"><b class="ttl">Информация</b></div>
+      <div class="head"><b>Информация</b></div>
 
       <button class="row" type="button" (click)="openMissing()"
               nz-tooltip nzTooltipTitle="Исчезли из выгрузки в незавершённом рейсе — открыть список">
@@ -49,8 +49,8 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
   styles: [`
     .card { background: var(--color-bg-surface); border-radius: var(--radius-card);
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-sm); }
+    /* Шапка — как у соседних карточек страницы (один размер заголовка). */
     .head { margin-bottom: var(--space-xs); }
-    .ttl { font-size: var(--font-size-sm); }
     .row { display: flex; align-items: center; gap: var(--space-sm); width: 100%;
            padding: 3px 4px; border: none; background: none; cursor: pointer; text-align: left;
            border-radius: var(--radius-sm); font-size: var(--font-size-sm); color: inherit; }
