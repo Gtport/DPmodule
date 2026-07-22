@@ -18,7 +18,8 @@
 
 SET search_path TO dpport;
 
-TRUNCATE stations, cargo_operations, cargo, marka, ports, route_speed, naznach_station, sf RESTART IDENTITY;
+TRUNCATE stations, cargo_operations, cargo, marka, ports, route_speed, naznach_station, sf,
+         port_cargo_line RESTART IDENTITY;
 
 \copy stations(kod,kod_4,name,road,latitude,longitude,is_bam) FROM '_reference/seed/stations.csv' WITH (FORMAT csv, HEADER true)
 \copy cargo_operations(kod,oper,oper_s) FROM '_reference/seed/cargo_operations.csv' WITH (FORMAT csv, HEADER true)
@@ -28,6 +29,7 @@ TRUNCATE stations, cargo_operations, cargo, marka, ports, route_speed, naznach_s
 \copy route_speed(station_nach,is_bam,from_km,speed) FROM '_reference/seed/route_speed.csv' WITH (FORMAT csv, HEADER true)
 \copy naznach_station(dest_station,origin_station,naznach,univers,enabled) FROM '_reference/seed/naznach_station.csv' WITH (FORMAT csv, HEADER true)
 \copy sf(sinonim,station,quantity) FROM '_reference/seed/sf.csv' WITH (FORMAT csv, HEADER true)
+\copy port_cargo_line(terminal,kind,cargo_key,label,pc,sort_order,enabled) FROM '_reference/seed/port_cargo_line.csv' WITH (FORMAT csv, HEADER true)
 
 -- Контроль загрузки:
 SELECT 'stations' AS tbl, count(*) FROM stations
@@ -37,4 +39,5 @@ UNION ALL SELECT 'marka', count(*) FROM marka
 UNION ALL SELECT 'ports', count(*) FROM ports
 UNION ALL SELECT 'route_speed', count(*) FROM route_speed
 UNION ALL SELECT 'naznach_station', count(*) FROM naznach_station
-UNION ALL SELECT 'sf', count(*) FROM sf;
+UNION ALL SELECT 'sf', count(*) FROM sf
+UNION ALL SELECT 'port_cargo_line', count(*) FROM port_cargo_line;
