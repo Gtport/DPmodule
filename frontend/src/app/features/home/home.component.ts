@@ -1,10 +1,11 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
 import { ArrivalsCardComponent } from './arrivals-card.component';
 import { NearestCardComponent } from './nearest-card.component';
 import { OperativkaCardComponent } from './operativka-card.component';
+import { SystemStatusCardComponent } from './system-status-card.component';
 
 /** Половина рабочей зоны: станция и её терминалы (из реестра ports). */
 interface StationHalf {
@@ -18,16 +19,23 @@ interface StationHalf {
  * (решение владельца): «Оперативка» + по колонке на каждую станцию предприятия
  * (раскладка из реестра терминалов, не хардкод; порядок станций — по коду,
  * Мыс перед Находкой). В станционных колонках — блок «Прибывшие» (компактный,
- * автообновляемый, с разворотом в перемещаемую модалку); наполнение «Оперативки»
- * и блоки «Ближайшие поезда»/«Информация» — следующие итерации.
+ * автообновляемый, с разворотом в перемещаемую модалку) и «Ближайшие поезда»;
+ * блок «Информация» — следующая итерация.
+ *
+ * Колонка «Оперативка» начинается со «Статуса системы» — туда перенесён весь
+ * функционал бывшей страницы «Дислокация» (решение владельца): актуальность
+ * снимка и планов, «Обновить из АСУ» и «Приём ЛК» перемещаемой модалкой. После
+ * пересборки снимка счётчики «Оперативки» перечитываются сразу, не дожидаясь
+ * минутного автообновления.
  */
 @Component({
   selector: 'app-home',
-  imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent],
+  imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent, SystemStatusCardComponent],
   template: `
     <div class="cols">
       <section class="col">
         <h2 class="st-title">Оперативка</h2>
+        <app-system-status-card (refreshed)="onSnapshotRebuilt()" />
         <app-operativka-card />
       </section>
 
@@ -59,6 +67,9 @@ export class HomeComponent implements OnInit {
   private readonly api = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
 
+  /** Счётчики «Оперативки» — освежаем сразу после пересборки снимка. */
+  private readonly operativka = viewChild(OperativkaCardComponent);
+
   readonly loading = signal(false);
   readonly terminals = signal<TerminalTarget[]>([]);
 
@@ -89,6 +100,11 @@ export class HomeComponent implements OnInit {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /** Дислокация пересобрана (АСУ/ЛК из статус-панели) — счётчики устарели. */
+  onSnapshotRebuilt(): void {
+    void this.operativka()?.load();
   }
 
   /** «МЫС АСТАФЬЕВА» → «Мыс Астафьева» (заголовок половины). */
