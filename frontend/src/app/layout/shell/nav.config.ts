@@ -35,10 +35,12 @@ export const DISPATCHER_NAV: NavItem[] = [
   // «Дислокация» убрана из меню (решение владельца): статус системы, «Обновить
   // из АСУ» и «Приём ЛК» переехали на главную, в колонку «Оперативка». Маршрут
   // /dislocation жив (прямой ссылкой) — страница осталась как запасной путь.
-  { path: 'missing',        label: 'Пропавшие вагоны',      icon: 'question-circle', theme: 'outline', roles: DISP },
+  // «Пропавшие вагоны» и «Грузовая работа» убраны из меню (решение владельца):
+  // оба открываются модалками из карточки «Информация» на главной. Маршрут
+  // /missing жив (прямой ссылкой, см. app.routes), у «Грузовой работы»
+  // отдельной страницы нет вовсе — только модалка.
   { path: 'rearrangement',  label: 'Перестановки',          icon: 'swap',         theme: 'outline', roles: DISP },
   { path: 'plan',           label: 'План подвода',          icon: 'train',        theme: 'fill',    roles: DISP },
-  { path: 'cargo-work',     label: 'Грузовая работа',       icon: 'dolly',        theme: 'fill',    roles: DISP },
   { path: 'reference',      label: 'Справки',               icon: 'edit',         theme: 'fill',    roles: DISP },
   { path: 'warehouse',      label: 'Склад',                 icon: 'warehouse',    theme: 'fill',    roles: DISP },
   { path: 'shipments',      label: 'Судовые партии',        icon: 'ship',         theme: 'fill',    roles: DISP },
