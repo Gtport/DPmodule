@@ -115,6 +115,7 @@ func run() error {
 		journalRepo   port.JournalRepository
 		adminRepo     port.AdminTablesRepository
 		cargoWorkRepo port.CargoWorkRepository
+		maxChatRepo   port.MaxChatRepository
 		status9Cache  *service.Status9Cache
 		status6Cache  *service.Status6Cache
 	)
@@ -129,6 +130,7 @@ func run() error {
 		journalRepo = gormrepo.NewJournalRepository(db)
 		adminRepo = gormrepo.NewAdminTablesRepository(db)
 		cargoWorkRepo = gormrepo.NewCargoWorkRepository(db)
+		maxChatRepo = gormrepo.NewMaxChatRepository(db)
 		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
@@ -194,7 +196,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, vagonOpRepo, cargoWorkRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
