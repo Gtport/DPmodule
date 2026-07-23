@@ -80,13 +80,15 @@ func TestTrainDisplay(t *testing.T) {
 func TestPlanTrains(t *testing.T) {
 	start := dayStart(time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC))
 	rows := []domain.Dislocation{
-		// план на сегодня (АЭ) — 2 вагона
-		{Vagon: "1", Naznach: "АЭ", Index: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
-		{Vagon: "2", Naznach: "АЭ", Index: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
+		// план на сегодня (АЭ) — 2 вагона; индекс нитки = index_pp (не index)
+		{Vagon: "1", Naznach: "АЭ", Index: "9999-111-9999", IndexPp: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
+		{Vagon: "2", Naznach: "АЭ", Index: "9999-111-9999", IndexPp: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
 		// прибывший (10) — не план
 		{Vagon: "3", Naznach: "АЭ", Index: "8643-789-9420", Status: ipf(10), PlanJd: pfLT(2026, 7, 23, 0, 19)},
 		// без планового времени — пропуск
 		{Vagon: "4", Naznach: "АЭ", Index: "8643-999-9420", Status: ipf(2)},
+		// только расчёт, без плана — НЕ в плане подвода, пропуск
+		{Vagon: "6", Naznach: "АЭ", Index: "8643-888-9420", Status: ipf(2), RaschJd: pfLT(2026, 7, 23, 11, 0)},
 		// чужой терминал — пропуск
 		{Vagon: "5", Naznach: "ГУТ-2", Index: "8643-880-9420", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 10, 0)},
 	}
@@ -109,5 +111,24 @@ func TestPlanTrains(t *testing.T) {
 	}
 	if lt := lineTrains(trains, "УГОЛЬ", "2026-07-23"); len(lt) != 1 || lt[0].Wagons != 2 {
 		t.Errorf("lineTrains(УГОЛЬ) = %+v", lt)
+	}
+}
+
+// TestBuildDaysSort — сортировка внутри ЖД-суток: 18:00–23:59 раньше 00:00–17:59
+// (отсечка 18). Пример АТТИС: 19:23, 22:08, 15:06 (позиции 01:23, 04:08, 21:06).
+func TestBuildDaysSort(t *testing.T) {
+	mk := func(idx string, hh, mm int) *pfTrain {
+		return newTrain(idx, true, time.Date(2026, 7, 22, hh, mm, 0, 0, time.UTC))
+	}
+	days := buildDays([]*pfTrain{mk("8643-150-9420", 15, 6), mk("8643-190-9420", 19, 23), mk("8643-220-9420", 22, 8)}, 18)
+	if len(days) != 1 {
+		t.Fatalf("ждали 1 день, got %d", len(days))
+	}
+	got := []string{days[0].Trains[0][:3], days[0].Trains[1][:3], days[0].Trains[2][:3]}
+	want := []string{"190", "220", "150"} // 19:23 → 22:08 → 15:06 по ЖД-порядку
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ЖД-порядок = %v, ждали %v", got, want)
+		}
 	}
 }

@@ -100,6 +100,7 @@ func (s *PlanFormService) terminalCard(ctx context.Context, date time.Time, t Ta
 	}
 
 	// Поезда: прибывшие (история, вчера+сегодня) + плановые (снимок, сегодня+вперёд).
+	cutoff := s.cw.CutoffHour()
 	arrived, err := s.arrivedTrains(ctx, date, t.Name)
 	if err != nil {
 		return card, err
@@ -107,7 +108,6 @@ func (s *PlanFormService) terminalCard(ctx context.Context, date time.Time, t Ta
 	plan := s.planTrains(t.Name, start)
 
 	// Прогноз «сегодня» — движок над поездами сегодня (приб-сегодня + план-сегодня).
-	cutoff := s.cw.CutoffHour()
 	for _, tl := range today.Lines {
 		y := yestByKey[tl.CargoKey]
 		trains := lineTrains(arrived, tl.CargoKey, todayKey)
@@ -122,7 +122,7 @@ func (s *PlanFormService) terminalCard(ctx context.Context, date time.Time, t Ta
 		})
 	}
 
-	card.Days = buildDays(append(arrived, plan...))
+	card.Days = buildDays(append(arrived, plan...), cutoff)
 	return card, nil
 }
 
@@ -186,8 +186,9 @@ func (s *PlanFormService) arrivedTrains(ctx context.Context, date time.Time, ter
 	return ordered(byKey, order), nil
 }
 
-// planTrains — плановые поезда из снимка: не на станции назначения, разложены по
-// ПЛАНОВОМУ времени (PlanJd → RaschJd), только с расчётной даты и вперёд.
+// planTrains — поезда ИЗ ПЛАНА ПОДВОДА из снимка: не на станции назначения, с
+// плановыми данными (PlanJd задан — иначе поезд не в плане, не показываем),
+// разложены по ПЛАНОВОМУ времени, только с расчётной даты и вперёд.
 func (s *PlanFormService) planTrains(terminal string, start time.Time) []*pfTrain {
 	if s.actual == nil {
 		return nil
@@ -202,7 +203,7 @@ func (s *PlanFormService) planTrains(terminal string, start time.Time) []*pfTrai
 		if st == 9 || st >= 10 || r.Naznach != terminal {
 			continue
 		}
-		tm := firstLT(r.PlanJd, r.RaschJd)
+		tm := r.PlanJd // только плановые: без нитки плана поезд в форму не попадает
 		if tm == nil || tm.IsZero() {
 			continue
 		}
@@ -210,7 +211,12 @@ func (s *PlanFormService) planTrains(terminal string, start time.Time) []*pfTrai
 		if t.Before(start) { // раньше расчётных суток — не показываем
 			continue
 		}
-		idx := r.Index
+		// Индекс нитки — index_pp (плановая портовая нитка: у с.ф. это «с.ф.СТАНЦИЯ»,
+		// а не фактический индексный номер поезда). Fallback — текущий индекс.
+		idx := r.IndexPp
+		if idx == "" {
+			idx = r.Index
+		}
 		if idx == "" {
 			idx = r.IndexMain
 		}
@@ -265,8 +271,10 @@ func lineTrains(trains []*pfTrain, cargoKey, dateKey string) []CargoWorkTrain {
 	return out
 }
 
-// buildDays — поезда по ЖД-датам (готовые строки), даты по возрастанию, внутри — по времени.
-func buildDays(trains []*pfTrain) []PlanFormDayDTO {
+// buildDays — поезда по ЖД-датам (готовые строки), даты по возрастанию, внутри —
+// по ПОЗИЦИИ В ЖД-СУТКАХ (час отсечки = начало): нитки 18:00–23:59 идут раньше
+// 00:00–17:59, а не по сырому времени (та же отсечка, что у движка аналитики).
+func buildDays(trains []*pfTrain, cutoff int) []PlanFormDayDTO {
 	by := map[string][]*pfTrain{}
 	for _, tr := range trains {
 		by[tr.date] = append(by[tr.date], tr)
@@ -280,7 +288,9 @@ func buildDays(trains []*pfTrain) []PlanFormDayDTO {
 	out := make([]PlanFormDayDTO, 0, len(dates))
 	for _, d := range dates {
 		list := by[d]
-		sort.SliceStable(list, func(i, j int) bool { return list[i].t.Before(list[j].t) })
+		sort.SliceStable(list, func(i, j int) bool {
+			return toCargoWorkCalc(list[i].t, cutoff).Before(toCargoWorkCalc(list[j].t, cutoff))
+		})
 		day := PlanFormDayDTO{Date: d}
 		for _, tr := range list {
 			day.Trains = append(day.Trains, trainDisplay(tr))
