@@ -41,6 +41,7 @@ export const DISPATCHER_NAV: NavItem[] = [
   // отдельной страницы нет вовсе — только модалка.
   { path: 'rearrangement',  label: 'Перестановки',          icon: 'swap',         theme: 'outline', roles: DISP },
   { path: 'plan',           label: 'План подвода',          icon: 'train',        theme: 'fill',    roles: DISP },
+  { path: 'broadcast',      label: 'Рассылка',              icon: 'send',         theme: 'outline', roles: DISP },
   { path: 'reference',      label: 'Справки',               icon: 'edit',         theme: 'fill',    roles: DISP },
   { path: 'warehouse',      label: 'Склад',                 icon: 'warehouse',    theme: 'fill',    roles: DISP },
   { path: 'shipments',      label: 'Судовые партии',        icon: 'ship',         theme: 'fill',    roles: DISP },
