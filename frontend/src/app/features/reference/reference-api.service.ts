@@ -28,18 +28,42 @@ export interface PlanFormLine {
   ost_today: number; useful_today: number; total_today: number; downtime_today: string;
 }
 
-/** Поезда одной ЖД-даты (готовые строки, формат gtport). */
-export interface PlanFormDay {
-  date: string; // yyyy-MM-dd
-  trains: string[];
+/** Поезд формы: готовая строка (формат gtport) + обе даты суток. */
+export interface PlanFormTrain {
+  display: string;
+  date_jd: string;  // ЖД-сутки (18:00→18:00)
+  date_msk: string; // грузовые (МСК) сутки
+  time_msk: string; // HH:MM — сортировка в ГР-режиме
 }
 
-/** Карточка одного терминала «ЖД сутки». */
+/** Карточка одного терминала. Trains отсортированы по ЖД-суткам и позиции внутри. */
 export interface PlanFormTerminal {
   terminal: string;
   color: string;
   lines: PlanFormLine[];
-  days: PlanFormDay[];
+  trains: PlanFormTrain[];
+}
+
+/** Поезда одного дня (раскладка на стороне интерфейса: ЖД либо ГР). */
+export interface PlanFormDay {
+  date: string;
+  trains: string[];
+}
+
+/** Раскладка поездов по суткам: 'jd' — ЖД (порядок как пришёл), 'msk' — грузовые. */
+export function groupTrains(trains: PlanFormTrain[], mode: 'jd' | 'msk'): PlanFormDay[] {
+  const by = new Map<string, PlanFormTrain[]>();
+  for (const t of trains) {
+    const key = mode === 'jd' ? t.date_jd : t.date_msk;
+    const list = by.get(key);
+    if (list) list.push(t); else by.set(key, [t]);
+  }
+  return [...by.keys()].sort().map((date) => {
+    const list = by.get(date)!;
+    // ЖД-порядок уже задан бэком (отсечка 18:00); в ГР-сутках — по времени МСК.
+    if (mode === 'msk') list.sort((a, b) => a.time_msk.localeCompare(b.time_msk));
+    return { date, trains: list.map((t) => t.display) };
+  });
 }
 
 /**
@@ -48,7 +72,7 @@ export interface PlanFormTerminal {
  * GET /max/chats, POST /max/broadcast/text|image.
  */
 @Injectable({ providedIn: 'root' })
-export class BroadcastApiService {
+export class ReferenceApiService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiBaseUrl}/v1/max`;
 

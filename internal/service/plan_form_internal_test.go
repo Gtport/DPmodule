@@ -114,21 +114,31 @@ func TestPlanTrains(t *testing.T) {
 	}
 }
 
-// TestBuildDaysSort — сортировка внутри ЖД-суток: 18:00–23:59 раньше 00:00–17:59
+// TestBuildTrainsSort — сортировка внутри ЖД-суток: 18:00–23:59 раньше 00:00–17:59
 // (отсечка 18). Пример АТТИС: 19:23, 22:08, 15:06 (позиции 01:23, 04:08, 21:06).
-func TestBuildDaysSort(t *testing.T) {
+func TestBuildTrainsSort(t *testing.T) {
 	mk := func(idx string, hh, mm int) *pfTrain {
-		return newTrain(idx, true, time.Date(2026, 7, 22, hh, mm, 0, 0, time.UTC))
+		return newTrain(idx, true, time.Date(2026, 7, 22, hh, mm, 0, 0, time.UTC), time.Time{})
 	}
-	days := buildDays([]*pfTrain{mk("8643-150-9420", 15, 6), mk("8643-190-9420", 19, 23), mk("8643-220-9420", 22, 8)}, 18)
-	if len(days) != 1 {
-		t.Fatalf("ждали 1 день, got %d", len(days))
+	list := buildTrains([]*pfTrain{mk("8643-150-9420", 15, 6), mk("8643-190-9420", 19, 23), mk("8643-220-9420", 22, 8)}, 18)
+	if len(list) != 3 {
+		t.Fatalf("ждали 3 поезда, got %d", len(list))
 	}
-	got := []string{days[0].Trains[0][:3], days[0].Trains[1][:3], days[0].Trains[2][:3]}
+	got := []string{list[0].Display[:3], list[1].Display[:3], list[2].Display[:3]}
 	want := []string{"190", "220", "150"} // 19:23 → 22:08 → 15:06 по ЖД-порядку
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("ЖД-порядок = %v, ждали %v", got, want)
 		}
+	}
+	// ГР-сутки: час ≥ 18 относится к предыдущим календарным суткам.
+	if list[0].DateMsk != "2026-07-21" { // 19:23 → 21.07
+		t.Errorf("19:23: DateMsk = %q, ждали 2026-07-21", list[0].DateMsk)
+	}
+	if list[2].DateMsk != "2026-07-22" { // 15:06 → 22.07
+		t.Errorf("15:06: DateMsk = %q, ждали 2026-07-22", list[2].DateMsk)
+	}
+	if list[0].DateJd != "2026-07-22" {
+		t.Errorf("DateJd = %q, ждали 2026-07-22", list[0].DateJd)
 	}
 }
