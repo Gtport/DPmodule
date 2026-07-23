@@ -44,6 +44,7 @@ func Build(
 	adminRepo port.AdminTablesRepository,
 	vagonOpRepo port.VagonOperationRepository,
 	cargoWorkRepo port.CargoWorkRepository,
+	maxChatRepo port.MaxChatRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -125,7 +126,12 @@ func Build(
 			maxSender = mc
 		}
 	}
-	handler.NewMaxHandler(maxSender).RegisterRoutes(api)
+	// Справочник чатов и маршруты рассылки — только при наличии БД (max_chat/max_route).
+	var maxChats *service.MaxChatService
+	if maxChatRepo != nil {
+		maxChats = service.NewMaxChatService(maxChatRepo)
+	}
+	handler.NewMaxHandler(maxSender, maxChats).RegisterRoutes(api)
 
 	// Приём файлов ЛК (шаг 1) — только если справочники и настроечная таблица
 	// загружены (требует БД). Формат — из ConfigCache, «чей файл» (ОКПО→терминалы)

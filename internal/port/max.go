@@ -1,6 +1,21 @@
 package port
 
-import "context"
+import (
+	"context"
+
+	"github.com/Gtport/DPmodule/internal/domain"
+)
+
+// MaxChatRepository — чтение справочника чатов MAX и маршрутов рассылки форм
+// (таблицы max_chat/max_route). Данные мелкие и меняются редко, кэш не нужен —
+// читаем из БД по запросу (рассылка идёт по кнопке, не горячий путь).
+type MaxChatRepository interface {
+	// Chats — все чаты (для админ-списка/фронта); порядок по имени.
+	Chats(ctx context.Context) ([]domain.MaxChat, error)
+	// Routes — маршруты для формы report и терминала terminal (пусто — сводные),
+	// только включённые, по sort_order. Возврат — коды чатов (max_chat.name).
+	Routes(ctx context.Context, report, terminal string) ([]domain.MaxRoute, error)
+}
 
 // MessengerSender — исходящий канал рассылки в мессенджер MAX (перенос gtport
 // max.Client). Домен и сервис рассылки знают только этот интерфейс, а не HTTP:
