@@ -9,23 +9,22 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { toBlob } from 'html-to-image';
 import { apiErrorMessage } from '../../core/api/api-error';
 import {
-  BroadcastApiService, BroadcastResult, PlanFormLine, PlanFormTerminal, PlanFormTrain,
+  BroadcastApiService, BroadcastResult, PlanFormLine, PlanFormTerminal,
 } from './broadcast-api.service';
 import { addDaysIso, todayMsk } from '../../shared/msk-date';
 
 /** Строка сводки: подпись + значение из линии. */
 interface Row { label: string; get: (l: PlanFormLine) => string; }
 
-/** Поезда одной ЖД-даты (для разделителей дат в списке). */
-interface TrainDay { date: string; trains: PlanFormTrain[]; }
-
 /**
- * Экран «Рассылка» (перенос gtport SmsPlan/SmsOper): по терминалу сводная
- * карточка «ЖД сутки» под картинку — блок «Вчера» (факт из учётного листа) и
- * «Сегодня» (прогноз движком над подходом), затем список поездов (приб + подход).
- * Данные — одна ручка GET /dislocation/plan-form (сбор на бэке, как оригинал).
- * Картинку рисует фронт (html-to-image); рассылку по маршруту (форма × терминал)
- * делает бэк. Карточки перемещаемы (cdkDrag) и печатаются.
+ * Экран «Рассылка» (перенос gtport SmsPlan/SmsOper): по терминалу карточка «ЖД
+ * сутки» под картинку. По ЖД-датам сверху вниз: «Вчера» (факт учётного листа +
+ * прибывшие поезда), «Сегодня» (остаток + прогноз + поезда), будущие дни (только
+ * плановые поезда). Строки поездов приходят готовыми с бэка (формат gtport:
+ * середина индекса, «приб», подгруппы «(N) середина SMS от терминал»).
+ *
+ * Картинку рисует фронт (html-to-image); текст оперативки собирается тут же.
+ * Карточки перемещаемы (cdkDrag) и печатаются.
  */
 @Component({
   selector: 'app-broadcast',
@@ -58,47 +57,45 @@ interface TrainDay { date: string; trains: PlanFormTrain[]; }
                 {{ f.terminal }} ЖД СУТКИ
               </div>
 
-              <!-- Вчера (факт) -->
-              <div class="blk">{{ fmtDate(prevDate()) }} (вчера)</div>
-              <table class="sum">
-                <thead><tr><th class="ind"></th>
-                  @for (l of f.lines; track l.cargo_key) { <th>{{ l.label }}</th> }
-                </tr></thead>
-                <tbody>
-                  @for (row of YEST; track row.label) {
-                    <tr><td class="ind">{{ row.label }}</td>
-                      @for (l of f.lines; track l.cargo_key) { <td>{{ row.get(l) }}</td> }
-                    </tr>
-                  }
-                </tbody>
-              </table>
+              @for (d of f.days; track d.date) {
+                <div class="blk" [class.prev]="isPrev(d.date)">{{ dayLabel(d.date) }}</div>
 
-              <!-- Сегодня (прогноз) -->
-              <div class="blk">{{ fmtDate(date()) }}</div>
-              <table class="sum">
-                <thead><tr><th class="ind"></th>
-                  @for (l of f.lines; track l.cargo_key) { <th>{{ l.label }}</th> }
-                </tr></thead>
-                <tbody>
-                  @for (row of TODAY; track row.label) {
-                    <tr><td class="ind">{{ row.label }}</td>
-                      @for (l of f.lines; track l.cargo_key) { <td>{{ row.get(l) }}</td> }
-                    </tr>
-                  }
-                </tbody>
-              </table>
-
-              <!-- Поезда: приб + подход, по ЖД-датам -->
-              <div class="trains">
-                @for (g of trainDays(f); track g.date) {
-                  <div class="tday">{{ fmtDate(g.date) }}</div>
-                  @for (t of g.trains; track $index) {
-                    <div class="tr" [class.prib]="t.arrived">{{ trainLine(t) }}</div>
-                  }
-                } @empty {
-                  <div class="empty">Нет поездов</div>
+                <!-- Сводка: вчера (6 строк) под своей датой, сегодня (3 строки) под своей -->
+                @if (isPrev(d.date)) {
+                  <table class="sum">
+                    <thead><tr><th class="ind"></th>
+                      @for (l of f.lines; track l.cargo_key) { <th>{{ l.label }}</th> }
+                    </tr></thead>
+                    <tbody>
+                      @for (row of YEST; track row.label) {
+                        <tr><td class="ind">{{ row.label }}</td>
+                          @for (l of f.lines; track l.cargo_key) { <td>{{ row.get(l) }}</td> }
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                } @else if (isToday(d.date)) {
+                  <table class="sum">
+                    <thead><tr><th class="ind"></th>
+                      @for (l of f.lines; track l.cargo_key) { <th>{{ l.label }}</th> }
+                    </tr></thead>
+                    <tbody>
+                      @for (row of TODAY; track row.label) {
+                        <tr><td class="ind">{{ row.label }}</td>
+                          @for (l of f.lines; track l.cargo_key) { <td>{{ row.get(l) }}</td> }
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
                 }
-              </div>
+
+                <!-- Поезда дня -->
+                @for (tr of d.trains; track $index) {
+                  <div class="tr"><b>{{ trainBold(tr) }}</b>{{ trainRest(tr) }}</div>
+                }
+              } @empty {
+                <div class="empty">Нет данных</div>
+              }
 
               <div class="term-actions no-print">
                 <button nz-button nzSize="small" (click)="exportPng(f.terminal)"
@@ -131,22 +128,21 @@ interface TrainDay { date: string; trains: PlanFormTrain[]; }
     .center { display: flex; justify-content: center; padding: var(--space-xl); }
     .grid { display: flex; flex-wrap: wrap; gap: var(--space-md); align-items: flex-start; }
 
-    .term { width: 340px; background: #fff; border: 1px solid var(--color-border);
+    .term { width: 360px; background: #fff; border: 1px solid var(--color-border);
             border-radius: var(--radius-card); overflow: hidden; box-shadow: var(--shadow-card); }
     .term-head { padding: var(--space-sm); text-align: center; font-weight: 700; cursor: move; }
-    .blk { padding: 3px 8px; background: rgba(0,0,0,.04); font-weight: 600; font-size: var(--font-size-sm);
+    .blk { padding: 4px 8px; background: rgba(0,0,0,.04); font-weight: 700; font-size: var(--font-size-sm);
            border-top: 1px solid var(--color-border-light); }
+    .blk.prev { color: var(--color-text-secondary); } /* «вчера» приглушённо, как gtport */
 
     .sum { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
     .sum th, .sum td { border: 1px solid var(--color-border-light); padding: 2px 8px; text-align: center; }
     .sum th { background: var(--color-bg-subtle); font-weight: 600; }
     .sum .ind { text-align: left; white-space: nowrap; font-weight: 500; }
 
-    .trains { max-height: 40vh; overflow: auto; border-top: 1px solid var(--color-border-light); }
-    .tday { padding: 3px 8px; background: rgba(0,0,0,.04); font-weight: 600; font-size: var(--font-size-sm); }
-    .tr { padding: 2px 8px; font-size: var(--font-size-sm); border-bottom: 1px solid var(--color-border-light);
+    .tr { padding: 3px 8px; font-size: var(--font-size-sm); border-bottom: 1px solid var(--color-border-light);
           white-space: normal; word-break: break-word; }
-    .tr.prib { color: var(--color-text-secondary); } /* прибывшие — приглушённо */
+    .tr b { font-weight: 700; }
     .empty { padding: var(--space-sm); text-align: center; color: var(--color-text-secondary);
              font-size: var(--font-size-sm); }
 
@@ -156,7 +152,6 @@ interface TrainDay { date: string; trains: PlanFormTrain[]; }
     @media print {
       .no-print { display: none !important; }
       .term { box-shadow: none; page-break-inside: avoid; }
-      .trains { max-height: none; overflow: visible; }
     }
   `],
 })
@@ -171,7 +166,6 @@ export class BroadcastComponent implements OnInit {
   readonly busy = signal('');
   readonly forms = signal<PlanFormTerminal[]>([]);
 
-  // «Вчера» (факт) — 6 строк как в gtport.
   readonly YEST: Row[] = [
     { label: 'Остаток на 18:', get: (l) => String(l.ost_18) },
     { label: 'Прибыло:', get: (l) => String(l.prib) },
@@ -180,7 +174,6 @@ export class BroadcastComponent implements OnInit {
     { label: 'Выгрузка:', get: (l) => String(l.vigr_fact) },
     { label: 'Остаток:', get: (l) => String(l.ost_y) },
   ];
-  // «Сегодня» (прогноз) — 3 строки как в gtport.
   readonly TODAY: Row[] = [
     { label: 'Остаток:', get: (l) => String(l.ost_today) },
     { label: 'Полезное образование:', get: (l) => `${l.useful_today}/${l.total_today}` },
@@ -191,9 +184,9 @@ export class BroadcastComponent implements OnInit {
     void this.reload();
   }
 
-  prevDate(): string {
-    return addDaysIso(this.date(), -1);
-  }
+  prevDate(): string { return addDaysIso(this.date(), -1); }
+  isPrev(d: string): boolean { return d === this.prevDate(); }
+  isToday(d: string): boolean { return d === this.date(); }
 
   async reload(): Promise<void> {
     this.loading.set(true);
@@ -210,33 +203,17 @@ export class BroadcastComponent implements OnInit {
     return d.length >= 10 ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}` : d;
   }
 
-  /** дд.мм чч:мм из LocalTime. */
-  fmtDT(ts: string | null): string {
-    if (!ts || ts.length < 16) return '—';
-    return `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}`;
+  dayLabel(d: string): string {
+    return this.isPrev(d) ? `${this.fmtDate(d)} (вчера)` : this.fmtDate(d);
   }
 
-  /** чч:мм. */
-  private hhmm(ts: string | null): string {
-    return ts && ts.length >= 16 ? ts.slice(11, 16) : '—';
+  /** Жирный префикс строки поезда — до первой подгруппы «(»; остальное обычным. */
+  private splitAt(tr: string): number {
+    const i = tr.indexOf('(');
+    return i === -1 ? tr.length : i;
   }
-
-  /** Поезда по ЖД-датам (разделители); внутри — по времени. */
-  trainDays(f: PlanFormTerminal): TrainDay[] {
-    const by: Record<string, PlanFormTrain[]> = {};
-    for (const t of f.trains) {
-      const day = t.time ? t.time.slice(0, 10) : '—';
-      (by[day] ??= []).push(t);
-    }
-    return Object.keys(by).sort().map((date) => ({ date, trains: by[date] }));
-  }
-
-  /** Строка поезда: «783 - приб 14:15 (40) уголь». */
-  trainLine(t: PlanFormTrain): string {
-    const prib = t.arrived ? 'приб ' : '';
-    const cargo = t.cargo ? ` ${t.cargo.toLowerCase()}` : '';
-    return `${t.index || '—'} - ${prib}${this.hhmm(t.time)} (${t.count})${cargo}`;
-  }
+  trainBold(tr: string): string { return tr.slice(0, this.splitAt(tr)); }
+  trainRest(tr: string): string { return tr.slice(this.splitAt(tr)); }
 
   // ── Экспорт / рассылка ──────────────────────────────────────────────────
 
@@ -245,16 +222,9 @@ export class BroadcastComponent implements OnInit {
   }
 
   private async png(el: HTMLElement): Promise<Blob> {
-    const scrollers = Array.from(el.querySelectorAll<HTMLElement>('.trains'));
-    const saved = scrollers.map((s) => ({ s, mh: s.style.maxHeight, ov: s.style.overflow }));
-    for (const { s } of saved) { s.style.maxHeight = 'none'; s.style.overflow = 'visible'; }
-    try {
-      const blob = await toBlob(el, { pixelRatio: 2, backgroundColor: '#ffffff' });
-      if (!blob) throw new Error('не удалось отрисовать картинку');
-      return blob;
-    } finally {
-      for (const { s, mh, ov } of saved) { s.style.maxHeight = mh; s.style.overflow = ov; }
-    }
+    const blob = await toBlob(el, { pixelRatio: 2, backgroundColor: '#ffffff' });
+    if (!blob) throw new Error('не удалось отрисовать картинку');
+    return blob;
   }
 
   async exportPng(terminal: string): Promise<void> {
@@ -319,14 +289,14 @@ export class BroadcastComponent implements OnInit {
     }
   }
 
-  /** Текст оперативки: заголовок + строки поездов по датам. */
+  /** Текст оперативки: заголовок терминала + поезда по ЖД-датам (без сводки). */
   private buildText(f: PlanFormTerminal): string {
-    const days = this.trainDays(f);
+    const days = f.days.filter((d) => d.trains.length);
     if (!days.length) return '';
     const parts = [`${f.terminal} ЖД сутки`];
-    for (const g of days) {
-      parts.push(this.fmtDate(g.date));
-      for (const t of g.trains) parts.push(this.trainLine(t));
+    for (const d of days) {
+      parts.push(this.dayLabel(d.date));
+      for (const tr of d.trains) parts.push(tr);
     }
     return parts.join('\n');
   }
