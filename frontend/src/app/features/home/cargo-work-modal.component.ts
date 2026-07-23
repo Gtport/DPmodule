@@ -10,6 +10,7 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { yesterdayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
 import {
   CargoWorkApiService, CargoWorkDay, CargoWorkLine, CargoWorkLoad, CargoWorkManual,
@@ -402,9 +403,8 @@ function toInt(value: unknown): number {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
-/** Учётный лист закрывают на следующий день — по умолчанию открываем вчера. */
+/** Учётный лист закрывают на следующий день — по умолчанию открываем вчера
+ *  (строго по Москве: старый вариант через toISOString съезжал на границе суток). */
 function yesterdayISO(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return yesterdayMsk();
 }
