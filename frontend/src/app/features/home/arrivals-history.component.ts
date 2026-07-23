@@ -11,6 +11,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 'ng-zorro-antd/dropdown';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { todayMsk } from '../../shared/msk-date';
 import {
   ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, ArrivalVagon, CandidateGroup, TerminalTarget,
 } from './arrivals-api.service';
@@ -686,6 +687,6 @@ export class ArrivalsHistoryComponent implements OnInit {
     return ts && ts.length >= 16 ? ts.slice(11, 16) : '';
   }
   private todayStr(): string {
-    return new Date().toISOString().slice(0, 10);
+    return todayMsk();
   }
 }

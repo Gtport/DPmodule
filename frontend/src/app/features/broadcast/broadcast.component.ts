@@ -11,11 +11,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import {
   BroadcastApiService, BroadcastResult, PlanFormLine, PlanFormTerminal, PlanFormTrain,
 } from './broadcast-api.service';
-
-/** Текущая дата МСК (yyyy-MM-dd) — не зависит от пояса браузера. */
-function todayMsk(): string {
-  return new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Moscow' }).slice(0, 10);
-}
+import { addDaysIso, todayMsk } from '../../shared/msk-date';
 
 /** Строка сводки: подпись + значение из линии. */
 interface Row { label: string; get: (l: PlanFormLine) => string; }
@@ -196,9 +192,7 @@ export class BroadcastComponent implements OnInit {
   }
 
   prevDate(): string {
-    const d = new Date(this.date() + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
+    return addDaysIso(this.date(), -1);
   }
 
   async reload(): Promise<void> {
