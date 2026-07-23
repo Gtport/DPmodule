@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"io"
 	"net/http"
 	"strings"
 
@@ -9,6 +10,10 @@ import (
 	"github.com/Gtport/DPmodule/internal/port"
 	"github.com/Gtport/DPmodule/internal/service"
 )
+
+// maxImageMaxBytes — потолок на PNG формы. Картинка «Плана подвода» — сотни КБ;
+// 20 МБ с запасом, страховка от случайной заливки чего попало.
+const maxImageMaxBytes = 20 << 20
 
 // maxHandler — исходящая рассылка в мессенджер MAX: health (проверка канала/токена),
 // список чатов и рассылка текстовых форм. Картинка — следующая ветка.
@@ -33,6 +38,7 @@ func (h *maxHandler) RegisterRoutes(g *gin.RouterGroup) {
 	}
 	if h.broadcast != nil {
 		g.POST("/max/broadcast/text", h.broadcastText)
+		g.POST("/max/broadcast/image", h.broadcastImage)
 	}
 }
 
@@ -109,6 +115,66 @@ func (h *maxHandler) broadcastText(c *gin.Context) {
 		return
 	}
 	// Чаты нашлись, но ни одна отправка не прошла — это отказ канала, не успех.
+	if res.AllFailed() {
+		c.JSON(http.StatusBadGateway, res)
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// broadcastImage godoc
+// @Summary  Рассылка картинки формы (готовый PNG с фронта) в чаты MAX по маршруту
+// @Tags     max
+// @Security BearerAuth
+// @Accept   multipart/form-data
+// @Param    image    formData file   true  "PNG формы (собирает фронт)"
+// @Param    report   formData string true  "форма: spravki|oper|plan"
+// @Param    terminal formData string false "терминал (ports.name_s); пусто — сводная"
+// @Param    caption  formData string false "подпись под картинкой"
+// @Success  200 {object} service.BroadcastResult
+// @Failure  400 {object} handler.ErrorResponse
+// @Failure  502 {object} handler.ErrorResponse
+// @Router   /api/v1/max/broadcast/image [post]
+func (h *maxHandler) broadcastImage(c *gin.Context) {
+	report := strings.TrimSpace(c.PostForm("report"))
+	if report == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "не указан тип формы (report)"})
+		return
+	}
+	terminal := c.PostForm("terminal")
+	caption := c.PostForm("caption")
+
+	fh, err := c.FormFile("image")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "картинка не передана (поле 'image')"})
+		return
+	}
+	if fh.Size == 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "пустая картинка"})
+		return
+	}
+	if fh.Size > maxImageMaxBytes {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "картинка слишком большая"})
+		return
+	}
+
+	f, err := fh.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "не удалось открыть картинку"})
+		return
+	}
+	defer f.Close()
+	image, err := io.ReadAll(io.LimitReader(f, maxImageMaxBytes))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "не удалось прочитать картинку"})
+		return
+	}
+
+	res, err := h.broadcast.SendImage(c.Request.Context(), report, terminal, image, fh.Filename, caption)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: err.Error()})
+		return
+	}
 	if res.AllFailed() {
 		c.JSON(http.StatusBadGateway, res)
 		return
