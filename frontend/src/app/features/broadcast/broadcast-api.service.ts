@@ -20,6 +20,32 @@ export interface BroadcastResult {
 /** Тип формы рассылки — совпадает с max_route.report на бэке. */
 export type MaxReport = 'spravki' | 'oper' | 'plan';
 
+/** Линия учёта карточки: факт вчера + прогноз сегодня. */
+export interface PlanFormLine {
+  cargo_key: string;
+  label: string;
+  ost_18: number; prib: number; useful_y: number; total_y: number; vigr_fact: number; ost_y: number;
+  ost_today: number; useful_today: number; total_today: number; downtime_today: string;
+}
+
+/** Поезд карточки: прибывший («приб») либо подходящий. */
+export interface PlanFormTrain {
+  index: string;
+  arrived: boolean;
+  time: string | null; // ЖД LocalTime
+  count: number;
+  cargo: string;
+  sms?: string;
+}
+
+/** Карточка одного терминала «ЖД сутки». */
+export interface PlanFormTerminal {
+  terminal: string;
+  color: string;
+  lines: PlanFormLine[];
+  trains: PlanFormTrain[];
+}
+
 /**
  * Клиент канала MAX. Бэкенд — тонкий релей: форму (текст/PNG) собирает фронт,
  * сервер разрешает адресатов по маршруту (форма × терминал) и шлёт. Ручки:
@@ -33,6 +59,12 @@ export class BroadcastApiService {
   /** Справочник чатов (для статуса/выбора; отправку адресует сервер по маршруту). */
   chats(): Promise<MaxChat[]> {
     return firstValueFrom(this.http.get<MaxChat[]>(`${this.base}/chats`));
+  }
+
+  /** Форма «План подвода» по терминалам на дату (вчера факт + сегодня прогноз + поезда). */
+  planForm(date: string): Promise<PlanFormTerminal[]> {
+    const base = `${environment.apiBaseUrl}/v1/dislocation`;
+    return firstValueFrom(this.http.get<PlanFormTerminal[]>(`${base}/plan-form`, { params: { date } }));
   }
 
   /** Рассылка текстовой формы по маршруту (форма × терминал → чаты). */

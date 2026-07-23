@@ -222,6 +222,12 @@ func Build(
 				cwSvc := service.NewCargoWorkService(cargoWorkRepo, historyRepo, planRepo, dirCache, cfgCache)
 				cwSvc.SetJournal(journal)
 				handler.NewCargoWorkHandler(cwSvc).RegisterRoutes(api)
+
+				// Форма «План подвода» экрана «Рассылка»: сводная карточка терминала
+				// (вчера факт из учётного листа + сегодня прогноз движком над
+				// подходом) + список поездов (приб + подход). Перенос gtport SmsPlan.
+				planForm := service.NewPlanFormService(cwSvc, actualCache, historyRepo, dirCache)
+				handler.NewPlanFormHandler(planForm).RegisterRoutes(api)
 			}
 		}
 	}
