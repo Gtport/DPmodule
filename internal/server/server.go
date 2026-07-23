@@ -131,7 +131,12 @@ func Build(
 	if maxChatRepo != nil {
 		maxChats = service.NewMaxChatService(maxChatRepo)
 	}
-	handler.NewMaxHandler(maxSender, maxChats).RegisterRoutes(api)
+	// Рассылка форм возможна, когда есть и транспорт (канал включён), и маршруты (БД).
+	var maxBroadcast *service.MaxBroadcastService
+	if maxSender != nil && maxChats != nil {
+		maxBroadcast = service.NewMaxBroadcastService(maxChats, maxSender, cfg.MAX.SendDelay)
+	}
+	handler.NewMaxHandler(maxSender, maxChats, maxBroadcast).RegisterRoutes(api)
 
 	// Приём файлов ЛК (шаг 1) — только если справочники и настроечная таблица
 	// загружены (требует БД). Формат — из ConfigCache, «чей файл» (ОКПО→терминалы)
