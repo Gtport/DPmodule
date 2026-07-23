@@ -80,9 +80,9 @@ func TestTrainDisplay(t *testing.T) {
 func TestPlanTrains(t *testing.T) {
 	start := dayStart(time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC))
 	rows := []domain.Dislocation{
-		// план на сегодня (АЭ) — 2 вагона
-		{Vagon: "1", Naznach: "АЭ", Index: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
-		{Vagon: "2", Naznach: "АЭ", Index: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
+		// план на сегодня (АЭ) — 2 вагона; индекс нитки = index_pp (не index)
+		{Vagon: "1", Naznach: "АЭ", Index: "9999-111-9999", IndexPp: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
+		{Vagon: "2", Naznach: "АЭ", Index: "9999-111-9999", IndexPp: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
 		// прибывший (10) — не план
 		{Vagon: "3", Naznach: "АЭ", Index: "8643-789-9420", Status: ipf(10), PlanJd: pfLT(2026, 7, 23, 0, 19)},
 		// без планового времени — пропуск

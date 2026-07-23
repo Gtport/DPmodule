@@ -211,7 +211,12 @@ func (s *PlanFormService) planTrains(terminal string, start time.Time) []*pfTrai
 		if t.Before(start) { // раньше расчётных суток — не показываем
 			continue
 		}
-		idx := r.Index
+		// Индекс нитки — index_pp (плановая портовая нитка: у с.ф. это «с.ф.СТАНЦИЯ»,
+		// а не фактический индексный номер поезда). Fallback — текущий индекс.
+		idx := r.IndexPp
+		if idx == "" {
+			idx = r.Index
+		}
 		if idx == "" {
 			idx = r.IndexMain
 		}
