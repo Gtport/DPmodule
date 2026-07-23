@@ -37,10 +37,25 @@ func (r BroadcastResult) AllFailed() bool {
 }
 
 // SendText рассылает текст формы report для терминала terminal (пусто — сводная
-// форма). Чаты берутся из маршрутов; при пустом маршруте возвращается результат
-// с Chats=0 (не ошибка — это ненастроенный маршрут, видно в ответе). Отправки
-// идут по очереди с паузой; ошибка одного чата не прерывает остальные.
+// форма).
 func (s *MaxBroadcastService) SendText(ctx context.Context, report, terminal, text string) (BroadcastResult, error) {
+	return s.broadcast(ctx, report, terminal, func(chatID string) error {
+		return s.sender.SendText(ctx, chatID, text)
+	})
+}
+
+// SendImage рассылает готовую картинку формы (PNG с фронта) с подписью caption.
+func (s *MaxBroadcastService) SendImage(ctx context.Context, report, terminal string, image []byte, filename, caption string) (BroadcastResult, error) {
+	return s.broadcast(ctx, report, terminal, func(chatID string) error {
+		return s.sender.SendImage(ctx, chatID, image, filename, caption)
+	})
+}
+
+// broadcast — общий цикл рассылки: разрешает адресатов по маршруту и шлёт каждым
+// send. Чаты берутся из маршрутов; при пустом маршруте возвращается результат с
+// Chats=0 (не ошибка — это ненастроенный маршрут, видно в ответе). Отправки идут
+// по очереди с паузой; ошибка одного чата не прерывает остальные.
+func (s *MaxBroadcastService) broadcast(ctx context.Context, report, terminal string, send func(chatID string) error) (BroadcastResult, error) {
 	chats, err := s.chats.ResolveChats(ctx, report, terminal)
 	if err != nil {
 		return BroadcastResult{}, err
@@ -54,7 +69,7 @@ func (s *MaxBroadcastService) SendText(ctx context.Context, report, terminal, te
 			case <-time.After(s.delay):
 			}
 		}
-		if err := s.sender.SendText(ctx, c.ChatID, text); err != nil {
+		if err := send(c.ChatID); err != nil {
 			res.Failed[c.Name] = err.Error()
 		} else {
 			res.Sent = append(res.Sent, c.Name)
