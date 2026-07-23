@@ -28,14 +28,10 @@ export interface PlanFormLine {
   ost_today: number; useful_today: number; total_today: number; downtime_today: string;
 }
 
-/** Поезд карточки: прибывший («приб») либо подходящий. */
-export interface PlanFormTrain {
-  index: string;
-  arrived: boolean;
-  time: string | null; // ЖД LocalTime
-  count: number;
-  cargo: string;
-  sms?: string;
+/** Поезда одной ЖД-даты (готовые строки, формат gtport). */
+export interface PlanFormDay {
+  date: string; // yyyy-MM-dd
+  trains: string[];
 }
 
 /** Карточка одного терминала «ЖД сутки». */
@@ -43,7 +39,7 @@ export interface PlanFormTerminal {
   terminal: string;
   color: string;
   lines: PlanFormLine[];
-  trains: PlanFormTrain[];
+  days: PlanFormDay[];
 }
 
 /**

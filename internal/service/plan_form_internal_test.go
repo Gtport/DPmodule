@@ -15,75 +15,99 @@ func pfLT(y, m, d, hh, mm int) *domain.LocalTime {
 
 func ipf(i int) *int { return &i }
 
-func TestDominantCargo(t *testing.T) {
-	if g := dominantCargo(map[string]int{"УГОЛЬ": 40, "МЕТАЛЛ": 5}); g != "УГОЛЬ" {
-		t.Fatalf("ждали УГОЛЬ, got %q", g)
+// TestIndexPart — середина индекса (порт gtport) для дефисного 4-3-4 и с.ф.
+func TestIndexPart(t *testing.T) {
+	cases := map[string]string{
+		"8631-877-9847": "877",           // 4-3-4 → середина
+		"8643-904-9420": "904",           //
+		"с.ф.НАХОДКА":   "с.ф.НАХОДКА",    // не цифра на байте 5 → целиком
+		"784":           "784",           // короткий → целиком
 	}
-	if g := dominantCargo(map[string]int{}); g != "" {
-		t.Fatalf("пусто → '', got %q", g)
+	for in, want := range cases {
+		if got := indexPart(in); got != want {
+			t.Errorf("indexPart(%q) = %q, ждали %q", in, got, want)
+		}
 	}
 }
 
-// TestApproaching — фильтр и свёртка подхода: только не-прибывшие своего терминала,
-// группировка по IdDisl, счёт по группе груза, время из прогноза.
-func TestApproaching(t *testing.T) {
+// TestSubDisplay — подгруппа: «(N) середина SMS от терминал».
+func TestSubDisplay(t *testing.T) {
+	// чужой груз (gruzpol ≠ naznach) — с «от»
+	got := subDisplay("8643-175-9420", "8643-904-9420", "ЛК-1", "АЭ", "ГУТ-2", 13)
+	if got != "(13) 175 ЛК-1 от ГУТ-2" {
+		t.Errorf("got %q", got)
+	}
+	// свой груз (gruzpol == naznach) — без «от»
+	got = subDisplay("8643-784-9420", "8643-904-9420", "Челутай", "АЭ", "АЭ", 9)
+	if got != "(9) 784 Челутай" {
+		t.Errorf("got %q", got)
+	}
+	// index_main == index_pp — середину не дублируем
+	got = subDisplay("8643-904-9420", "8643-904-9420", "Челутай", "АЭ", "АЭ", 63)
+	if got != "(63) Челутай" {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestTrainDisplay — полная строка из скриншота gtport.
+func TestTrainDisplay(t *testing.T) {
+	tr := &pfTrain{
+		indexPp: "8643-904-9420", arrived: true,
+		t: time.Date(2026, 7, 22, 19, 23, 0, 0, time.UTC),
+		subs: []*pfSub{
+			{indexMain: "8643-175-9420", sms1: "ЛК-1", naznach: "АЭ", gruzpol: "ГУТ-2", count: 13},
+			{indexMain: "8643-784-9420", sms1: "Челутай", naznach: "АЭ", gruzpol: "АЭ", count: 9},
+		},
+	}
+	want := "904 - приб 19:23 (13) 175 ЛК-1 от ГУТ-2, (9) 784 Челутай"
+	if got := trainDisplay(tr); got != want {
+		t.Errorf("trainDisplay =\n  %q\nждали\n  %q", got, want)
+	}
+
+	// плановый (не «приб»), с.ф. целиком
+	sf := &pfTrain{
+		indexPp: "с.ф.НАХОДКА", arrived: false,
+		t:    time.Date(2026, 7, 23, 12, 5, 0, 0, time.UTC),
+		subs: []*pfSub{{indexMain: "8600-098-9420", sms1: "ПЗ", naznach: "АЭ", gruzpol: "ГУТ-2", count: 6}},
+	}
+	if got := trainDisplay(sf); got != "с.ф.НАХОДКА - 12:05 (6) 098 ПЗ от ГУТ-2" {
+		t.Errorf("с.ф.: got %q", got)
+	}
+}
+
+// TestPlanTrains — плановые из снимка: фильтр (не прибывшие, свой терминал, есть
+// плановое время, не раньше суток), группировка по индексу+дате.
+func TestPlanTrains(t *testing.T) {
+	start := dayStart(time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC))
 	rows := []domain.Dislocation{
-		// поезд A (АЭ, в пути) — 2 вагона угля
-		{Vagon: "1", Naznach: "АЭ", IdDisl: "A", Index: "783", Status: ipf(2), CargoGroup: "УГОЛЬ", ProgJd: pfLT(2026, 7, 23, 14, 15)},
-		{Vagon: "2", Naznach: "АЭ", IdDisl: "A", Index: "783", Status: ipf(2), CargoGroup: "УГОЛЬ", ProgJd: pfLT(2026, 7, 23, 14, 15)},
-		// прибывший (статус 10) — не подход
-		{Vagon: "3", Naznach: "АЭ", IdDisl: "B", Index: "784", Status: ipf(10), CargoGroup: "УГОЛЬ", ProgJd: pfLT(2026, 7, 23, 10, 0)},
-		// чужой терминал — мимо
-		{Vagon: "4", Naznach: "ГУТ-2", IdDisl: "C", Index: "900", Status: ipf(2), CargoGroup: "УГОЛЬ", ProgJd: pfLT(2026, 7, 23, 9, 0)},
+		// план на сегодня (АЭ) — 2 вагона
+		{Vagon: "1", Naznach: "АЭ", Index: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
+		{Vagon: "2", Naznach: "АЭ", Index: "8643-176-9420", IndexMain: "8643-176-9420", Sms1: "ЛК-1", GruzpolS: "ГУТ-2", CargoGroup: "УГОЛЬ", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 9, 0)},
+		// прибывший (10) — не план
+		{Vagon: "3", Naznach: "АЭ", Index: "8643-789-9420", Status: ipf(10), PlanJd: pfLT(2026, 7, 23, 0, 19)},
+		// без планового времени — пропуск
+		{Vagon: "4", Naznach: "АЭ", Index: "8643-999-9420", Status: ipf(2)},
+		// чужой терминал — пропуск
+		{Vagon: "5", Naznach: "ГУТ-2", Index: "8643-880-9420", Status: ipf(2), PlanJd: pfLT(2026, 7, 23, 10, 0)},
 	}
 	cache := NewActualCache(s9StubDisl{items: rows})
 	if err := cache.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	svc := &PlanFormService{actual: cache}
-	ap := svc.approaching("АЭ")
+	trains := svc.planTrains("АЭ", start)
 
-	if len(ap.trains) != 1 {
-		t.Fatalf("ждали 1 подходящий поезд (A), got %d", len(ap.trains))
+	if len(trains) != 1 {
+		t.Fatalf("ждали 1 плановый поезд, got %d", len(trains))
 	}
-	if ap.trains[0].index != "783" || ap.trains[0].total != 2 || ap.trains[0].cargo != "УГОЛЬ" {
-		t.Fatalf("свёртка поезда A неверна: %+v", ap.trains[0])
+	tr := trains[0]
+	if tr.indexPp != "8643-176-9420" || tr.arrived {
+		t.Fatalf("поезд неверный: %+v", tr)
 	}
-	// Для аналитики линии «УГОЛЬ» — один поезд на 2 вагона.
-	tl := ap.trainsForLine("УГОЛЬ")
-	if len(tl) != 1 || tl[0].Wagons != 2 || tl[0].Name != "783" {
-		t.Fatalf("trainsForLine(УГОЛЬ) неверно: %+v", tl)
+	if got := trainDisplay(tr); got != "176 - 09:00 (2) ЛК-1 от ГУТ-2" {
+		t.Errorf("display = %q", got)
 	}
-	// Линия без разбивки ('') — все вагоны поезда.
-	if all := ap.trainsForLine(""); len(all) != 1 || all[0].Wagons != 2 {
-		t.Fatalf("trainsForLine('') неверно: %+v", all)
-	}
-	// Металла в подходе нет.
-	if m := ap.trainsForLine("МЕТАЛЛ"); len(m) != 0 {
-		t.Fatalf("металла не должно быть, got %+v", m)
-	}
-}
-
-// TestTrainList — список поездов: приб + подход, приб помечены, сортировка по времени.
-func TestTrainList(t *testing.T) {
-	arrived := []domain.VagonHistory{
-		{IndexPp: "783", DatePrib: pfLT(2026, 7, 23, 8, 0), CargoGroup: "УГОЛЬ"},
-		{IndexPp: "783", DatePrib: pfLT(2026, 7, 23, 8, 0), CargoGroup: "УГОЛЬ"},
-	}
-	ap := approachingSet{trains: []approachingTrain{
-		{index: "790", total: 5, cargo: "УГОЛЬ", time: pfLT(2026, 7, 23, 16, 40)},
-	}}
-	svc := &PlanFormService{}
-	list := svc.trainList(arrived, ap)
-
-	if len(list) != 2 {
-		t.Fatalf("ждали 2 поезда (приб 783 + подход 790), got %d", len(list))
-	}
-	// Сортировка по времени: 08:00 приб раньше 16:40 подход.
-	if !list[0].Arrived || list[0].Index != "783" || list[0].Count != 2 {
-		t.Fatalf("первый — приб 783 (2 ваг), got %+v", list[0])
-	}
-	if list[1].Arrived || list[1].Index != "790" || list[1].Count != 5 {
-		t.Fatalf("второй — подход 790 (5 ваг), got %+v", list[1])
+	if lt := lineTrains(trains, "УГОЛЬ", "2026-07-23"); len(lt) != 1 || lt[0].Wagons != 2 {
+		t.Errorf("lineTrains(УГОЛЬ) = %+v", lt)
 	}
 }
