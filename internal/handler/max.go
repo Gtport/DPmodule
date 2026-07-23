@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -9,25 +10,29 @@ import (
 	"github.com/Gtport/DPmodule/internal/service"
 )
 
-// maxHandler — исходящая рассылка в мессенджер MAX. Пока: health (проверка
-// канала/токена) и список чатов для фронта. Сами рассылки текста/картинки —
-// следующие ветки.
+// maxHandler — исходящая рассылка в мессенджер MAX: health (проверка канала/токена),
+// список чатов и рассылка текстовых форм. Картинка — следующая ветка.
 //
-// sender == nil — max.enabled=false в конфиге (канал спит, не ошибка).
+// sender == nil — max.enabled=false (канал спит, не ошибка).
 // chats == nil — нет БД (справочник чатов недоступен).
+// broadcast == nil — нет транспорта ИЛИ справочника (рассылать нечем/некуда).
 type maxHandler struct {
-	sender port.MessengerSender // nil, если MAX отключён в конфиге
-	chats  *service.MaxChatService
+	sender    port.MessengerSender
+	chats     *service.MaxChatService
+	broadcast *service.MaxBroadcastService
 }
 
-func NewMaxHandler(sender port.MessengerSender, chats *service.MaxChatService) *maxHandler {
-	return &maxHandler{sender: sender, chats: chats}
+func NewMaxHandler(sender port.MessengerSender, chats *service.MaxChatService, broadcast *service.MaxBroadcastService) *maxHandler {
+	return &maxHandler{sender: sender, chats: chats, broadcast: broadcast}
 }
 
 func (h *maxHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/max/health", h.health)
 	if h.chats != nil {
 		g.GET("/max/chats", h.listChats)
+	}
+	if h.broadcast != nil {
+		g.POST("/max/broadcast/text", h.broadcastText)
 	}
 }
 
@@ -64,4 +69,49 @@ func (h *maxHandler) listChats(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, chats)
+}
+
+// broadcastTextRequest — рассылка готовой текстовой формы. Текст собирает фронт
+// (как в gtport formatTextForCopy); сервер только разрешает адресатов и шлёт.
+type broadcastTextRequest struct {
+	Report   string `json:"report"`   // 'spravki' | 'oper' | 'plan'
+	Terminal string `json:"terminal"` // ports.name_s; пусто — сводная форма
+	Text     string `json:"text"`
+}
+
+// broadcastText godoc
+// @Summary  Рассылка текстовой формы в чаты MAX по маршруту (форма×терминал)
+// @Tags     max
+// @Security BearerAuth
+// @Param    body body handler.broadcastTextRequest true "форма, терминал, текст"
+// @Success  200 {object} service.BroadcastResult
+// @Failure  400 {object} handler.ErrorResponse
+// @Failure  502 {object} handler.ErrorResponse
+// @Router   /api/v1/max/broadcast/text [post]
+func (h *maxHandler) broadcastText(c *gin.Context) {
+	var req broadcastTextRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "неверное тело запроса: " + err.Error()})
+		return
+	}
+	if strings.TrimSpace(req.Report) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "не указан тип формы (report)"})
+		return
+	}
+	if strings.TrimSpace(req.Text) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "пустой текст рассылки"})
+		return
+	}
+
+	res, err := h.broadcast.SendText(c.Request.Context(), req.Report, req.Terminal, req.Text)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, ErrorResponse{Error: err.Error()})
+		return
+	}
+	// Чаты нашлись, но ни одна отправка не прошла — это отказ канала, не успех.
+	if res.AllFailed() {
+		c.JSON(http.StatusBadGateway, res)
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
