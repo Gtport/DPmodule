@@ -76,6 +76,16 @@ export class BrosApiService {
     return r.records ?? [];
   }
 
+  /** Броски за период (отчёт): фильтр по терминалу и датам (YYYY-MM-DD). */
+  async filter(start: string, end: string, gruzpol = ''): Promise<BrosRecord[]> {
+    const params: Record<string, string> = { start_date: start, end_date: end, limit: '10000' };
+    if (gruzpol) params['gruzpol_s'] = gruzpol;
+    const r = await firstValueFrom(
+      this.http.get<{ records: BrosRecord[] }>(`${this.base}/filter`, { params }),
+    );
+    return r.records ?? [];
+  }
+
   /** Справочник кодов бросания. */
   async getReasonCodes(): Promise<BrosReasonCode[]> {
     const r = await firstValueFrom(

@@ -9,6 +9,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { ArrivalsApiService } from './arrivals-api.service';
 import { BrosApiService, BrosRecord, BrosReasonCode } from './bros-api.service';
 import { BrosJournalModalComponent } from './bros-journal-modal.component';
+import { BrosReportModalComponent } from './bros-report-modal.component';
 
 /**
  * Перемещаемая модалка «Брошенные поезда»: активные броски (снимок bros),
@@ -19,7 +20,7 @@ import { BrosJournalModalComponent } from './bros-journal-modal.component';
   selector: 'app-bros-modal',
   imports: [
     DragDropModule, NzModalModule, NzButtonModule, NzIconModule, NzTooltipModule,
-    BrosJournalModalComponent,
+    BrosJournalModalComponent, BrosReportModalComponent,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="ttl" [nzFooter]="null" nzWidth="1080px"
@@ -34,6 +35,10 @@ import { BrosJournalModalComponent } from './bros-journal-modal.component';
         <div class="bar">
           <span class="mut">Активные броски. Клик по «Журнал» — фиксация состояния и кода бросания.</span>
           <span class="spacer"></span>
+          <button nz-button nzSize="small" (click)="showReport.set(true)"
+                  nz-tooltip nzTooltipTitle="Отчёт за период (Excel, MAX)">
+            <span nz-icon nzType="bar-chart"></span> Отчёт
+          </button>
           <button nz-button nzType="text" nzSize="small" nz-tooltip nzTooltipTitle="Обновить"
                   (click)="load()">
             <span nz-icon nzType="reload"></span>
@@ -96,6 +101,9 @@ import { BrosJournalModalComponent } from './bros-journal-modal.component';
       <app-bros-journal-modal [record]="r" [codes]="codes()"
                               (saved)="load()" (closed)="editing.set(null)" />
     }
+    @if (showReport()) {
+      <app-bros-report-modal (closed)="showReport.set(false)" />
+    }
   `,
   styles: [`
     .ttl { cursor: move; user-select: none; }
@@ -129,6 +137,7 @@ export class BrosModalComponent implements OnInit {
   readonly rows = signal<BrosRecord[]>([]);
   readonly codes = signal<BrosReasonCode[]>([]);
   readonly editing = signal<BrosRecord | null>(null);
+  readonly showReport = signal(false);
 
   private readonly codesMap = computed(() => {
     const m: Record<string, string> = {};
