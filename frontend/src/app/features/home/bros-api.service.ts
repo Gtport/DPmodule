@@ -105,6 +105,14 @@ export class BrosApiService {
     return r.records ?? [];
   }
 
+  /** Поиск броска по индексу (подстрока, по всей базе; мин. 3 символа). */
+  async search(q: string): Promise<BrosRecord[]> {
+    const r = await firstValueFrom(
+      this.http.get<{ records: BrosRecord[] }>(`${this.base}/search`, { params: { q } }),
+    );
+    return r.records ?? [];
+  }
+
   /** Справочник кодов бросания. */
   async getReasonCodes(): Promise<BrosReasonCode[]> {
     const r = await firstValueFrom(

@@ -1,36 +1,33 @@
-import { Component, ElementRef, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
-import { toBlob } from 'html-to-image';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { addDaysIso, todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
-import { ReferenceApiService } from '../reference/reference-api.service';
-import { BrosApiService, BrosReportRow, BrosReasonCode } from './bros-api.service';
+import { BrosApiService, BrosRecord, BrosReportRow, BrosReasonCode } from './bros-api.service';
 
 /** Суточный агрегат периода. */
 interface DailyStat { date: string; count: number; created: number; lifted: number; }
 
 /**
  * Перемещаемая модалка «Брошенные — отчёт за период» (перенос gtport BrosReport):
- * броски за период с суммарным простоем (суток), суточная динамика и сводка.
- * Экспорт Excel (данные + динамика), PNG-снимок таблицы и отправка сводки в MAX.
- *
- * Разбивка суток по кодам (05/01-согл/01-несогл) считается по журналу и требует
- * агрегации — следующая итерация (пока показываем суммарный простой и текущий код).
+ * броски за период с простоем (суток) и разбивкой по кодам, суточная динамика,
+ * сводка. Поиск поезда по индексу (по всей базе), статистика, экспорт Excel.
+ * Отправка в MAX — в оперативке (форме «Брошенные»), как в gtport.
  */
 @Component({
   selector: 'app-bros-report-modal',
   imports: [
     FormsModule, DragDropModule, NzModalModule, NzButtonModule, NzIconModule,
-    NzSelectModule, NzSpinModule, NzTooltipModule,
+    NzInputModule, NzSelectModule, NzSpinModule, NzTooltipModule,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="ttl" [nzFooter]="null" nzWidth="1120px"
@@ -54,17 +51,16 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
             <span nz-icon nzType="search"></span> Загрузить
           </button>
           <span class="spacer"></span>
+          <button nz-button nzSize="small" (click)="openSearch()" nz-tooltip nzTooltipTitle="Поиск поезда по индексу (по всей базе)">
+            <span nz-icon nzType="search"></span>
+          </button>
+          <button nz-button nzSize="small" (click)="showStats.set(true)" nz-tooltip nzTooltipTitle="Статистика"
+                  [disabled]="rows().length === 0">
+            <span nz-icon nzType="bar-chart"></span>
+          </button>
           <button nz-button nzSize="small" (click)="exportExcel()" nz-tooltip nzTooltipTitle="Экспорт в Excel"
                   [disabled]="rows().length === 0">
             <span nz-icon nzType="file-excel"></span>
-          </button>
-          <button nz-button nzSize="small" (click)="exportPng()" nz-tooltip nzTooltipTitle="Сохранить картинку"
-                  [disabled]="rows().length === 0">
-            <span nz-icon nzType="picture"></span>
-          </button>
-          <button nz-button nzType="primary" nzSize="small" [nzLoading]="sending()" (click)="sendToMax()"
-                  nz-tooltip nzTooltipTitle="Сводку в общий чат MAX" [disabled]="rows().length === 0">
-            <span nz-icon nzType="send"></span> В MAX
           </button>
         </div>
 
@@ -141,6 +137,77 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
           «Согласованный простой» — есть юр. оформление (заявка 05 или письмо 01-согл), остальное — ответственность РЖД.</p>
       </ng-container>
     </nz-modal>
+
+    <!-- Поиск поезда по индексу (по всей базе, вне периода) -->
+    @if (showSearch()) {
+      <nz-modal [nzVisible]="true" nzTitle="Поиск броска по индексу" [nzFooter]="null"
+                nzWidth="820px" [nzMask]="false" (nzOnCancel)="showSearch.set(false)">
+        <ng-container *nzModalContent>
+          <div class="bar">
+            <input nz-input placeholder="индекс или его часть (мин. 3 символа)" [ngModel]="searchQuery()"
+                   (ngModelChange)="searchQuery.set($event)" (keydown.enter)="runSearch()" />
+            <button nz-button nzType="primary" nzSize="small" [nzLoading]="searching()" (click)="runSearch()">
+              <span nz-icon nzType="search"></span> Найти
+            </button>
+          </div>
+          <div class="tbl-wrap">
+            <table class="tbl">
+              <thead><tr>
+                <th class="c-idx">Индекс</th><th>Станция</th><th class="c-dt">Дата броса</th>
+                <th class="c-dt">Дата подъёма</th><th class="c-code">Код</th><th class="c-vc">Ваг</th>
+                <th class="c-st">Статус</th><th>Состав</th>
+              </tr></thead>
+              <tbody>
+                @for (r of searchResults(); track r.id) {
+                  <tr [style.background]="rowBg(r)">
+                    <td class="num idx" [title]="r.index_1">{{ r.index_1 || '—' }}</td>
+                    <td class="ell" [title]="r.station_br">{{ r.station_br || '—' }}</td>
+                    <td class="c">{{ fmtDate(r.date_br) }}</td>
+                    <td class="c">{{ r.date_pod_fact ? fmtDate(r.date_pod_fact) : '—' }}</td>
+                    <td class="c">{{ r.reason || '—' }}</td>
+                    <td class="c num">{{ r.vagon_count }}</td>
+                    <td class="c">{{ r.status_br ? 'активен' : 'поднят' }}</td>
+                    <td class="ell" [title]="r.sostav">{{ r.sostav || '—' }}</td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="8" class="empty">{{ searchDone() ? 'Ничего не найдено' : 'Введите индекс и нажмите «Найти»' }}</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </ng-container>
+      </nz-modal>
+    }
+
+    <!-- Статистика: суточная динамика + разбивка причин -->
+    @if (showStats()) {
+      <nz-modal [nzVisible]="true" nzTitle="Статистика брошенных" [nzFooter]="null"
+                nzWidth="720px" [nzMask]="false" (nzOnCancel)="showStats.set(false)">
+        <ng-container *nzModalContent>
+          <div class="stat-cards">
+            <div class="sc c05"><b>{{ daysCode05() }}</b><span>к.05 заявка</span></div>
+            <div class="sc ok"><b>{{ daysAgreed() }}</b><span>01 согл. письмо</span></div>
+            <div class="sc bad"><b>{{ daysNotAgreed() }}</b><span>01 несогл. РЖД</span></div>
+            <div class="sc"><b>{{ daysOther() }}</b><span>прочие</span></div>
+            <div class="sc prot"><b>{{ protectedPct() }}%</b><span>согласованный простой</span></div>
+          </div>
+          <div class="stat-h">Динамика по дням</div>
+          <div class="tbl-wrap" style="max-height: 46vh">
+            <table class="tbl">
+              <thead><tr><th>Дата</th><th class="c-vc">Наличие</th><th class="c-vc">Брошено</th><th class="c-vc">Поднято</th></tr></thead>
+              <tbody>
+                @for (d of dailyRows(); track d.date) {
+                  <tr><td class="c">{{ fmtDate(d.date) }}</td><td class="c num">{{ d.count }}</td>
+                    <td class="c num">{{ d.created }}</td><td class="c num">{{ d.lifted }}</td></tr>
+                }
+                <tr class="tot"><td class="c"><b>Итого</b></td><td class="c num"><b>{{ totalDays() }}</b></td>
+                  <td class="c num"><b>{{ totalCreated() }}</b></td><td class="c num"><b>{{ totalLifted() }}</b></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </ng-container>
+      </nz-modal>
+    }
   `,
   styles: [`
     .ttl { cursor: move; user-select: none; }
@@ -174,14 +241,23 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
     .days.warn { color: #d46b08; } .days.danger { color: var(--color-danger, #cf1322); }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
+    .c-st { width: 60px; }
+    .bar .ant-input { flex: 1 1 auto; }
+    .stat-cards { display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-md); }
+    .sc { flex: 1 1 0; min-width: 96px; text-align: center; padding: 6px 8px;
+          border: 1px solid var(--color-border-light); border-radius: var(--radius-sm); background: var(--color-bg-subtle); }
+    .sc b { display: block; font-size: 1.2rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .sc span { font-size: var(--font-size-sm); color: var(--color-text-muted); }
+    .sc.c05 b { color: #1565c0; } .sc.ok b { color: #2e7d32; } .sc.bad b { color: #c62828; }
+    .sc.prot { background: #f3e5f5; } .sc.prot b { color: #7b1fa2; }
+    .stat-h { font-weight: 600; font-size: var(--font-size-sm); margin: 0 0 var(--space-xs); }
+    tr.tot > td { background: var(--color-bg-subtle); }
   `],
 })
 export class BrosReportModalComponent implements OnInit {
   private readonly api = inject(BrosApiService);
   private readonly arrivals = inject(ArrivalsApiService);
-  private readonly ref = inject(ReferenceApiService);
   private readonly msg = inject(NzMessageService);
-  private readonly host = inject(ElementRef<HTMLElement>);
 
   readonly closed = output<void>();
 
@@ -189,12 +265,20 @@ export class BrosReportModalComponent implements OnInit {
   readonly end = signal(todayMsk());
   readonly terminal = signal('');
   readonly loading = signal(false);
-  readonly sending = signal(false);
 
   readonly rows = signal<BrosReportRow[]>([]);
   readonly terminals = signal<string[]>([]);
   readonly codes = signal<BrosReasonCode[]>([]);
   private readonly termColor = signal<Record<string, string>>({});
+
+  // Поиск по индексу (по всей базе) и статистика — отдельные вложенные модалки.
+  readonly showSearch = signal(false);
+  readonly searchQuery = signal('');
+  readonly searching = signal(false);
+  readonly searchDone = signal(false);
+  readonly searchResults = signal<BrosRecord[]>([]);
+  readonly showStats = signal(false);
+  readonly dailyRows = computed(() => this.dailyStats());
 
   private readonly codesMap = computed(() => {
     const m: Record<string, string> = {};
@@ -256,7 +340,7 @@ export class BrosReportModalComponent implements OnInit {
     }
   }
 
-  rowBg(r: BrosReportRow): string | null { return this.termColor()[r.gruzpol_s] ?? null; }
+  rowBg(r: BrosRecord): string | null { return this.termColor()[r.gruzpol_s] ?? null; }
   codeDesc(code: string): string { return this.codesMap()[code] || 'Код не найден в справочнике'; }
 
   private computeDaily(): DailyStat[] {
@@ -318,46 +402,23 @@ export class BrosReportModalComponent implements OnInit {
     }
   }
 
-  // ── PNG / MAX ────────────────────────────────────────────────────────────────
-  private async png(): Promise<Blob> {
-    const el = this.host.nativeElement.querySelector('#bros-report-tbl') as HTMLElement | null;
-    if (!el) throw new Error('таблица не найдена');
-    const blob = await toBlob(el, { pixelRatio: 2, backgroundColor: '#ffffff' });
-    if (!blob) throw new Error('не удалось отрисовать картинку');
-    return blob;
-  }
+  // ── Поиск по индексу (по всей базе, вне периода) ─────────────────────────────
+  openSearch(): void { this.showSearch.set(true); }
 
-  async exportPng(): Promise<void> {
-    try {
-      const blob = await this.png();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Брошенные_${todayMsk()}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      this.msg.error(apiErrorMessage(err));
+  async runSearch(): Promise<void> {
+    const q = this.searchQuery().trim();
+    if (q.length < 3) {
+      this.msg.warning('Минимум 3 символа');
+      return;
     }
-  }
-
-  async sendToMax(): Promise<void> {
-    this.sending.set(true);
+    this.searching.set(true);
     try {
-      const blob = await this.png();
-      const res = await this.ref.sendImage('oper', '', blob, `Брошенные_${todayMsk()}.png`,
-        `Брошенные поезда на ${this.fmtDate(todayMsk())}`);
-      if (res.chats === 0) {
-        this.msg.warning('Нет настроенного маршрута рассылки (форма «oper»)');
-      } else if (Object.keys(res.failed).length) {
-        this.msg.warning(`Отправлено в ${res.sent.length}, не ушло — ${Object.keys(res.failed).join(', ')}`);
-      } else {
-        this.msg.success(`Отправлено в чаты (${res.sent.join(', ')})`);
-      }
+      this.searchResults.set(await this.api.search(q));
+      this.searchDone.set(true);
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     } finally {
-      this.sending.set(false);
+      this.searching.set(false);
     }
   }
 

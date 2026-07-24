@@ -1,12 +1,15 @@
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, inject, output, signal } from '@angular/core';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { toBlob } from 'html-to-image';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
+import { ReferenceApiService } from '../reference/reference-api.service';
 import { BrosApiService, BrosRecord, BrosReasonCode } from './bros-api.service';
 import { BrosJournalModalComponent } from './bros-journal-modal.component';
 import { BrosReportModalComponent } from './bros-report-modal.component';
@@ -35,8 +38,17 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
         <div class="bar">
           <span class="mut">Активные броски. Клик по «Журнал» — фиксация состояния и кода бросания.</span>
           <span class="spacer"></span>
+          <button nz-button nzSize="small" (click)="exportPng()" [disabled]="rows().length === 0"
+                  nz-tooltip nzTooltipTitle="Сохранить картинку таблицы">
+            <span nz-icon nzType="picture"></span>
+          </button>
+          <button nz-button nzType="primary" nzSize="small" [nzLoading]="sending()"
+                  (click)="sendToMax()" [disabled]="rows().length === 0"
+                  nz-tooltip nzTooltipTitle="Сохранить журнал и отправить сводку в Оперативный чат MAX">
+            <span nz-icon nzType="send"></span> В MAX
+          </button>
           <button nz-button nzSize="small" (click)="showReport.set(true)"
-                  nz-tooltip nzTooltipTitle="Отчёт за период (Excel, MAX)">
+                  nz-tooltip nzTooltipTitle="Отчёт за период (поиск, статистика, Excel)">
             <span nz-icon nzType="bar-chart"></span> Отчёт
           </button>
           <button nz-button nzType="text" nzSize="small" nz-tooltip nzTooltipTitle="Обновить"
@@ -45,7 +57,7 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
           </button>
         </div>
 
-        <div class="tbl-wrap">
+        <div class="tbl-wrap" id="bros-active-tbl">
           <table class="tbl">
             <thead>
               <tr>
@@ -59,7 +71,7 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
                 <th class="c-code">Код</th>
                 <th>Состав</th>
                 <th class="c-vc">Ваг</th>
-                <th class="c-act"></th>
+                <th class="c-act no-snap"></th>
               </tr>
             </thead>
             <tbody>
@@ -79,7 +91,7 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
                   </td>
                   <td class="ell" [title]="r.sostav">{{ r.sostav || '—' }}</td>
                   <td class="c num">{{ r.vagon_count }}</td>
-                  <td class="c">
+                  <td class="c no-snap">
                     <button nz-button nzType="link" nzSize="small" (click)="editing.set(r)"
                             nz-tooltip nzTooltipTitle="Записать в журнал">
                       <span nz-icon nzType="edit"></span>
@@ -130,7 +142,9 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
 export class BrosModalComponent implements OnInit {
   private readonly api = inject(BrosApiService);
   private readonly arrivals = inject(ArrivalsApiService);
+  private readonly ref = inject(ReferenceApiService);
   private readonly msg = inject(NzMessageService);
+  private readonly host = inject(ElementRef<HTMLElement>);
 
   readonly closed = output<void>();
 
@@ -138,6 +152,7 @@ export class BrosModalComponent implements OnInit {
   readonly codes = signal<BrosReasonCode[]>([]);
   readonly editing = signal<BrosRecord | null>(null);
   readonly showReport = signal(false);
+  readonly sending = signal(false);
 
   private readonly codesMap = computed(() => {
     const m: Record<string, string> = {};
@@ -191,5 +206,57 @@ export class BrosModalComponent implements OnInit {
   fmtDate(ts: string | null): string {
     if (!ts || ts.length < 10) return '—';
     return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(2, 4)}`;
+  }
+
+  // ── PNG / MAX (колонка действий в снимок не попадает — .no-snap) ─────────────
+  private async png(): Promise<Blob> {
+    const el = this.host.nativeElement.querySelector('#bros-active-tbl') as HTMLElement | null;
+    if (!el) throw new Error('таблица не найдена');
+    const blob = await toBlob(el, {
+      pixelRatio: 2, backgroundColor: '#ffffff',
+      filter: (n) => !(n instanceof HTMLElement && n.classList.contains('no-snap')),
+    });
+    if (!blob) throw new Error('не удалось отрисовать картинку');
+    return blob;
+  }
+
+  async exportPng(): Promise<void> {
+    try {
+      const blob = await this.png();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Брошенные_${todayMsk()}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    }
+  }
+
+  /** Фиксируем журнал за сегодня, затем шлём картинку в Оперативный чат (как gtport). */
+  async sendToMax(): Promise<void> {
+    this.sending.set(true);
+    try {
+      try {
+        await this.api.bulkSave(); // фиксация состояния всех активных перед отправкой
+      } catch {
+        /* bulk-save не критичен — отправку не срываем */
+      }
+      const blob = await this.png();
+      const res = await this.ref.sendImage('oper', '', blob, `Брошенные_${todayMsk()}.png`,
+        `Брошенные поезда на ${this.fmtDate(todayMsk())}`);
+      if (res.chats === 0) {
+        this.msg.warning('Нет настроенного маршрута рассылки (форма «oper»)');
+      } else if (Object.keys(res.failed).length) {
+        this.msg.warning(`Отправлено в ${res.sent.length}, не ушло — ${Object.keys(res.failed).join(', ')}`);
+      } else {
+        this.msg.success(`Отправлено в чаты (${res.sent.join(', ')})`);
+      }
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.sending.set(false);
+    }
   }
 }
