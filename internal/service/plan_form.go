@@ -53,18 +53,25 @@ type PlanFormLineDTO struct {
 	DowntimeToday string `json:"downtime_today"`
 }
 
-// PlanFormDayDTO — поезда одной ЖД-даты (готовые строки для показа).
-type PlanFormDayDTO struct {
-	Date   string   `json:"date"` // yyyy-MM-dd
-	Trains []string `json:"trains"`
+// PlanFormTrainDTO — поезд формы: готовая строка + обе даты суток.
+//
+// DateJd — ЖД-сутки (18:00→18:00), по ним строится «Утренняя СМС» (план подвода).
+// DateMsk/TimeMsk — грузовые (МСК) сутки: «Оперативная СМС» умеет показывать
+// поезда и в этой раскладке (переключатель ЖД/ГР, как в gtport SmsOper).
+type PlanFormTrainDTO struct {
+	Display string `json:"display"`  // «904 - приб 19:23 (13) 175 ЛК-1 от ГУТ-2»
+	DateJd  string `json:"date_jd"`  // yyyy-MM-dd
+	DateMsk string `json:"date_msk"` // yyyy-MM-dd
+	TimeMsk string `json:"time_msk"` // HH:MM — сортировка в ГР-режиме
 }
 
-// PlanFormTerminalDTO — карточка терминала.
+// PlanFormTerminalDTO — карточка терминала. Trains уже отсортированы по ЖД-суткам
+// и позиции внутри них (отсечка 18:00), так что ЖД-раскладка = порядок как есть.
 type PlanFormTerminalDTO struct {
-	Terminal string            `json:"terminal"`
-	Color    string            `json:"color"`
-	Lines    []PlanFormLineDTO `json:"lines"`
-	Days     []PlanFormDayDTO  `json:"days"`
+	Terminal string             `json:"terminal"`
+	Color    string             `json:"color"`
+	Lines    []PlanFormLineDTO  `json:"lines"`
+	Trains   []PlanFormTrainDTO `json:"trains"`
 }
 
 // Form собирает карточки всех терминалов на дату (ЖД-сутки, yyyy-MM-dd).
@@ -122,7 +129,7 @@ func (s *PlanFormService) terminalCard(ctx context.Context, date time.Time, t Ta
 		})
 	}
 
-	card.Days = buildDays(append(arrived, plan...), cutoff)
+	card.Trains = buildTrains(append(arrived, plan...), cutoff)
 	return card, nil
 }
 
@@ -139,7 +146,8 @@ type pfTrain struct {
 	indexPp  string
 	arrived  bool
 	t        time.Time      // время показа/группировки (ЖД)
-	date     string         // yyyy-MM-dd от t
+	tMsk     time.Time      // то же событие в грузовых (МСК) сутках
+	date     string         // yyyy-MM-dd от t (ЖД-сутки)
 	subs     []*pfSub       // в порядке появления
 	subIdx   map[string]int // ключ подгруппы → индекс в subs
 	cargoCnt map[string]int // группа груза → вагонов (для аналитики линии)
@@ -177,7 +185,7 @@ func (s *PlanFormService) arrivedTrains(ctx context.Context, date time.Time, ter
 		key := r.IndexPp + "|" + tm.Format("2006-01-02")
 		tr, ok := byKey[key]
 		if !ok {
-			tr = newTrain(r.IndexPp, true, tm)
+			tr = newTrain(r.IndexPp, true, tm, time.Time{}) // МСК выводим из ЖД-штампа
 			byKey[key] = tr
 			order = append(order, key)
 		}
@@ -223,7 +231,11 @@ func (s *PlanFormService) planTrains(terminal string, start time.Time) []*pfTrai
 		key := idx + "|" + t.Format("2006-01-02")
 		tr, ok := byKey[key]
 		if !ok {
-			tr = newTrain(idx, false, t)
+			var mskT time.Time // плановое время в МСК — как есть из снимка
+			if r.PlanMsk != nil && !r.PlanMsk.IsZero() {
+				mskT = r.PlanMsk.Time()
+			}
+			tr = newTrain(idx, false, t, mskT)
 			byKey[key] = tr
 			order = append(order, key)
 		}
@@ -232,11 +244,23 @@ func (s *PlanFormService) planTrains(terminal string, start time.Time) []*pfTrai
 	return ordered(byKey, order)
 }
 
-func newTrain(indexPp string, arrived bool, t time.Time) *pfTrain {
+func newTrain(indexPp string, arrived bool, t, tMsk time.Time) *pfTrain {
+	if tMsk.IsZero() {
+		tMsk = mskFromJd(t)
+	}
 	return &pfTrain{
-		indexPp: indexPp, arrived: arrived, t: t, date: t.Format("2006-01-02"),
+		indexPp: indexPp, arrived: arrived, t: t, tMsk: tMsk, date: t.Format("2006-01-02"),
 		subIdx: map[string]int{}, cargoCnt: map[string]int{},
 	}
+}
+
+// mskFromJd — ЖД-штамп → грузовые (МСК) сутки: час ≥ 18 относится к предыдущим
+// календарным суткам (перенос gtport calculateDatesFromHistory).
+func mskFromJd(t time.Time) time.Time {
+	if t.Hour() >= 18 {
+		return t.AddDate(0, 0, -1)
+	}
+	return t
 }
 
 func ordered(m map[string]*pfTrain, order []string) []*pfTrain {
@@ -271,31 +295,27 @@ func lineTrains(trains []*pfTrain, cargoKey, dateKey string) []CargoWorkTrain {
 	return out
 }
 
-// buildDays — поезда по ЖД-датам (готовые строки), даты по возрастанию, внутри —
-// по ПОЗИЦИИ В ЖД-СУТКАХ (час отсечки = начало): нитки 18:00–23:59 идут раньше
-// 00:00–17:59, а не по сырому времени (та же отсечка, что у движка аналитики).
-func buildDays(trains []*pfTrain, cutoff int) []PlanFormDayDTO {
-	by := map[string][]*pfTrain{}
-	for _, tr := range trains {
-		by[tr.date] = append(by[tr.date], tr)
-	}
-	dates := make([]string, 0, len(by))
-	for d := range by {
-		dates = append(dates, d)
-	}
-	sort.Strings(dates)
-
-	out := make([]PlanFormDayDTO, 0, len(dates))
-	for _, d := range dates {
-		list := by[d]
-		sort.SliceStable(list, func(i, j int) bool {
-			return toCargoWorkCalc(list[i].t, cutoff).Before(toCargoWorkCalc(list[j].t, cutoff))
-		})
-		day := PlanFormDayDTO{Date: d}
-		for _, tr := range list {
-			day.Trains = append(day.Trains, trainDisplay(tr))
+// buildTrains — поезда одним списком, отсортированные по ЖД-суткам и ПОЗИЦИИ
+// ВНУТРИ СУТОК (час отсечки = начало): нитки 18:00–23:59 идут раньше 00:00–17:59,
+// а не по сырому времени (та же отсечка, что у движка аналитики). Раскладка по
+// дням — на стороне интерфейса (ЖД по date_jd в этом порядке, ГР по date_msk).
+func buildTrains(trains []*pfTrain, cutoff int) []PlanFormTrainDTO {
+	list := append([]*pfTrain(nil), trains...)
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].date != list[j].date {
+			return list[i].date < list[j].date
 		}
-		out = append(out, day)
+		return toCargoWorkCalc(list[i].t, cutoff).Before(toCargoWorkCalc(list[j].t, cutoff))
+	})
+
+	out := make([]PlanFormTrainDTO, 0, len(list))
+	for _, tr := range list {
+		out = append(out, PlanFormTrainDTO{
+			Display: trainDisplay(tr),
+			DateJd:  tr.date,
+			DateMsk: tr.tMsk.Format("2006-01-02"),
+			TimeMsk: tr.tMsk.Format("15:04"),
+		})
 	}
 	return out
 }
