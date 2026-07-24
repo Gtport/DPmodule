@@ -37,3 +37,173 @@ func (r *BrosReasonCodesRepository) ReasonCodes(ctx context.Context) ([]domain.B
 	}
 	return out, nil
 }
+
+// ── Снимок брошенных (таблица bros) ─────────────────────────────────────────
+
+// BrosRepository реализует port.BrosRepository.
+type BrosRepository struct {
+	db *gorm.DB
+}
+
+func NewBrosRepository(db *gorm.DB) *BrosRepository {
+	return &BrosRepository{db: db}
+}
+
+// brosModel — ORM-раскладка колонок bros. Даты (date_*) и штампы (prog_*, *_at) —
+// LocalTime (Московское naive).
+type brosModel struct {
+	ID          string            `gorm:"column:id;primaryKey"`
+	IDIndex     string            `gorm:"column:id_index"`
+	Index0      string            `gorm:"column:index_0"`
+	Index1      string            `gorm:"column:index_1"`
+	StationBr   string            `gorm:"column:station_br"`
+	DorogaBr    string            `gorm:"column:doroga_br"`
+	DateBr      *domain.LocalTime `gorm:"column:date_br"`
+	GruzpolS    string            `gorm:"column:gruzpol_s"`
+	DatePod     *domain.LocalTime `gorm:"column:date_pod"`
+	DatePodFact *domain.LocalTime `gorm:"column:date_pod_fact"`
+	Prog0       *domain.LocalTime `gorm:"column:prog_0"`
+	Prog1       *domain.LocalTime `gorm:"column:prog_1"`
+	ToGo        *float64          `gorm:"column:to_go"`
+	Plan        *domain.LocalTime `gorm:"column:plan"`
+	PlanHistory string            `gorm:"column:plan_history"`
+	StatusBr    bool              `gorm:"column:status_br"`
+	Reason      string            `gorm:"column:reason"`
+	Comment     string            `gorm:"column:comment"`
+	Sostav      string            `gorm:"column:sostav"`
+	VagonCount  int               `gorm:"column:vagon_count"`
+	CreatedAt   *domain.LocalTime `gorm:"column:created_at"`
+	UpdatedAt   *domain.LocalTime `gorm:"column:updated_at"`
+}
+
+func (brosModel) TableName() string { return "bros" }
+
+func toBrosModel(b domain.Bros) brosModel {
+	return brosModel{
+		ID: b.ID, IDIndex: b.IDIndex, Index0: b.Index0, Index1: b.Index1,
+		StationBr: b.StationBr, DorogaBr: b.DorogaBr, DateBr: b.DateBr,
+		GruzpolS: b.GruzpolS, DatePod: b.DatePod, DatePodFact: b.DatePodFact,
+		Prog0: b.Prog0, Prog1: b.Prog1, ToGo: b.ToGo, Plan: b.Plan,
+		PlanHistory: b.PlanHistory, StatusBr: b.StatusBr, Reason: b.Reason,
+		Comment: b.Comment, Sostav: b.Sostav, VagonCount: b.VagonCount,
+		CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt,
+	}
+}
+
+func toBrosDomain(m brosModel) domain.Bros {
+	return domain.Bros{
+		ID: m.ID, IDIndex: m.IDIndex, Index0: m.Index0, Index1: m.Index1,
+		StationBr: m.StationBr, DorogaBr: m.DorogaBr, DateBr: m.DateBr,
+		GruzpolS: m.GruzpolS, DatePod: m.DatePod, DatePodFact: m.DatePodFact,
+		Prog0: m.Prog0, Prog1: m.Prog1, ToGo: m.ToGo, Plan: m.Plan,
+		PlanHistory: m.PlanHistory, StatusBr: m.StatusBr, Reason: m.Reason,
+		Comment: m.Comment, Sostav: m.Sostav, VagonCount: m.VagonCount,
+		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+	}
+}
+
+func brosDomainSlice(ms []brosModel) []domain.Bros {
+	out := make([]domain.Bros, len(ms))
+	for i, m := range ms {
+		out[i] = toBrosDomain(m)
+	}
+	return out
+}
+
+func (r *BrosRepository) Active(ctx context.Context) ([]domain.Bros, error) {
+	var ms []brosModel
+	if err := r.db.WithContext(ctx).Where("status_br = true").
+		Order("created_at DESC").Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	return brosDomainSlice(ms), nil
+}
+
+func (r *BrosRepository) Insert(ctx context.Context, b domain.Bros) error {
+	m := toBrosModel(b)
+	return r.db.WithContext(ctx).Create(&m).Error
+}
+
+func (r *BrosRepository) Update(ctx context.Context, id string, fields map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&brosModel{}).
+		Where("id = ?", id).Updates(fields).Error
+}
+
+func (r *BrosRepository) History(ctx context.Context, limit, offset int) ([]domain.Bros, int, error) {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&brosModel{}).
+		Where("status_br = false").Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var ms []brosModel
+	if err := r.db.WithContext(ctx).Where("status_br = false").
+		Order("updated_at DESC").Limit(limit).Offset(offset).Find(&ms).Error; err != nil {
+		return nil, 0, err
+	}
+	return brosDomainSlice(ms), int(total), nil
+}
+
+func (r *BrosRepository) Filter(ctx context.Context, f domain.BrosFilter) ([]domain.Bros, int, error) {
+	where := func(q *gorm.DB) *gorm.DB {
+		if len(f.GruzpolS) > 0 {
+			q = q.Where("gruzpol_s IN ?", f.GruzpolS)
+		}
+		if f.Status != nil {
+			q = q.Where("status_br = ?", *f.Status)
+		}
+		// Период: бросок пересекается с [start; end] — брошен не позже конца И
+		// (ещё активен ИЛИ поднят не раньше начала). Зеркало gtport BrosFilter.
+		if f.StartDate != nil && f.EndDate != nil {
+			q = q.Where("date_br <= ? AND (date_pod_fact IS NULL OR date_pod_fact >= ?)", f.EndDate, f.StartDate)
+		} else if f.StartDate != nil {
+			q = q.Where("date_br >= ? OR date_pod_fact >= ?", f.StartDate, f.StartDate)
+		} else if f.EndDate != nil {
+			q = q.Where("date_br <= ?", f.EndDate)
+		}
+		return q
+	}
+
+	var total int64
+	if err := where(r.db.WithContext(ctx).Model(&brosModel{})).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var ms []brosModel
+	q := where(r.db.WithContext(ctx).Model(&brosModel{})).Order("date_br DESC")
+	if f.Limit > 0 {
+		q = q.Limit(f.Limit)
+	}
+	if f.Offset > 0 {
+		q = q.Offset(f.Offset)
+	}
+	if err := q.Find(&ms).Error; err != nil {
+		return nil, 0, err
+	}
+	return brosDomainSlice(ms), int(total), nil
+}
+
+func (r *BrosRepository) GetByID(ctx context.Context, id string) (*domain.Bros, error) {
+	var m brosModel
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&m).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	b := toBrosDomain(m)
+	return &b, nil
+}
+
+func (r *BrosRepository) SearchByIndex(ctx context.Context, q string) ([]domain.Bros, error) {
+	pattern := "%" + q + "%"
+	var ms []brosModel
+	if err := r.db.WithContext(ctx).
+		Where("index_0 ILIKE ? OR index_1 ILIKE ?", pattern, pattern).
+		Order("date_br DESC").Limit(50).Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	return brosDomainSlice(ms), nil
+}

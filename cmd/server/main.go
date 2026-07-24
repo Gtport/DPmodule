@@ -115,6 +115,7 @@ func run() error {
 		journalRepo    port.JournalRepository
 		adminRepo      port.AdminTablesRepository
 		brosReasonRepo port.BrosReasonCodesRepository
+		brosRepo       port.BrosRepository
 		cargoWorkRepo  port.CargoWorkRepository
 		maxChatRepo    port.MaxChatRepository
 		status9Cache   *service.Status9Cache
@@ -131,6 +132,7 @@ func run() error {
 		journalRepo = gormrepo.NewJournalRepository(db)
 		adminRepo = gormrepo.NewAdminTablesRepository(db)
 		brosReasonRepo = gormrepo.NewBrosReasonCodesRepository(db)
+		brosRepo = gormrepo.NewBrosRepository(db)
 		cargoWorkRepo = gormrepo.NewCargoWorkRepository(db)
 		maxChatRepo = gormrepo.NewMaxChatRepository(db)
 		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
@@ -198,7 +200,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {

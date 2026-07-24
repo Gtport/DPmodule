@@ -43,6 +43,7 @@ func Build(
 	journalRepo port.JournalRepository,
 	adminRepo port.AdminTablesRepository,
 	brosReasonRepo port.BrosReasonCodesRepository,
+	brosRepo port.BrosRepository,
 	vagonOpRepo port.VagonOperationRepository,
 	cargoWorkRepo port.CargoWorkRepository,
 	maxChatRepo port.MaxChatRepository,
@@ -105,6 +106,12 @@ func Build(
 		handler.NewBrosHandler(service.NewBrosReasonCodes(brosReasonRepo)).RegisterRoutes(api)
 	}
 
+	// Снимок брошенных: активные/история/отчёт/поиск (чтение). Reconcile статуса 5
+	// цепляется к конвейеру ниже (proc.SetBros). Правки/журнал — следующая ветка.
+	if brosRepo != nil {
+		handler.NewBrosOpsHandler(service.NewBrosService(brosRepo)).RegisterRoutes(api)
+	}
+
 	// Экран «Прогнозы»: сводка поездов с прогнозными полями Stage 3/4 из RAM-снимка.
 	if actualCache != nil {
 		handler.NewForecastHandler(service.NewForecastBoard(actualCache)).RegisterRoutes(api)
@@ -163,6 +170,10 @@ func Build(
 			// «Бесплановые в подходе» (Оперативка): трекинг на сравнении снимков.
 			if unplannedRepo != nil {
 				proc.SetUnplannedRepo(unplannedRepo)
+			}
+			// Снимок брошенных: reconcile статуса 5 после Stage 4 (пишет в bros).
+			if brosRepo != nil {
+				proc.SetBros(brosRepo)
 			}
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
 

@@ -27,6 +27,7 @@ type LKProcessor struct {
 	status6   *Status6Cache
 	history   port.HistoryRepository
 	unplanned port.UnplannedMoveRepository // «бесплановые в подходе» (nil — выключено/тесты)
+	bros      port.BrosRepository          // снимок брошенных (nil — выключено/тесты)
 	vagonOps  *VagonOpService              // очередь запросов 601 (nil — выключено/тесты)
 	enricher  *Enricher
 	journal   *Journal   // единый журнал событий (может быть nil — cmd-утилиты)
@@ -135,6 +136,9 @@ type LKProcessResult struct {
 	HistoryUpdated   int            `json:"history_updated"`    // обновлённых строк истории по переходам
 	UnloadOnLeave    int            `json:"unload_on_leave"`    // авто-вех выгрузки по выбытию статуса-10
 	VagonOpsQueued   int            `json:"vagon_ops_queued"`   // заявок 601 в очередь (прибытие/пропажа/выбытие)
+	BrosNew          int            `json:"bros_new"`           // новых брошенных поездов (статус 5)
+	BrosStopped      int            `json:"bros_stopped"`       // поднятых брошенных
+	BrosActive       int            `json:"bros_active"`        // активных брошенных после пересбора
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -321,6 +325,16 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// Снимок брошенных (reconcile статуса 5): новые/продолжающиеся/поднятые
+	// броски. ПОСЛЕ Stage 4 (нужен ProgJd) и ДО подмены снимка (actual =
+	// прежний, для определения подъёма). Пишет в таблицу bros.
+	var brosStats BrosStats
+	if p.actual != nil && p.bros != nil {
+		if brosStats, err = applyBros(ctx, all, p.actual, p.bros); err != nil {
+			return LKProcessResult{}, fmt.Errorf("bros: %w", err)
+		}
+	}
+
 	// Заявки на историю продвижения (601): прибытие / пропажа / выбытие-10 —
 	// только постановка в очередь (HTTP — у фонового воркера). ДО подмены
 	// снимка. Отказ очереди пересборку не валит: трейл — вторичные данные.
@@ -380,6 +394,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		ForecastComputed: forecastN, ProgComputed: progN,
 		HistoryInserted: hist.Inserted, HistoryUpdated: hist.Updated,
 		UnloadOnLeave: unloadLeft, VagonOpsQueued: opQueued,
+		BrosNew: brosStats.New, BrosStopped: brosStats.Stopped, BrosActive: brosStats.Active,
 	}, nil
 }
 
@@ -411,3 +426,7 @@ func (p *LKProcessor) SetUnplannedRepo(repo port.UnplannedMoveRepository) {
 // SetVagonOps подключает очередь запросов истории продвижения (601);
 // nil — триггеры выключены (cmd-утилиты, тесты).
 func (p *LKProcessor) SetVagonOps(svc *VagonOpService) { p.vagonOps = svc }
+
+// SetBros подключает снимок брошенных (reconcile статуса 5 после Stage 4);
+// nil — подсистема выключена (cmd-утилиты, тесты).
+func (p *LKProcessor) SetBros(repo port.BrosRepository) { p.bros = repo }
