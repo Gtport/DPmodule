@@ -59,6 +59,7 @@ func (h *brosOpsHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/bros/active", h.active)
 	g.GET("/dislocation/bros/history", h.history)
 	g.GET("/dislocation/bros/filter", h.filter)
+	g.GET("/dislocation/bros/report", h.report)
 	g.GET("/dislocation/bros/search", h.search)
 	// Журнал: bros_id в теле (POST) / query (GET). Отдельным сегментом :id не
 	// делаем — gin не допускает static+param на одном уровне (есть /active и др.).
@@ -150,6 +151,48 @@ func (h *brosOpsHandler) filter(c *gin.Context) {
 		"records": records, "count": len(records), "total": total,
 		"limit": f.Limit, "offset": f.Offset, "has_more": f.Offset+len(records) < total,
 	})
+}
+
+// report godoc
+// @Summary  Отчёт по броскам за период с разбивкой суток по кодам
+// @Tags     bros
+// @Security BearerAuth
+// @Success  200 {object} object
+// @Failure  400 {object} object
+// @Router   /api/v1/dislocation/bros/report [get]
+func (h *brosOpsHandler) report(c *gin.Context) {
+	var f domain.BrosFilter
+	if g := strings.TrimSpace(c.Query("gruzpol_s")); g != "" {
+		for _, part := range strings.Split(g, ",") {
+			if p := strings.TrimSpace(part); p != "" {
+				f.GruzpolS = append(f.GruzpolS, p)
+			}
+		}
+	}
+	if s := c.Query("start_date"); s != "" {
+		d, err := parseBrosDate(s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "неверный формат start_date, ожидается YYYY-MM-DD"})
+			return
+		}
+		f.StartDate = d
+	}
+	if s := c.Query("end_date"); s != "" {
+		d, err := parseBrosDate(s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "неверный формат end_date, ожидается YYYY-MM-DD"})
+			return
+		}
+		f.EndDate = d
+	}
+	f.Limit = atoiDefault(c.Query("limit"), 10000)
+
+	rows, err := h.svc.Report(c.Request.Context(), f)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"records": rows, "count": len(rows)})
 }
 
 // search godoc

@@ -13,7 +13,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { addDaysIso, todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
 import { ReferenceApiService } from '../reference/reference-api.service';
-import { BrosApiService, BrosRecord, BrosReasonCode } from './bros-api.service';
+import { BrosApiService, BrosReportRow, BrosReasonCode } from './bros-api.service';
 
 /** Суточный агрегат периода. */
 interface DailyStat { date: string; count: number; created: number; lifted: number; }
@@ -78,6 +78,15 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
           <div class="tile"><b>{{ totalLifted() }}</b><span>поднято</span></div>
         </div>
 
+        <!-- Разбивка поездо-суток по типам причин -->
+        <div class="tiles">
+          <div class="tile c05"><b>{{ daysCode05() }}</b><span>к.05 (заявка)</span></div>
+          <div class="tile ok"><b>{{ daysAgreed() }}</b><span>01 согл. (письмо)</span></div>
+          <div class="tile bad"><b>{{ daysNotAgreed() }}</b><span>01 несогл. (РЖД)</span></div>
+          <div class="tile"><b>{{ daysOther() }}</b><span>прочие</span></div>
+          <div class="tile prot"><b>{{ protectedPct() }}%</b><span>согласованный простой</span></div>
+        </div>
+
         @if (loading()) {
           <div class="center"><nz-spin nzSimple></nz-spin></div>
         } @else {
@@ -92,6 +101,10 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
                   <th class="c-dt">Дата подъёма</th>
                   <th class="c-code">Код</th>
                   <th class="c-days">Суток</th>
+                  <th class="c-b" nz-tooltip nzTooltipTitle="Суток по коду 05 (заявка)">к.05</th>
+                  <th class="c-b" nz-tooltip nzTooltipTitle="Суток по коду 01 согласованному (письмо)">01✓</th>
+                  <th class="c-b" nz-tooltip nzTooltipTitle="Суток по коду 01 несогласованному">01✗</th>
+                  <th class="c-b" nz-tooltip nzTooltipTitle="Суток по прочим кодам / без журнала">проч</th>
                   <th class="c-vc">Ваг</th>
                   <th>Состав</th>
                 </tr>
@@ -109,18 +122,23 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
                         <span class="code" nz-tooltip [nzTooltipTitle]="codeDesc(r.reason)">{{ r.reason }}</span>
                       } @else { — }
                     </td>
-                    <td class="c days" [class.warn]="days(r) >= 4" [class.danger]="days(r) >= 7">{{ days(r) }}</td>
+                    <td class="c days" [class.warn]="r.days_total >= 4" [class.danger]="r.days_total >= 7">{{ r.days_total }}</td>
+                    <td class="c b c05">{{ r.days_code05 || '' }}</td>
+                    <td class="c b ok">{{ r.days_code01_agreed || '' }}</td>
+                    <td class="c b bad">{{ r.days_code01_notagreed || '' }}</td>
+                    <td class="c b">{{ r.days_other || '' }}</td>
                     <td class="c num">{{ r.vagon_count }}</td>
                     <td class="ell" [title]="r.sostav">{{ r.sostav || '—' }}</td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="9" class="empty">Нет данных за выбранный период</td></tr>
+                  <tr><td colspan="13" class="empty">Нет данных за выбранный период</td></tr>
                 }
               </tbody>
             </table>
           </div>
         }
-        <p class="hint">Суток — суммарный простой (дата броса → подъём или сегодня). Цвет строки — терминал.</p>
+        <p class="hint">Суток — суммарный простой (дата броса → подъём или сегодня), разбивка по кодам из журнала.
+          «Согласованный простой» — есть юр. оформление (заявка 05 или письмо 01-согл), остальное — ответственность РЖД.</p>
       </ng-container>
     </nz-modal>
   `,
@@ -143,7 +161,11 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
               padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; }
     .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
     .c-idx { width: 118px; } .c-dor { width: 44px; } .c-dt { width: 92px; }
-    .c-code { width: 46px; } .c-days { width: 56px; } .c-vc { width: 44px; }
+    .c-code { width: 46px; } .c-days { width: 52px; } .c-b { width: 42px; } .c-vc { width: 44px; }
+    .b { font-variant-numeric: tabular-nums; }
+    td.b.c05 { color: #1565c0; } td.b.ok { color: #2e7d32; } td.b.bad { color: #c62828; font-weight: 600; }
+    .tile.c05 b { color: #1565c0; } .tile.ok b { color: #2e7d32; } .tile.bad b { color: #c62828; }
+    .tile.prot { background: #f3e5f5; } .tile.prot b { color: #7b1fa2; }
     .num { font-variant-numeric: tabular-nums; }
     .idx, .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .c { text-align: center; }
@@ -169,7 +191,7 @@ export class BrosReportModalComponent implements OnInit {
   readonly loading = signal(false);
   readonly sending = signal(false);
 
-  readonly rows = signal<BrosRecord[]>([]);
+  readonly rows = signal<BrosReportRow[]>([]);
   readonly terminals = signal<string[]>([]);
   readonly codes = signal<BrosReasonCode[]>([]);
   private readonly termColor = signal<Record<string, string>>({});
@@ -182,10 +204,20 @@ export class BrosReportModalComponent implements OnInit {
 
   // ── Сводка ────────────────────────────────────────────────────────────────
   readonly totalVagons = computed(() => this.rows().reduce((s, r) => s + r.vagon_count, 0));
-  readonly totalDays = computed(() => this.rows().reduce((s, r) => s + this.days(r), 0));
+  readonly totalDays = computed(() => this.rows().reduce((s, r) => s + r.days_total, 0));
   readonly avgDays = computed(() => {
     const n = this.rows().length;
     return n ? Math.round((this.totalDays() / n) * 10) / 10 : 0;
+  });
+  // Разбивка поездо-суток по типам причин (агрегация журнала на бэке).
+  readonly daysCode05 = computed(() => this.rows().reduce((s, r) => s + r.days_code05, 0));
+  readonly daysAgreed = computed(() => this.rows().reduce((s, r) => s + r.days_code01_agreed, 0));
+  readonly daysNotAgreed = computed(() => this.rows().reduce((s, r) => s + r.days_code01_notagreed, 0));
+  readonly daysOther = computed(() => this.rows().reduce((s, r) => s + r.days_other, 0));
+  // «Согласованный» простой (заявка 05 + письмо 01-согл) — есть юр. оформление.
+  readonly protectedPct = computed(() => {
+    const t = this.totalDays();
+    return t ? Math.round(((this.daysCode05() + this.daysAgreed()) / t) * 100) : 0;
   });
   private readonly dailyStats = computed<DailyStat[]>(() => this.computeDaily());
   readonly totalCreated = computed(() => this.dailyStats().reduce((s, d) => s + d.created, 0));
@@ -199,7 +231,7 @@ export class BrosReportModalComponent implements OnInit {
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      this.rows.set(await this.api.filter(this.start(), this.end(), this.terminal()));
+      this.rows.set(await this.api.report(this.start(), this.end(), this.terminal()));
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
       this.rows.set([]);
@@ -224,17 +256,8 @@ export class BrosReportModalComponent implements OnInit {
     }
   }
 
-  rowBg(r: BrosRecord): string | null { return this.termColor()[r.gruzpol_s] ?? null; }
+  rowBg(r: BrosReportRow): string | null { return this.termColor()[r.gruzpol_s] ?? null; }
   codeDesc(code: string): string { return this.codesMap()[code] || 'Код не найден в справочнике'; }
-
-  /** Суток простоя: дата броса → фактический подъём или сегодня (в начатых сутках). */
-  days(r: BrosRecord): number {
-    const from = dayNum(r.date_br);
-    if (from === null) return 0;
-    const to = r.date_pod_fact ? dayNum(r.date_pod_fact) : dayNum(todayMsk());
-    if (to === null) return 0;
-    return Math.max(0, to - from);
-  }
 
   private computeDaily(): DailyStat[] {
     const s = dayNum(this.start()), e = dayNum(this.end());
@@ -265,8 +288,10 @@ export class BrosReportModalComponent implements OnInit {
       const data = this.rows().map((r) => ({
         'Индекс': r.index_1, 'Станция': r.station_br, 'Дорога': r.doroga_br,
         'Дата броса': this.fmtDate(r.date_br), 'Дата подъёма': r.date_pod_fact ? this.fmtDate(r.date_pod_fact) : '',
-        'Код': r.reason, 'Суток': this.days(r), 'Вагонов': r.vagon_count,
-        'Состав': r.sostav, 'История планов': r.plan_history,
+        'Код': r.reason, 'Суток': r.days_total,
+        'из них к.05': r.days_code05, '01 согл.': r.days_code01_agreed,
+        '01 несогл.': r.days_code01_notagreed, 'прочие': r.days_other,
+        'Вагонов': r.vagon_count, 'Состав': r.sostav, 'История планов': r.plan_history,
       }));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Брошенные');
 
@@ -275,6 +300,16 @@ export class BrosReportModalComponent implements OnInit {
       }));
       daily.push({ 'Дата': 'ИТОГО', 'Наличие': this.totalDays(), 'Брошено': this.totalCreated(), 'Поднято': this.totalLifted() });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(daily), 'Динамика по дням');
+
+      const analysis = [
+        { 'Показатель': 'Всего поездо-суток', 'Значение': this.totalDays() },
+        { 'Показатель': 'Код 05 (заявка)', 'Значение': this.daysCode05() },
+        { 'Показатель': 'Код 01 согласованный (письмо)', 'Значение': this.daysAgreed() },
+        { 'Показатель': 'Код 01 несогласованный (РЖД)', 'Значение': this.daysNotAgreed() },
+        { 'Показатель': 'Прочие / без журнала', 'Значение': this.daysOther() },
+        { 'Показатель': 'Согласованный простой, %', 'Значение': this.protectedPct() },
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(analysis), 'Анализ причин');
 
       const label = this.terminal() || 'все';
       XLSX.writeFile(wb, `Брошенные_${label}_${this.start()}—${this.end()}.xlsx`);

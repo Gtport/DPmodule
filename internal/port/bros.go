@@ -42,6 +42,8 @@ type BrosJournalRepository interface {
 	Upsert(ctx context.Context, e domain.BrosJournalEntry) (int64, error)
 	// ByBrosID — вся история записей броска, новые первыми.
 	ByBrosID(ctx context.Context, brosID string) ([]domain.BrosJournalEntry, error)
+	// ByBrosIDs — записи для набора бросков (отчёт), упорядочены bros_id, date ASC.
+	ByBrosIDs(ctx context.Context, brosIDs []string) ([]domain.BrosJournalEntry, error)
 	// Latest — последняя запись броска (nil, nil — записей нет).
 	Latest(ctx context.Context, brosID string) (*domain.BrosJournalEntry, error)
 }

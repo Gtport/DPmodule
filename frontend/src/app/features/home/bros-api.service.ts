@@ -27,6 +27,15 @@ export interface BrosRecord {
   vagon_count: number;
 }
 
+/** Строка отчёта: бросок + разбивка суток простоя по типам причин. */
+export interface BrosReportRow extends BrosRecord {
+  days_total: number;
+  days_code05: number;          // платное размещение (заявка)
+  days_code01_agreed: number;   // согласованный простой (письмо)
+  days_code01_notagreed: number; // несогласованный (ответственность РЖД)
+  days_other: number;
+}
+
 /** Код бросания (классификатор РЖД). */
 export interface BrosReasonCode {
   code: string;
@@ -82,6 +91,16 @@ export class BrosApiService {
     if (gruzpol) params['gruzpol_s'] = gruzpol;
     const r = await firstValueFrom(
       this.http.get<{ records: BrosRecord[] }>(`${this.base}/filter`, { params }),
+    );
+    return r.records ?? [];
+  }
+
+  /** Отчёт за период с разбивкой суток по кодам (агрегация журнала на бэке). */
+  async report(start: string, end: string, gruzpol = ''): Promise<BrosReportRow[]> {
+    const params: Record<string, string> = { start_date: start, end_date: end };
+    if (gruzpol) params['gruzpol_s'] = gruzpol;
+    const r = await firstValueFrom(
+      this.http.get<{ records: BrosReportRow[] }>(`${this.base}/report`, { params }),
     );
     return r.records ?? [];
   }

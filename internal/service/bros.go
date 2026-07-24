@@ -282,13 +282,15 @@ func brosSameDate(a, b *domain.LocalTime) bool {
 
 // ── Чтение снимка брошенных (API) ───────────────────────────────────────────
 
-// BrosService — чтение снимка брошенных: активные, история, фильтр отчёта, поиск.
+// BrosService — чтение снимка брошенных: активные, история, фильтр отчёта, поиск,
+// отчёт с разбивкой суток по кодам (агрегация журнала).
 type BrosService struct {
-	repo port.BrosRepository
+	repo    port.BrosRepository
+	journal port.BrosJournalRepository
 }
 
-func NewBrosService(repo port.BrosRepository) *BrosService {
-	return &BrosService{repo: repo}
+func NewBrosService(repo port.BrosRepository, journal port.BrosJournalRepository) *BrosService {
+	return &BrosService{repo: repo, journal: journal}
 }
 
 func (s *BrosService) Active(ctx context.Context) ([]domain.Bros, error) {

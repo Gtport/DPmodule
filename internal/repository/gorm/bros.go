@@ -288,6 +288,22 @@ func (r *BrosJournalRepository) ByBrosID(ctx context.Context, brosID string) ([]
 	return out, nil
 }
 
+func (r *BrosJournalRepository) ByBrosIDs(ctx context.Context, brosIDs []string) ([]domain.BrosJournalEntry, error) {
+	if len(brosIDs) == 0 {
+		return nil, nil
+	}
+	var ms []brosJournalModel
+	if err := r.db.WithContext(ctx).Where("bros_id IN ?", brosIDs).
+		Order("bros_id, date").Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.BrosJournalEntry, len(ms))
+	for i, m := range ms {
+		out[i] = toBrosJournalDomain(m)
+	}
+	return out, nil
+}
+
 func (r *BrosJournalRepository) Latest(ctx context.Context, brosID string) (*domain.BrosJournalEntry, error) {
 	var m brosJournalModel
 	err := r.db.WithContext(ctx).Where("bros_id = ?", brosID).

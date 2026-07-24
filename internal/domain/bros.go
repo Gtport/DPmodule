@@ -51,6 +51,19 @@ type BrosFilter struct {
 	Offset    int
 }
 
+// BrosReportRow — строка отчёта за период: бросок + разбивка суток простоя по
+// типам причин (по журналу, с логикой «последней известной записи на день»).
+// DaysCode05 — платное размещение; DaysCode01Agreed/NotAgreed — согласованный/
+// несогласованный простой (кто отвечает); DaysOther — прочие/без журнала.
+type BrosReportRow struct {
+	Bros
+	DaysTotal           int `json:"days_total"`
+	DaysCode05          int `json:"days_code05"`
+	DaysCode01Agreed    int `json:"days_code01_agreed"`
+	DaysCode01NotAgreed int `json:"days_code01_notagreed"`
+	DaysOther           int `json:"days_other"`
+}
+
 // BrosJournalEntry — запись журнала броска: фиксация состояния поезда оператором
 // на конкретные сутки. Одна запись в сутки на поезд (UPSERT по bros_id+date),
 // история накапливается. ZayavkaNomer/ZayavkaDate/DatePod/ReasonText заполняются

@@ -111,7 +111,7 @@ func Build(
 	// цепляется к конвейеру ниже (proc.SetBros). Правки/журнал — следующая ветка.
 	if brosRepo != nil {
 		brosJournal := service.NewBrosJournalService(brosJournalRepo, brosRepo, brosReasonRepo)
-		handler.NewBrosOpsHandler(service.NewBrosService(brosRepo), brosJournal).RegisterRoutes(api)
+		handler.NewBrosOpsHandler(service.NewBrosService(brosRepo, brosJournalRepo), brosJournal).RegisterRoutes(api)
 	}
 
 	// Экран «Прогнозы»: сводка поездов с прогнозными полями Stage 3/4 из RAM-снимка.

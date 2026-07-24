@@ -26,6 +26,9 @@ func (f *fakeJournalRepo) Upsert(_ context.Context, e domain.BrosJournalEntry) (
 func (f *fakeJournalRepo) ByBrosID(context.Context, string) ([]domain.BrosJournalEntry, error) {
 	return nil, nil
 }
+func (f *fakeJournalRepo) ByBrosIDs(context.Context, []string) ([]domain.BrosJournalEntry, error) {
+	return nil, nil
+}
 func (f *fakeJournalRepo) Latest(_ context.Context, id string) (*domain.BrosJournalEntry, error) {
 	if f.latest == nil {
 		return nil, nil
