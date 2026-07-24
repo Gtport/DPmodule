@@ -32,6 +32,9 @@ type BrosRepository interface {
 	GetByID(ctx context.Context, id string) (*domain.Bros, error)
 	// SearchByIndex — поиск по подстроке index_0/index_1 (активные и завершённые).
 	SearchByIndex(ctx context.Context, q string) ([]domain.Bros, error)
+	// PurgeCompletedOlderThan удаляет завершённые (status_br=false) броски,
+	// поднятые (updated_at) раньше cutoff. Возвращает число удалённых.
+	PurgeCompletedOlderThan(ctx context.Context, cutoff domain.LocalTime) (int, error)
 }
 
 // BrosJournalRepository — журнал бросков (таблица bros_journal). Одна запись в

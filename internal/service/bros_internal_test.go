@@ -50,6 +50,9 @@ func (f *fakeBrosRepo) GetByID(_ context.Context, id string) (*domain.Bros, erro
 func (f *fakeBrosRepo) SearchByIndex(context.Context, string) ([]domain.Bros, error) {
 	return nil, nil
 }
+func (f *fakeBrosRepo) PurgeCompletedOlderThan(context.Context, domain.LocalTime) (int, error) {
+	return 0, nil
+}
 
 // brosVag — вагон статуса `status` с ключом `key` для тестов.
 func brosVag(vagon, key, index, station, statNach, cargo string, status int) domain.Dislocation {

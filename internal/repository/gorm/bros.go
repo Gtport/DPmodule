@@ -208,6 +208,17 @@ func (r *BrosRepository) SearchByIndex(ctx context.Context, q string) ([]domain.
 	return brosDomainSlice(ms), nil
 }
 
+// PurgeCompletedOlderThan удаляет завершённые броски старше cutoff (по updated_at).
+func (r *BrosRepository) PurgeCompletedOlderThan(ctx context.Context, cutoff domain.LocalTime) (int, error) {
+	res := r.db.WithContext(ctx).
+		Where("status_br = false AND updated_at < ?", cutoff).
+		Delete(&brosModel{})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return int(res.RowsAffected), nil
+}
+
 // ── Журнал бросков (таблица bros_journal) ───────────────────────────────────
 
 // BrosJournalRepository реализует port.BrosJournalRepository.

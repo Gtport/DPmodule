@@ -139,6 +139,7 @@ type LKProcessResult struct {
 	BrosNew          int            `json:"bros_new"`           // новых брошенных поездов (статус 5)
 	BrosStopped      int            `json:"bros_stopped"`       // поднятых брошенных
 	BrosActive       int            `json:"bros_active"`        // активных брошенных после пересбора
+	BrosPurged       int            `json:"bros_purged"`        // автоочистка: удалено завершённых бросков старше TTL
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -335,6 +336,16 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// Автоочистка завершённых бросков старше порога (status.bros_cleanup_days; 0 →
+	// выключена). ⚠️ Ограничивает глубину отчёта — удалённые броски в него не попадут.
+	var brosPurged int
+	if p.bros != nil && sp.BrosCleanupDays > 0 {
+		cutoff := domain.LocalTime(time.Time(clock.Now()).Add(-time.Duration(sp.BrosCleanupDays) * 24 * time.Hour))
+		if brosPurged, err = p.bros.PurgeCompletedOlderThan(ctx, cutoff); err != nil {
+			return LKProcessResult{}, fmt.Errorf("автоочистка bros: %w", err)
+		}
+	}
+
 	// Заявки на историю продвижения (601): прибытие / пропажа / выбытие-10 —
 	// только постановка в очередь (HTTP — у фонового воркера). ДО подмены
 	// снимка. Отказ очереди пересборку не валит: трейл — вторичные данные.
@@ -395,6 +406,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		HistoryInserted: hist.Inserted, HistoryUpdated: hist.Updated,
 		UnloadOnLeave: unloadLeft, VagonOpsQueued: opQueued,
 		BrosNew: brosStats.New, BrosStopped: brosStats.Stopped, BrosActive: brosStats.Active,
+		BrosPurged: brosPurged,
 	}, nil
 }
 
