@@ -6,6 +6,8 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { MissingApiService, MissingVagon, Status6Vagon } from '../missing/missing-api.service';
 import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.component';
 import { CargoWorkModalComponent } from './cargo-work-modal.component';
+import { BrosModalComponent } from './bros-modal.component';
+import { BrosApiService } from './bros-api.service';
 
 /**
  * Карточка «Информация» рядом со «Статусом системы» (правая половина верхней
@@ -16,7 +18,7 @@ import { CargoWorkModalComponent } from './cargo-work-modal.component';
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Информация</b></div>
@@ -35,6 +37,13 @@ import { CargoWorkModalComponent } from './cargo-work-modal.component';
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
+      <button class="row" type="button" (click)="openBros()"
+              nz-tooltip nzTooltipTitle="Брошенные поезда (статус 5): журнал и коды бросания — открыть">
+        <span class="lbl">Брошенные</span>
+        <span class="cnt" [class.warn]="brosCount() > 0">{{ brosCount() }}</span>
+        <span nz-icon nzType="right" class="go"></span>
+      </button>
+
       <button class="row" type="button" (click)="openCargoWork()"
               nz-tooltip nzTooltipTitle="Суточный учёт выгрузки и погрузки по терминалам — открыть">
         <span class="lbl">Грузовая работа</span>
@@ -49,6 +58,9 @@ import { CargoWorkModalComponent } from './cargo-work-modal.component';
     }
     @if (showCargoWork()) {
       <app-cargo-work-modal (closed)="showCargoWork.set(false)" />
+    }
+    @if (showBros()) {
+      <app-bros-modal (closed)="showBros.set(false)" />
     }
     @if (showDonors()) {
       <app-vagon-list-modal title="Перегруз — доноры (статус 6)" sinceLabel="Донор с"
@@ -76,13 +88,16 @@ import { CargoWorkModalComponent } from './cargo-work-modal.component';
 })
 export class InfoCardComponent implements OnInit, OnDestroy {
   private readonly api = inject(MissingApiService);
+  private readonly bros = inject(BrosApiService);
   private readonly msg = inject(NzMessageService);
 
   readonly missing = signal<MissingVagon[]>([]);
   readonly donors = signal<Status6Vagon[]>([]);
+  readonly brosCount = signal(0);
   readonly showMissing = signal(false);
   readonly showDonors = signal(false);
   readonly showCargoWork = signal(false);
+  readonly showBros = signal(false);
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -98,9 +113,12 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   /** Списки короткие (TTL-очистка и снятие доноров) — тянем целиком, счётчик = длина. */
   async load(initial = false): Promise<void> {
     try {
-      const [missing, donors] = await Promise.all([this.api.getMissing(), this.api.getStatus6()]);
+      const [missing, donors, bros] = await Promise.all([
+        this.api.getMissing(), this.api.getStatus6(), this.bros.getActive(),
+      ]);
       this.missing.set(missing ?? []);
       this.donors.set(donors ?? []);
+      this.brosCount.set(bros?.length ?? 0);
     } catch (err) {
       if (initial) this.msg.error(apiErrorMessage(err));
     }
@@ -109,6 +127,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   openMissing(): void { this.showMissing.set(true); }
   openDonors(): void { this.showDonors.set(true); }
   openCargoWork(): void { this.showCargoWork.set(true); }
+  openBros(): void { this.showBros.set(true); }
 
   /** Пропавшие → общая форма строки таблицы. */
   missingRows(): VagonListRow[] {

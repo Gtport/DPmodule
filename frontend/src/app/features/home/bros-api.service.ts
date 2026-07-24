@@ -1,0 +1,114 @@
+import { HttpClient } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
+import { environment } from '../../../environments/environment';
+
+/** Брошенный поезд (снимок bros). Даты — «YYYY-MM-DDTHH:MM:SS» без TZ. */
+export interface BrosRecord {
+  id: string;
+  id_index: string;
+  index_0: string;
+  index_1: string;
+  station_br: string;
+  doroga_br: string;
+  date_br: string | null;
+  gruzpol_s: string;
+  date_pod: string | null;
+  date_pod_fact: string | null;
+  prog_0: string | null;
+  prog_1: string | null;
+  to_go: number | null;
+  plan: string | null;
+  plan_history: string;
+  status_br: boolean;
+  reason: string;
+  comment: string;
+  sostav: string;
+  vagon_count: number;
+}
+
+/** Код бросания (классификатор РЖД). */
+export interface BrosReasonCode {
+  code: string;
+  description: string;
+}
+
+/** Запись журнала броска. */
+export interface BrosJournalEntry {
+  id: number;
+  bros_id: string;
+  date: string | null;
+  reason: string;
+  comment: string;
+  zayavka_nomer: string | null;
+  zayavka_date: string | null;
+  date_pod: string | null;
+  reason_text: string | null;
+  is_agreed: boolean | null;
+  plan_pod: string | null;
+  created_at: string | null;
+  created_by: string;
+}
+
+/** Тело создания записи журнала (даты строками YYYY-MM-DD). */
+export interface BrosJournalCreate {
+  bros_id: string;
+  reason: string;
+  comment?: string;
+  zayavka_nomer?: string;
+  zayavka_date?: string;
+  date_pod?: string;
+  reason_text?: string;
+  is_agreed?: boolean | null;
+  plan_pod?: string;
+}
+
+@Injectable({ providedIn: 'root' })
+export class BrosApiService {
+  private readonly http = inject(HttpClient);
+  private readonly base = `${environment.apiBaseUrl}/v1/dislocation/bros`;
+
+  /** Активные броски (status_br=true), новые первыми. */
+  async getActive(): Promise<BrosRecord[]> {
+    const r = await firstValueFrom(
+      this.http.get<{ records: BrosRecord[] }>(`${this.base}/active`),
+    );
+    return r.records ?? [];
+  }
+
+  /** Справочник кодов бросания. */
+  async getReasonCodes(): Promise<BrosReasonCode[]> {
+    const r = await firstValueFrom(
+      this.http.get<{ codes: BrosReasonCode[] }>(`${this.base}/reason-codes`),
+    );
+    return r.codes ?? [];
+  }
+
+  /** История журнала броска (новые первыми). */
+  async getJournal(brosId: string): Promise<BrosJournalEntry[]> {
+    const r = await firstValueFrom(
+      this.http.get<{ entries: BrosJournalEntry[] }>(`${this.base}/journal`, {
+        params: { bros_id: brosId },
+      }),
+    );
+    return r.entries ?? [];
+  }
+
+  /** Создать (или перезаписать за сегодня) запись журнала. */
+  async createJournal(body: BrosJournalCreate): Promise<BrosJournalEntry> {
+    const r = await firstValueFrom(
+      this.http.post<{ entry: BrosJournalEntry }>(`${this.base}/journal`, body),
+    );
+    return r.entry;
+  }
+
+  /** Массовая фиксация активных на сегодня (перед рассылкой в MAX). */
+  bulkSave(): Promise<{ result: { total: number; saved: number; failed: number } }> {
+    return firstValueFrom(
+      this.http.post<{ result: { total: number; saved: number; failed: number } }>(
+        `${this.base}/journal/bulk-save`,
+        {},
+      ),
+    );
+  }
+}
