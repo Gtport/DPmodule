@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/service"
 )
@@ -46,11 +47,12 @@ func (h *brosHandler) reasonCodes(c *gin.Context) {
 // Чтение всем авторизованным. Правки/журнал — следующая ветка. Требует БД
 // (репозиторий bros) — монтируется только когда снимок доступен.
 type brosOpsHandler struct {
-	svc *service.BrosService
+	svc     *service.BrosService
+	journal *service.BrosJournalService
 }
 
-func NewBrosOpsHandler(svc *service.BrosService) *brosOpsHandler {
-	return &brosOpsHandler{svc: svc}
+func NewBrosOpsHandler(svc *service.BrosService, journal *service.BrosJournalService) *brosOpsHandler {
+	return &brosOpsHandler{svc: svc, journal: journal}
 }
 
 func (h *brosOpsHandler) RegisterRoutes(g *gin.RouterGroup) {
@@ -58,6 +60,11 @@ func (h *brosOpsHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/bros/history", h.history)
 	g.GET("/dislocation/bros/filter", h.filter)
 	g.GET("/dislocation/bros/search", h.search)
+	// Журнал: bros_id в теле (POST) / query (GET). Отдельным сегментом :id не
+	// делаем — gin не допускает static+param на одном уровне (есть /active и др.).
+	g.POST("/dislocation/bros/journal", h.journalCreate)
+	g.GET("/dislocation/bros/journal", h.journalHistory)
+	g.POST("/dislocation/bros/journal/bulk-save", h.journalBulkSave)
 }
 
 // active godoc
@@ -164,6 +171,85 @@ func (h *brosOpsHandler) search(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"records": records, "count": len(records)})
+}
+
+// brosJournalReq — тело запроса создания записи журнала.
+type brosJournalReq struct {
+	BrosID       string `json:"bros_id"`
+	Reason       string `json:"reason"`
+	Comment      string `json:"comment"`
+	ZayavkaNomer string `json:"zayavka_nomer"`
+	ZayavkaDate  string `json:"zayavka_date"`
+	DatePod      string `json:"date_pod"`
+	ReasonText   string `json:"reason_text"`
+	IsAgreed     *bool  `json:"is_agreed"`
+	PlanPod      string `json:"plan_pod"`
+}
+
+// journalCreate godoc
+// @Summary  Запись в журнал броска (фиксация состояния оператором)
+// @Tags     bros
+// @Security BearerAuth
+// @Success  200 {object} object
+// @Failure  400 {object} object
+// @Router   /api/v1/dislocation/bros/journal [post]
+func (h *brosOpsHandler) journalCreate(c *gin.Context) {
+	var req brosJournalReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	username := "unknown"
+	if cl := auth.ClaimsFromContext(c.Request.Context()); cl != nil && cl.Username != "" {
+		username = cl.Username
+	}
+	entry, err := h.journal.Create(c.Request.Context(), service.BrosJournalCreate{
+		BrosID: req.BrosID, Reason: req.Reason, Comment: req.Comment,
+		ZayavkaNomer: req.ZayavkaNomer, ZayavkaDate: req.ZayavkaDate,
+		DatePod: req.DatePod, ReasonText: req.ReasonText,
+		IsAgreed: req.IsAgreed, PlanPod: req.PlanPod, CreatedBy: username,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"entry": entry})
+}
+
+// journalHistory godoc
+// @Summary  История журнала броска
+// @Tags     bros
+// @Security BearerAuth
+// @Success  200 {object} object
+// @Failure  400 {object} object
+// @Router   /api/v1/dislocation/bros/journal [get]
+func (h *brosOpsHandler) journalHistory(c *gin.Context) {
+	brosID := strings.TrimSpace(c.Query("bros_id"))
+	if brosID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bros_id обязателен"})
+		return
+	}
+	entries, err := h.journal.History(c.Request.Context(), brosID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"entries": entries, "count": len(entries)})
+}
+
+// journalBulkSave godoc
+// @Summary  Массовая фиксация журнала за сегодня (перед рассылкой в MAX)
+// @Tags     bros
+// @Security BearerAuth
+// @Success  200 {object} object
+// @Router   /api/v1/dislocation/bros/journal/bulk-save [post]
+func (h *brosOpsHandler) journalBulkSave(c *gin.Context) {
+	res, err := h.journal.BulkSave(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"result": res})
 }
 
 // atoiDefault — целое из строки или значение по умолчанию (при пустом/ошибке).

@@ -38,7 +38,15 @@ func (f *fakeBrosRepo) History(context.Context, int, int) ([]domain.Bros, int, e
 func (f *fakeBrosRepo) Filter(context.Context, domain.BrosFilter) ([]domain.Bros, int, error) {
 	return nil, 0, nil
 }
-func (f *fakeBrosRepo) GetByID(context.Context, string) (*domain.Bros, error) { return nil, nil }
+func (f *fakeBrosRepo) GetByID(_ context.Context, id string) (*domain.Bros, error) {
+	for i := range f.active {
+		if f.active[i].ID == id {
+			b := f.active[i]
+			return &b, nil
+		}
+	}
+	return nil, nil
+}
 func (f *fakeBrosRepo) SearchByIndex(context.Context, string) ([]domain.Bros, error) {
 	return nil, nil
 }

@@ -50,3 +50,24 @@ type BrosFilter struct {
 	Limit     int
 	Offset    int
 }
+
+// BrosJournalEntry — запись журнала броска: фиксация состояния поезда оператором
+// на конкретные сутки. Одна запись в сутки на поезд (UPSERT по bros_id+date),
+// история накапливается. ZayavkaNomer/ZayavkaDate/DatePod/ReasonText заполняются
+// для кода 05 и согласованного кода 01; IsAgreed — только для кода 01. Даты — без
+// времени; CreatedAt — timestamp. Всё время Московское naive.
+type BrosJournalEntry struct {
+	ID           int64      `json:"id"`
+	BrosID       string     `json:"bros_id"`
+	Date         *LocalTime `json:"date"`
+	Reason       string     `json:"reason"`
+	Comment      string     `json:"comment"`
+	ZayavkaNomer *string    `json:"zayavka_nomer"`
+	ZayavkaDate  *LocalTime `json:"zayavka_date"`
+	DatePod      *LocalTime `json:"date_pod"`
+	ReasonText   *string    `json:"reason_text"`
+	IsAgreed     *bool      `json:"is_agreed"`
+	PlanPod      *LocalTime `json:"plan_pod"`
+	CreatedAt    *LocalTime `json:"created_at"`
+	CreatedBy    string     `json:"created_by"`
+}

@@ -207,3 +207,97 @@ func (r *BrosRepository) SearchByIndex(ctx context.Context, q string) ([]domain.
 	}
 	return brosDomainSlice(ms), nil
 }
+
+// ── Журнал бросков (таблица bros_journal) ───────────────────────────────────
+
+// BrosJournalRepository реализует port.BrosJournalRepository.
+type BrosJournalRepository struct {
+	db *gorm.DB
+}
+
+func NewBrosJournalRepository(db *gorm.DB) *BrosJournalRepository {
+	return &BrosJournalRepository{db: db}
+}
+
+type brosJournalModel struct {
+	ID           int64             `gorm:"column:id;primaryKey"`
+	BrosID       string            `gorm:"column:bros_id"`
+	Date         *domain.LocalTime `gorm:"column:date"`
+	Reason       string            `gorm:"column:reason"`
+	Comment      string            `gorm:"column:comment"`
+	ZayavkaNomer *string           `gorm:"column:zayavka_nomer"`
+	ZayavkaDate  *domain.LocalTime `gorm:"column:zayavka_date"`
+	DatePod      *domain.LocalTime `gorm:"column:date_pod"`
+	ReasonText   *string           `gorm:"column:reason_text"`
+	IsAgreed     *bool             `gorm:"column:is_agreed"`
+	PlanPod      *domain.LocalTime `gorm:"column:plan_pod"`
+	CreatedAt    *domain.LocalTime `gorm:"column:created_at"`
+	CreatedBy    string            `gorm:"column:created_by"`
+}
+
+func (brosJournalModel) TableName() string { return "bros_journal" }
+
+func toBrosJournalDomain(m brosJournalModel) domain.BrosJournalEntry {
+	return domain.BrosJournalEntry{
+		ID: m.ID, BrosID: m.BrosID, Date: m.Date, Reason: m.Reason, Comment: m.Comment,
+		ZayavkaNomer: m.ZayavkaNomer, ZayavkaDate: m.ZayavkaDate, DatePod: m.DatePod,
+		ReasonText: m.ReasonText, IsAgreed: m.IsAgreed, PlanPod: m.PlanPod,
+		CreatedAt: m.CreatedAt, CreatedBy: m.CreatedBy,
+	}
+}
+
+// Upsert — INSERT записи за её сутки или перезапись существующей (bros_id, date).
+// Сырой SQL с RETURNING id (канон для атомарного upsert).
+func (r *BrosJournalRepository) Upsert(ctx context.Context, e domain.BrosJournalEntry) (int64, error) {
+	var id int64
+	err := r.db.WithContext(ctx).Raw(`
+		INSERT INTO bros_journal (
+			bros_id, date, reason, comment,
+			zayavka_nomer, zayavka_date, date_pod, reason_text,
+			is_agreed, plan_pod, created_at, created_by
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (bros_id, date) DO UPDATE SET
+			reason        = EXCLUDED.reason,
+			comment       = EXCLUDED.comment,
+			zayavka_nomer = EXCLUDED.zayavka_nomer,
+			zayavka_date  = EXCLUDED.zayavka_date,
+			date_pod      = EXCLUDED.date_pod,
+			reason_text   = EXCLUDED.reason_text,
+			is_agreed     = EXCLUDED.is_agreed,
+			plan_pod      = EXCLUDED.plan_pod,
+			created_at    = EXCLUDED.created_at,
+			created_by    = EXCLUDED.created_by
+		RETURNING id`,
+		e.BrosID, e.Date, e.Reason, e.Comment,
+		e.ZayavkaNomer, e.ZayavkaDate, e.DatePod, e.ReasonText,
+		e.IsAgreed, e.PlanPod, e.CreatedAt, e.CreatedBy,
+	).Scan(&id).Error
+	return id, err
+}
+
+func (r *BrosJournalRepository) ByBrosID(ctx context.Context, brosID string) ([]domain.BrosJournalEntry, error) {
+	var ms []brosJournalModel
+	if err := r.db.WithContext(ctx).Where("bros_id = ?", brosID).
+		Order("date DESC, created_at DESC").Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.BrosJournalEntry, len(ms))
+	for i, m := range ms {
+		out[i] = toBrosJournalDomain(m)
+	}
+	return out, nil
+}
+
+func (r *BrosJournalRepository) Latest(ctx context.Context, brosID string) (*domain.BrosJournalEntry, error) {
+	var m brosJournalModel
+	err := r.db.WithContext(ctx).Where("bros_id = ?", brosID).
+		Order("date DESC, created_at DESC").First(&m).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	e := toBrosJournalDomain(m)
+	return &e, nil
+}

@@ -58,7 +58,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `journal.go` | Типы единого журнала событий: `JournalEvent`, типы событий (`disl_update`/`disl_rejected`/`plan_upload`/`dict_reload`) и триггеры (`manual`/`scheduled`/`actualization`/`plan`). |
 | `cargowork.go` | Типы «Грузовой работы»: `PortCargoLine` (линия учёта терминала — колонка выгрузки или строка погрузки, со способностью ваг/сут и меткой колонки плана), `CargoWorkRow` (суточный учётный лист линии: авто-слой / ручной слой / расчётные поля + метод `Recalc` — формулы остатка, перепоказа и эффективности в одном месте), `CargoWorkLoadRow` (строка погрузки). |
 | `admin_tables.go` | Типы админ-редактора: `AdminTable` (запись реестра `list_tables`), `AdminColumn` (колонка с русской подписью/типом/признаками), `AdminRow`. |
-| `bros.go` | Типы подсистемы «Брошенные»: `BrosReasonCode` (строка справочника кодов бросания РЖД: код + расшифровка), `Bros` (снимок брошенного поезда: агрегат вагонов статуса 5, жизненный цикл active→поднят), `BrosFilter` (фильтр отчёта: терминалы/период/статус). Журнал — следующая ветка. |
+| `bros.go` | Типы подсистемы «Брошенные»: `BrosReasonCode` (строка справочника кодов бросания РЖД: код + расшифровка), `Bros` (снимок брошенного поезда: агрегат вагонов статуса 5, жизненный цикл active→поднят), `BrosFilter` (фильтр отчёта: терминалы/период/статус), `BrosJournalEntry` (запись журнала: фиксация состояния оператором на сутки, коды 05/01 с реквизитами заявки/письма). |
 | `errors.go` | Общие sentinel-ошибки домена (`ErrNotFound`/`ErrBadRequest`/`ErrForbidden`/`ErrConflict`) для маппинга в HTTP-коды. |
 
 ### `internal/port/` — интерфейсы (контракты хранилищ/интеграций)
@@ -76,7 +76,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `journal.go` | `JournalRepository`: append-запись событий, выборки по типам/диапазону. |
 | `cargowork.go` | `CargoWorkRepository`: справочник линий учёта (`Lines`), чтение/upsert суточных листов выгрузки и погрузки по естественному ключу (дата, терминал, линия), удаление суток. |
 | `admin_tables.go` | `AdminTablesRepository`: универсальный CRUD справочников по реестру `list_tables` (админ-редактор). |
-| `bros.go` | `BrosReasonCodesRepository`: чтение справочника кодов бросания (`bros_reason_codes`). `BrosRepository`: снимок брошенных (`bros`) — активные, история, фильтр отчёта, поиск по индексу; Insert/Update (динамический) для reconcile-слоя. |
+| `bros.go` | `BrosReasonCodesRepository`: чтение справочника кодов бросания (`bros_reason_codes`). `BrosRepository`: снимок брошенных (`bros`) — активные, история, фильтр отчёта, поиск по индексу; Insert/Update (динамический) для reconcile-слоя. `BrosJournalRepository`: журнал (`bros_journal`) — Upsert (одна запись в сутки на поезд), история, последняя запись. |
 | `external.go` | Внешние интеграции: `SecretSource` (секреты — env сейчас, Vault позже), `ASUClient` (АСУ, pull/push) и `ReferenceClient` (памятки: по номеру / инкремент). |
 | `max.go` | `MessengerSender` — исходящий канал рассылки в мессенджер MAX: `Ping` (health), `SendText`, `SendImage`, `SendFile`. Реализация — `adapter/max`. Плюс `MaxChatRepository` — чтение справочника чатов (`Chats`) и маршрутов рассылки форм (`Routes` по форме+терминалу). |
 
@@ -123,6 +123,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `max_chats.go` | `MaxChatService` — справочник чатов MAX и разрешение маршрутов рассылки форм: `Chats` (список для фронта, без `chat_id`), `ResolveChats(report, terminal)` — активные чаты формы в порядке маршрутов, с дедупом и пропуском выключенных/без-id. Отделяет «куда слать» от транспорта. |
 | `bros_reason_codes.go` | `BrosReasonCodes` — справочник кодов бросания (чтение). Расшифровки нужны журналу бросков и отчёту — экраны следующих веток. |
 | `bros.go` | Снимок брошенных. `applyBros` — reconcile статуса 5 после Stage 4 (перенос gtport `dislocation_status5` без stateful-очереди): вагоны статуса 5 группируются по `id_status5` → новый ключ INSERT, активный UPDATE (состав/план/индекс), исчезнувший из статуса 5 STOP (поднят; новое состояние — из свежего батча по вагонам прежнего снимка). `BrosService` — чтение (активные/история/фильтр/поиск). |
+| `bros_journal.go` | `BrosJournalService` — журнал бросков: `Create` (валидация кодов — 05 требует реквизиты заявки, 01 требует `is_agreed` + письмо для согласованного; авто-`reason_text` из справочника; UPSERT одна-в-сутки; синхронизация `reason`/`date_pod` в снимок `bros`), `History`, `BulkSave` (фиксация всех активных на сегодня перед рассылкой в MAX: копия последней записи или первая из полей `bros`). |
 | `plan_form.go` | `PlanFormService` — форма «План подвода» (модалка «Утренняя СМС» в «Справках») (перенос gtport `SmsPlan`): по терминалу карточка «ЖД сутки» — «Вчера» (факт учётного листа) + «Сегодня» (прогноз движком `calcCargoWorkDay` над поездами суток) + поезда по ЖД-датам. **Поезда**: прибывшие («приб») из `vagon_history` (по `date_prib_d`, вчера+сегодня) + плановые из снимка (`ActualCache`), разложенные по ПЛАНОВОЙ дате `PlanJd→RaschJd` (сегодня+вперёд). Строки — дословный порт gtport (`trainDisplay`/`subDisplay`/`indexPart`): середина индекса (байты 6–8, для дефисного 4-3-4 и с.ф.), «приб», подгруппы «(N) середина SMS от терминал» (SMS = `sms_1`, не станция; «от» когда `gruzpol_s ≠ naznach`). Прогноз «сегодня» — над поездами сегодня (приб + план). Golden-тесты формата по скриншотам gtport. |
 | `max_broadcast.go` | `MaxBroadcastService` — рассылка готовых форм в чаты MAX: `SendText`/`SendImage(report, terminal, ...)` разрешают адресатов (`ResolveChats`) и шлют через `MessengerSender` общим циклом с паузой между чатами; результат по чатам (`Sent`/`Failed`). Текст/картинку НЕ строит — как в gtport, форму собирает фронт, сюда приходит готовое (тонкий релей). |
 | `plan_process.go` | `PlanProcessor`: приём файла плана, матч ниток с вагонами, простановка планового прибытия; чтение планов для фронта. |
@@ -159,7 +160,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `vagonop.go` | Трейл продвижения `vagon_operation` (транзакционный `ReplaceForTrip`: DELETE+батч-INSERT, дедуп по времени операции) и очередь `vagon_op_request` (upsert `ON CONFLICT (trip_key)` со сбросом попыток, выборка `priority DESC, created_at`, снятие/учёт неудач). Сырой SQL по канону. |
 | `cargowork.go` | `CargoWorkRepository`: справочник линий и суточные листы «Грузовой работы». Upsert по естественному ключу (дата, терминал, линия) — пересчёт и правка попадают в одну строку; `created_at` при конфликте не перезаписывается. Удаление суток — выгрузка и погрузка одной транзакцией. |
 | `admin_tables.go` | Универсальный CRUD админ-редактора: имена таблиц только из реестра `list_tables`, колонки и русские подписи из `information_schema`/`pg_description`, идентификаторы квотируются, значения — параметрами (канон динамического SQL). |
-| `bros.go` | `BrosReasonCodesRepository`: чтение справочника кодов бросания (`bros_reason_codes`), по коду. `BrosRepository`: снимок брошенных (`bros`) — Active/History/Filter/GetByID/SearchByIndex (билдер) + Insert/Update (динамический UPDATE только затронутых колонок) для reconcile. |
+| `bros.go` | `BrosReasonCodesRepository`: чтение справочника кодов бросания (`bros_reason_codes`), по коду. `BrosRepository`: снимок брошенных (`bros`) — Active/History/Filter/GetByID/SearchByIndex (билдер) + Insert/Update (динамический UPDATE только затронутых колонок) для reconcile. `BrosJournalRepository`: журнал (`bros_journal`) — Upsert (сырой SQL с `ON CONFLICT (bros_id,date)` + RETURNING id), ByBrosID, Latest. |
 | `max.go` | `MaxChatRepository`: чтение справочника чатов MAX (`max_chat`, по имени) и маршрутов рассылки форм (`max_route` по форме+терминалу, включённые, по порядку). Обе таблицы правятся в админ-редакторе. |
 
 ### `internal/parser/` — разбор входных файлов
@@ -186,7 +187,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 |---|---|
 | `lk_upload.go` | Приём ЛК: список staged-файлов + загрузка xlsx (шаг 1). |
 | `admin_tables.go` | `/admin/tables*` — универсальный CRUD справочников для страницы «Админ» (реестр `list_tables`; только роль administrator). |
-| `bros.go` | Брошенные, чтение всем авторизованным: `GET /dislocation/bros/reason-codes` (справочник кодов РЖД), `/active` (активные), `/history` (завершённые, пагинация), `/filter` (отчёт: терминалы/период/статус), `/search?q=` (по индексу, ≥3 символов). Reconcile статуса 5 (запись в `bros`) — в конвейере (`proc.SetBros`). Правки/журнал — следующая ветка. |
+| `bros.go` | Брошенные, всем авторизованным: `GET /dislocation/bros/reason-codes` (коды РЖД), `/active`, `/history` (пагинация), `/filter` (отчёт: терминалы/период/статус), `/search?q=` (по индексу, ≥3 символов). Журнал: `POST /bros/journal` (запись, `bros_id` в теле, `created_by` из JWT), `GET /bros/journal?bros_id=` (история), `POST /bros/journal/bulk-save` (фиксация всех активных перед рассылкой). Сегментом `:id` не делаем — gin не мешает static+param. Reconcile статуса 5 — в конвейере (`proc.SetBros`). |
 | `dict_reload.go` | `POST /dislocation/directories/reload` — «Обновить справочники»: перезагрузка словарей + пересчёт снимка. |
 | `lk_process.go` | Запуск шага 2 обработки ЛК (staged-файлы → снимок). |
 | `asu_pull.go` | `POST /dislocation/asu/pull` — ручной триггер автозагрузки АСУ-АСУ (по расписанию — внутренний крон-воркер, см. `internal/worker`). Рассогласование меток → 409, АСУ недоступна → 502. |
@@ -237,7 +238,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `pr/SKILL.md` | Задача → ветка от свежего `main` → проверки (`go build/test/vet`, `ng build`) → обновление `STRUCTURE.md` → diff на подтверждение → коммит с `Co-Authored-By` → пуш → PR. Запрет коммитов в `main` и штабелирования веток; порядок восстановления, если коммит всё же ушёл в `main`. |
 
 ### `migrations/` — SQL-миграции (golang-migrate, `cmd/migrate`)
-Пары `up`/`down` с последовательной нумерацией `000001–000045`: инициализация схемы
+Пары `up`/`down` с последовательной нумерацией `000001–000046`: инициализация схемы
 `dpport`, справочников и конфигурации, расширения портов, скоростные профили, пороги
 статусов, таблицы `status9`/`status6`, назначения, план подвода, словарь cargo,
 админ-редактор, поля переадресации и доверенного лица, поле `owner` («чей вагон»:
@@ -264,6 +265,10 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
   reconcile-слоем конвейера (`applyBros`) после Stage 4. Уход от gtport-очереди
   new/stop: снимок пересобирается целиком, поэтому reconcile против таблицы.
   Журнал (`bros_journal`) и экраны — следующие ветки.
+- `000046_bros_journal.*.sql` — подсистема «Брошенные», ветка 3: журнал бросков
+  (`bros_journal`, одна запись в сутки на поезд, UNIQUE bros_id+date). Особые коды
+  05 (реквизиты заявки) и 01 (`is_agreed` + письмо для согласованного) — бизнес-
+  правило РЖД. `BulkSave` фиксирует активные перед рассылкой в MAX. Экраны — далее.
 - `000014_plan.*.sql` — таблицы плана подвода (`plan`, `plan_nitka`).
 - `000015_plan_history.*.sql` — история загрузок плана (несколько загрузок на станцию,
   выбор свежей); пересоздаёт `plan`/`plan_nitka` (view-cache, восстановимо загрузкой).

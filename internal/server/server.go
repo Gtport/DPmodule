@@ -44,6 +44,7 @@ func Build(
 	adminRepo port.AdminTablesRepository,
 	brosReasonRepo port.BrosReasonCodesRepository,
 	brosRepo port.BrosRepository,
+	brosJournalRepo port.BrosJournalRepository,
 	vagonOpRepo port.VagonOperationRepository,
 	cargoWorkRepo port.CargoWorkRepository,
 	maxChatRepo port.MaxChatRepository,
@@ -109,7 +110,8 @@ func Build(
 	// Снимок брошенных: активные/история/отчёт/поиск (чтение). Reconcile статуса 5
 	// цепляется к конвейеру ниже (proc.SetBros). Правки/журнал — следующая ветка.
 	if brosRepo != nil {
-		handler.NewBrosOpsHandler(service.NewBrosService(brosRepo)).RegisterRoutes(api)
+		brosJournal := service.NewBrosJournalService(brosJournalRepo, brosRepo, brosReasonRepo)
+		handler.NewBrosOpsHandler(service.NewBrosService(brosRepo), brosJournal).RegisterRoutes(api)
 	}
 
 	// Экран «Прогнозы»: сводка поездов с прогнозными полями Stage 3/4 из RAM-снимка.

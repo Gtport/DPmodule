@@ -33,3 +33,15 @@ type BrosRepository interface {
 	// SearchByIndex — поиск по подстроке index_0/index_1 (активные и завершённые).
 	SearchByIndex(ctx context.Context, q string) ([]domain.Bros, error)
 }
+
+// BrosJournalRepository — журнал бросков (таблица bros_journal). Одна запись в
+// сутки на поезд (UPSERT по bros_id+date), история накапливается.
+type BrosJournalRepository interface {
+	// Upsert сохраняет запись за её сутки (INSERT или перезапись существующей на
+	// эти сутки), возвращает id.
+	Upsert(ctx context.Context, e domain.BrosJournalEntry) (int64, error)
+	// ByBrosID — вся история записей броска, новые первыми.
+	ByBrosID(ctx context.Context, brosID string) ([]domain.BrosJournalEntry, error)
+	// Latest — последняя запись броска (nil, nil — записей нет).
+	Latest(ctx context.Context, brosID string) (*domain.BrosJournalEntry, error)
+}
