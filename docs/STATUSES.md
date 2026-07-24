@@ -217,7 +217,7 @@
 | `prost_dn_min` | `client_settings.extra.status` | 1 (сутки) | порог простоя → статус 4 |
 | `prost_ch_min` | `client_settings.extra.status` | 12 (часов) | порог простоя → статус 4 |
 | `missing8_ttl_days` | `client_settings.extra.status` | 7 (у нас; в GTport не было) | автоочистка записей-8 в `status9`; 0 → выключена |
-| `bros_cleanup_days` | `client_settings.extra.status` | 365 (у нас; в GTport было 30) | автоочистка завершённых бросков (`bros`, status_br=false) старше N суток; 0 → выключена. ⚠️ ограничивает глубину отчёта по броскам |
+| `bros_cleanup_days` | `client_settings.extra.status` | 0 = выключена (у нас; механизм есть; в GTport было 30) | автоочистка завершённых бросков (`bros`, status_br=false) старше N суток; журнал уезжает каскадом (`ON DELETE CASCADE`). Выключено → `bros` и журнал хранятся бессрочно, отчёт за любой период (как gtport). ⚠️ при N>0 ограничивает глубину отчёта |
 
 ---
 
