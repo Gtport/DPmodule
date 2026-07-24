@@ -13,8 +13,8 @@ import (
 
 	"github.com/Gtport/DPmodule/internal/adapter/asu"
 	"github.com/Gtport/DPmodule/internal/adapter/max"
-	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/adapter/reference"
+	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/config"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/handler"
@@ -42,6 +42,7 @@ func Build(
 	planRepo port.PlanRepository,
 	journalRepo port.JournalRepository,
 	adminRepo port.AdminTablesRepository,
+	brosReasonRepo port.BrosReasonCodesRepository,
 	vagonOpRepo port.VagonOperationRepository,
 	cargoWorkRepo port.CargoWorkRepository,
 	maxChatRepo port.MaxChatRepository,
@@ -95,6 +96,13 @@ func Build(
 			adminGrp.Use(jwtMW.RequireRole(auth.RoleAdministrator))
 		}
 		handler.NewAdminTablesHandler(service.NewAdminTables(adminRepo)).RegisterRoutes(adminGrp)
+	}
+
+	// Справочник кодов бросания (классификатор РЖД) — чтение всем авторизованным
+	// (первая ветка подсистемы «Брошенные»). Активные броски, журнал и отчёт —
+	// следующие ветки.
+	if brosReasonRepo != nil {
+		handler.NewBrosHandler(service.NewBrosReasonCodes(brosReasonRepo)).RegisterRoutes(api)
 	}
 
 	// Экран «Прогнозы»: сводка поездов с прогнозными полями Stage 3/4 из RAM-снимка.
