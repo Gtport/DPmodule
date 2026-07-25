@@ -4,9 +4,10 @@
 -- через -f: каталог /home/alex закрыт правами 750, и postgres прочитать его не может
 -- («psql: error: … Permission denied»). Через stdin файл читает shell пользователя.
 --
---     sudo -u postgres psql -d dpport -v ro_pass="'ПАРОЛЬ'" < scripts/dev_pg_readonly.sql
+--     sudo -u postgres psql -d dpport -v ro_pass=ПАРОЛЬ < scripts/dev_pg_readonly.sql
 --
--- ПАРОЛЬ заменить на настоящий; кавычки внутри двойных обязательны. Команду начать
+-- ПАРОЛЬ заменить на настоящий и передать БЕЗ одинарных кавычек: psql заквотирует
+-- значение сам (:'ro_pass'), а лишние кавычки войдут в состав пароля. Команду начать
 -- с пробела — тогда пароль не попадёт в историю bash.
 --
 -- Смысл: через туннель ходим этой ролью, а не gtport_app. Тогда случайный UPDATE
@@ -15,14 +16,16 @@
 
 \set ON_ERROR_STOP on
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dpport_ro') THEN
-    EXECUTE format('CREATE ROLE dpport_ro LOGIN PASSWORD %L', :'ro_pass');
-  ELSE
-    EXECUTE format('ALTER ROLE dpport_ro LOGIN PASSWORD %L', :'ro_pass');
-  END IF;
-END $$;
+-- Создание роли — не DO-блоком: psql НЕ подставляет свои переменные внутри строк
+-- в долларовых кавычках, поэтому :'ro_pass' уехал бы в PL/pgSQL дословно и упал
+-- с «syntax error at or near ":"». Собираем команду запросом и выполняем \gexec.
+SELECT format('CREATE ROLE dpport_ro LOGIN PASSWORD %L', :'ro_pass')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dpport_ro')
+\gexec
+
+-- Пароль выставляем всегда: повторный прогон скрипта = смена пароля роли.
+SELECT format('ALTER ROLE dpport_ro LOGIN PASSWORD %L', :'ro_pass')
+\gexec
 
 -- Явно отбираем право создавать что-либо и писать.
 GRANT CONNECT ON DATABASE dpport TO dpport_ro;
