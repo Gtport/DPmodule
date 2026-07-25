@@ -244,15 +244,22 @@ func run() error {
 	}
 
 	// Ежедневная фиксация журнала брошенных: bulk-save на сегодня по всем активным.
-	// 01:00 МСК = 22:00 UTC (Москва без летнего времени → offset стабилен круглый год);
-	// граница Truncate(24h) абсолютная (00:00 UTC). BulkSave — UPSERT (bros_id, дата),
-	// идемпотентен: повторный ручной прогон в тот же день просто перезапишет строку.
-	if brosJournal != nil {
-		workers = append(workers, worker.NewAlignedCronWorker("bros-journal-bulk", 24*time.Hour, 22*time.Hour, log,
-			func(ctx context.Context) error {
-				_, err := brosJournal.BulkSave(ctx)
-				return err
-			}))
+	// Время — из config bros.journal_cron (МСК «HH:MM»). Граница aligned-крона
+	// абсолютна (00:00 UTC), поэтому «HH:MM» МСК переводим в offset от UTC-полуночи
+	// (Москва без летнего времени → offset стабилен круглый год). BulkSave — UPSERT
+	// (bros_id, дата), идемпотентен: повтор в тот же день просто перезапишет строку.
+	if cfg.Bros.Enabled && brosJournal != nil {
+		offset, err := mskDailyOffset(cfg.Bros.JournalCron)
+		if err != nil {
+			log.Error("bros.journal_cron: неверный формат, ожидается HH:MM (МСК) — крон выключен",
+				zap.String("value", cfg.Bros.JournalCron), zap.Error(err))
+		} else {
+			workers = append(workers, worker.NewAlignedCronWorker("bros-journal-bulk", 24*time.Hour, offset, log,
+				func(ctx context.Context) error {
+					_, err := brosJournal.BulkSave(ctx)
+					return err
+				}))
+		}
 	}
 
 	if len(workers) > 0 {
@@ -299,4 +306,19 @@ func run() error {
 
 	log.Info("stopped")
 	return nil
+}
+
+// mskDailyOffset переводит время «HH:MM» по Москве в offset от UTC-полуночи для
+// aligned-крона (interval 24h). МСК = UTC+3 без летнего времени, граница крона —
+// абсолютная 00:00 UTC. Пример: «01:00» МСК → 22h (22:00 UTC).
+func mskDailyOffset(hhmm string) (time.Duration, error) {
+	t, err := time.Parse("15:04", hhmm)
+	if err != nil {
+		return 0, err
+	}
+	d := time.Duration(t.Hour())*time.Hour + time.Duration(t.Minute())*time.Minute - 3*time.Hour
+	if d < 0 {
+		d += 24 * time.Hour
+	}
+	return d, nil
 }

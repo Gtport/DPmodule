@@ -20,6 +20,15 @@ type Config struct {
 	Reference Reference `yaml:"reference"`
 	WagonOps  WagonOps  `yaml:"wagonops"`
 	MAX       MAX       `yaml:"max"`
+	Bros      Bros      `yaml:"bros"`
+}
+
+// Bros — подсистема «Брошенные»: фоновый крон ежедневной фиксации журнала
+// (bulk-save по всем активным броскам), чтобы посуточная история набивалась
+// сама, не завися от отправок в MAX.
+type Bros struct {
+	Enabled     bool   `yaml:"enabled"`      // включить ежедневный крон bulk-save журнала
+	JournalCron string `yaml:"journal_cron"` // время bulk-save по МСК «HH:MM»; дефолт 01:00
 }
 
 // MAX — исходящая рассылка форм («План подвода»/оперативка) в мессенджер MAX.
@@ -253,6 +262,9 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.MAX.SendDelay == 0 {
 		cfg.MAX.SendDelay = 500 * time.Millisecond
+	}
+	if cfg.Bros.JournalCron == "" {
+		cfg.Bros.JournalCron = "01:00"
 	}
 }
 

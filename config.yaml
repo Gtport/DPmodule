@@ -63,3 +63,7 @@ max:                    # рассылка форм в мессенджер MAX 
   base_url: https://platform-api2.max.ru  # Bot API MAX (CA Минцифры вшит в бинарь)
   timeout_secs: 120     # таймаут HTTP (заливка картинок бывает долгой)
   send_delay: 500ms     # пауза между чатами (лимит API 30 rps)
+
+bros:                   # подсистема «Брошенные»
+  enabled: true         # ежедневный крон bulk-save журнала (фиксация без завязки на MAX)
+  journal_cron: "01:00" # время bulk-save по Москве (HH:MM); пустое → дефолт 01:00
