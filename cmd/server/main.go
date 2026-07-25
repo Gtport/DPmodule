@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -202,7 +203,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps, brosJournal := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
@@ -240,6 +241,18 @@ func run() error {
 	// внутри — пачка с паузой между HTTP-запросами (пороги в config wagonops).
 	if cfg.WagonOps.Enabled && vagonOps != nil {
 		workers = append(workers, worker.NewCronWorker("vagonops-drain", cfg.WagonOps.DrainInterval, log, vagonOps.DrainQueue))
+	}
+
+	// Ежедневная фиксация журнала брошенных: bulk-save на сегодня по всем активным.
+	// 01:00 МСК = 22:00 UTC (Москва без летнего времени → offset стабилен круглый год);
+	// граница Truncate(24h) абсолютная (00:00 UTC). BulkSave — UPSERT (bros_id, дата),
+	// идемпотентен: повторный ручной прогон в тот же день просто перезапишет строку.
+	if brosJournal != nil {
+		workers = append(workers, worker.NewAlignedCronWorker("bros-journal-bulk", 24*time.Hour, 22*time.Hour, log,
+			func(ctx context.Context) error {
+				_, err := brosJournal.BulkSave(ctx)
+				return err
+			}))
 	}
 
 	if len(workers) > 0 {

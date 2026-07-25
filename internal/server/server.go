@@ -51,12 +51,14 @@ func Build(
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
-) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.VagonOpService) {
+) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.VagonOpService, *service.BrosJournalService) {
 	// asuIngest и refSvc отдаём наружу: их фоновые крон-воркеры живут в main
 	// (жизненный цикл процесса), а ручки остаются здесь. asuIngest = nil, если нет
 	// БД/справочников (тогда воркер не запускается).
 	var asuIngest *service.ASUIngest
 	var vagonOps *service.VagonOpService
+	// brosJournal отдаём наружу для крона ежедневного bulk-save (nil без БД).
+	var brosJournal *service.BrosJournalService
 
 	if cfg.App.Env != "dev" {
 		gin.SetMode(gin.ReleaseMode)
@@ -110,7 +112,7 @@ func Build(
 	// Снимок брошенных: активные/история/отчёт/поиск (чтение). Reconcile статуса 5
 	// цепляется к конвейеру ниже (proc.SetBros). Правки/журнал — следующая ветка.
 	if brosRepo != nil {
-		brosJournal := service.NewBrosJournalService(brosJournalRepo, brosRepo, brosReasonRepo)
+		brosJournal = service.NewBrosJournalService(brosJournalRepo, brosRepo, brosReasonRepo)
 		handler.NewBrosOpsHandler(service.NewBrosService(brosRepo, brosJournalRepo), brosJournal).RegisterRoutes(api)
 	}
 
@@ -258,7 +260,7 @@ func Build(
 		Handler:      router,
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
-	}, asuIngest, refSvc, vagonOps
+	}, asuIngest, refSvc, vagonOps, brosJournal
 }
 
 // NewMetricsServer returns a minimal http.Server that serves /metrics only,
