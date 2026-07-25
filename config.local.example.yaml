@@ -1,0 +1,83 @@
+# Конфиг для локальной разработки (WSL). Скопировать в config.local.yaml
+# и запускать бэкенд с ним:
+#
+#     go run ./cmd/server -config config.local.yaml
+#
+# config.local.yaml — вне git (см. .gitignore), поэтому боевой config.yaml
+# не мешается в diff'ах и не уезжает в PR с локальными адресами.
+#
+# ⚠️ Главное отличие от боевого: ВСЕ исходящие интеграции выключены.
+# Локальный инстанс не должен ни ходить к провайдеру АСУ, ни слать формы в MAX —
+# чаты и получатели там настоящие, а крон «Брошенные» второй раз запишет журнал.
+
+app:
+  name: iqport-service
+  env: dev
+
+http:
+  host: 127.0.0.1
+  port: 8080
+  read_timeout: 10s
+  write_timeout: 30s
+  shutdown_timeout: 15s
+
+metrics:
+  port: 9090
+
+postgres:
+  enabled: true
+  host: localhost
+  port: 5432          # локальный Postgres в WSL, НЕ туннель к боевой базе
+  dbname: dpport
+  user: gtport_app
+  sslmode: disable    # пароль — env PG_PASSWORD из ./.env
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+
+keycloak:
+  enabled: true
+  jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs
+  # issuer обязан совпадать с KC_HOSTNAME локального Keycloak + /realms/iqport.
+  # Локально точка входа — dev-сервер Angular (он же проксирует /realms на :8180),
+  # поэтому и в .env Keycloak'а стоит KC_HOSTNAME=http://localhost:4200.
+  issuer: http://localhost:4200/realms/iqport
+  audience: iqport-backend
+
+log:
+  level: debug
+  file: logs/service.log
+  max_size_mb: 100
+  max_backups: 5
+  max_age_days: 30
+
+# ---- исходящие интеграции: на локальной машине выключены ----
+
+asu:
+  enabled: false        # крон забора дислокации. Данные берём из копии боевой базы
+  pull_interval: 10m    # (scripts/dev_db_refresh.sh) либо заливкой файла ЛК руками.
+  pull_offset: 5m
+
+wagonops:
+  enabled: false        # запрос 601 к провайдеру: очередь общая с боевой, дублировать незачем
+  drain_interval: 15s
+  batch: 50
+  pause: 500ms
+  max_attempts: 5
+
+reference:
+  enabled: false
+  base_url: ""
+  insecure_tls: false
+  pull_interval: 1h
+  clients: [attis, nmtp]
+
+max:
+  enabled: false        # ⚠️ true = реальная рассылка в реальные чаты MAX. Не включать.
+  base_url: https://platform-api2.max.ru
+  timeout_secs: 120
+  send_delay: 500ms
+
+bros:
+  enabled: false        # ежедневный bulk-save журнала — дело боевого инстанса
+  journal_cron: "01:00"
