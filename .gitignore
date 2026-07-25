@@ -2,6 +2,11 @@
 .env
 *.env
 
+# конфиг машины разработчика (WSL): свои адреса, выключенные интеграции.
+# Боевой config.yaml в git — локальные отличия держим отдельным файлом,
+# запуск: go run ./cmd/server -config config.local.yaml (см. docs/DEV_WSL.md)
+config.local.yaml
+
 # Экспорт реалма Keycloak — внутри пользователи с credentials
 /deployments/keycloak/import/
 !.env.example
