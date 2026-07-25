@@ -203,13 +203,22 @@ psql "postgres://dpport_ro:<пароль>@localhost:5433/dpport"
 один раз суперпользователем):
 
 ```bash
- sudo -u postgres psql -d dpport -v ro_pass="'ПАРОЛЬ'" < scripts/dev_pg_readonly.sql
+ sudo -u postgres psql -d dpport -v ro_pass=ПАРОЛЬ < scripts/dev_pg_readonly.sql
 ```
 
-Файл подаётся через stdin, а не через `-f`: `/home/alex` закрыт правами 750, и
-`postgres` до файла не доберётся (`Permission denied`). Пароль подставить настоящий,
-кавычки внутри двойных обязательны, а начальный пробел в строке не даст паролю
-попасть в историю bash.
+Две тонкости, на которых легко споткнуться:
+- **stdin, а не `-f`**: `/home/alex` закрыт правами 750, и `postgres` до файла не
+  доберётся (`Permission denied`). Через stdin файл читает ваш shell.
+- **пароль без одинарных кавычек**: psql заквотирует значение сам (`:'ro_pass'`),
+  а лишние кавычки войдут в состав пароля.
+
+Начальный пробел в строке не даст паролю попасть в историю bash. Проверка после
+запуска — вторая команда должна отвалиться:
+
+```bash
+ psql "postgres://dpport_ro:ПАРОЛЬ@localhost:5432/dpport" -c "select count(*) from dislocation"
+ psql "postgres://dpport_ro:ПАРОЛЬ@localhost:5432/dpport" -c "update dislocation set vagon=vagon"
+```
 
 У неё `default_transaction_read_only = on`, поэтому случайный `UPDATE` из psql или
 DBeaver отвалится с ошибкой, а не испортит рабочий день диспетчеру.
