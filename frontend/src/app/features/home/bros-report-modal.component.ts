@@ -591,43 +591,87 @@ export class BrosReportModalComponent implements OnInit {
     return out;
   }
 
-  // ── Экспорт Excel ────────────────────────────────────────────────────────────
+  // ── Экспорт Excel (формат оригинала gtport BrosReport, 3 листа) ──────────────
   async exportExcel(): Promise<void> {
     if (this.rows().length === 0) return;
     try {
-      const XLSX = await import('xlsx-js-style');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const XLSX: any = await import('xlsx-js-style');
       const wb = XLSX.utils.book_new();
+      const ed = (ts: string | null) => (ts && ts.length >= 10 ? this.fmtDate(ts) : '-'); // пусто → «-»
 
-      const data = this.rows().map((r) => ({
-        'Индекс': r.index_1, 'Станция': r.station_br, 'Дорога': r.doroga_br,
-        'Дата броса': this.fmtDate(r.date_br), 'Дата подъёма': r.date_pod_fact ? this.fmtDate(r.date_pod_fact) : '',
-        'Подъём запл': r.date_pod ? this.fmtDate(r.date_pod) : '',
-        'Код': r.reason, 'Суток': r.days_total,
-        'к.5': r.days_code05, '01 согл.': r.days_code01_agreed, '01 несогл.': r.days_code01_notagreed, 'прочие': r.days_other,
-        'Состав': r.sostav, 'История планов': r.plan_history,
-      }));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Брошенные');
+      // ── Лист 1: данные ──
+      const h1 = ['Индекс', 'Станция', 'Дорога', 'Дата бросания', 'Дата подъёма (факт)',
+        'Подъём запл', 'Код бр', 'Суток всего', 'из них код5', 'из них 01 согл.',
+        'из них 01 несогл.', 'Состав', 'Кол-во вагонов', 'История планов'];
+      const rows = [...this.rows()].sort((a, b) => (a.date_br ?? '').localeCompare(b.date_br ?? ''))
+        .map((r) => [
+          r.index_1, r.station_br, r.doroga_br, ed(r.date_br), ed(r.date_pod_fact), ed(r.date_pod),
+          r.reason || '', r.days_total, r.days_code05, r.days_code01_agreed, r.days_code01_notagreed,
+          r.sostav, r.vagon_count, r.plan_history || '',
+        ]);
+      const ws1 = XLSX.utils.aoa_to_sheet([h1, ...rows]);
+      ws1['!cols'] = [15, 20, 10, 12, 14, 12, 8, 10, 10, 12, 14, 40, 10, 30].map((w: number) => ({ wch: w }));
+      const rng = XLSX.utils.decode_range(ws1['!ref'] || 'A1');
+      for (let R = rng.s.r; R <= rng.e.r; R++) {
+        for (let C = rng.s.c; C <= rng.e.c; C++) {
+          const ref = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws1[ref]) ws1[ref] = { t: 's', v: '' };
+          ws1[ref].s = {
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+            border: { top: b(), bottom: b(), left: b(), right: b() },
+            font: R === 0 ? { bold: true, sz: 11 } : { sz: 10 },
+            fill: R === 0 ? { patternType: 'solid', fgColor: { rgb: 'E0E0E0' } } : undefined,
+          };
+        }
+      }
+      XLSX.utils.book_append_sheet(wb, ws1, 'Брошенные поезда');
 
-      const daily = this.dailyRows().map((d) => ({
-        'Дата': this.fmtDate(d.date), 'Наличие': d.count, 'Брошено': d.created, 'Поднято': d.lifted,
-      }));
-      daily.push({ 'Дата': 'ИТОГО', 'Наличие': this.totalDays(), 'Брошено': this.totalCreated(), 'Поднято': this.totalLifted() });
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(daily), 'Динамика по дням');
-
-      const analysis = [
-        { 'Показатель': 'Всего поездо-суток', 'Значение': this.totalDays() },
-        { 'Показатель': 'Код 05 (заявка)', 'Значение': this.daysCode05() },
-        { 'Показатель': 'Код 01 согласованный', 'Значение': this.daysAgreed() },
-        { 'Показатель': 'Код 01 несогласованный', 'Значение': this.daysNotAgreed() },
-        { 'Показатель': 'Прочие', 'Значение': this.daysOther() },
-        { 'Показатель': 'Согласованный простой, %', 'Значение': this.protectedPct() },
-        { 'Показатель': '', 'Значение': '' as unknown as number },
-        ...this.topReasons().map((t) => ({ 'Показатель': `Код ${t.code} — ${this.reasonDesc(t.code)}`, 'Значение': t.days })),
+      // ── Лист 2: статистика по дням ──
+      const d = this.dailyRows();
+      const maxOf = (sel: (x: DailyStat) => number) => d.reduce((m, x) => Math.max(m, sel(x)), 0);
+      const dateOfMax = (sel: (x: DailyStat) => number) => {
+        const m = maxOf(sel);
+        const hit = d.find((x) => sel(x) === m);
+        return hit ? this.fmtDate(hit.date) : '-';
+      };
+      const avg = (sel: (x: DailyStat) => number) => (d.length ? (d.reduce((s, x) => s + sel(x), 0) / d.length).toFixed(1) : '0');
+      const sh2 = [
+        ['Дата', 'Наличие', 'Брошено', 'Поднято'],
+        ...d.map((x) => [this.fmtDate(x.date), x.count, x.created, x.lifted]),
+        ['ИТОГО', this.rows().length, this.totalCreated(), this.totalLifted()],
+        ['Среднесуточное', avg((x) => x.count), avg((x) => x.created), avg((x) => x.lifted)],
+        ['Максимум', maxOf((x) => x.count), maxOf((x) => x.created), maxOf((x) => x.lifted)],
+        ['Дата максимума', dateOfMax((x) => x.count), dateOfMax((x) => x.created), dateOfMax((x) => x.lifted)],
       ];
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(analysis), 'Анализ причин');
+      const ws2 = XLSX.utils.aoa_to_sheet(sh2);
+      ws2['!cols'] = [18, 14, 12, 12].map((w: number) => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws2, 'Статистика по дням');
 
-      const label = this.terminal() || 'все';
-      XLSX.writeFile(wb, `Брошенные_${label}_${this.start()}—${this.end()}.xlsx`);
+      // ── Лист 3: анализ причин ──
+      const tot = this.totalDays();
+      const p = (v: number) => (tot ? `${Math.round((v / tot) * 100)}%` : '-');
+      const sh3 = [
+        ['Показатель', 'Поездо-суток', '% от всего'],
+        ['Всего суток простоя', tot, '100%'],
+        ['По коду 5 (официальная заявка)', this.daysCode05(), p(this.daysCode05())],
+        ['По коду 01 согласованному (письмо)', this.daysAgreed(), p(this.daysAgreed())],
+        ['По коду 01 несогласованному', this.daysNotAgreed(), p(this.daysNotAgreed())],
+        ['По прочим кодам', this.daysOther(), p(this.daysOther())],
+        [''],
+        ['Топ причин по поездо-суткам', '', ''],
+        ['Код', 'Поездо-суток', 'Уникальных поездов'],
+        ...this.topReasons().map((t) => [
+          t.code + (this.reasonDesc(t.code) ? ` — ${this.reasonDesc(t.code).substring(0, 60)}` : ''),
+          t.days, t.trains,
+        ]),
+      ];
+      const ws3 = XLSX.utils.aoa_to_sheet(sh3);
+      ws3['!cols'] = [60, 18, 20].map((w: number) => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws3, 'Анализ причин');
+
+      const label = this.terminal() || 'все_порты';
+      XLSX.writeFile(wb, `брошенные_${label}_${this.fmtDate(this.start())}-${this.fmtDate(this.end())}.xlsx`);
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     }
@@ -645,6 +689,9 @@ export class BrosReportModalComponent implements OnInit {
     return ts.length >= 16 && ts.includes('T') ? `${d} ${ts.slice(11, 16)}` : d;
   }
 }
+
+/** Тонкая чёрная граница ячейки Excel (xlsx-js-style). */
+function b() { return { style: 'thin', color: { rgb: '000000' } }; }
 
 /** «YYYY-MM-DD…» → номер дня (дни от эпохи, полдень UTC — без сноса на границе). */
 function dayNum(ts: string | null): number | null {
