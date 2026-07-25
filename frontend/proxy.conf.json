@@ -4,5 +4,11 @@
     "secure": false,
     "changeOrigin": true,
     "logLevel": "debug"
+  },
+  "/realms": {
+    "target": "http://localhost:8180",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug"
   }
 }

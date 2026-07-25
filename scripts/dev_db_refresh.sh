@@ -37,6 +37,17 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# ---- предохранитель: не запускать на боевом сервере ----
+# Скрипт делает DROP DATABASE локальной базы. На VPS «локальная» — это боевая
+# база, с которой прямо сейчас работает диспетчер. Признак боевого сервера —
+# работающий user-юнит бэкенда.
+if systemctl --user is-active --quiet dpmodule-backend 2>/dev/null && [[ "${DPM_FORCE:-0}" != "1" ]]; then
+  echo "ОТКАЗ: похоже, это боевой сервер (юнит dpmodule-backend запущен)." >&2
+  echo "Скрипт удаляет и пересоздаёт базу — запускать его нужно в WSL, а не здесь." >&2
+  echo "Если вы точно понимаете, что делаете: DPM_FORCE=1 $0 …" >&2
+  exit 1
+fi
+
 command -v pg_restore >/dev/null || { echo "нет pg_restore — поставь postgresql-client-16" >&2; exit 1; }
 LOCAL_MAJOR=$(pg_restore --version | grep -oE '[0-9]+' | head -1)
 [[ "$LOCAL_MAJOR" -ge 16 ]] || { echo "pg_restore версии $LOCAL_MAJOR — нужен 16+ (на сервере PostgreSQL 16)" >&2; exit 1; }
