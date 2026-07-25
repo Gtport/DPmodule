@@ -319,11 +319,14 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
   styles: [`
     .ttl { cursor: move; user-select: none; }
     .ttl .sub { color: var(--color-text-muted); font-weight: 400; font-size: var(--font-size-sm); }
-    .toolbar { display: flex; align-items: center; gap: 2px; margin-bottom: var(--space-sm); }
+    .toolbar { display: flex; align-items: center; gap: 4px; margin-bottom: var(--space-sm); }
     .toolbar .head { font-weight: 600; }
+    /* Иконки шапки — крупные, как в сайдбаре (--layout-icon-size × 1.2 ≈ 19px). */
+    .toolbar button { width: 34px; height: 34px; }
+    .toolbar [nz-icon] { font-size: calc(var(--layout-icon-size, 16px) * 1.2); }
     .spacer { flex: 1 1 auto; }
     .filters { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-sm); flex-wrap: wrap; }
-    .filters .ant-input { flex: 1 1 auto; }
+    .filters .ant-input { width: 300px; flex: 0 0 auto; }
     .fl { font-size: var(--font-size-sm); color: var(--color-text-secondary); display: inline-flex; align-items: center; gap: 4px; }
     .term { width: 150px; }
     .date { padding: 3px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
