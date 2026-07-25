@@ -7,81 +7,76 @@ import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
+import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { addDaysIso, todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
-import { BrosApiService, BrosRecord, BrosReportRow, BrosReasonCode } from './bros-api.service';
+import {
+  BrosApiService, BrosRecord, BrosReportRow, BrosReasonCode, BrosTopReason, BrosJournalEntry,
+} from './bros-api.service';
 
 /** Суточный агрегат периода. */
 interface DailyStat { date: string; count: number; created: number; lifted: number; }
 
 /**
- * Перемещаемая модалка «Брошенные — отчёт за период» (перенос gtport BrosReport):
- * броски за период с простоем (суток) и разбивкой по кодам, суточная динамика,
- * сводка. Поиск поезда по индексу (по всей базе), статистика, экспорт Excel.
- * Отправка в MAX — в оперативке (форме «Брошенные»), как в gtport.
+ * Перемещаемая модалка «Отчёт по брошенным поездам» (точный перенос gtport
+ * BrosReport). Главная таблица с разбивкой суток по кодам; индекс кликабелен —
+ * открывает «Детальную информацию» (поля + разбивка + журнал). Иконки в шапке:
+ * поиск по индексу (по всей базе), статистика, экспорт Excel, свернуть фильтр.
+ * Разбивка/топ причин — из бэкенд-агрегации журнала (`/report`).
  */
 @Component({
   selector: 'app-bros-report-modal',
   imports: [
     FormsModule, DragDropModule, NzModalModule, NzButtonModule, NzIconModule,
-    NzInputModule, NzSelectModule, NzSpinModule, NzTooltipModule,
+    NzInputModule, NzSelectModule, NzSpinModule, NzTagModule, NzTooltipModule,
   ],
   template: `
-    <nz-modal [nzVisible]="true" [nzTitle]="ttl" [nzFooter]="null" nzWidth="1120px"
+    <nz-modal [nzVisible]="true" [nzTitle]="ttl" [nzFooter]="null" nzWidth="1280px"
               [nzMask]="false" (nzOnCancel)="closed.emit()">
       <ng-template #ttl>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
-          Брошенные — отчёт за период
+          Отчёт по брошенным поездам — {{ portLabel() }}
         </div>
       </ng-template>
 
       <ng-container *nzModalContent>
-        <div class="bar">
-          <input type="date" class="date" [ngModel]="start()" (ngModelChange)="start.set($event)" />
-          <span class="dash">—</span>
-          <input type="date" class="date" [ngModel]="end()" (ngModelChange)="end.set($event)" />
-          <nz-select class="term" nzSize="small" [ngModel]="terminal()" (ngModelChange)="terminal.set($event)">
-            <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
-            @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
-          </nz-select>
-          <button nz-button nzType="primary" nzSize="small" [nzLoading]="loading()" (click)="load()">
-            <span nz-icon nzType="search"></span> Загрузить
-          </button>
+        <div class="toolbar">
+          <span class="head">Брошенные поезда — {{ portLabel() }}</span>
           <span class="spacer"></span>
-          <button nz-button nzSize="small" (click)="openSearch()" nz-tooltip nzTooltipTitle="Поиск поезда по индексу (по всей базе)">
-            <span nz-icon nzType="search"></span>
+          <button nz-button nzType="text" nzSize="small" (click)="openSearch()" nz-tooltip nzTooltipTitle="Поиск поезда по индексу">
+            <span nz-icon nzType="file-search"></span>
           </button>
-          <button nz-button nzSize="small" (click)="showStats.set(true)" nz-tooltip nzTooltipTitle="Статистика"
-                  [disabled]="rows().length === 0">
+          <button nz-button nzType="text" nzSize="small" (click)="showStats.set(true)" [disabled]="rows().length === 0"
+                  nz-tooltip nzTooltipTitle="Статистика">
             <span nz-icon nzType="bar-chart"></span>
           </button>
-          <button nz-button nzSize="small" (click)="exportExcel()" nz-tooltip nzTooltipTitle="Экспорт в Excel"
-                  [disabled]="rows().length === 0">
-            <span nz-icon nzType="file-excel"></span>
+          <button nz-button nzType="text" nzSize="small" (click)="exportExcel()" [disabled]="rows().length === 0"
+                  nz-tooltip nzTooltipTitle="Экспорт в Excel">
+            <span nz-icon nzType="download"></span>
+          </button>
+          <button nz-button nzType="text" nzSize="small" (click)="showFilters.set(!showFilters())"
+                  nz-tooltip nzTooltipTitle="Фильтры">
+            <span nz-icon nzType="filter"></span>
           </button>
         </div>
 
-        <!-- Сводка -->
-        <div class="tiles">
-          <div class="tile"><b>{{ rows().length }}</b><span>поездов</span></div>
-          <div class="tile"><b>{{ totalVagons() }}</b><span>вагонов</span></div>
-          <div class="tile"><b>{{ totalDays() }}</b><span>поездо-суток</span></div>
-          <div class="tile"><b>{{ avgDays() }}</b><span>ср. суток/поезд</span></div>
-          <div class="tile"><b>{{ totalCreated() }}</b><span>новых бросков</span></div>
-          <div class="tile"><b>{{ totalLifted() }}</b><span>поднято</span></div>
-        </div>
-
-        <!-- Разбивка поездо-суток по типам причин -->
-        <div class="tiles">
-          <div class="tile c05"><b>{{ daysCode05() }}</b><span>к.05 (заявка)</span></div>
-          <div class="tile ok"><b>{{ daysAgreed() }}</b><span>01 согл. (письмо)</span></div>
-          <div class="tile bad"><b>{{ daysNotAgreed() }}</b><span>01 несогл. (РЖД)</span></div>
-          <div class="tile"><b>{{ daysOther() }}</b><span>прочие</span></div>
-          <div class="tile prot"><b>{{ protectedPct() }}%</b><span>согласованный простой</span></div>
-        </div>
+        @if (showFilters()) {
+          <div class="filters">
+            <nz-select class="term" nzSize="small" [ngModel]="terminal()" (ngModelChange)="terminal.set($event)">
+              <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
+              @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
+            </nz-select>
+            <label class="fl">Начало <input type="date" class="date" [ngModel]="start()" (ngModelChange)="start.set($event)" /></label>
+            <label class="fl">Конец <input type="date" class="date" [ngModel]="end()" (ngModelChange)="end.set($event)" /></label>
+            <button nz-button nzType="primary" nzSize="small" [nzLoading]="loading()" (click)="load()">
+              <span nz-icon nzType="search"></span> Загрузить
+            </button>
+            <button nz-button nzSize="small" (click)="last30()">30 дней</button>
+          </div>
+        }
 
         @if (loading()) {
           <div class="center"><nz-spin nzSimple></nz-spin></div>
@@ -90,40 +85,40 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
             <table class="tbl">
               <thead>
                 <tr>
-                  <th class="c-idx">Индекс</th>
-                  <th>Станция</th>
-                  <th class="c-dor">Дор</th>
-                  <th class="c-dt">Дата броса</th>
-                  <th class="c-dt">Дата подъёма</th>
-                  <th class="c-code">Код</th>
+                  <th class="c-idx" (click)="sortBy('index_1')">Индекс {{ arrow('index_1') }}</th>
+                  <th (click)="sortBy('station_br')">Станция {{ arrow('station_br') }}</th>
+                  <th class="c-dor" (click)="sortBy('doroga_br')">Дорога {{ arrow('doroga_br') }}</th>
+                  <th class="c-dt" (click)="sortBy('date_br')">Дата броса {{ arrow('date_br') }}</th>
+                  <th class="c-dt" (click)="sortBy('date_pod_fact')">Дата подъёма {{ arrow('date_pod_fact') }}</th>
+                  <th class="c-dt">Подъём запл</th>
+                  <th class="c-code">Код бр</th>
                   <th class="c-days">Суток</th>
-                  <th class="c-b" nz-tooltip nzTooltipTitle="Суток по коду 05 (заявка)">к.05</th>
-                  <th class="c-b" nz-tooltip nzTooltipTitle="Суток по коду 01 согласованному (письмо)">01✓</th>
-                  <th class="c-b" nz-tooltip nzTooltipTitle="Суток по коду 01 несогласованному">01✗</th>
-                  <th class="c-b" nz-tooltip nzTooltipTitle="Суток по прочим кодам / без журнала">проч</th>
-                  <th class="c-vc">Ваг</th>
+                  <th class="c-b hb05">к.5</th>
+                  <th class="c-b hok">01✓</th>
+                  <th class="c-b hbad">01✗</th>
+                  <th class="c-b">прочие</th>
                   <th>Состав</th>
                 </tr>
               </thead>
               <tbody>
-                @for (r of rows(); track r.id) {
+                @for (r of sortedRows(); track r.id) {
                   <tr [style.background]="rowBg(r)">
-                    <td class="num idx" [title]="r.index_1">{{ r.index_1 || '—' }}</td>
+                    <td class="c-idx"><a class="idx" (click)="openDetails(r)">{{ r.index_1 || '—' }}</a></td>
                     <td class="ell" [title]="r.station_br">{{ r.station_br || '—' }}</td>
                     <td class="c">{{ r.doroga_br || '—' }}</td>
                     <td class="c">{{ fmtDate(r.date_br) }}</td>
-                    <td class="c">{{ r.date_pod_fact ? fmtDate(r.date_pod_fact) : (r.status_br ? 'активен' : '—') }}</td>
+                    <td class="c">{{ fmtDate(r.date_pod_fact) }}</td>
+                    <td class="c">{{ fmtDate(r.date_pod) }}</td>
                     <td class="c">
                       @if (r.reason) {
                         <span class="code" nz-tooltip [nzTooltipTitle]="codeDesc(r.reason)">{{ r.reason }}</span>
                       } @else { — }
                     </td>
-                    <td class="c days" [class.warn]="r.days_total >= 4" [class.danger]="r.days_total >= 7">{{ r.days_total }}</td>
-                    <td class="c b c05">{{ r.days_code05 || '' }}</td>
-                    <td class="c b ok">{{ r.days_code01_agreed || '' }}</td>
-                    <td class="c b bad">{{ r.days_code01_notagreed || '' }}</td>
-                    <td class="c b">{{ r.days_other || '' }}</td>
-                    <td class="c num">{{ r.vagon_count }}</td>
+                    <td class="c"><span class="chip" [class]="chipCls(r.days_total)">{{ r.days_total }}</span></td>
+                    <td class="c b c05">{{ r.days_code05 || '-' }}</td>
+                    <td class="c b ok">{{ r.days_code01_agreed || '-' }}</td>
+                    <td class="c b bad">{{ r.days_code01_notagreed || '-' }}</td>
+                    <td class="c b">{{ r.days_other || '-' }}</td>
                     <td class="ell" [title]="r.sostav">{{ r.sostav || '—' }}</td>
                   </tr>
                 } @empty {
@@ -132,45 +127,118 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
               </tbody>
             </table>
           </div>
+          <p class="hint">Индекс кликабелен — детали и журнал. Суток — простой (дата броса → подъём или сегодня), разбивка по кодам из журнала.</p>
         }
-        <p class="hint">Суток — суммарный простой (дата броса → подъём или сегодня), разбивка по кодам из журнала.
-          «Согласованный простой» — есть юр. оформление (заявка 05 или письмо 01-согл), остальное — ответственность РЖД.</p>
       </ng-container>
     </nz-modal>
 
-    <!-- Поиск поезда по индексу (по всей базе, вне периода) -->
-    @if (showSearch()) {
-      <nz-modal [nzVisible]="true" nzTitle="Поиск броска по индексу" [nzFooter]="null"
-                nzWidth="820px" [nzMask]="false" (nzOnCancel)="showSearch.set(false)">
+    <!-- Детальная информация (клик по индексу) -->
+    @if (detailRow(); as d) {
+      <nz-modal [nzVisible]="true" [nzTitle]="dttl" [nzFooter]="null" nzWidth="920px"
+                [nzMask]="false" (nzOnCancel)="detailRow.set(null)">
+        <ng-template #dttl>
+          <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
+            Детальная информация &nbsp;<span class="sub">{{ d.index_1 }} · {{ d.station_br }} · {{ fmtDate(d.date_br) }}</span>
+          </div>
+        </ng-template>
         <ng-container *nzModalContent>
-          <div class="bar">
-            <input nz-input placeholder="индекс или его часть (мин. 3 символа)" [ngModel]="searchQuery()"
+          <table class="kv">
+            <tr><td class="k">Нач. индекс (index_0):</td><td>{{ d.index_0 || '—' }}</td><td class="k">Тек. индекс (index_1):</td><td>{{ d.index_1 || '—' }}</td></tr>
+            <tr><td class="k">Станция:</td><td>{{ d.station_br || '—' }}</td><td class="k">Дорога:</td><td>{{ d.doroga_br || '—' }}</td></tr>
+            <tr><td class="k">Дата бросания:</td><td>{{ fmtDateTime(d.date_br) }}</td><td class="k">Грузополучатель:</td><td>{{ d.gruzpol_s || '—' }}</td></tr>
+            <tr><td class="k">Подъём запл:</td><td>{{ fmtDate(d.date_pod) }}</td><td class="k">Факт. подъём:</td><td>{{ fmtDate(d.date_pod_fact) }}</td></tr>
+            <tr><td class="k">Смотрелся на нитку:</td><td>{{ fmtDateTime(d.prog_0) }}</td><td class="k">Прогноз при подъёме:</td><td>{{ fmtDateTime(d.prog_1) }}</td></tr>
+            <tr><td class="k">Ходу до назначения, ч:</td><td>{{ d.to_go != null ? d.to_go.toFixed(2) : '—' }}</td><td class="k">История планов:</td><td>{{ d.plan_history || '—' }}</td></tr>
+            <tr><td class="k">Состав:</td><td colspan="3">{{ d.sostav || '—' }}</td></tr>
+            <tr><td class="k">Вагонов:</td><td>{{ d.vagon_count }}</td><td class="k">Статус:</td>
+              <td><nz-tag [nzColor]="d.status_br ? 'blue' : 'green'">{{ d.status_br ? 'активен' : 'завершён' }}</nz-tag></td></tr>
+          </table>
+
+          <div class="box">
+            <div class="box-h">Разбивка суток простоя</div>
+            <nz-tag>Всего: {{ d.days_total }} сут.</nz-tag>
+            @if (d.days_code05) { <nz-tag nzColor="blue">к.5: {{ d.days_code05 }}</nz-tag> }
+            @if (d.days_code01_agreed) { <nz-tag nzColor="green">01 согл: {{ d.days_code01_agreed }}</nz-tag> }
+            @if (d.days_code01_notagreed) { <nz-tag nzColor="red">01 несогл: {{ d.days_code01_notagreed }}</nz-tag> }
+            @if (d.days_other) { <nz-tag>Прочие: {{ d.days_other }}</nz-tag> }
+          </div>
+
+          <div class="box-h"><span nz-icon nzType="history"></span> История записей журнала</div>
+          @if (detailLoading()) {
+            <div class="center"><nz-spin nzSimple nzSize="small"></nz-spin></div>
+          } @else {
+            <div class="tbl-wrap" style="max-height: 40vh">
+              <table class="tbl">
+                <thead><tr>
+                  <th class="c-dt">Дата</th><th class="c-code">Код</th><th class="c-b">Тип</th>
+                  <th>Причина / Комментарий</th><th class="c-dt">Подъём запл</th>
+                  <th>Заявка / Письмо</th><th class="c-dt">План подв</th><th class="c-op">Оператор</th>
+                </tr></thead>
+                <tbody>
+                  @for (e of detailJournal(); track e.id) {
+                    <tr>
+                      <td class="c">{{ fmtDate(e.date) }}</td>
+                      <td class="c"><span class="code">{{ e.reason || '—' }}</span></td>
+                      <td class="c">{{ agreeLabel(e) }}</td>
+                      <td>{{ e.reason_text || e.comment || '—' }}</td>
+                      <td class="c">{{ fmtDate(e.date_pod) }}</td>
+                      <td>{{ e.zayavka_nomer ? (e.zayavka_nomer + ' / ' + fmtDate(e.zayavka_date)) : '—' }}</td>
+                      <td class="c">{{ fmtDate(e.plan_pod) }}</td>
+                      <td class="c">{{ e.created_by }}</td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="8" class="empty">Записей журнала нет</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </ng-container>
+      </nz-modal>
+    }
+
+    <!-- Поиск по индексу -->
+    @if (showSearch()) {
+      <nz-modal [nzVisible]="true" [nzTitle]="sttl" [nzFooter]="null" nzWidth="1120px"
+                [nzMask]="false" (nzOnCancel)="showSearch.set(false)">
+        <ng-template #sttl>
+          <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
+            Поиск поезда по индексу
+            @if (searchDone()) { <nz-tag nzColor="blue">{{ searchResults().length }} записей</nz-tag> }
+          </div>
+        </ng-template>
+        <ng-container *nzModalContent>
+          <div class="filters">
+            <input nz-input placeholder="индекс поезда (index_0 или index_1)" [ngModel]="searchQuery()"
                    (ngModelChange)="searchQuery.set($event)" (keydown.enter)="runSearch()" />
             <button nz-button nzType="primary" nzSize="small" [nzLoading]="searching()" (click)="runSearch()">
               <span nz-icon nzType="search"></span> Найти
             </button>
           </div>
+          <p class="hint">Поиск по подстроке в index_0/index_1 · минимум 3 символа · по всей истории бросков, не ограничен периодом.</p>
           <div class="tbl-wrap">
             <table class="tbl">
               <thead><tr>
-                <th class="c-idx">Индекс</th><th>Станция</th><th class="c-dt">Дата броса</th>
-                <th class="c-dt">Дата подъёма</th><th class="c-code">Код</th><th class="c-vc">Ваг</th>
-                <th class="c-st">Статус</th><th>Состав</th>
+                <th class="c-idx">Индекс</th><th>Станция</th><th class="c-dor">Дорога</th>
+                <th class="c-dt">Дата броса</th><th class="c-dt">Дата подъёма</th><th class="c-dt">Подъём запл</th>
+                <th class="c-code">Код бр</th><th class="c-days">Суток</th><th class="c-st">Статус</th><th>Состав</th>
               </tr></thead>
               <tbody>
                 @for (r of searchResults(); track r.id) {
                   <tr [style.background]="rowBg(r)">
-                    <td class="num idx" [title]="r.index_1">{{ r.index_1 || '—' }}</td>
+                    <td class="c-idx"><a class="idx" (click)="openDetailsFromSearch(r)">{{ r.index_1 || '—' }}</a></td>
                     <td class="ell" [title]="r.station_br">{{ r.station_br || '—' }}</td>
+                    <td class="c">{{ r.doroga_br || '—' }}</td>
                     <td class="c">{{ fmtDate(r.date_br) }}</td>
-                    <td class="c">{{ r.date_pod_fact ? fmtDate(r.date_pod_fact) : '—' }}</td>
+                    <td class="c">{{ fmtDate(r.date_pod_fact) }}</td>
+                    <td class="c">{{ fmtDate(r.date_pod) }}</td>
                     <td class="c">{{ r.reason || '—' }}</td>
-                    <td class="c num">{{ r.vagon_count }}</td>
-                    <td class="c">{{ r.status_br ? 'активен' : 'поднят' }}</td>
+                    <td class="c"><span class="chip" [class]="chipCls(searchDays(r))">{{ searchDays(r) }}</span></td>
+                    <td class="c"><nz-tag [nzColor]="r.status_br ? 'blue' : 'green'">{{ r.status_br ? 'активен' : 'поднят' }}</nz-tag></td>
                     <td class="ell" [title]="r.sostav">{{ r.sostav || '—' }}</td>
                   </tr>
                 } @empty {
-                  <tr><td colspan="8" class="empty">{{ searchDone() ? 'Ничего не найдено' : 'Введите индекс и нажмите «Найти»' }}</td></tr>
+                  <tr><td colspan="10" class="empty">{{ searchDone() ? 'Ничего не найдено' : 'Введите индекс и нажмите «Найти»' }}</td></tr>
                 }
               </tbody>
             </table>
@@ -179,26 +247,65 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
       </nz-modal>
     }
 
-    <!-- Статистика: суточная динамика + разбивка причин -->
+    <!-- Статистика -->
     @if (showStats()) {
-      <nz-modal [nzVisible]="true" nzTitle="Статистика брошенных" [nzFooter]="null"
-                nzWidth="720px" [nzMask]="false" (nzOnCancel)="showStats.set(false)">
-        <ng-container *nzModalContent>
-          <div class="stat-cards">
-            <div class="sc c05"><b>{{ daysCode05() }}</b><span>к.05 заявка</span></div>
-            <div class="sc ok"><b>{{ daysAgreed() }}</b><span>01 согл. письмо</span></div>
-            <div class="sc bad"><b>{{ daysNotAgreed() }}</b><span>01 несогл. РЖД</span></div>
-            <div class="sc"><b>{{ daysOther() }}</b><span>прочие</span></div>
-            <div class="sc prot"><b>{{ protectedPct() }}%</b><span>согласованный простой</span></div>
+      <nz-modal [nzVisible]="true" [nzTitle]="sxttl" [nzFooter]="null" nzWidth="1040px"
+                [nzMask]="false" (nzOnCancel)="showStats.set(false)">
+        <ng-template #sxttl>
+          <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
+            Статистика — {{ portLabel() }} &nbsp;<span class="sub">{{ fmtDate(start()) }} – {{ fmtDate(end()) }}</span>
           </div>
-          <div class="stat-h">Динамика по дням</div>
-          <div class="tbl-wrap" style="max-height: 46vh">
+        </ng-template>
+        <ng-container *nzModalContent>
+          <div class="tiles">
+            <div class="tile"><b>{{ rows().length }}</b><span>Поездов всего</span></div>
+            <div class="tile"><b>{{ totalVagons() }}</b><span>Вагонов всего</span></div>
+            <div class="tile"><b>{{ totalDays() }}</b><span>Поездо-суток</span></div>
+            <div class="tile"><b>{{ avgDays() }}</b><span>Среднее суток/поезд</span></div>
+            <div class="tile"><b>{{ avgDailyCount() }}</b><span>Среднесут. остаток</span></div>
+            <div class="tile"><b>{{ totalCreated() }}</b><span>Новых бросков</span></div>
+            <div class="tile"><b>{{ totalLifted() }}</b><span>Поднято</span></div>
+          </div>
+
+          <div class="box-h">Поездо-сутки по типам причин</div>
+          <div class="cards">
+            <div class="pc c05"><div class="pc-t"><span>Код 5 — официальная заявка</span><b>{{ daysCode05() }}</b></div>
+              <div class="bar"><i [style.width.%]="pct(daysCode05())"></i></div><span class="pc-p">{{ pct(daysCode05()) }}% от итого</span></div>
+            <div class="pc ok"><div class="pc-t"><span>Код 01 согласованный (письмо)</span><b>{{ daysAgreed() }}</b></div>
+              <div class="bar"><i [style.width.%]="pct(daysAgreed())"></i></div><span class="pc-p">{{ pct(daysAgreed()) }}% от итого</span></div>
+            <div class="pc bad"><div class="pc-t"><span>Код 01 несогласованный</span><b>{{ daysNotAgreed() }}</b></div>
+              <div class="bar"><i [style.width.%]="pct(daysNotAgreed())"></i></div><span class="pc-p">{{ pct(daysNotAgreed()) }}% от итого</span></div>
+            <div class="pc oth"><div class="pc-t"><span>Прочие коды</span><b>{{ daysOther() }}</b></div>
+              <div class="bar"><i [style.width.%]="pct(daysOther())"></i></div><span class="pc-p">{{ pct(daysOther()) }}% от итого</span></div>
+          </div>
+          <div class="prot">
+            <div class="prot-t">«Согласованный» простой (код5 + код01 согл.) — {{ protectedPct() }}%</div>
+            <div class="bar big"><i [style.width.%]="protectedPct()"></i></div>
+            <span class="pc-p">Простой с юр. оформлением (заявка или письмо). Остальные {{ 100 - protectedPct() }}% — «несогласованный» (ответственность РЖД).</span>
+          </div>
+
+          @if (topReasons().length) {
+            <div class="box-h">Топ причин по поездо-суткам</div>
             <table class="tbl">
-              <thead><tr><th>Дата</th><th class="c-vc">Наличие</th><th class="c-vc">Брошено</th><th class="c-vc">Поднято</th></tr></thead>
+              <thead><tr><th class="c-code">Код</th><th>Расшифровка</th><th class="c-b">Поездо-суток</th><th class="c-b">Поездов</th></tr></thead>
+              <tbody>
+                @for (t of topReasons(); track t.code) {
+                  <tr><td class="c"><b>{{ t.code }}</b></td><td class="ell" [title]="reasonDesc(t.code)">{{ reasonDesc(t.code) }}</td>
+                    <td class="c num"><b>{{ t.days }}</b></td><td class="c num">{{ t.trains }}</td></tr>
+                }
+              </tbody>
+            </table>
+          }
+
+          <div class="box-h">Динамика по дням</div>
+          <div class="tbl-wrap" style="max-height: 36vh">
+            <table class="tbl">
+              <thead><tr><th class="c-dt">Дата</th><th class="c-b">Наличие</th><th class="c-b">Брошено</th><th class="c-b">Поднято</th></tr></thead>
               <tbody>
                 @for (d of dailyRows(); track d.date) {
-                  <tr><td class="c">{{ fmtDate(d.date) }}</td><td class="c num">{{ d.count }}</td>
-                    <td class="c num">{{ d.created }}</td><td class="c num">{{ d.lifted }}</td></tr>
+                  <tr [class.peak]="d.count === maxCount() && maxCount() > 0">
+                    <td class="c">{{ fmtDate(d.date) }}</td><td class="c num">{{ d.count }}</td>
+                    <td class="c num">{{ d.created || '-' }}</td><td class="c num">{{ d.lifted || '-' }}</td></tr>
                 }
                 <tr class="tot"><td class="c"><b>Итого</b></td><td class="c num"><b>{{ totalDays() }}</b></td>
                   <td class="c num"><b>{{ totalCreated() }}</b></td><td class="c num"><b>{{ totalLifted() }}</b></td></tr>
@@ -211,47 +318,66 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
   `,
   styles: [`
     .ttl { cursor: move; user-select: none; }
-    .bar { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-sm); flex-wrap: wrap; }
-    .date { padding: 3px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
-    .dash { color: var(--color-text-muted); }
-    .term { width: 150px; }
+    .ttl .sub { color: var(--color-text-muted); font-weight: 400; font-size: var(--font-size-sm); }
+    .toolbar { display: flex; align-items: center; gap: 2px; margin-bottom: var(--space-sm); }
+    .toolbar .head { font-weight: 600; }
     .spacer { flex: 1 1 auto; }
-    .tiles { display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-sm); }
-    .tile { flex: 1 1 0; min-width: 90px; text-align: center; padding: 6px 8px;
-            border: 1px solid var(--color-border-light); border-radius: var(--radius-sm); background: var(--color-bg-subtle); }
-    .tile b { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
-    .tile span { font-size: var(--font-size-sm); color: var(--color-text-muted); }
-    .center { display: flex; justify-content: center; padding: var(--space-xl); }
-    .tbl-wrap { max-height: 56vh; overflow: auto; background: #fff; }
+    .filters { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-sm); flex-wrap: wrap; }
+    .filters .ant-input { flex: 1 1 auto; }
+    .fl { font-size: var(--font-size-sm); color: var(--color-text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+    .term { width: 150px; }
+    .date { padding: 3px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+    .center { display: flex; justify-content: center; padding: var(--space-lg); }
+    .tbl-wrap { max-height: 62vh; overflow: auto; background: #fff; }
     .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); table-layout: fixed; }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600;
-              padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; }
+    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600; cursor: default;
+              padding: 5px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; white-space: nowrap; }
+    .tbl thead th.c-idx, .tbl thead th:nth-child(2), .tbl thead th.c-dor, .tbl thead th.c-dt { cursor: pointer; }
     .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
-    .c-idx { width: 118px; } .c-dor { width: 44px; } .c-dt { width: 92px; }
-    .c-code { width: 46px; } .c-days { width: 52px; } .c-b { width: 42px; } .c-vc { width: 44px; }
-    .b { font-variant-numeric: tabular-nums; }
-    td.b.c05 { color: #1565c0; } td.b.ok { color: #2e7d32; } td.b.bad { color: #c62828; font-weight: 600; }
-    .tile.c05 b { color: #1565c0; } .tile.ok b { color: #2e7d32; } .tile.bad b { color: #c62828; }
-    .tile.prot { background: #f3e5f5; } .tile.prot b { color: #7b1fa2; }
-    .num { font-variant-numeric: tabular-nums; }
-    .idx, .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hb05 { color: #1565c0; } .hok { color: #2e7d32; } .hbad { color: #c62828; }
+    .c-idx { width: 120px; } .c-dor { width: 56px; } .c-dt { width: 104px; }
+    .c-code { width: 58px; } .c-days { width: 62px; } .c-b { width: 74px; } .c-st { width: 78px; } .c-op { width: 100px; }
+    .num, .b { font-variant-numeric: tabular-nums; }
+    .idx { color: #0958d9; text-decoration: underline; cursor: pointer; }
+    .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .c { text-align: center; }
     .code { font-weight: 600; cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
-    .days { font-weight: 600; }
-    .days.warn { color: #d46b08; } .days.danger { color: var(--color-danger, #cf1322); }
+    td.b.c05 { color: #1565c0; } td.b.ok { color: #2e7d32; } td.b.bad { color: #c62828; font-weight: 600; }
+    .chip { display: inline-block; min-width: 26px; padding: 1px 8px; border-radius: 11px; font-weight: 600;
+            background: #e5e5e5; color: #333; font-variant-numeric: tabular-nums; }
+    .chip.warn { background: #fa8c16; color: #fff; } .chip.danger { background: #cf1322; color: #fff; }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
-    .c-st { width: 60px; }
-    .bar .ant-input { flex: 1 1 auto; }
-    .stat-cards { display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-md); }
-    .sc { flex: 1 1 0; min-width: 96px; text-align: center; padding: 6px 8px;
-          border: 1px solid var(--color-border-light); border-radius: var(--radius-sm); background: var(--color-bg-subtle); }
-    .sc b { display: block; font-size: 1.2rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
-    .sc span { font-size: var(--font-size-sm); color: var(--color-text-muted); }
-    .sc.c05 b { color: #1565c0; } .sc.ok b { color: #2e7d32; } .sc.bad b { color: #c62828; }
-    .sc.prot { background: #f3e5f5; } .sc.prot b { color: #7b1fa2; }
-    .stat-h { font-weight: 600; font-size: var(--font-size-sm); margin: 0 0 var(--space-xs); }
+    /* Детали: сетка полей */
+    .kv { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); margin-bottom: var(--space-md); }
+    .kv td { border: 1px solid var(--color-border-light); padding: 5px 8px; }
+    .kv .k { background: var(--color-bg-subtle); color: var(--color-text-secondary); width: 170px; }
+    .box { border: 1px solid var(--color-border-light); border-radius: var(--radius-sm); padding: var(--space-sm);
+           margin-bottom: var(--space-md); display: flex; align-items: center; gap: var(--space-xs); flex-wrap: wrap; }
+    .box-h { font-weight: 600; font-size: var(--font-size-sm); margin: 0 0 var(--space-xs); }
+    /* Статистика */
+    .tiles { display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-md); }
+    .tile { flex: 1 1 0; min-width: 92px; text-align: center; padding: 6px 8px; border: 1px solid var(--color-border-light);
+            border-radius: var(--radius-sm); background: #fff; }
+    .tile b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .tile span { font-size: var(--font-size-sm); color: var(--color-text-muted); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-sm); margin-bottom: var(--space-sm); }
+    .pc { padding: var(--space-sm); border-radius: var(--radius-sm); border: 1px solid var(--color-border-light); }
+    .pc-t { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm); }
+    .pc-t b { font-size: 1.1rem; }
+    .pc-p { font-size: var(--font-size-sm); color: var(--color-text-muted); }
+    .bar { height: 4px; border-radius: 2px; background: rgba(0,0,0,.08); margin: 4px 0; overflow: hidden; }
+    .bar.big { height: 8px; }
+    .bar i { display: block; height: 100%; }
+    .pc.c05 { background: #e3f2fd; } .pc.c05 .pc-t, .pc.c05 b { color: #1565c0; } .pc.c05 .bar i { background: #1565c0; }
+    .pc.ok { background: #e8f5e9; } .pc.ok .pc-t, .pc.ok b { color: #2e7d32; } .pc.ok .bar i { background: #2e7d32; }
+    .pc.bad { background: #ffebee; } .pc.bad .pc-t, .pc.bad b { color: #c62828; } .pc.bad .bar i { background: #c62828; }
+    .pc.oth { background: #f5f5f5; } .pc.oth .bar i { background: #757575; }
+    .prot { border: 1px solid #9c27b0; border-radius: var(--radius-sm); padding: var(--space-sm); background: #f3e5f5; margin-bottom: var(--space-md); }
+    .prot-t { font-weight: 600; color: #6a1b9a; font-size: var(--font-size-sm); }
+    .prot .bar i { background: #7b1fa2; }
     tr.tot > td { background: var(--color-bg-subtle); }
+    tr.peak > td { background: #fff9c4; }
   `],
 })
 export class BrosReportModalComponent implements OnInit {
@@ -265,20 +391,34 @@ export class BrosReportModalComponent implements OnInit {
   readonly end = signal(todayMsk());
   readonly terminal = signal('');
   readonly loading = signal(false);
+  readonly showFilters = signal(true);
 
   readonly rows = signal<BrosReportRow[]>([]);
+  readonly topReasons = signal<BrosTopReason[]>([]);
   readonly terminals = signal<string[]>([]);
   readonly codes = signal<BrosReasonCode[]>([]);
   private readonly termColor = signal<Record<string, string>>({});
 
-  // Поиск по индексу (по всей базе) и статистика — отдельные вложенные модалки.
+  // Сортировка главной таблицы.
+  readonly orderBy = signal<keyof BrosReportRow>('date_br');
+  readonly orderDir = signal<'asc' | 'desc'>('desc');
+
+  // Детали поезда.
+  readonly detailRow = signal<BrosReportRow | null>(null);
+  readonly detailJournal = signal<BrosJournalEntry[]>([]);
+  readonly detailLoading = signal(false);
+
+  // Поиск.
   readonly showSearch = signal(false);
   readonly searchQuery = signal('');
   readonly searching = signal(false);
   readonly searchDone = signal(false);
   readonly searchResults = signal<BrosRecord[]>([]);
+
+  // Статистика.
   readonly showStats = signal(false);
-  readonly dailyRows = computed(() => this.dailyStats());
+
+  readonly portLabel = computed(() => this.terminal() || 'Все терминалы');
 
   private readonly codesMap = computed(() => {
     const m: Record<string, string> = {};
@@ -286,26 +426,45 @@ export class BrosReportModalComponent implements OnInit {
     return m;
   });
 
-  // ── Сводка ────────────────────────────────────────────────────────────────
+  readonly sortedRows = computed(() => {
+    const by = this.orderBy(), dir = this.orderDir();
+    return [...this.rows()].sort((a, b) => {
+      const av = a[by], bv = b[by];
+      if (typeof av === 'number' && typeof bv === 'number') return dir === 'asc' ? av - bv : bv - av;
+      return dir === 'asc'
+        ? String(av ?? '').localeCompare(String(bv ?? ''))
+        : String(bv ?? '').localeCompare(String(av ?? ''));
+    });
+  });
+
+  // ── Сводка/статистика ──────────────────────────────────────────────────────
   readonly totalVagons = computed(() => this.rows().reduce((s, r) => s + r.vagon_count, 0));
   readonly totalDays = computed(() => this.rows().reduce((s, r) => s + r.days_total, 0));
   readonly avgDays = computed(() => {
     const n = this.rows().length;
     return n ? Math.round((this.totalDays() / n) * 10) / 10 : 0;
   });
-  // Разбивка поездо-суток по типам причин (агрегация журнала на бэке).
   readonly daysCode05 = computed(() => this.rows().reduce((s, r) => s + r.days_code05, 0));
   readonly daysAgreed = computed(() => this.rows().reduce((s, r) => s + r.days_code01_agreed, 0));
   readonly daysNotAgreed = computed(() => this.rows().reduce((s, r) => s + r.days_code01_notagreed, 0));
   readonly daysOther = computed(() => this.rows().reduce((s, r) => s + r.days_other, 0));
-  // «Согласованный» простой (заявка 05 + письмо 01-согл) — есть юр. оформление.
   readonly protectedPct = computed(() => {
     const t = this.totalDays();
     return t ? Math.round(((this.daysCode05() + this.daysAgreed()) / t) * 100) : 0;
   });
-  private readonly dailyStats = computed<DailyStat[]>(() => this.computeDaily());
-  readonly totalCreated = computed(() => this.dailyStats().reduce((s, d) => s + d.created, 0));
-  readonly totalLifted = computed(() => this.dailyStats().reduce((s, d) => s + d.lifted, 0));
+  readonly dailyRows = computed<DailyStat[]>(() => this.computeDaily());
+  readonly totalCreated = computed(() => this.dailyRows().reduce((s, d) => s + d.created, 0));
+  readonly totalLifted = computed(() => this.dailyRows().reduce((s, d) => s + d.lifted, 0));
+  readonly avgDailyCount = computed(() => {
+    const d = this.dailyRows();
+    return d.length ? Math.round((d.reduce((s, x) => s + x.count, 0) / d.length) * 10) / 10 : 0;
+  });
+  readonly maxCount = computed(() => this.dailyRows().reduce((m, d) => Math.max(m, d.count), 0));
+
+  pct(v: number): number {
+    const t = this.totalDays();
+    return t ? Math.round((v / t) * 100) : 0;
+  }
 
   ngOnInit(): void {
     void this.loadRefs();
@@ -315,21 +474,27 @@ export class BrosReportModalComponent implements OnInit {
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      this.rows.set(await this.api.report(this.start(), this.end(), this.terminal()));
+      const res = await this.api.report(this.start(), this.end(), this.terminal());
+      this.rows.set(res.records);
+      this.topReasons.set(res.top_reasons);
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
       this.rows.set([]);
+      this.topReasons.set([]);
     } finally {
       this.loading.set(false);
     }
   }
 
+  last30(): void {
+    this.start.set(addDaysIso(todayMsk(), -30));
+    this.end.set(todayMsk());
+    void this.load();
+  }
+
   private async loadRefs(): Promise<void> {
     try {
-      const [codes, terms] = await Promise.all([
-        this.api.getReasonCodes(),
-        this.arrivals.getTerminals(),
-      ]);
+      const [codes, terms] = await Promise.all([this.api.getReasonCodes(), this.arrivals.getTerminals()]);
       this.codes.set(codes);
       this.terminals.set(terms.map((t) => t.name));
       const cm: Record<string, string> = {};
@@ -340,9 +505,73 @@ export class BrosReportModalComponent implements OnInit {
     }
   }
 
+  sortBy(col: keyof BrosReportRow): void {
+    if (this.orderBy() === col) this.orderDir.set(this.orderDir() === 'asc' ? 'desc' : 'asc');
+    else { this.orderBy.set(col); this.orderDir.set('asc'); }
+  }
+  arrow(col: keyof BrosReportRow): string {
+    return this.orderBy() === col ? (this.orderDir() === 'asc' ? '↑' : '↓') : '';
+  }
+
   rowBg(r: BrosRecord): string | null { return this.termColor()[r.gruzpol_s] ?? null; }
   codeDesc(code: string): string { return this.codesMap()[code] || 'Код не найден в справочнике'; }
+  reasonDesc(code: string): string {
+    const base = code.replace(' ✓', '').replace(' ✗', '');
+    return this.codesMap()[base] || (code === 'неизвестен' ? '—' : '');
+  }
+  chipCls(days: number): string { return days >= 7 ? 'danger' : days >= 4 ? 'warn' : ''; }
 
+  // ── Детали ──────────────────────────────────────────────────────────────────
+  async openDetails(r: BrosReportRow): Promise<void> {
+    this.detailRow.set(r);
+    this.detailJournal.set([]);
+    this.detailLoading.set(true);
+    try {
+      this.detailJournal.set(await this.api.getJournal(r.id));
+    } catch {
+      /* журнал не критичен */
+    } finally {
+      this.detailLoading.set(false);
+    }
+  }
+  /** Из поиска: BrosRecord → добираем суток на фронте (без разбивки) и открываем детали. */
+  openDetailsFromSearch(r: BrosRecord): void {
+    const row: BrosReportRow = {
+      ...r, days_total: this.searchDays(r),
+      days_code05: 0, days_code01_agreed: 0, days_code01_notagreed: 0, days_other: 0,
+    };
+    void this.openDetails(row);
+  }
+  agreeLabel(e: BrosJournalEntry): string {
+    if (e.is_agreed === true) return 'согл.';
+    if (e.is_agreed === false) return 'несогл.';
+    return '—';
+  }
+
+  // ── Поиск ───────────────────────────────────────────────────────────────────
+  openSearch(): void { this.showSearch.set(true); }
+  async runSearch(): Promise<void> {
+    const q = this.searchQuery().trim();
+    if (q.length < 3) { this.msg.warning('Минимум 3 символа'); return; }
+    this.searching.set(true);
+    try {
+      this.searchResults.set(await this.api.search(q));
+      this.searchDone.set(true);
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.searching.set(false);
+    }
+  }
+  /** Суток простоя для строки поиска (простой date-diff, без журнала). */
+  searchDays(r: BrosRecord): number {
+    const from = dayNum(r.date_br);
+    if (from === null) return 0;
+    const to = r.date_pod_fact ? dayNum(r.date_pod_fact) : dayNum(todayMsk());
+    return to === null ? 0 : Math.max(0, to - from);
+  }
+
+  // ── Динамика по дням ─────────────────────────────────────────────────────────
   private computeDaily(): DailyStat[] {
     const s = dayNum(this.start()), e = dayNum(this.end());
     if (s === null || e === null || e < s) return [];
@@ -362,7 +591,7 @@ export class BrosReportModalComponent implements OnInit {
     return out;
   }
 
-  // ── Экспорт Excel ───────────────────────────────────────────────────────────
+  // ── Экспорт Excel ────────────────────────────────────────────────────────────
   async exportExcel(): Promise<void> {
     if (this.rows().length === 0) return;
     try {
@@ -372,14 +601,14 @@ export class BrosReportModalComponent implements OnInit {
       const data = this.rows().map((r) => ({
         'Индекс': r.index_1, 'Станция': r.station_br, 'Дорога': r.doroga_br,
         'Дата броса': this.fmtDate(r.date_br), 'Дата подъёма': r.date_pod_fact ? this.fmtDate(r.date_pod_fact) : '',
+        'Подъём запл': r.date_pod ? this.fmtDate(r.date_pod) : '',
         'Код': r.reason, 'Суток': r.days_total,
-        'из них к.05': r.days_code05, '01 согл.': r.days_code01_agreed,
-        '01 несогл.': r.days_code01_notagreed, 'прочие': r.days_other,
-        'Вагонов': r.vagon_count, 'Состав': r.sostav, 'История планов': r.plan_history,
+        'к.5': r.days_code05, '01 согл.': r.days_code01_agreed, '01 несогл.': r.days_code01_notagreed, 'прочие': r.days_other,
+        'Состав': r.sostav, 'История планов': r.plan_history,
       }));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Брошенные');
 
-      const daily = this.dailyStats().map((d) => ({
+      const daily = this.dailyRows().map((d) => ({
         'Дата': this.fmtDate(d.date), 'Наличие': d.count, 'Брошено': d.created, 'Поднято': d.lifted,
       }));
       daily.push({ 'Дата': 'ИТОГО', 'Наличие': this.totalDays(), 'Брошено': this.totalCreated(), 'Поднято': this.totalLifted() });
@@ -388,10 +617,12 @@ export class BrosReportModalComponent implements OnInit {
       const analysis = [
         { 'Показатель': 'Всего поездо-суток', 'Значение': this.totalDays() },
         { 'Показатель': 'Код 05 (заявка)', 'Значение': this.daysCode05() },
-        { 'Показатель': 'Код 01 согласованный (письмо)', 'Значение': this.daysAgreed() },
-        { 'Показатель': 'Код 01 несогласованный (РЖД)', 'Значение': this.daysNotAgreed() },
-        { 'Показатель': 'Прочие / без журнала', 'Значение': this.daysOther() },
+        { 'Показатель': 'Код 01 согласованный', 'Значение': this.daysAgreed() },
+        { 'Показатель': 'Код 01 несогласованный', 'Значение': this.daysNotAgreed() },
+        { 'Показатель': 'Прочие', 'Значение': this.daysOther() },
         { 'Показатель': 'Согласованный простой, %', 'Значение': this.protectedPct() },
+        { 'Показатель': '', 'Значение': '' as unknown as number },
+        ...this.topReasons().map((t) => ({ 'Показатель': `Код ${t.code} — ${this.reasonDesc(t.code)}`, 'Значение': t.days })),
       ];
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(analysis), 'Анализ причин');
 
@@ -402,30 +633,16 @@ export class BrosReportModalComponent implements OnInit {
     }
   }
 
-  // ── Поиск по индексу (по всей базе, вне периода) ─────────────────────────────
-  openSearch(): void { this.showSearch.set(true); }
-
-  async runSearch(): Promise<void> {
-    const q = this.searchQuery().trim();
-    if (q.length < 3) {
-      this.msg.warning('Минимум 3 символа');
-      return;
-    }
-    this.searching.set(true);
-    try {
-      this.searchResults.set(await this.api.search(q));
-      this.searchDone.set(true);
-    } catch (err) {
-      this.msg.error(apiErrorMessage(err));
-    } finally {
-      this.searching.set(false);
-    }
-  }
-
-  /** «2026-07-24T00:00:00» / «2026-07-24» → «24.07.26»; пусто → «—». */
+  /** «2026-07-24T00:00:00» / «2026-07-24» → «24.07.2026» (полный год); пусто → «—». */
   fmtDate(ts: string | null): string {
     if (!ts || ts.length < 10) return '—';
-    return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(2, 4)}`;
+    return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(0, 4)}`;
+  }
+  /** «2026-07-24T08:05:00» → «24.07.2026 08:05»; только дата → «24.07.2026»; пусто → «—». */
+  fmtDateTime(ts: string | null): string {
+    if (!ts || ts.length < 10) return '—';
+    const d = this.fmtDate(ts);
+    return ts.length >= 16 && ts.includes('T') ? `${d} ${ts.slice(11, 16)}` : d;
   }
 }
 

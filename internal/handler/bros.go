@@ -187,12 +187,14 @@ func (h *brosOpsHandler) report(c *gin.Context) {
 	}
 	f.Limit = atoiDefault(c.Query("limit"), 10000)
 
-	rows, err := h.svc.Report(c.Request.Context(), f)
+	rep, err := h.svc.Report(c.Request.Context(), f)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"records": rows, "count": len(rows)})
+	c.JSON(http.StatusOK, gin.H{
+		"records": rep.Records, "top_reasons": rep.TopReasons, "count": len(rep.Records),
+	})
 }
 
 // search godoc

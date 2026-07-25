@@ -30,7 +30,7 @@ func TestBrosCountDays_LastKnown(t *testing.T) {
 		brosEntry(brosDayLT(2026, 5, 13), "05", nil),
 	}
 	var row domain.BrosReportRow
-	brosCountDays(&row, from, to, entries, "")
+	brosCountDays(&row, from, to, entries, "", "id", map[string]*topReasonAgg{})
 
 	assert.Equal(t, 5, row.DaysTotal)
 	assert.Equal(t, 3, row.DaysCode05)
@@ -45,7 +45,7 @@ func TestBrosCountDays_Code01Agreed(t *testing.T) {
 	agreed := true
 	entries := []domain.BrosJournalEntry{brosEntry(brosDayLT(2026, 6, 1), "01", &agreed)}
 	var row domain.BrosReportRow
-	brosCountDays(&row, from, to, entries, "")
+	brosCountDays(&row, from, to, entries, "", "id", map[string]*topReasonAgg{})
 
 	assert.Equal(t, 3, row.DaysTotal)
 	assert.Equal(t, 3, row.DaysCode01Agreed)
@@ -59,7 +59,7 @@ func TestBrosCountDays_Code01NotAgreed(t *testing.T) {
 	no := false
 	entries := []domain.BrosJournalEntry{brosEntry(brosDayLT(2026, 6, 1), "01", &no)}
 	var row domain.BrosReportRow
-	brosCountDays(&row, from, to, entries, "")
+	brosCountDays(&row, from, to, entries, "", "id", map[string]*topReasonAgg{})
 
 	assert.Equal(t, 2, row.DaysTotal)
 	assert.Equal(t, 2, row.DaysCode01NotAgreed)
@@ -70,14 +70,14 @@ func TestBrosCountDays_FallbackReason(t *testing.T) {
 	from := dayFloor(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC))
 	to := dayFloor(time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC)) // 2 суток
 	var row domain.BrosReportRow
-	brosCountDays(&row, from, to, nil, "05")
+	brosCountDays(&row, from, to, nil, "05", "id", map[string]*topReasonAgg{})
 
 	assert.Equal(t, 2, row.DaysTotal)
 	assert.Equal(t, 2, row.DaysCode05)
 
 	// Код 01 без журнала → is_agreed неизвестен → прочие (не согл./несогл.).
 	var row2 domain.BrosReportRow
-	brosCountDays(&row2, from, to, nil, "01")
+	brosCountDays(&row2, from, to, nil, "01", "id", map[string]*topReasonAgg{})
 	assert.Equal(t, 2, row2.DaysOther)
 	assert.Equal(t, 0, row2.DaysCode01Agreed)
 }

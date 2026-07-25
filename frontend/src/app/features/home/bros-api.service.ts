@@ -36,6 +36,19 @@ export interface BrosReportRow extends BrosRecord {
   days_other: number;
 }
 
+/** Строка «Топ причин по поездо-суткам» отчёта. */
+export interface BrosTopReason {
+  code: string;
+  days: number;
+  trains: number;
+}
+
+/** Ответ отчёта: строки + топ причин. */
+export interface BrosReportResult {
+  records: BrosReportRow[];
+  top_reasons: BrosTopReason[];
+}
+
 /** Код бросания (классификатор РЖД). */
 export interface BrosReasonCode {
   code: string;
@@ -95,14 +108,14 @@ export class BrosApiService {
     return r.records ?? [];
   }
 
-  /** Отчёт за период с разбивкой суток по кодам (агрегация журнала на бэке). */
-  async report(start: string, end: string, gruzpol = ''): Promise<BrosReportRow[]> {
+  /** Отчёт за период: строки с разбивкой суток по кодам + топ причин (агрегация журнала). */
+  async report(start: string, end: string, gruzpol = ''): Promise<BrosReportResult> {
     const params: Record<string, string> = { start_date: start, end_date: end };
     if (gruzpol) params['gruzpol_s'] = gruzpol;
     const r = await firstValueFrom(
-      this.http.get<{ records: BrosReportRow[] }>(`${this.base}/report`, { params }),
+      this.http.get<BrosReportResult>(`${this.base}/report`, { params }),
     );
-    return r.records ?? [];
+    return { records: r.records ?? [], top_reasons: r.top_reasons ?? [] };
   }
 
   /** Поиск броска по индексу (подстрока, по всей базе; мин. 3 символа). */

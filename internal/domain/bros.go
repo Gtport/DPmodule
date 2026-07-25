@@ -64,6 +64,21 @@ type BrosReportRow struct {
 	DaysOther           int `json:"days_other"`
 }
 
+// BrosTopReason — строка «Топ причин по поездо-суткам» отчёта: код (метка), сумма
+// поездо-суток по нему и число уникальных поездов. Код 01 разводится на «01 ✓»
+// (согласованный) и «01 ✗» (несогласованный); для расшифровки фронт берёт базовый код.
+type BrosTopReason struct {
+	Code   string `json:"code"`
+	Days   int    `json:"days"`
+	Trains int    `json:"trains"`
+}
+
+// BrosReport — ответ отчёта: строки с разбивкой суток + топ причин по поездо-суткам.
+type BrosReport struct {
+	Records    []BrosReportRow `json:"records"`
+	TopReasons []BrosTopReason `json:"top_reasons"`
+}
+
 // BrosJournalEntry — запись журнала броска: фиксация состояния поезда оператором
 // на конкретные сутки. Одна запись в сутки на поезд (UPSERT по bros_id+date),
 // история накапливается. ZayavkaNomer/ZayavkaDate/DatePod/ReasonText заполняются
