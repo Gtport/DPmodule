@@ -203,8 +203,13 @@ psql "postgres://dpport_ro:<пароль>@localhost:5433/dpport"
 один раз суперпользователем):
 
 ```bash
-sudo -u postgres psql -d dpport -v ro_pass="'ПАРОЛЬ'" -f scripts/dev_pg_readonly.sql
+ sudo -u postgres psql -d dpport -v ro_pass="'ПАРОЛЬ'" < scripts/dev_pg_readonly.sql
 ```
+
+Файл подаётся через stdin, а не через `-f`: `/home/alex` закрыт правами 750, и
+`postgres` до файла не доберётся (`Permission denied`). Пароль подставить настоящий,
+кавычки внутри двойных обязательны, а начальный пробел в строке не даст паролю
+попасть в историю bash.
 
 У неё `default_transaction_read_only = on`, поэтому случайный `UPDATE` из psql или
 DBeaver отвалится с ошибкой, а не испортит рабочий день диспетчеру.
