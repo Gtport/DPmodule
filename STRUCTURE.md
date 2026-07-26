@@ -246,7 +246,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `scripts/gen_cargo_seed.py`, `gen_marka_seed.py` | Генерация seed-справочников `cargo.csv` / `marka.csv` из выгрузок gtport. |
 | `scripts/seed_directories.sql`, `import_vigr.sql` | Заливка справочников и перенос выгрузки/погрузки из gtport в `cargo_work`. |
 | `config.local.example.yaml` | Шаблон конфига машины разработчика: локальный Postgres, issuer `localhost:4200`, **все** исходящие интеграции (АСУ, wagonops, памятки, MAX, крон «Брошенные») выключены. Копируется в `config.local.yaml` (вне git). |
-| `docs/DEV_WSL.md` | Инструкция по развёртыванию рабочей копии в WSL: инструменты, доступы, данные вне git, база, Keycloak, запуск, ежедневный цикл «ветка → PR → pull на VPS», разбор типовых поломок. |
+| `docs/DEV_WSL.md` | Инструкция по развёртыванию рабочей копии в WSL: инструменты, доступы, данные вне git, база, Keycloak, запуск, ежедневный цикл «правка → коммит в `main` → pull на VPS», миграции схемы (порядок, ловушка обновления копии базы, раскатка до рестарта бэкенда), разбор типовых поломок. |
 | `docs/STATUSES.md` | Справка по жизненному циклу статусов вагона. |
 
 ### `migrations/` — SQL-миграции (golang-migrate, `cmd/migrate`)
