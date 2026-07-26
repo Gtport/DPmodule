@@ -27,7 +27,9 @@ metrics:
 postgres:
   enabled: true
   host: localhost
-  port: 5432          # локальный Postgres в WSL, НЕ туннель к боевой базе
+  port: 5432          # локальный Postgres в WSL, НЕ туннель к боевой базе.
+                      # Свежий кластер встаёт на 5433, если 5432 занят — проверить
+                      # командой pg_lsclusters и поставить сюда порт своего кластера
   dbname: dpport
   user: gtport_app
   sslmode: disable    # пароль — env PG_PASSWORD из ./.env

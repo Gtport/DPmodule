@@ -115,8 +115,14 @@ diff'ах. В шаблоне уже: локальный Postgres, `issuer: http:
 
 ```bash
 sudo service postgresql start
+pg_lsclusters                      # запомнить ПОРТ кластера: 5432 или 5433
 scripts/dev_db_refresh.sh          # снимет дамп на VPS и зальёт в локальную dpport
 ```
+
+⚠️ **Порт.** Если 5432 в системе занят, свежий кластер встаёт на **5433** —
+`pg_lsclusters` покажет это в третьей колонке. Скрипт определяет порт сам (спрашивает
+у сервера) и в конце напомнит, но `postgres.port` в `config.local.yaml` нужно
+поправить руками, иначе бэкенд будет стучаться не туда.
 
 Скрипт удаляет и пересоздаёт **локальную** базу, боевую только читает. На самом VPS
 он запускаться отказывается (там «локальная» база — это боевая). По умолчанию
@@ -262,5 +268,6 @@ systemctl --user restart dpmodule-backend
 | Бэкенд падает на старте про справочники | не перенесён `_reference/seed/` (шаг 3) |
 | `pg_restore: unsupported version` | локальный клиент старше 16 — поставить `postgresql-client-16` |
 | `connection refused` на 5432 | в WSL Postgres не стартует сам: `sudo service postgresql start` |
+| `password authentication failed for user "gtport_app"` | почти наверняка не пароль, а **порт**: кластер на 5433, а подключение идёт на 5432 (там отвечает другой сервер). Проверить `pg_lsclusters`, поправить `postgres.port` в `config.local.yaml` |
 | Порт 4200 занят | уже запущен второй `ng serve` — найти его: `ss -tlnp` |
 | Экраны пустые, данных нет | локальная база не залита — `scripts/dev_db_refresh.sh` |

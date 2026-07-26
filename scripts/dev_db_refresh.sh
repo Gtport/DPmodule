@@ -20,6 +20,10 @@ DB="${DPM_DB:-dpport}"                            # имя локальной б
 DB_USER="${DPM_DB_USER:-gtport_app}"              # роль приложения (как в config)
 DB_SCHEMA="${DPM_DB_SCHEMA:-dpport}"              # схема (search_path базы)
 SUPER="${DPM_PG_SUPER:-sudo -u postgres psql}"    # как ходить в локальный Postgres админом
+# Порт кластера. Пустой = спросить у самого сервера (ниже). Если 5432 занят, свежий
+# кластер встаёт на 5433, и заливка молча уходила бы «не туда»: сервер на чужом порту
+# отвечает «password authentication failed», а не «нет такой роли».
+PG_PORT="${DPM_PG_PORT:-}"
 
 MODE=snapshot
 DUMP_FILE=""
@@ -56,6 +60,14 @@ LOCAL_MAJOR=$(pg_restore --version | grep -oE '[0-9]+' | head -1)
 if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 : "${PG_PASSWORD:?в ./.env нет PG_PASSWORD — он же пароль локальной роли $DB_USER}"
 
+# Порт спрашиваем у того самого кластера, куда ходит суперпользователь: админ-часть
+# и заливка обязаны попасть в один и тот же сервер.
+if [[ -z "$PG_PORT" ]]; then
+  PG_PORT=$($SUPER -Atqc 'show port' 2>/dev/null | tr -d '[:space:]')
+  [[ -n "$PG_PORT" ]] || { echo "не удалось спросить порт у Postgres ($SUPER) — задай DPM_PG_PORT" >&2; exit 1; }
+fi
+echo "→ локальный Postgres: порт $PG_PORT"
+
 # ---- 1. дамп ----
 if [[ -z "$DUMP_FILE" ]]; then
   : "${VPS:?укажи адрес сервера: export DPM_VPS=user@host}"
@@ -79,7 +91,7 @@ fi
 
 # ---- 2. пересоздание локальной базы ----
 echo "→ пересоздаю локальную базу $DB…"
-$SUPER -v ON_ERROR_STOP=1 -q <<SQL
+$SUPER -p "$PG_PORT" -v ON_ERROR_STOP=1 -q <<SQL
 SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB' AND pid <> pg_backend_pid();
 DROP DATABASE IF EXISTS $DB;
 DO \$\$ BEGIN
@@ -97,17 +109,18 @@ SQL
 # ---- 3. заливка ----
 echo "→ заливаю дамп…"
 # COMMENT ON COLUMN не исключаем: из них Админ берёт русские подписи полей справочников.
-PGPASSWORD="$PG_PASSWORD" pg_restore -h localhost -U "$DB_USER" -d "$DB" \
+PGPASSWORD="$PG_PASSWORD" pg_restore -h localhost -p "$PG_PORT" -U "$DB_USER" -d "$DB" \
   --no-owner --no-privileges "$DUMP_FILE" || {
     echo "⚠️  pg_restore завершился с ошибками (часть выше). Обычно это безобидные ALTER OWNER;" >&2
     echo "    проверь таблицы командой ниже." >&2
   }
 
 # ---- 4. проверка ----
-CNT=$(PGPASSWORD="$PG_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB" -Atc \
+CNT=$(PGPASSWORD="$PG_PASSWORD" psql -h localhost -p "$PG_PORT" -U "$DB_USER" -d "$DB" -Atc \
       "select count(*) from information_schema.tables where table_schema='$DB_SCHEMA'")
-DISL=$(PGPASSWORD="$PG_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB" -Atc \
+DISL=$(PGPASSWORD="$PG_PASSWORD" psql -h localhost -p "$PG_PORT" -U "$DB_USER" -d "$DB" -Atc \
       "select count(*) from dislocation" 2>/dev/null || echo '?')
 echo "✓ готово: таблиц в схеме $DB_SCHEMA — $CNT, строк в dislocation — $DISL"
 [[ "$MODE" == "snapshot" ]] && echo "  (vagon_operation перенесён без данных — для истории продвижения гоняй --full)"
+[[ "$PG_PORT" != "5432" ]] && echo "  ⚠️  кластер на порту $PG_PORT — пропиши postgres.port: $PG_PORT в config.local.yaml"
 exit 0
