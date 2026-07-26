@@ -173,12 +173,18 @@ curl -s http://localhost:8180/realms/iqport/.well-known/openid-configuration | g
 
 ```bash
 # бэкенд
-go run ./cmd/server -config config.local.yaml
+make run-local
 
 # фронтенд
 cd frontend && npm ci        # только в первый раз, ~437 МБ node_modules
 npm start                    # ng serve на http://localhost:4200
 ```
+
+`make run-local` вносит секреты из `.env` в окружение и запускает бэкенд с
+локальным конфигом. Секреты читаются именно из окружения, а не из файла: на VPS их
+подставляет systemd (`EnvironmentFile=.env`), поэтому голый `go run` падает с
+`secret PG_PASSWORD is required when postgres.enabled is true`. То же вручную:
+`set -a; . ./.env; set +a`.
 
 Dev-сервер проксирует `/api` на `:8080` и `/realms` на `:8180`
 (`frontend/proxy.conf.json`) — то, что на VPS делает nginx.
