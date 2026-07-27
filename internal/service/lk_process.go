@@ -28,6 +28,7 @@ type LKProcessor struct {
 	history   port.HistoryRepository
 	unplanned port.UnplannedMoveRepository // «бесплановые в подходе» (nil — выключено/тесты)
 	bros      port.BrosRepository          // снимок брошенных (nil — выключено/тесты)
+	delays    port.VagonDelayRepository    // память о задержках вагонов (nil — выключено/тесты)
 	vagonOps  *VagonOpService              // очередь запросов 601 (nil — выключено/тесты)
 	enricher  *Enricher
 	journal   *Journal   // единый журнал событий (может быть nil — cmd-утилиты)
@@ -140,6 +141,10 @@ type LKProcessResult struct {
 	BrosStopped      int            `json:"bros_stopped"`       // поднятых брошенных
 	BrosActive       int            `json:"bros_active"`        // активных брошенных после пересбора
 	BrosPurged       int            `json:"bros_purged"`        // автоочистка: удалено завершённых бросков старше TTL
+	DelayOpened      int            `json:"delay_opened"`       // новых эпизодов задержек вагонов (статусы 4/5)
+	DelayEscalated   int            `json:"delay_escalated"`    // эскалаций 4 → 5 (простой стал броском)
+	DelayClosed      int            `json:"delay_closed"`       // закрытых эпизодов задержек
+	DelayActive      int            `json:"delay_active"`       // открытых эпизодов после пересбора
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -346,6 +351,16 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// Память о задержках вагонов (эпизоды статусов 4/5): reconcile vagon_delay.
+	// ПОСЛЕ Stage 4 (статусы и sticky финальные); прежний снимок не нужен —
+	// состояние «до» несут открытые эпизоды в таблице.
+	var delayStats DelayStats
+	if p.delays != nil {
+		if delayStats, err = applyDelays(ctx, all, p.delays); err != nil {
+			return LKProcessResult{}, fmt.Errorf("vagon_delay: %w", err)
+		}
+	}
+
 	// Заявки на историю продвижения (601): прибытие / пропажа / выбытие-10 —
 	// только постановка в очередь (HTTP — у фонового воркера). ДО подмены
 	// снимка. Отказ очереди пересборку не валит: трейл — вторичные данные.
@@ -407,6 +422,8 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		UnloadOnLeave: unloadLeft, VagonOpsQueued: opQueued,
 		BrosNew: brosStats.New, BrosStopped: brosStats.Stopped, BrosActive: brosStats.Active,
 		BrosPurged: brosPurged,
+		DelayOpened: delayStats.Opened, DelayEscalated: delayStats.Escalated,
+		DelayClosed: delayStats.Closed, DelayActive: delayStats.Active,
 	}, nil
 }
 
@@ -442,3 +459,7 @@ func (p *LKProcessor) SetVagonOps(svc *VagonOpService) { p.vagonOps = svc }
 // SetBros подключает снимок брошенных (reconcile статуса 5 после Stage 4);
 // nil — подсистема выключена (cmd-утилиты, тесты).
 func (p *LKProcessor) SetBros(repo port.BrosRepository) { p.bros = repo }
+
+// SetDelays подключает память о задержках вагонов (reconcile эпизодов статусов
+// 4/5 после Stage 4); nil — подсистема выключена (cmd-утилиты, тесты).
+func (p *LKProcessor) SetDelays(repo port.VagonDelayRepository) { p.delays = repo }
