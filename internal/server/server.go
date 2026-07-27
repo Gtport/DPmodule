@@ -45,6 +45,7 @@ func Build(
 	brosReasonRepo port.BrosReasonCodesRepository,
 	brosRepo port.BrosRepository,
 	brosJournalRepo port.BrosJournalRepository,
+	delayRepo port.VagonDelayRepository,
 	vagonOpRepo port.VagonOperationRepository,
 	cargoWorkRepo port.CargoWorkRepository,
 	maxChatRepo port.MaxChatRepository,
@@ -178,6 +179,10 @@ func Build(
 			// Снимок брошенных: reconcile статуса 5 после Stage 4 (пишет в bros).
 			if brosRepo != nil {
 				proc.SetBros(brosRepo)
+			}
+			// Память о задержках вагонов: эпизоды статусов 4/5 (пишет в vagon_delay).
+			if delayRepo != nil {
+				proc.SetDelays(delayRepo)
 			}
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
 

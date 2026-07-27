@@ -50,9 +50,19 @@ func enrichFromActual(newRec, ex *domain.Dislocation, now domain.LocalTime) bool
 		exStatus = *ex.Status
 	}
 
-	// Sticky 4/5: пока станция операции та же — держим статус (брошен / долгий простой).
+	newStatus := 0
+	if newRec.Status != nil {
+		newStatus = *newRec.Status
+	}
+
+	// Sticky 4/5: пока станция операции та же — держим статус (брошен / долгий
+	// простой). Исключение: свежий расчёт дал 5 (официальное бросание, code_oper
+	// 92) — эскалация 4 → 5 проходит; иначе бросок на станции долгого простоя
+	// навсегда остался бы «простоем» и не попал бы в bros. Обратного понижения
+	// 5 → 4 нет: sticky-5 держит бросок до смены станции.
 	sticky := false
-	if (exStatus == 5 || exStatus == 4) && newRec.CodeStationOper == ex.CodeStationOper {
+	if (exStatus == 5 || exStatus == 4) && newRec.CodeStationOper == ex.CodeStationOper &&
+		!(exStatus == 4 && newStatus == 5) {
 		s := exStatus
 		newRec.Status = &s
 		sticky = true

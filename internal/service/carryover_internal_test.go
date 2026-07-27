@@ -110,6 +110,23 @@ func TestCarryOver_Sticky5(t *testing.T) {
 	assert.Equal(t, 2, *nw2.Status)
 }
 
+// Эскалация 4 → 5: простаивающий официально брошен (code_oper 92) на той же
+// станции — sticky-4 НЕ гасит свежий статус 5, иначе бросок навсегда остался бы
+// «простоем» и не попал бы в bros (решение владельца: 5 затирает 4).
+func TestCarryOver_Escalate4to5(t *testing.T) {
+	st4, st5, st2 := 4, 5, 2
+	ex := domain.Dislocation{Vagon: "V", Status: &st4, CodeStationOper: "770005"}
+
+	nw := domain.Dislocation{Vagon: "V", Status: &st5, CodeStationOper: "770005"} // та же станция
+	assert.False(t, enrichFromActual(&nw, &ex, now0()))
+	assert.Equal(t, 5, *nw.Status) // эскалация прошла
+
+	// обычное мигание (свежий расчёт дал 2) sticky-4 по-прежнему гасит
+	nw2 := domain.Dislocation{Vagon: "V", Status: &st2, CodeStationOper: "770005"}
+	assert.True(t, enrichFromActual(&nw2, &ex, now0()))
+	assert.Equal(t, 4, *nw2.Status)
+}
+
 // Новые поля: всегда из актуальной, если там не пусто (важно для запасного ЛК).
 func TestCarryOver_NewFields(t *testing.T) {
 	st2 := 2
