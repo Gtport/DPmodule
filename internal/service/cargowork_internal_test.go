@@ -120,6 +120,9 @@ func (cwHist) Insert(context.Context, []domain.VagonHistory) error              
 func (cwHist) UpdateFields(context.Context, string, map[string]any) error         { return nil }
 func (cwHist) RowsByIDs(context.Context, []string) ([]domain.VagonHistory, error) { return nil, nil }
 func (cwHist) UpdateFieldsBatch(context.Context, map[string]map[string]any) error { return nil }
+func (cwHist) TripsForPamyatki(context.Context, []string) ([]domain.PamyatkaTrip, error) {
+	return nil, nil
+}
 func (cwHist) DailyTerminalCounts(context.Context, domain.LocalTime, domain.LocalTime) (map[string]int, map[string]int, error) {
 	return nil, nil, nil
 }

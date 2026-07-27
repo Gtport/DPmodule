@@ -49,6 +49,7 @@ func Build(
 	vagonOpRepo port.VagonOperationRepository,
 	cargoWorkRepo port.CargoWorkRepository,
 	maxChatRepo port.MaxChatRepository,
+	pamCursorRepo port.PamyatkaCursorRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -133,12 +134,18 @@ func Build(
 		handler.NewMissingHandler(service.NewMissingService(status9Cache, status6Cache)).RegisterRoutes(api)
 	}
 
-	// Памятки на подачу/уборку (внешний провайдер, тот же что дислокация). Не зависит
-	// от БД — на этом этапе данные только логируются, не сохраняются. Ручной забор по
-	// номеру и ручной триггер инкремента — здесь; крон-инкремент запускает main.
-	refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS, cfg.Reference.AuthSecretKey, secret.NewEnvSource())
-	refSvc := service.NewReferenceService(refClient, cfg.Reference.Clients, cfg.Reference.PullInterval, log)
-	handler.NewReferenceHandler(refSvc).RegisterRoutes(api)
+	// Памятки ГУ-45 на подачу/уборку (внешний провайдер, тот же что дислокация):
+	// инкремент раскладывает вехи подачи/уборки по рейсам vagon_history. Ручной
+	// забор по номеру и ручной триггер — здесь; крон-инкремент запускает main.
+	// Без истории и курсора движок собрать нельзя (нечего заполнять и негде
+	// держать позицию) — тогда ручек нет вовсе, как у прочих подсистем на БД.
+	var refSvc *service.ReferenceService
+	if historyRepo != nil && pamCursorRepo != nil {
+		refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS, cfg.Reference.AuthSecretKey, secret.NewEnvSource())
+		refSvc = service.NewReferenceService(refClient, historyRepo, pamCursorRepo, journalRepo,
+			cfg.Reference.Clients, cfg.Reference.PullInterval, log)
+		handler.NewReferenceHandler(refSvc).RegisterRoutes(api)
+	}
 
 	// Исходящая рассылка форм в мессенджер MAX (токен — env MAX_BOT_TOKEN, CA
 	// Минцифры вшит в адаптер). enabled=false → sender=nil, health отвечает

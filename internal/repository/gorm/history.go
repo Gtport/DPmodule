@@ -138,6 +138,45 @@ func (r *HistoryRepository) UpdateFields(ctx context.Context, id string, fields 
 		Where("id = ?", id).Updates(fields).Error
 }
 
+// TripsForPamyatki — рейсы перечисленных вагонов в виде, нужном движку памяток:
+// якорь привязки (date_prib) и текущее состояние заполнения. Полные строки
+// истории не читаем — их 70 колонок, а решают четыре поля.
+//
+// Матч считает Go (domain.ApplyPamyatki), а не SQL: рейсов на пачку немного
+// (боевая пачка за 3 суток — 2371 вагон, не больше двух рейсов на вагон), зато
+// правила выбора рейса покрыты обычными тестами без базы.
+func (r *HistoryRepository) TripsForPamyatki(ctx context.Context, vagons []string) ([]domain.PamyatkaTrip, error) {
+	if len(vagons) == 0 {
+		return nil, nil
+	}
+	var rows []struct {
+		ID          string
+		Vagon       string
+		DatePrib    *domain.LocalTime
+		State       int
+		NomGu45Pod  string
+		NomGu45Ubor string
+		DateUbor    *domain.LocalTime
+	}
+	err := r.db.WithContext(ctx).Model(&vagonHistoryModel{}).
+		Select("id, vagon, date_prib, pamyatka_state AS state, nom_gu45_pod, nom_gu45_ubor, date_ubor").
+		Where("vagon IN ?", vagons).
+		Where("date_prib IS NOT NULL"). // без прибытия привязать памятку не к чему
+		Order("vagon, date_prib").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.PamyatkaTrip, len(rows))
+	for i, r := range rows {
+		out[i] = domain.PamyatkaTrip{
+			ID: r.ID, Vagon: r.Vagon, DatePrib: r.DatePrib, State: r.State,
+			NomGu45Pod: r.NomGu45Pod, NomGu45Ubor: r.NomGu45Ubor, DateUbor: r.DateUbor,
+		}
+	}
+	return out, nil
+}
+
 // ArrivedRows — строки с фактом прибытия за период (date_prib_d ∈ [from; to]),
 // с фильтром по терминалам naznach (пусто — все). Читает по индексу
 // ix_vagon_history_date_prib_d; сортировка — стабильная, по времени прибытия.

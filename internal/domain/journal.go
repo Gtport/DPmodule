@@ -10,6 +10,7 @@ const (
 	EventDictReload   = "dict_reload"   // «Обновить справочники»: перезагрузка словарей + пересчёт снимка
 	EventRearrange    = "rearrangement" // перестановка/переадресация: правка naznach/pereadr_* оператором
 	EventArrivalsEdit = "arrivals_edit" // операторские действия с прибывшими: правки истории, подтверждения-скрытия
+	EventPamyatkaPull = "pamyatka_pull" // инкремент памяток ГУ-45: вехи подачи/уборки разнесены по рейсам
 )
 
 // Триггеры обновления снимка дислокации (event_journal.trigger).

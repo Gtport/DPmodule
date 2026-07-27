@@ -53,6 +53,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `directory.go` | Справочники обогащения: станции, операции, словарь грузов (cargo), marka, порты, скоростные профили, назначения. |
 | `history.go` | `VagonHistory` — строка бизнес-истории рейса (вехи погрузки/прибытия/выгрузки), таблица `vagon_history`. |
 | `pamyatka.go` | `Pamyatka`/`PamyatkaVagon` — памятка на подачу/уборку от провайдера (контракт `reference/update`); времена вагонов уже с восстановленным годом. |
+| `pamyatka_apply.go` | **Движок разноса памяток ГУ-45 по рейсам** (`ApplyPamyatki`, чистая функция): выбор рейса замком по времени прибытия (последний рейс с `date_prib` ≤ подачи — матч по одному номеру вагона сажает треть строк на посторонний рейс), уборочная памятка на стадии 0 заполняет оба блока, повтор того же документа обновляет на месте, чужая памятка перезаписывает рейс только если полнее. Стадии `pamyatka_state` 0/1/2, коды пропусков для журнала. |
 | `config.go` | Настроечная таблица: реестр каналов ввода (`DataSource`), клиентские параметры (`ClientSettings`), настроечный портрет станции плана (`PlanProfile`: режим planned/capacity, коэф, наши терминалы). |
 | `localtime.go` | Тип `LocalTime` — время без часового пояса (без `Z`), единый формат в JSON и БД (инвариант «МСК naive»). |
 | `journal.go` | Типы единого журнала событий: `JournalEvent`, типы событий (`disl_update`/`disl_rejected`/`plan_upload`/`dict_reload`) и триггеры (`manual`/`scheduled`/`actualization`/`plan`). |
@@ -67,7 +68,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 |---|---|
 | `dislocation.go` | `DislocationRepository`: чтение снимка на старте + атомарная замена снимка целиком. |
 | `plan.go` | `PlanRepository`: хранение плана с историей загрузок (сохранить, список, свежий, по id). |
-| `history.go` | `HistoryRepository`: запись бизнес-истории рейса (проверка id, вставка, точечный UPDATE). |
+| `history.go` | `HistoryRepository`: запись бизнес-истории рейса (проверка id, вставка, точечный UPDATE), `TripsForPamyatki` — рейсы вагонов для движка памяток (якорь `date_prib` + состояние заполнения). |
 | `directory.go` | `DirectoryRepository`: загрузка справочников обогащения. |
 | `config.go` | `ConfigRepository`: загрузка настроечной таблицы (`data_source`, `client_settings`, `plan_profile`). |
 | `status9.go` | `Status9Repository`: кандидаты в прибытие (статусы 8/9), сохранение операторских правок. |
@@ -79,6 +80,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `admin_tables.go` | `AdminTablesRepository`: универсальный CRUD справочников по реестру `list_tables` (админ-редактор). |
 | `bros.go` | `BrosReasonCodesRepository`: чтение справочника кодов бросания (`bros_reason_codes`). `BrosRepository`: снимок брошенных (`bros`) — активные, история, фильтр отчёта, поиск по индексу; Insert/Update (динамический) для reconcile-слоя. `BrosJournalRepository`: журнал (`bros_journal`) — Upsert (одна запись в сутки на поезд), история, последняя запись. |
 | `delay.go` | `VagonDelayRepository`: эпизоды задержек вагонов (`vagon_delay`) — открытые (`Open`), Insert, динамический Update для reconcile-слоя. |
+| `pamyatka.go` | `PamyatkaCursorRepository`: курсор инкремента памяток ГУ-45 по клиентам провайдера (`pamyatka_cursor`) — Get/Set. В памяти держать нельзя: рестарт потерял бы позицию. |
 | `external.go` | Внешние интеграции: `SecretSource` (секреты — env сейчас, Vault позже), `ASUClient` (АСУ, pull/push) и `ReferenceClient` (памятки: по номеру / инкремент). |
 | `max.go` | `MessengerSender` — исходящий канал рассылки в мессенджер MAX: `Ping` (health), `SendText`, `SendImage`, `SendFile`. Реализация — `adapter/max`. Плюс `MaxChatRepository` — чтение справочника чатов (`Chats`) и маршрутов рассылки форм (`Routes` по форме+терминалу). |
 
@@ -86,7 +88,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | Файл | За что отвечает |
 |---|---|
 | `asu/http_client.go` | HTTP-реализация `port.ASUClient`: GET к сервису АСУ (`<base_url>/<client>/dislocation`), секрет из `SecretSource` в заголовке `auth_header` (напр. `X-API-Key`; пусто → `Bearer`), опция `insecure_tls` (самоподписанный серт). Плюс `PullWagonHistory` — запрос 601 «История продвижения вагона» (`/wagons/{vagon}/history/{client}?from=&to=`, тот же провайдер/ключ). Сырые байты; разбор — в `parser`. |
-| `reference/http_client.go` | HTTP-реализация `port.ReferenceClient`: забор памяток у того же провайдера (`/reference?number=` и `/reference/update/{client}?last_update=`), `X-API-Key` из `SecretSource`, `insecure_tls`. Сырые байты (разбор пока не подключён). |
+| `reference/http_client.go` | HTTP-реализация `port.ReferenceClient`: забор памяток у того же провайдера (`/reference?number=` и `/reference/update/{client}?last_update=`), `X-API-Key` из `SecretSource`, `insecure_tls`. Отдаёт сырые байты; разбор — в `parser`. |
 | `max/client.go` | HTTP-реализация `port.MessengerSender`: исходящая рассылка форм в мессенджер MAX (Bot API `platform-api.max.ru`). Токен бота — из `SecretSource` (env `MAX_BOT_TOKEN`) в заголовке `Authorization` (голый, без `Bearer`). `Ping` (`GET /me`) для health; `SendText`; `SendImage`/`SendFile` — трёхшаговой заливкой (URL → тело → сообщение с токеном вложения) с паузой и retry на `attachment.not.ready`. Корневой CA Минцифры вшит через `go:embed` (`certs/russian_trusted_ca.pem`) и добавлен в пул TLS поверх системного. |
 
 ### `internal/service/` — бизнес-логика
@@ -121,7 +123,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `lk_status.go` | Контроль приёма ЛК: сводка staged-файлов, замечания, блокирующие ошибки для UI/шага 2. Устаревание файла (`stale`) — БЛОК (`ready=false`), согласовано с гардом обработки `checkFreshness` (иначе статус «готово», а обработка падает 409). |
 | `lk_process.go` | **Приём ЛК, шаг 2**: парсинг принятых файлов и атомарная замена снимка дислокации (мьютекс сериализует пересборку с автозагрузкой АСУ). Гарды актуальности (`guardFreshness`/`checkFreshness`): не обрабатывать файлы старше `max_staleness_minutes` и не затирать свежую дислокацию более старой (`reject_older_than_current`, роль-исключение) — иначе 409. |
 | `asu_ingest.go` | **Автозагрузка АСУ-АСУ** (`api_pull`): забор всех клиентов провайдера за проход, гарды — рассогласование меток (`max_source_skew_minutes`), свежесть как у ЛК (`max_staleness_minutes`, `reject_older_than_current`), «данные не обновились» (каждый поток обязан принести метку строго новее прошлого обновления — защита от обрыва РЖД↔АСУ); общий конвейер `ProcessRecords` → снимок; триггер журнала `scheduled`. |
-| `reference.go` | **Памятки на подачу/уборку** (`ReferenceService`): забор по номеру и крон-инкремент по клиентам (`last_update = now − interval`). Клиенты независимы (ошибка одного не рушит проход). ЭТАП-ЗАГЛУШКА: данные логируются, **не сохраняются** и не разбираются. |
+| `reference.go` | **Памятки ГУ-45** (`ReferenceService`): крон-инкремент по клиентам с курсором из `pamyatka_cursor` → разбор → `domain.ApplyPamyatki` → батч-запись вех подачи/уборки в `vagon_history`. Курсор двигается только после успешной записи и только на непустой `LAST_UPDATE` (пустая пачка отдаёт пустой курсор). Клиенты независимы; итог прохода — в `event_journal` (`pamyatka_pull`). Сами памятки не храним: нужны вехи рейса, а не документы. Забор по номеру — диагностический, отдаёт сырой документ (иной контракт). |
 | `max_chats.go` | `MaxChatService` — справочник чатов MAX и разрешение маршрутов рассылки форм: `Chats` (список для фронта, без `chat_id`), `ResolveChats(report, terminal)` — активные чаты формы в порядке маршрутов, с дедупом и пропуском выключенных/без-id. Отделяет «куда слать» от транспорта. |
 | `bros_reason_codes.go` | `BrosReasonCodes` — справочник кодов бросания (чтение). Расшифровки нужны журналу бросков и отчёту — экраны следующих веток. |
 | `bros.go` | Снимок брошенных. `applyBros` — reconcile статуса 5 после Stage 4 (перенос gtport `dislocation_status5` без stateful-очереди): вагоны статуса 5 группируются по `id_status5` → новый ключ INSERT, активный UPDATE (состав/план/индекс), исчезнувший из статуса 5 STOP (поднят; новое состояние — из свежего батча по вагонам прежнего снимка). `BrosService` — чтение (активные/история/фильтр/поиск). |
@@ -155,7 +157,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `db.go` | Открытие подключения GORM (драйвер pgx, пул, отключение неявных транзакций). |
 | `dislocation.go` | ORM-модель снимка + атомарная замена через staging-таблицу и swap («вариант B»). |
 | `plan.go` | ORM-модели плана/ниток, сериализация ячеек портов (jsonb↔text), сохранение/чтение загрузок с историей. |
-| `history.go` | ORM-модель и запись бизнес-истории (существующие id, вставка, динамический UPDATE). |
+| `history.go` | ORM-модель и запись бизнес-истории (существующие id, вставка, динамический UPDATE). `TripsForPamyatki` — узкая выборка рейсов по вагонам (id, `date_prib`, `pamyatka_state`, номера памяток, `date_ubor`): матч считает Go, чтобы правила были покрыты тестами без базы. |
 | `directory.go` | ORM-модели и загрузка всех справочников обогащения. |
 | `config.go` | ORM-модели и загрузка настроечной таблицы. |
 | `status9.go` | Таблица `status9`: чтение, вставка без перезаписи правок, upsert пропавших, удаление, выборка пропавших (полные строки и устаревшие для TTL-очистки). |
@@ -167,6 +169,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `admin_tables.go` | Универсальный CRUD админ-редактора: имена таблиц только из реестра `list_tables`, колонки и русские подписи из `information_schema`/`pg_description`, идентификаторы квотируются, значения — параметрами (канон динамического SQL). |
 | `bros.go` | `BrosReasonCodesRepository`: чтение справочника кодов бросания (`bros_reason_codes`), по коду. `BrosRepository`: снимок брошенных (`bros`) — Active/History/Filter/GetByID/SearchByIndex (билдер) + Insert/Update (динамический UPDATE) для reconcile + PurgeCompletedOlderThan (автоочистка завершённых старше TTL). `BrosJournalRepository`: журнал (`bros_journal`) — Upsert (сырой SQL с `ON CONFLICT (bros_id,date)` + RETURNING id), ByBrosID, Latest. |
 | `delay.go` | `VagonDelayRepository`: эпизоды задержек вагонов (`vagon_delay`) — открытые (`date_to IS NULL`), Insert, динамический Update (закрытие/эскалация), `ByTrip` (эпизоды рейса для трейла), `ByPeriod` (отчёт: сырой SQL с LEFT JOIN `vagon_history` → `trip_id` для «Истории движения»), `PurgeClosedOlderThan` (автоочистка). |
+| `pamyatka.go` | `PamyatkaCursorRepository`: курсор памяток по клиентам (`pamyatka_cursor`) — Get (нет строки → пусто, без ошибки) и Set (upsert `ON CONFLICT`), штамп из `clock.Now()`. |
 | `max.go` | `MaxChatRepository`: чтение справочника чатов MAX (`max_chat`, по имени) и маршрутов рассылки форм (`max_route` по форме+терминалу, включённые, по порядку). Обе таблицы правятся в админ-редакторе. |
 
 ### `internal/parser/` — разбор входных файлов
@@ -198,7 +201,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `dict_reload.go` | `POST /dislocation/directories/reload` — «Обновить справочники»: перезагрузка словарей + пересчёт снимка. |
 | `lk_process.go` | Запуск шага 2 обработки ЛК (staged-файлы → снимок). |
 | `asu_pull.go` | `POST /dislocation/asu/pull` — ручной триггер автозагрузки АСУ-АСУ (по расписанию — внутренний крон-воркер, см. `internal/worker`). Рассогласование меток → 409, АСУ недоступна → 502. |
-| `reference.go` | Памятки: `GET /reference?number=` (по номеру) и `POST /reference/update/pull` (ручной триггер инкремента; по расписанию — крон-воркер). Провайдер недоступен → 502. |
+| `reference.go` | Памятки ГУ-45: `GET /reference?number=` (сырой документ провайдера, диагностика) и `POST /reference/update/pull` (ручной триггер инкремента; по расписанию — крон-воркер). Ответ инкремента — по клиенту: разобрано памяток/вагонов, обновлено рейсов, пропущено с причинами. Провайдер недоступен → 502. |
 | `plan_upload.go` | План подвода: загрузка файла (upload/prepare/confirm/touch), получение свежего/по id, история загрузок; гард свежести → 409. |
 | `status.go` | `/dislocation/status` (актуальность из журнала) + `/dislocation/journal?from&to&limit` (журнал обновлений дислокации за период: источник, триггер, кто, когда, вагоны). |
 | `forecast.go` | `GET /dislocation/forecast` — сводка прогнозов по поездам (Stage 3/4) для экрана «Прогнозы» (из `ForecastBoard`). |
@@ -256,7 +259,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `docs/STATUSES.md` | Справка по жизненному циклу статусов вагона. |
 
 ### `migrations/` — SQL-миграции (golang-migrate, `cmd/migrate`)
-Пары `up`/`down` с последовательной нумерацией `000001–000048`: инициализация схемы
+Пары `up`/`down` с последовательной нумерацией `000001–000049`: инициализация схемы
 `dpport`, справочников и конфигурации, расширения портов, скоростные профили, пороги
 статусов, таблицы `status9`/`status6`, назначения, план подвода, словарь cargo,
 админ-редактор, поля переадресации и доверенного лица, поле `owner` («чей вагон»:
@@ -294,6 +297,15 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 - `000048_vagon_delay_terminal.*.sql` — терминал (`gruzpol_s`) в эпизодах задержек:
   обязателен в «Задержанных вагонах» и фильтре отчёта (решение владельца); бэкфилл
   существующих эпизодов из `vagon_history` по рейсу.
+- `000049_pamyatka.*.sql` — вехи памяток ГУ-45 в истории: колонка `pamyatka_state`
+  (0 — памяток не было, 1 — подача, 2 — уборка) + таблица курсоров `pamyatka_cursor`.
+  Колонки под памятки существуют с `000001` (перенесены из gtport), но там их вбивали
+  руками Excel-файлом «Журнал движения» — теперь ведёт крон. Раскладка (решение
+  владельца 28.07.2026, в модели gtport стояло «уточнить») зафиксирована в
+  `COMMENT ON COLUMN`: `nom_gu45_pod`/`date_gu45_pod`/`date_pod`/`place_pod` из
+  памятки на подачу, `nom_gu45_ubor`/`date_gu45_ubor`/`date_ubor` — на уборку,
+  `date_vigr_gu45` ← `REPORT`. Колонки-дубли `date_pod_gu45`/`date_ubor_gu45` остаются
+  пустыми.
 - `000014_plan.*.sql` — таблицы плана подвода (`plan`, `plan_nitka`).
 - `000015_plan_history.*.sql` — история загрузок плана (несколько загрузок на станцию,
   выбор свежей); пересоздаёт `plan`/`plan_nitka` (view-cache, восстановимо загрузкой).

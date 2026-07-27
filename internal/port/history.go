@@ -16,6 +16,10 @@ type HistoryRepository interface {
 	Insert(ctx context.Context, rows []domain.VagonHistory) error
 	// UpdateFields точечно обновляет колонки строки по id (ключи — имена колонок).
 	UpdateFields(ctx context.Context, id string, fields map[string]any) error
+	// TripsForPamyatki — рейсы перечисленных вагонов для движка памяток ГУ-45:
+	// только якорь привязки (date_prib) и состояние заполнения памятками.
+	// Рейсы без date_prib не возвращаются — привязать памятку к ним не к чему.
+	TripsForPamyatki(ctx context.Context, vagons []string) ([]domain.PamyatkaTrip, error)
 	// ArrivedRows — строки истории с фактом прибытия: date_prib_d ∈ [from; to]
 	// (даты без времени), naznach из набора (пустой набор — все). Для «Истории
 	// прибывших» домашней страницы.

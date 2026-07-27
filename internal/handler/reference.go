@@ -8,9 +8,10 @@ import (
 	"github.com/Gtport/DPmodule/internal/service"
 )
 
-// referenceHandler — памятки на подачу/уборку из внешнего сервиса. По номеру —
-// ручной забор; крон-инкремент по клиентам дёргается фоновым воркером, здесь же —
-// ручной триггер. На этом этапе данные только логируются, не сохраняются.
+// referenceHandler — памятки ГУ-45 на подачу/уборку из внешнего сервиса.
+// Инкремент раскладывает вехи подачи/уборки по рейсам vagon_history (крон +
+// ручной триггер здесь); забор по номеру отдаёт сырой документ провайдера
+// как есть — это другой контракт, в историю он не раскладывается.
 type referenceHandler struct {
 	svc *service.ReferenceService
 }
@@ -25,7 +26,7 @@ func (h *referenceHandler) RegisterRoutes(g *gin.RouterGroup) {
 }
 
 // byNumber godoc
-// @Summary  Памятка по номеру (забор у провайдера; пока не сохраняется)
+// @Summary  Памятка по номеру — сырой документ провайдера (диагностика)
 // @Tags     reference
 // @Security BearerAuth
 // @Param    number query string true  "номер памятки (NUMBER_PAMYATKA)"
@@ -40,25 +41,27 @@ func (h *referenceHandler) byNumber(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "требуется параметр number"})
 		return
 	}
-	n, err := h.svc.FetchByNumber(c.Request.Context(), c.Query("client"), number)
+	body, err := h.svc.FetchByNumber(c.Request.Context(), c.Query("client"), number)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "received", "number": number, "bytes": n})
+	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 }
 
 // updatePull godoc
-// @Summary  Крон-инкремент памяток по всем клиентам (забор; пока не сохраняется)
+// @Summary  Инкремент памяток по всем клиентам: разнос вех подачи/уборки по рейсам
 // @Tags     reference
 // @Security BearerAuth
-// @Success  200 {object} object
-// @Failure  502 {object} object "провайдер недоступен / ошибка забора"
+// @Success  200 {object} object "по клиенту: разобрано памяток/вагонов, обновлено рейсов, пропущено с причинами"
+// @Failure  502 {object} object "провайдер недоступен / ошибка забора или записи"
 // @Router   /api/v1/reference/update/pull [post]
 func (h *referenceHandler) updatePull(c *gin.Context) {
-	if err := h.svc.PullUpdates(c.Request.Context()); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+	res, err := h.svc.PullUpdatesDetailed(c.Request.Context())
+	if err != nil {
+		// Часть клиентов могла отработать — отдаём и результаты, и ошибку.
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "results": res})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "received"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "results": res})
 }

@@ -171,6 +171,10 @@ func (r *histStubRepo) RowsByIDs(_ context.Context, ids []string) ([]domain.Vago
 	return out, nil
 }
 
+func (r *histStubRepo) TripsForPamyatki(_ context.Context, _ []string) ([]domain.PamyatkaTrip, error) {
+	return nil, nil
+}
+
 func (r *histStubRepo) UpdateFieldsBatch(_ context.Context, updates map[string]map[string]any) error {
 	if r.batch == nil {
 		r.batch = map[string]map[string]any{}

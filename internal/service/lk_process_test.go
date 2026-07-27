@@ -360,6 +360,10 @@ func (f *fakeHistoryRepo) RowsByIDs(_ context.Context, ids []string) ([]domain.V
 	return out, nil
 }
 
+func (f *fakeHistoryRepo) TripsForPamyatki(_ context.Context, _ []string) ([]domain.PamyatkaTrip, error) {
+	return nil, nil
+}
+
 func (f *fakeHistoryRepo) UpdateFieldsBatch(_ context.Context, updates map[string]map[string]any) error {
 	for id, fields := range updates {
 		f.updatedBatch[id] = fields
