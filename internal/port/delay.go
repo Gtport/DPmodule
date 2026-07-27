@@ -16,6 +16,9 @@ type VagonDelayRepository interface {
 	// ByTrip — эпизоды задержек одного рейса (вагон + дата начала рейса),
 	// по возрастанию date_from.
 	ByTrip(ctx context.Context, vagon string, dateNachD domain.LocalTime) ([]domain.VagonDelay, error)
+	// ByPeriod — эпизоды, пересекающиеся с интервалом [from; to) (закрытые и
+	// открытые), с id строки рейса в vagon_history; по возрастанию date_from.
+	ByPeriod(ctx context.Context, from, to domain.LocalTime) ([]domain.VagonDelayRow, error)
 	// Insert вставляет новый эпизод.
 	Insert(ctx context.Context, d domain.VagonDelay) error
 	// Update точечно обновляет колонки эпизода по id (ключи — имена колонок).

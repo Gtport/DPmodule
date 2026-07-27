@@ -102,6 +102,57 @@ func (r *VagonDelayRepository) Update(ctx context.Context, id int64, fields map[
 		Where("id = ?", id).Updates(fields).Error
 }
 
+// vagonDelayRowModel — строка отчёта: эпизод + id строки рейса из vagon_history.
+// Плоская (без embedded): Raw().Scan сопоставляет колонки только по прямым полям.
+type vagonDelayRowModel struct {
+	ID          int64             `gorm:"column:id"`
+	Vagon       string            `gorm:"column:vagon"`
+	DateNachD   *domain.LocalTime `gorm:"column:date_nach_d"`
+	Kind        int               `gorm:"column:kind"`
+	GroupKey    string            `gorm:"column:group_key"`
+	Index       string            `gorm:"column:index_poezd"`
+	IndexMain   string            `gorm:"column:index_main"`
+	StationCode string            `gorm:"column:station_code"`
+	StationName string            `gorm:"column:station_name"`
+	Doroga      string            `gorm:"column:doroga"`
+	DateFrom    *domain.LocalTime `gorm:"column:date_from"`
+	DateTo      *domain.LocalTime `gorm:"column:date_to"`
+	Hours       *float64          `gorm:"column:hours"`
+	CreatedAt   *domain.LocalTime `gorm:"column:created_at"`
+	UpdatedAt   *domain.LocalTime `gorm:"column:updated_at"`
+	TripID      string            `gorm:"column:trip_id"`
+}
+
+// ByPeriod — эпизоды, пересекающиеся с [from; to), с id строки рейса
+// (vagon_history по вагону и дате начала рейса — та же пара, что даёт trip_key).
+// Сырой SQL: JOIN по канону GORM-гибрида.
+func (r *VagonDelayRepository) ByPeriod(ctx context.Context, from, to domain.LocalTime) ([]domain.VagonDelayRow, error) {
+	var ms []vagonDelayRowModel
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT d.*, COALESCE(h.id, '') AS trip_id
+		FROM vagon_delay d
+		LEFT JOIN vagon_history h
+		       ON h.vagon = d.vagon AND h.date_nach_d = d.date_nach_d
+		WHERE d.date_from < ? AND (d.date_to IS NULL OR d.date_to >= ?)
+		ORDER BY d.date_from`, to, from).Scan(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.VagonDelayRow, len(ms))
+	for i, m := range ms {
+		out[i] = domain.VagonDelayRow{
+			VagonDelay: domain.VagonDelay{
+				ID: m.ID, Vagon: m.Vagon, DateNachD: m.DateNachD, Kind: m.Kind,
+				GroupKey: m.GroupKey, Index: m.Index, IndexMain: m.IndexMain,
+				StationCode: m.StationCode, StationName: m.StationName, Doroga: m.Doroga,
+				DateFrom: m.DateFrom, DateTo: m.DateTo, Hours: m.Hours,
+				CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+			},
+			TripID: m.TripID,
+		}
+	}
+	return out, nil
+}
+
 // PurgeClosedOlderThan удаляет закрытые эпизоды старше cutoff (по date_to);
 // открытые (date_to IS NULL) не трогает.
 func (r *VagonDelayRepository) PurgeClosedOlderThan(ctx context.Context, cutoff domain.LocalTime) (int, error) {

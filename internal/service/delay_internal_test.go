@@ -12,9 +12,11 @@ import (
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
-// fakeDelayRepo — in-memory port.VagonDelayRepository для тестов reconcile.
+// fakeDelayRepo — in-memory port.VagonDelayRepository для тестов reconcile
+// и отчёта (period — что вернёт ByPeriod).
 type fakeDelayRepo struct {
 	open    []domain.VagonDelay
+	period  []domain.VagonDelayRow
 	inserts []domain.VagonDelay
 	updates map[int64]map[string]any
 }
@@ -40,6 +42,10 @@ func (f *fakeDelayRepo) PurgeClosedOlderThan(context.Context, domain.LocalTime) 
 
 func (f *fakeDelayRepo) ByTrip(context.Context, string, domain.LocalTime) ([]domain.VagonDelay, error) {
 	return nil, nil
+}
+
+func (f *fakeDelayRepo) ByPeriod(context.Context, domain.LocalTime, domain.LocalTime) ([]domain.VagonDelayRow, error) {
+	return f.period, nil
 }
 
 // delayVag — вагон статуса `status` на станции `stCode` для тестов задержек.

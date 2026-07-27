@@ -89,4 +89,22 @@ func TestVagonDelayRepository_Lifecycle(t *testing.T) {
 	var left int64
 	require.NoError(t, db.Raw("SELECT count(*) FROM vagon_delay WHERE vagon = ?", vag).Scan(&left).Error)
 	assert.Equal(t, int64(1), left, "открытый эпизод должен пережить автоочистку")
+
+	// ByPeriod (отчёт): открытый эпизод попадает в период, trip_id пуст —
+	// строки рейса в vagon_history для тестового «вагона» нет.
+	rows, err := repo.ByPeriod(ctx,
+		*domain.NewLocalTime(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)),
+		*domain.NewLocalTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)))
+	require.NoError(t, err)
+	var mineRow *domain.VagonDelayRow
+	for i := range rows {
+		if rows[i].Vagon == vag {
+			mineRow = &rows[i]
+			break
+		}
+	}
+	require.NotNil(t, mineRow, "открытый эпизод должен попасть в отчёт за период")
+	assert.Equal(t, "880002", mineRow.StationCode)
+	assert.Empty(t, mineRow.TripID)
+	assert.Nil(t, mineRow.DateTo)
 }

@@ -8,6 +8,7 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
 import { CargoWorkModalComponent } from './cargo-work-modal.component';
 import { BrosModalComponent } from './bros-modal.component';
 import { BrosApiService } from './bros-api.service';
+import { DelaysReportModalComponent } from './delays-report-modal.component';
 
 /**
  * Карточка «Информация» рядом со «Статусом системы» (правая половина верхней
@@ -18,7 +19,7 @@ import { BrosApiService } from './bros-api.service';
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysReportModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Информация</b></div>
@@ -44,6 +45,12 @@ import { BrosApiService } from './bros-api.service';
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
+      <button class="row" type="button" (click)="openDelays()"
+              nz-tooltip nzTooltipTitle="Простои и бросания вагонов в пути за период (память задержек) — открыть отчёт">
+        <span class="lbl">Простои в пути</span>
+        <span nz-icon nzType="right" class="go ml"></span>
+      </button>
+
       <button class="row" type="button" (click)="openCargoWork()"
               nz-tooltip nzTooltipTitle="Суточный учёт выгрузки и погрузки по терминалам — открыть">
         <span class="lbl">Грузовая работа</span>
@@ -61,6 +68,9 @@ import { BrosApiService } from './bros-api.service';
     }
     @if (showBros()) {
       <app-bros-modal (closed)="showBros.set(false)" />
+    }
+    @if (showDelays()) {
+      <app-delays-report-modal (closed)="showDelays.set(false)" />
     }
     @if (showDonors()) {
       <app-vagon-list-modal title="Перегруз — доноры (статус 6)" sinceLabel="Донор с"
@@ -98,6 +108,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   readonly showDonors = signal(false);
   readonly showCargoWork = signal(false);
   readonly showBros = signal(false);
+  readonly showDelays = signal(false);
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -128,6 +139,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   openDonors(): void { this.showDonors.set(true); }
   openCargoWork(): void { this.showCargoWork.set(true); }
   openBros(): void { this.showBros.set(true); }
+  openDelays(): void { this.showDelays.set(true); }
 
   /** Пропавшие → общая форма строки таблицы. */
   missingRows(): VagonListRow[] {

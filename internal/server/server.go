@@ -110,6 +110,12 @@ func Build(
 		handler.NewBrosHandler(service.NewBrosReasonCodes(brosReasonRepo)).RegisterRoutes(api)
 	}
 
+	// Отчёт «Простои за период»: память о задержках vagon_delay (только чтение;
+	// пишет reconcile конвейера, proc.SetDelays ниже).
+	if delayRepo != nil {
+		handler.NewDelaysHandler(service.NewDelayService(delayRepo)).RegisterRoutes(api)
+	}
+
 	// Снимок брошенных: активные/история/отчёт/поиск (чтение). Reconcile статуса 5
 	// цепляется к конвейеру ниже (proc.SetBros). Правки/журнал — следующая ветка.
 	if brosRepo != nil {

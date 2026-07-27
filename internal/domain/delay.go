@@ -31,3 +31,37 @@ type VagonDelay struct {
 	CreatedAt   *LocalTime `json:"created_at"`
 	UpdatedAt   *LocalTime `json:"updated_at"`
 }
+
+// VagonDelayRow — эпизод в отчёте: сам эпизод + id строки рейса в vagon_history
+// (по нему открывается «История движения вагона»; пуст, если строки рейса нет)
+// + часть длительности, попавшая в период отчёта (вагоно-часы за период).
+type VagonDelayRow struct {
+	VagonDelay
+	TripID        string  `json:"trip_id"`
+	HoursInPeriod float64 `json:"hours_in_period"`
+}
+
+// DelayStationAgg — строка отчёта «по станциям»: вагоно-часы простоя за период
+// с разбивкой по виду, уникальные вагоны, стоящие прямо сейчас.
+type DelayStationAgg struct {
+	StationCode string  `json:"station_code"`
+	StationName string  `json:"station_name"`
+	Doroga      string  `json:"doroga"`
+	Episodes    int     `json:"episodes"`
+	Vagons      int     `json:"vagons"`
+	OpenNow     int     `json:"open_now"`
+	Hours4      float64 `json:"hours4"` // долгий простой
+	Hours5      float64 `json:"hours5"` // брошен
+	Hours       float64 `json:"hours"`  // всего за период
+}
+
+// DelayReport — отчёт «Простои за период»: эпизоды (пересекающиеся с периодом)
+// + агрегат по станциям (по убыванию вагоно-часов) + итоги.
+type DelayReport struct {
+	Records       []VagonDelayRow   `json:"records"`
+	Stations      []DelayStationAgg `json:"stations"`
+	TotalHours    float64           `json:"total_hours"`
+	TotalEpisodes int               `json:"total_episodes"`
+	TotalVagons   int               `json:"total_vagons"`
+	OpenNow       int               `json:"open_now"`
+}
