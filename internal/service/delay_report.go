@@ -21,15 +21,37 @@ func NewDelayService(repo port.VagonDelayRepository) *DelayService {
 	return &DelayService{repo: repo}
 }
 
+// Current — «Задержанные вагоны»: открытые эпизоды (стоят прямо сейчас),
+// свежие сверху; hours_in_period — текущая длительность стоянки (до «сейчас»).
+func (s *DelayService) Current(ctx context.Context) ([]domain.VagonDelayRow, error) {
+	rows, err := s.repo.Current(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("открытые эпизоды: %w", err)
+	}
+	now := time.Time(clock.Now())
+	for i := range rows {
+		if rows[i].DateFrom == nil {
+			continue
+		}
+		if h := now.Sub(time.Time(*rows[i].DateFrom)).Hours(); h > 0 {
+			rows[i].HoursInPeriod = round1(h)
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool { // дольше всех стоящие сверху
+		return rows[i].HoursInPeriod > rows[j].HoursInPeriod
+	})
+	return rows, nil
+}
+
 // Report — отчёт за период дат [from; to] (обе включительно, МСК): эпизоды,
-// пересекающиеся с периодом, + агрегат по станциям + итоги. Главная метрика —
-// вагоно-часы простоя ЗА ПЕРИОД (hours_in_period): длительность эпизода,
-// обрезанная границами периода; открытый эпизод считается до «сейчас».
-// Полная длительность эпизода (hours) остаётся в строке как есть.
-func (s *DelayService) Report(ctx context.Context, from, to domain.LocalTime) (domain.DelayReport, error) {
+// пересекающиеся с периодом, + агрегат по станциям + итоги. terminal — фильтр
+// по gruzpol_s (пусто — все). Главная метрика — вагоно-часы простоя ЗА ПЕРИОД
+// (hours_in_period): длительность эпизода, обрезанная границами периода;
+// открытый эпизод считается до «сейчас». Полная длительность (hours) — как есть.
+func (s *DelayService) Report(ctx context.Context, from, to domain.LocalTime, terminal string) (domain.DelayReport, error) {
 	start := dayStartTime(from)
 	end := dayStartTime(to).Add(24 * time.Hour) // конец периода — следующая полночь
-	rows, err := s.repo.ByPeriod(ctx, domain.LocalTime(start), domain.LocalTime(end))
+	rows, err := s.repo.ByPeriod(ctx, domain.LocalTime(start), domain.LocalTime(end), terminal)
 	if err != nil {
 		return domain.DelayReport{}, fmt.Errorf("эпизоды за период: %w", err)
 	}

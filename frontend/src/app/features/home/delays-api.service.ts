@@ -15,6 +15,8 @@ export interface DelayEpisode {
   station_code: string;
   station_name: string;
   doroga: string;
+  /** Терминал (краткое имя причала) — куда едет вагон. */
+  gruzpol_s: string;
   date_from: string | null;
   /** null — вагон стоит до сих пор. */
   date_to: string | null;
@@ -55,8 +57,13 @@ export class DelaysApiService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiBaseUrl}/v1/dislocation/delays`;
 
-  /** Отчёт за период дат (обе включительно, YYYY-MM-DD, МСК). */
-  report(from: string, to: string): Promise<DelayReport> {
-    return firstValueFrom(this.http.get<DelayReport>(`${this.base}/report`, { params: { from, to } }));
+  /** «Задержанные вагоны»: открытые эпизоды (стоят сейчас), hours_in_period — длительность до «сейчас». */
+  current(): Promise<DelayEpisode[]> {
+    return firstValueFrom(this.http.get<DelayEpisode[]>(`${this.base}/current`));
+  }
+
+  /** Отчёт за период дат (обе включительно, YYYY-MM-DD, МСК); terminal пусто — все. */
+  report(from: string, to: string, terminal = ''): Promise<DelayReport> {
+    return firstValueFrom(this.http.get<DelayReport>(`${this.base}/report`, { params: { from, to, terminal } }));
   }
 }

@@ -25,6 +25,7 @@ type VagonDelay struct {
 	StationCode string     `json:"station_code"`
 	StationName string     `json:"station_name"`
 	Doroga      string     `json:"doroga"`
+	GruzpolS    string     `json:"gruzpol_s"` // терминал (краткое имя причала)
 	DateFrom    *LocalTime `json:"date_from"` // начало стоянки (time_op)
 	DateTo      *LocalTime `json:"date_to"`   // nil — стоит до сих пор
 	Hours       *float64   `json:"hours"`     // длительность, часы (при закрытии)

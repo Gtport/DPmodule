@@ -30,6 +30,7 @@ type vagonDelayModel struct {
 	StationCode string            `gorm:"column:station_code"`
 	StationName string            `gorm:"column:station_name"`
 	Doroga      string            `gorm:"column:doroga"`
+	GruzpolS    string            `gorm:"column:gruzpol_s"`
 	DateFrom    *domain.LocalTime `gorm:"column:date_from"`
 	DateTo      *domain.LocalTime `gorm:"column:date_to"`
 	Hours       *float64          `gorm:"column:hours"`
@@ -44,6 +45,7 @@ func toVagonDelayModel(d domain.VagonDelay) vagonDelayModel {
 		ID: d.ID, Vagon: d.Vagon, DateNachD: d.DateNachD, Kind: d.Kind,
 		GroupKey: d.GroupKey, Index: d.Index, IndexMain: d.IndexMain,
 		StationCode: d.StationCode, StationName: d.StationName, Doroga: d.Doroga,
+		GruzpolS: d.GruzpolS,
 		DateFrom: d.DateFrom, DateTo: d.DateTo, Hours: d.Hours,
 		CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
 	}
@@ -54,6 +56,7 @@ func toVagonDelayDomain(m vagonDelayModel) domain.VagonDelay {
 		ID: m.ID, Vagon: m.Vagon, DateNachD: m.DateNachD, Kind: m.Kind,
 		GroupKey: m.GroupKey, Index: m.Index, IndexMain: m.IndexMain,
 		StationCode: m.StationCode, StationName: m.StationName, Doroga: m.Doroga,
+		GruzpolS: m.GruzpolS,
 		DateFrom: m.DateFrom, DateTo: m.DateTo, Hours: m.Hours,
 		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 	}
@@ -115,6 +118,7 @@ type vagonDelayRowModel struct {
 	StationCode string            `gorm:"column:station_code"`
 	StationName string            `gorm:"column:station_name"`
 	Doroga      string            `gorm:"column:doroga"`
+	GruzpolS    string            `gorm:"column:gruzpol_s"`
 	DateFrom    *domain.LocalTime `gorm:"column:date_from"`
 	DateTo      *domain.LocalTime `gorm:"column:date_to"`
 	Hours       *float64          `gorm:"column:hours"`
@@ -123,32 +127,63 @@ type vagonDelayRowModel struct {
 	TripID      string            `gorm:"column:trip_id"`
 }
 
+func toVagonDelayRowDomain(m vagonDelayRowModel) domain.VagonDelayRow {
+	return domain.VagonDelayRow{
+		VagonDelay: domain.VagonDelay{
+			ID: m.ID, Vagon: m.Vagon, DateNachD: m.DateNachD, Kind: m.Kind,
+			GroupKey: m.GroupKey, Index: m.Index, IndexMain: m.IndexMain,
+			StationCode: m.StationCode, StationName: m.StationName, Doroga: m.Doroga,
+			GruzpolS: m.GruzpolS,
+			DateFrom: m.DateFrom, DateTo: m.DateTo, Hours: m.Hours,
+			CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+		},
+		TripID: m.TripID,
+	}
+}
+
 // ByPeriod — эпизоды, пересекающиеся с [from; to), с id строки рейса
 // (vagon_history по вагону и дате начала рейса — та же пара, что даёт trip_key).
-// Сырой SQL: JOIN по канону GORM-гибрида.
-func (r *VagonDelayRepository) ByPeriod(ctx context.Context, from, to domain.LocalTime) ([]domain.VagonDelayRow, error) {
+// terminal — фильтр по gruzpol_s (пусто — все). Сырой SQL: JOIN по канону.
+func (r *VagonDelayRepository) ByPeriod(ctx context.Context, from, to domain.LocalTime, terminal string) ([]domain.VagonDelayRow, error) {
+	q := `
+		SELECT d.*, COALESCE(h.id, '') AS trip_id
+		FROM vagon_delay d
+		LEFT JOIN vagon_history h
+		       ON h.vagon = d.vagon AND h.date_nach_d = d.date_nach_d
+		WHERE d.date_from < ? AND (d.date_to IS NULL OR d.date_to >= ?)`
+	args := []any{to, from}
+	if terminal != "" {
+		q += ` AND d.gruzpol_s = ?`
+		args = append(args, terminal)
+	}
+	q += ` ORDER BY d.date_from`
+
+	var ms []vagonDelayRowModel
+	if err := r.db.WithContext(ctx).Raw(q, args...).Scan(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.VagonDelayRow, len(ms))
+	for i, m := range ms {
+		out[i] = toVagonDelayRowDomain(m)
+	}
+	return out, nil
+}
+
+// Current — открытые эпизоды (задержаны сейчас) с id строки рейса.
+func (r *VagonDelayRepository) Current(ctx context.Context) ([]domain.VagonDelayRow, error) {
 	var ms []vagonDelayRowModel
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT d.*, COALESCE(h.id, '') AS trip_id
 		FROM vagon_delay d
 		LEFT JOIN vagon_history h
 		       ON h.vagon = d.vagon AND h.date_nach_d = d.date_nach_d
-		WHERE d.date_from < ? AND (d.date_to IS NULL OR d.date_to >= ?)
-		ORDER BY d.date_from`, to, from).Scan(&ms).Error; err != nil {
+		WHERE d.date_to IS NULL
+		ORDER BY d.date_from`).Scan(&ms).Error; err != nil {
 		return nil, err
 	}
 	out := make([]domain.VagonDelayRow, len(ms))
 	for i, m := range ms {
-		out[i] = domain.VagonDelayRow{
-			VagonDelay: domain.VagonDelay{
-				ID: m.ID, Vagon: m.Vagon, DateNachD: m.DateNachD, Kind: m.Kind,
-				GroupKey: m.GroupKey, Index: m.Index, IndexMain: m.IndexMain,
-				StationCode: m.StationCode, StationName: m.StationName, Doroga: m.Doroga,
-				DateFrom: m.DateFrom, DateTo: m.DateTo, Hours: m.Hours,
-				CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
-			},
-			TripID: m.TripID,
-		}
+		out[i] = toVagonDelayRowDomain(m)
 	}
 	return out, nil
 }

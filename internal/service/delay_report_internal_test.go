@@ -46,7 +46,8 @@ func TestDelayReport(t *testing.T) {
 
 	rep, err := svc.Report(context.Background(),
 		domain.LocalTime(time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)),
-		domain.LocalTime(time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC))) // включительно → конец 21.07 00:00
+		domain.LocalTime(time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)), // включительно → конец 21.07 00:00
+		"")
 	require.NoError(t, err)
 
 	assert.Equal(t, 3, rep.TotalEpisodes)
@@ -74,4 +75,23 @@ func TestDelayReport(t *testing.T) {
 	// Полная длительность закрытого эпизода не тронута (48 ч).
 	require.NotNil(t, rep.Records[2].Hours)
 	assert.Equal(t, 48.0, *rep.Records[2].Hours)
+}
+
+// Current («Задержанные вагоны»): открытые эпизоды, длительность до «сейчас»,
+// дольше всех стоящие — сверху.
+func TestDelayCurrent(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC))
+	defer restore()
+
+	repo := &fakeDelayRepo{period: []domain.VagonDelayRow{
+		delayReportEp("100", "930000", "ИРКУТСК", 4, "2026-07-22T00:00:00", ""),
+		delayReportEp("200", "984700", "НАХОДКА", 5, "2026-07-20T12:00:00", ""),
+	}}
+
+	rows, err := NewDelayService(repo).Current(context.Background())
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "200", rows[0].Vagon) // стоит 48 ч — выше, чем 12 ч
+	assert.Equal(t, 48.0, rows[0].HoursInPeriod)
+	assert.Equal(t, 12.0, rows[1].HoursInPeriod)
 }

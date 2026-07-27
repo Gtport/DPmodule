@@ -130,6 +130,7 @@ func newDelayEpisode(r *domain.Dislocation, status int, now domain.LocalTime) do
 		GroupKey: delayGroupKey(r, status),
 		Index:    r.Index, IndexMain: r.IndexMain,
 		StationCode: r.CodeStationOper, StationName: r.StationOper, Doroga: r.DorogaOper,
+		GruzpolS: r.GruzpolS,
 		DateFrom: from, CreatedAt: &now, UpdatedAt: &now,
 	}
 }
@@ -151,6 +152,9 @@ func delayContinueFields(cur domain.VagonDelay, r *domain.Dislocation, status in
 	}
 	if r.IndexMain != "" && r.IndexMain != cur.IndexMain {
 		fields["index_main"] = r.IndexMain
+	}
+	if r.GruzpolS != "" && r.GruzpolS != cur.GruzpolS {
+		fields["gruzpol_s"] = r.GruzpolS
 	}
 	if len(fields) > 0 {
 		fields["updated_at"] = now

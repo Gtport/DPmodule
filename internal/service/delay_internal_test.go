@@ -44,7 +44,11 @@ func (f *fakeDelayRepo) ByTrip(context.Context, string, domain.LocalTime) ([]dom
 	return nil, nil
 }
 
-func (f *fakeDelayRepo) ByPeriod(context.Context, domain.LocalTime, domain.LocalTime) ([]domain.VagonDelayRow, error) {
+func (f *fakeDelayRepo) ByPeriod(context.Context, domain.LocalTime, domain.LocalTime, string) ([]domain.VagonDelayRow, error) {
+	return f.period, nil
+}
+
+func (f *fakeDelayRepo) Current(context.Context) ([]domain.VagonDelayRow, error) {
 	return f.period, nil
 }
 

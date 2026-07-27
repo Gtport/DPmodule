@@ -22,7 +22,27 @@ func NewDelaysHandler(svc *service.DelayService) *delaysHandler {
 }
 
 func (h *delaysHandler) RegisterRoutes(g *gin.RouterGroup) {
+	g.GET("/dislocation/delays/current", h.current)
 	g.GET("/dislocation/delays/report", h.report)
+}
+
+// current godoc
+// @Summary  «Задержанные вагоны»: открытые эпизоды задержек (стоят прямо сейчас)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Produce  json
+// @Success  200 {array} domain.VagonDelayRow
+// @Router   /api/v1/dislocation/delays/current [get]
+func (h *delaysHandler) current(c *gin.Context) {
+	rows, err := h.svc.Current(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if rows == nil {
+		rows = []domain.VagonDelayRow{}
+	}
+	c.JSON(http.StatusOK, rows)
 }
 
 // report godoc
@@ -30,8 +50,9 @@ func (h *delaysHandler) RegisterRoutes(g *gin.RouterGroup) {
 // @Tags     dislocation
 // @Security BearerAuth
 // @Produce  json
-// @Param    from query string false "начало периода YYYY-MM-DD (дефолт: to − 6 дней)"
-// @Param    to   query string false "конец периода YYYY-MM-DD, включительно (дефолт: сегодня МСК)"
+// @Param    from     query string false "начало периода YYYY-MM-DD (дефолт: to − 6 дней)"
+// @Param    to       query string false "конец периода YYYY-MM-DD, включительно (дефолт: сегодня МСК)"
+// @Param    terminal query string false "терминал (gruzpol_s); пусто — все"
 // @Success  200 {object} domain.DelayReport
 // @Router   /api/v1/dislocation/delays/report [get]
 func (h *delaysHandler) report(c *gin.Context) {
@@ -47,7 +68,7 @@ func (h *delaysHandler) report(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "конец периода раньше начала"})
 		return
 	}
-	rep, err := h.svc.Report(c.Request.Context(), domain.LocalTime(from), domain.LocalTime(to))
+	rep, err := h.svc.Report(c.Request.Context(), domain.LocalTime(from), domain.LocalTime(to), c.Query("terminal"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

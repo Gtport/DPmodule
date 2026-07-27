@@ -80,7 +80,7 @@ func TestVagonDelayRepository_Lifecycle(t *testing.T) {
 
 	// Автоочистка: закрытый эпизод старше cutoff удаляется, открытый — не трогается.
 	require.NoError(t, repo.Insert(ctx, domain.VagonDelay{
-		Vagon: vag, Kind: domain.DelayKindProstoi, StationCode: "880002",
+		Vagon: vag, Kind: domain.DelayKindProstoi, StationCode: "880002", GruzpolS: "АЭ",
 		DateFrom: to, CreatedAt: now, UpdatedAt: now, // второй эпизод, открытый
 	}))
 	purged, err := repo.PurgeClosedOlderThan(ctx, *domain.NewLocalTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)))
@@ -94,7 +94,7 @@ func TestVagonDelayRepository_Lifecycle(t *testing.T) {
 	// строки рейса в vagon_history для тестового «вагона» нет.
 	rows, err := repo.ByPeriod(ctx,
 		*domain.NewLocalTime(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)),
-		*domain.NewLocalTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)))
+		*domain.NewLocalTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)), "")
 	require.NoError(t, err)
 	var mineRow *domain.VagonDelayRow
 	for i := range rows {
@@ -105,6 +105,28 @@ func TestVagonDelayRepository_Lifecycle(t *testing.T) {
 	}
 	require.NotNil(t, mineRow, "открытый эпизод должен попасть в отчёт за период")
 	assert.Equal(t, "880002", mineRow.StationCode)
+	assert.Equal(t, "АЭ", mineRow.GruzpolS)
 	assert.Empty(t, mineRow.TripID)
 	assert.Nil(t, mineRow.DateTo)
+
+	// Фильтр по терминалу: чужой терминал строку отсекает.
+	rowsF, err := repo.ByPeriod(ctx,
+		*domain.NewLocalTime(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)),
+		*domain.NewLocalTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)), "УТ-1")
+	require.NoError(t, err)
+	for _, r := range rowsF {
+		assert.NotEqual(t, vag, r.Vagon, "эпизод терминала АЭ не должен пройти фильтр УТ-1")
+	}
+
+	// Current («задержаны сейчас»): открытый эпизод виден.
+	cur, err := repo.Current(ctx)
+	require.NoError(t, err)
+	var inCur bool
+	for _, r := range cur {
+		if r.Vagon == vag {
+			inCur = true
+			break
+		}
+	}
+	assert.True(t, inCur, "открытый эпизод должен быть среди задержанных сейчас")
 }

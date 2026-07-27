@@ -8,7 +8,7 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
 import { CargoWorkModalComponent } from './cargo-work-modal.component';
 import { BrosModalComponent } from './bros-modal.component';
 import { BrosApiService } from './bros-api.service';
-import { DelaysReportModalComponent } from './delays-report-modal.component';
+import { DelaysModalComponent } from './delays-modal.component';
 
 /**
  * Карточка «Информация» рядом со «Статусом системы» (правая половина верхней
@@ -19,7 +19,7 @@ import { DelaysReportModalComponent } from './delays-report-modal.component';
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysReportModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Информация</b></div>
@@ -46,8 +46,8 @@ import { DelaysReportModalComponent } from './delays-report-modal.component';
       </button>
 
       <button class="row" type="button" (click)="openDelays()"
-              nz-tooltip nzTooltipTitle="Простои и бросания вагонов в пути за период (память задержек) — открыть отчёт">
-        <span class="lbl">Простои в пути</span>
+              nz-tooltip nzTooltipTitle="Вагоны, задержанные в пути прямо сейчас (простои и бросания); отчёт за период — внутри">
+        <span class="lbl">Задержанные вагоны</span>
         <span nz-icon nzType="right" class="go ml"></span>
       </button>
 
@@ -70,7 +70,7 @@ import { DelaysReportModalComponent } from './delays-report-modal.component';
       <app-bros-modal (closed)="showBros.set(false)" />
     }
     @if (showDelays()) {
-      <app-delays-report-modal (closed)="showDelays.set(false)" />
+      <app-delays-modal (closed)="showDelays.set(false)" />
     }
     @if (showDonors()) {
       <app-vagon-list-modal title="Перегруз — доноры (статус 6)" sinceLabel="Донор с"
