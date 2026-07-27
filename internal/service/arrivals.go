@@ -237,6 +237,19 @@ func (s *ArrivalsService) journalEdit(ctx context.Context, req ArrivalsUpdateReq
 	if req.Naznach != "" {
 		actions = append(actions, "set_naznach")
 		extra["new_naznach"] = req.Naznach
+		// Сколько уже выгруженных строк переехало вместе с местом выгрузки —
+		// иначе по журналу не восстановить, откуда в отчётах поехали цифры.
+		if req.PlaceVigr == nil {
+			moved := 0
+			for i := range rows {
+				if rows[i].DateVigr != nil {
+					moved++
+				}
+			}
+			if moved > 0 {
+				extra["place_vigr_moved"] = moved
+			}
+		}
 	}
 	if len(actions) == 0 {
 		return
@@ -328,6 +341,15 @@ func arrivalUpdateFields(r *domain.VagonHistory, req ArrivalsUpdateRequest, now 
 	}
 	if req.Naznach != "" {
 		fields["naznach"] = req.Naznach
+		// Место выгрузки едет следом за назначением (решение владельца): у уже
+		// выгруженного вагона place_vigr был проставлен автоматикой по ПРЕЖНЕМУ
+		// naznach, и без этого веха выгрузки навсегда остаётся на старом терминале
+		// — «Грузовая работа» (vigr_stan) и карточка «Прибытие/выгрузка» считают
+		// такой вагон прибывшим на один терминал, а выгруженным на другой.
+		// Явно указанное в этом же запросе место (операция «Выгрузить») сильнее.
+		if req.PlaceVigr == nil && (r.DateVigr != nil || req.DateVigr != nil) {
+			fields["place_vigr"] = req.Naznach
+		}
 	}
 	return fields
 }

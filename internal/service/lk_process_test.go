@@ -133,13 +133,17 @@ func (f *fakeStatus6Repo) DeleteByVagons(_ context.Context, vagons []string) (in
 // fakeHistoryRepo — in-memory port.HistoryRepository.
 type fakeHistoryRepo struct {
 	existing     map[string]struct{}
+	rows         map[string]domain.VagonHistory // готовые строки для RowsByIDs
 	inserted     []domain.VagonHistory
 	updated      map[string]map[string]any
 	updatedBatch map[string]map[string]any
 }
 
 func newFakeHistory() *fakeHistoryRepo {
-	return &fakeHistoryRepo{existing: map[string]struct{}{}, updated: map[string]map[string]any{}, updatedBatch: map[string]map[string]any{}}
+	return &fakeHistoryRepo{
+		existing: map[string]struct{}{}, rows: map[string]domain.VagonHistory{},
+		updated: map[string]map[string]any{}, updatedBatch: map[string]map[string]any{},
+	}
 }
 func (f *fakeHistoryRepo) ExistingIDs(_ context.Context, ids []string) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
@@ -343,9 +347,14 @@ func stageBytes(t *testing.T, baseDir, name string, data []byte) {
 }
 
 func (f *fakeHistoryRepo) RowsByIDs(_ context.Context, ids []string) ([]domain.VagonHistory, error) {
-	// Синтетические строки по запрошенным id (для правок истории в тестах).
+	// Строки по запрошенным id: заданные тестом (rows) — как есть, остальные
+	// синтетические.
 	out := make([]domain.VagonHistory, 0, len(ids))
 	for _, id := range ids {
+		if r, ok := f.rows[id]; ok {
+			out = append(out, r)
+			continue
+		}
 		out = append(out, domain.VagonHistory{ID: id, Vagon: id})
 	}
 	return out, nil

@@ -138,6 +138,53 @@ func TestArrivalUpdateFields(t *testing.T) {
 			t.Error("date_vigr должен остаться фактическим временем (20:39)")
 		}
 	})
+
+	// Смена назначения у ВЫГРУЖЕННОГО вагона: место выгрузки едет следом, иначе
+	// вагон прибыл на один терминал, а выгружен на другом (отчёты врут).
+	t.Run("смена назначения выгруженного — place_vigr следом", func(t *testing.T) {
+		vigr := domain.VagonHistory{
+			ID:        "2",
+			DateVigr:  domain.NewLocalTime(time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC)),
+			PlaceVigr: "АЭ",
+		}
+		f := arrivalUpdateFields(&vigr, ArrivalsUpdateRequest{Naznach: "ГУТ-2"}, now)
+		if f["naznach"] != "ГУТ-2" || f["place_vigr"] != "ГУТ-2" {
+			t.Errorf("ожидались naznach и place_vigr = ГУТ-2, получено: %v", f)
+		}
+		if f["date_vigr"] != nil || f["date_vigr_d"] != nil {
+			t.Errorf("время выгрузки трогать нельзя: %v", f)
+		}
+	})
+
+	t.Run("смена назначения невыгруженного — place_vigr не появляется", func(t *testing.T) {
+		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{Naznach: "ГУТ-2"}, now)
+		if _, ok := f["place_vigr"]; ok {
+			t.Errorf("вагон не выгружен — место выгрузки ставить рано: %v", f)
+		}
+	})
+
+	t.Run("выгрузка и смена назначения разом — явное место сильнее", func(t *testing.T) {
+		place := "АЭ"
+		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{
+			DateVigr:  domain.NewLocalTime(time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC)),
+			PlaceVigr: &place,
+			Naznach:   "ГУТ-2",
+		}, now)
+		if f["place_vigr"] != "АЭ" {
+			t.Errorf("явно указанное место выгрузки должно победить: %v", f)
+		}
+	})
+
+	// Выгрузка без явного места + смена назначения: место берём из нового назначения.
+	t.Run("выгрузка без места + смена назначения", func(t *testing.T) {
+		f := arrivalUpdateFields(&row, ArrivalsUpdateRequest{
+			DateVigr: domain.NewLocalTime(time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC)),
+			Naznach:  "ГУТ-2",
+		}, now)
+		if f["place_vigr"] != "ГУТ-2" {
+			t.Errorf("место выгрузки должно взяться из нового назначения: %v", f)
+		}
+	})
 }
 
 // Правило дат: не-администратору можно править только сегодня/вчера.

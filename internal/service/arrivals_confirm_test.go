@@ -158,3 +158,40 @@ func TestUpdateNaznachTouchesSnapshot(t *testing.T) {
 	require.Contains(t, hist.updatedBatch, "A1")
 	assert.Equal(t, "ГУТ-2", hist.updatedBatch["A1"]["naznach"], "история: назначение переставлено")
 }
+
+// Перестановка УЖЕ ВЫГРУЖЕННОГО вагона: место выгрузки в истории едет следом за
+// назначением, иначе «Грузовая работа» и карточка «Прибытие/выгрузка» разносят
+// один вагон по двум терминалам (прибыл на новый, выгружен на старом).
+func TestUpdateNaznachMovesPlaceVigr(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC))
+	defer restore()
+
+	s12 := 12
+	prib := domain.NewLocalTime(time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC))
+	vigr := domain.NewLocalTime(time.Date(2026, 7, 20, 11, 0, 0, 0, time.UTC))
+	repo := &fakeDislRepo{current: []domain.Dislocation{
+		{ID: "A1", Vagon: "111", Status: &s12, Naznach: "АЭ", DatePrib: prib},
+	}}
+	proc, _ := newProcessor(t, repo)
+	hist := newFakeHistory()
+	hist.rows["A1"] = domain.VagonHistory{
+		ID: "A1", Vagon: "111", Naznach: "АЭ",
+		DatePrib: prib, DatePribD: prib, DateVigr: vigr, DateVigrD: vigr, PlaceVigr: "АЭ",
+	}
+	dir := service.NewDirectoryCache(&stubDirRepo{ports: []domain.Ports{
+		{Okpo: 1, NameS: "АЭ", Enabled: true},
+		{Okpo: 2, NameS: "ГУТ-2", Enabled: true},
+	}})
+	require.NoError(t, dir.Load(context.Background()))
+	svc := service.NewArrivalsService(hist, dir, proc)
+
+	_, err := svc.UpdateVagons(context.Background(), service.ArrivalsUpdateRequest{
+		VagonIDs: []string{"A1"}, Naznach: "ГУТ-2",
+	})
+	require.NoError(t, err)
+
+	require.Contains(t, hist.updatedBatch, "A1")
+	assert.Equal(t, "ГУТ-2", hist.updatedBatch["A1"]["naznach"])
+	assert.Equal(t, "ГУТ-2", hist.updatedBatch["A1"]["place_vigr"], "место выгрузки переставлено")
+	assert.Nil(t, hist.updatedBatch["A1"]["date_vigr"], "время выгрузки не трогаем")
+}
