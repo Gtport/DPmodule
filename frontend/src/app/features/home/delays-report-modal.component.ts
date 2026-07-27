@@ -106,7 +106,7 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
               </tr></thead>
               <tbody>
                 @for (e of r.records; track e.id) {
-                  <tr [class.open-ep]="!e.date_to">
+                  <tr>
                     <td class="c num">
                       @if (e.trip_id) {
                         <a class="idx" (click)="openTrail(e)" nz-tooltip nzTooltipTitle="История движения вагона">{{ e.vagon }}</a>
@@ -169,7 +169,7 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .dtag { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 11px;
             background: var(--color-warning-bg); border: 1px solid var(--color-warning); }
     .dtag5 { color: var(--color-danger); border-color: var(--color-danger); }
-    tr.open-ep td { background: var(--color-warning-bg); }
+    /* Заливки строк нет (решение владельца) — открытый эпизод виден по «стоит» в колонке «По». */
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
   `],

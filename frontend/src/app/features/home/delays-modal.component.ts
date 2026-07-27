@@ -57,6 +57,10 @@ interface DelayGroup {
             <nz-option nzValue="4" nzLabel="Долгий простой"></nz-option>
             <nz-option nzValue="5" nzLabel="Брошенные"></nz-option>
           </nz-select>
+          <nz-select class="term" nzSize="small" [ngModel]="terminalFilter()" (ngModelChange)="terminalFilter.set($event)">
+            <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
+            @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
+          </nz-select>
           <span class="spacer"></span>
           <button nz-button nzSize="small" (click)="showReport.set(true)"
                   nz-tooltip nzTooltipTitle="Отчёт по простоям за период (терминал, даты)">
@@ -140,9 +144,10 @@ interface DelayGroup {
     .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
     .grp { cursor: pointer; }
     .grp:hover td { background: var(--color-bg-hover); }
-    .grp td { background: var(--color-warning-bg); }
-    .grp.g5 td { background: color-mix(in srgb, var(--color-danger) 8%, var(--color-bg-surface)); }
+    /* Заливки строк нет (решение владельца): брошенные — красным индексом и бейджем. */
+    .grp.g5 .c-idx { color: var(--color-danger); font-weight: 600; }
     .vag td { background: var(--color-bg-subtle); }
+    .term { width: 150px; }
     .tw { font-size: 10px; color: var(--color-text-muted); margin-right: 4px; }
     .c { text-align: center; white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; }
@@ -166,14 +171,20 @@ export class DelaysModalComponent implements OnInit {
   readonly loading = signal(false);
   readonly episodes = signal<DelayEpisode[]>([]);
   readonly kindFilter = signal('');
+  readonly terminalFilter = signal('');
+
+  /** Терминалы из самих эпизодов (без похода за справочником). */
+  readonly terminals = computed(() =>
+    [...new Set(this.episodes().map((e) => e.gruzpol_s).filter(Boolean))].sort());
   readonly open = signal<Set<string>>(new Set());
   readonly showReport = signal(false);
   readonly trailFor = signal<{ trip_id: string; vagon: string } | null>(null);
 
   /** Группы-поезда: индекс + станция; вид группы — 5, если есть брошенные. */
   readonly groups = computed<DelayGroup[]>(() => {
-    const kf = this.kindFilter();
-    const eps = this.episodes().filter((e) => !kf || String(e.kind) === kf);
+    const kf = this.kindFilter(), tf = this.terminalFilter();
+    const eps = this.episodes().filter((e) =>
+      (!kf || String(e.kind) === kf) && (!tf || e.gruzpol_s === tf));
     const map = new Map<string, DelayGroup>();
     for (const e of eps) {
       const key = `${e.index}|${e.station_code}`;
