@@ -13,6 +13,9 @@ import (
 type VagonDelayRepository interface {
 	// Open — открытые эпизоды (date_to IS NULL), не больше одного на вагон.
 	Open(ctx context.Context) ([]domain.VagonDelay, error)
+	// ByTrip — эпизоды задержек одного рейса (вагон + дата начала рейса),
+	// по возрастанию date_from.
+	ByTrip(ctx context.Context, vagon string, dateNachD domain.LocalTime) ([]domain.VagonDelay, error)
 	// Insert вставляет новый эпизод.
 	Insert(ctx context.Context, d domain.VagonDelay) error
 	// Update точечно обновляет колонки эпизода по id (ключи — имена колонок).

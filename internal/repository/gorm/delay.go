@@ -74,6 +74,21 @@ func (r *VagonDelayRepository) Open(ctx context.Context) ([]domain.VagonDelay, e
 	return out, nil
 }
 
+// ByTrip — эпизоды задержек одного рейса (вагон + дата начала рейса).
+func (r *VagonDelayRepository) ByTrip(ctx context.Context, vagon string, dateNachD domain.LocalTime) ([]domain.VagonDelay, error) {
+	var ms []vagonDelayModel
+	if err := r.db.WithContext(ctx).
+		Where("vagon = ? AND date_nach_d = ?", vagon, dateNachD).
+		Order("date_from").Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.VagonDelay, len(ms))
+	for i, m := range ms {
+		out[i] = toVagonDelayDomain(m)
+	}
+	return out, nil
+}
+
 func (r *VagonDelayRepository) Insert(ctx context.Context, d domain.VagonDelay) error {
 	m := toVagonDelayModel(d)
 	return r.db.WithContext(ctx).Create(&m).Error

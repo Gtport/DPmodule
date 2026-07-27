@@ -18,8 +18,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
+	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -51,11 +55,25 @@ type TrailVisit struct {
 	First   TrailOp
 	Last    TrailOp
 	Count   int
-	Ops     []TrailOp // все операции визита (для разворота и Excel)
+	Ops     []TrailOp   // все операции визита (для разворота и Excel)
+	Delay   *TrailDelay // визит был задержкой (простой/бросание); nil — обычный
+}
+
+// TrailDelay — эпизод задержки рейса (vagon_delay) в человеческом виде.
+type TrailDelay struct {
+	Kind        int    // 4 — долгий простой, 5 — брошен
+	StationCode string // код станции стоянки (из снимка)
+	StationName string // имя станции стоянки (из снимка)
+	DateFrom    domain.LocalTime
+	DateTo      *domain.LocalTime // nil — стоит до сих пор
+	Hours       float64           // длительность; для открытого — до «сейчас»
 }
 
 // TrailView — весь трейл рейса плюс период фактически полученной истории:
 // оператор сначала смотрит, что уже есть в базе, и решает, обновлять ли из АСУ.
+// Delays — эпизоды задержек рейса из vagon_delay (независимы от трейла 601:
+// показываются и когда истории продвижения нет); сводка «ехал N, из них X
+// стоял» — TripHours/DelayHours.
 type TrailView struct {
 	ID       string
 	Vagon    string
@@ -65,6 +83,10 @@ type TrailView struct {
 	To       *domain.LocalTime // время последней операции
 	Count    int               // всего операций
 	Visits   []TrailVisit
+
+	Delays     []TrailDelay // эпизоды задержек рейса, по времени
+	TripHours  float64      // длительность рейса: погрузка → прибытие (или «сейчас»)
+	DelayHours float64      // суммарные задержки рейса, часы
 }
 
 // TrailByHistoryID — сохранённый трейл рейса из БД, без обращения к провайдеру.
@@ -82,7 +104,9 @@ func (s *VagonOpService) TrailByHistoryID(ctx context.Context, id string) (Trail
 	if err != nil {
 		return TrailView{}, err
 	}
-	return buildTrailView(row, ops, s.dir), nil
+	v := buildTrailView(row, ops, s.dir)
+	s.attachDelays(ctx, row, &v)
+	return v, nil
 }
 
 // PullTrailByHistoryID — запрос 601 у провайдера «сейчас» (кнопка «Обновить из
@@ -112,7 +136,23 @@ func (s *VagonOpService) PullTrailByHistoryID(ctx context.Context, id string) (T
 	if err != nil {
 		return TrailView{}, err
 	}
-	return buildTrailView(row, ops, s.dir), nil
+	v := buildTrailView(row, ops, s.dir)
+	s.attachDelays(ctx, row, &v)
+	return v, nil
+}
+
+// attachDelays — best-effort наложение эпизодов задержек (vagon_delay) на трейл:
+// задержки — вторичная информация, их отказ экран истории не валит.
+func (s *VagonOpService) attachDelays(ctx context.Context, row domain.VagonHistory, v *TrailView) {
+	if s.delays == nil || row.DateNachD == nil {
+		return
+	}
+	eps, err := s.delays.ByTrip(ctx, row.Vagon, *row.DateNachD)
+	if err != nil {
+		s.log.Warn("vagon_delay по рейсу не прочитан", zap.String("vagon", row.Vagon), zap.Error(err))
+		return
+	}
+	attachTrailDelays(v, eps, row.DatePrib, clock.Now())
 }
 
 // tripRow — строка рейса из vagon_history по id (id = вагон/станция/дата, см.
@@ -186,6 +226,88 @@ func buildTrailView(row domain.VagonHistory, ops []domain.VagonOperation, dir *D
 	return v
 }
 
+// attachTrailDelays накладывает эпизоды задержек на трейл (чистая функция):
+// сводка рейса (TripHours: погрузка → прибытие или now; DelayHours: сумма
+// эпизодов, открытый считается до now) + маркировка визитов — по коду станции
+// и пересечению интервалов времени. Эпизод без визита (истории 601 нет или она
+// не покрывает стоянку) остаётся только в списке Delays.
+func attachTrailDelays(v *TrailView, eps []domain.VagonDelay, datePrib *domain.LocalTime, now domain.LocalTime) {
+	if v.DateNach != nil && !time.Time(*v.DateNach).IsZero() {
+		end := time.Time(now)
+		if datePrib != nil && !time.Time(*datePrib).IsZero() {
+			end = time.Time(*datePrib)
+		}
+		if h := end.Sub(time.Time(*v.DateNach)).Hours(); h > 0 {
+			v.TripHours = round1(h)
+		}
+	}
+
+	var total float64
+	for _, e := range eps {
+		if e.DateFrom == nil || time.Time(*e.DateFrom).IsZero() {
+			continue
+		}
+		d := TrailDelay{
+			Kind: e.Kind, StationCode: e.StationCode, StationName: e.StationName,
+			DateFrom: *e.DateFrom, DateTo: e.DateTo,
+		}
+		switch {
+		case e.DateTo == nil: // стоит сейчас — длительность до «сейчас»
+			if h := time.Time(now).Sub(time.Time(*e.DateFrom)).Hours(); h > 0 {
+				d.Hours = round1(h)
+			}
+		case e.Hours != nil:
+			d.Hours = *e.Hours
+		default:
+			if h := time.Time(*e.DateTo).Sub(time.Time(*e.DateFrom)).Hours(); h > 0 {
+				d.Hours = round1(h)
+			}
+		}
+		total += d.Hours
+		v.Delays = append(v.Delays, d)
+	}
+	v.DelayHours = round1(total)
+
+	// Маркировка визитов: код станции + пересечение интервалов (эпизод мог
+	// начаться раньше первой операции визита в сохранённом окне истории).
+	for i := range v.Delays {
+		d := &v.Delays[i]
+		to := time.Time(now)
+		if d.DateTo != nil {
+			to = time.Time(*d.DateTo)
+		}
+		for j := range v.Visits {
+			vis := &v.Visits[j]
+			if vis.Delay != nil || !sameStationCode(vis.StanOp, d.StationCode) {
+				continue
+			}
+			if !time.Time(d.DateFrom).After(time.Time(vis.Last.DateOp)) &&
+				!to.Before(time.Time(vis.First.DateOp)) {
+				vis.Delay = d
+				break
+			}
+		}
+	}
+}
+
+// sameStationCode — сравнение кодов станций с поправкой на ведущие нули
+// (601 отдаёт код с ведущими нулями, снимок — как в справочнике).
+func sameStationCode(a, b string) bool {
+	na, errA := strconv.Atoi(strings.TrimSpace(a))
+	nb, errB := strconv.Atoi(strings.TrimSpace(b))
+	if errA == nil && errB == nil {
+		return na == nb
+	}
+	return strings.TrimSpace(a) == strings.TrimSpace(b) && strings.TrimSpace(a) != ""
+}
+
+// round1 — округление до 0.1 (часы задержек).
+func round1(h float64) float64 { return math.Round(h*10) / 10 }
+
 // SetHistory подключает репозиторий бизнес-истории: нужен для «Истории движения
 // вагона» из интерфейса (рейс адресуется строкой vagon_history, а не снимком).
 func (s *VagonOpService) SetHistory(h port.HistoryRepository) { s.hist = h }
+
+// SetDelays подключает эпизоды задержек (vagon_delay) для трейла и сводки
+// «ехал N, из них X стоял»; nil — блок задержек на экране пуст.
+func (s *VagonOpService) SetDelays(d port.VagonDelayRepository) { s.delays = d }

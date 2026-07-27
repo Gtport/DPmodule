@@ -38,6 +38,10 @@ func (f *fakeDelayRepo) PurgeClosedOlderThan(context.Context, domain.LocalTime) 
 	return 0, nil
 }
 
+func (f *fakeDelayRepo) ByTrip(context.Context, string, domain.LocalTime) ([]domain.VagonDelay, error) {
+	return nil, nil
+}
+
 // delayVag — вагон статуса `status` на станции `stCode` для тестов задержек.
 func delayVag(vagon, stCode string, status int, timeOp *domain.LocalTime) domain.Dislocation {
 	s := status

@@ -7,7 +7,7 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { TrailOp, TrailVisit, VagonTrail, VagonTrailApiService } from './vagon-trail-api.service';
+import { TrailDelay, TrailOp, TrailVisit, VagonTrail, VagonTrailApiService } from './vagon-trail-api.service';
 
 /**
  * Ширины колонок выгрузки в единицах Excel — порядок как в строке экспорта:
@@ -62,6 +62,12 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
             } @else {
               <span class="mut">Истории в базе нет</span>
             }
+            @if (t.delay_hours) {
+              <span class="dsum" nz-tooltip nzTooltipTitle="Суммарные задержки (простои ≥ порога и бросания) за рейс">
+                в рейсе {{ fmtDur(t.trip_hours) }}, из них стоял <b>{{ fmtDur(t.delay_hours) }}</b>
+                ({{ t.delays.length }} эп.)
+              </span>
+            }
           }
           <span class="spacer"></span>
           <button nz-button nzSize="small" nzType="primary" [nzLoading]="pulling()" (click)="pull()"
@@ -91,10 +97,16 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
               </thead>
               <tbody>
                 @for (v of trail()?.visits ?? []; track $index; let i = $index) {
-                  <tr class="visit" (click)="toggle(i)">
+                  <tr class="visit" [class.delayed]="v.delay" (click)="toggle(i)">
                     <td class="c-st">
                       <span nz-icon [nzType]="isOpen(i) ? 'down' : 'right'" class="tw"></span>
                       {{ v.station || ('код ' + v.stan_op) }}
+                      @if (v.delay; as d) {
+                        <span class="dtag" [class.dtag5]="d.kind === 5"
+                              nz-tooltip [nzTooltipTitle]="delayHint(d)">
+                          {{ d.kind === 5 ? 'брошен' : 'простой' }} {{ fmtDur(d.hours) }}
+                        </span>
+                      }
                     </td>
                     <td class="c-road mut">{{ v.road || '—' }}</td>
                     <td class="c-dt">{{ fmtDT(v.first.date_op) }}</td>
@@ -127,6 +139,21 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
           </div>
         </nz-spin>
 
+        @if (unmatchedDelays().length) {
+          <div class="dlist">
+            <div class="dlist-title">Задержки вне сохранённого трейла:</div>
+            @for (d of unmatchedDelays(); track $index) {
+              <div>
+                <span class="dtag" [class.dtag5]="d.kind === 5">
+                  {{ d.kind === 5 ? 'брошен' : 'простой' }} {{ fmtDur(d.hours) }}
+                </span>
+                {{ d.station_name || ('код ' + d.station_code) }} ·
+                {{ fmtDT(d.date_from) }} — {{ d.date_to ? fmtDT(d.date_to) : 'стоит сейчас' }}
+              </div>
+            }
+          </div>
+        }
+
         <p class="hint">Клик по станции — все операции на ней. Время — московское, как пришло от АСУ.</p>
       </ng-container>
     </nz-modal>
@@ -144,6 +171,15 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
     .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
     .visit { cursor: pointer; }
     .visit:hover { background: var(--color-bg-hover); }
+    .visit.delayed td { background: var(--color-warning-bg); }
+    .dsum { color: var(--color-text-secondary); }
+    .dtag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 10px;
+            font-size: 11px; white-space: nowrap; background: var(--color-warning-bg);
+            border: 1px solid var(--color-warning); }
+    .dtag5 { color: var(--color-danger); border-color: var(--color-danger); }
+    .dlist { margin-top: var(--space-sm); font-size: var(--font-size-sm); }
+    .dlist-title { font-weight: 600; margin-bottom: 2px; }
+    .dlist .dtag { margin-left: 0; margin-right: 4px; }
     .op td { background: var(--color-bg-subtle); }
     .tw { font-size: 10px; color: var(--color-text-muted); margin-right: 4px; }
     .c-dt, .c-idx, .c-cnt { text-align: center; white-space: nowrap; }
@@ -217,6 +253,29 @@ export class VagonTrailModalComponent implements OnInit {
 
   opName(o: TrailOp): string {
     return o.oper_s || o.oper || (o.kop_vmd ? 'код ' + o.kop_vmd : '—');
+  }
+
+  /** Часы → человеческая длительность: до суток — часы, дальше — сутки с десятыми. */
+  fmtDur(hours: number): string {
+    if (!hours || hours <= 0) return '—';
+    if (hours < 24) return `${Math.round(hours * 10) / 10} ч`;
+    return `${Math.round((hours / 24) * 10) / 10} сут`;
+  }
+
+  delayHint(d: TrailDelay): string {
+    const kind = d.kind === 5 ? 'Брошен' : 'Долгий простой';
+    const to = d.date_to ? this.fmtDT(d.date_to) : 'стоит сейчас';
+    return `${kind}: ${this.fmtDT(d.date_from)} — ${to} (${this.fmtDur(d.hours)})`;
+  }
+
+  /** Эпизоды, не привязанные ни к одному визиту (трейла нет или он не покрывает стоянку). */
+  unmatchedDelays(): TrailDelay[] {
+    const t = this.trail();
+    if (!t?.delays?.length) return [];
+    const matched = new Set(
+      t.visits.filter((v) => v.delay).map((v) => `${v.delay!.station_code}|${v.delay!.date_from}`),
+    );
+    return t.delays.filter((d) => !matched.has(`${d.station_code}|${d.date_from}`));
   }
 
   /** Экспорт — ПОЛНЫЙ трейл (свёртка нужна на экране, в файле удобнее всё). */

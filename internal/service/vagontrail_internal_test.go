@@ -147,3 +147,51 @@ func TestClientForTerminal(t *testing.T) {
 	assert.Empty(t, s.clientForTerminal("НЕТ-ТАКОГО"))
 	assert.Empty(t, s.clientForTerminal(""))
 }
+
+// Наложение задержек на трейл: сводка рейса (TripHours до «сейчас», DelayHours —
+// сумма, открытый эпизод до now), маркировка визита с поправкой на ведущие нули
+// кода станции; эпизод без визита остаётся только в списке Delays.
+func TestAttachTrailDelays(t *testing.T) {
+	now := trailTime("2026-07-26T12:00:00")
+	dn := trailTime("2026-07-10T00:00:00")
+	v := &TrailView{
+		DateNach: &dn,
+		Visits: []TrailVisit{
+			{StanOp: "0930000", // 601 отдаёт код с ведущим нулём
+				First: TrailOp{DateOp: trailTime("2026-07-15T08:00:00")},
+				Last:  TrailOp{DateOp: trailTime("2026-07-16T09:00:00")}},
+			{StanOp: "0984700",
+				First: TrailOp{DateOp: trailTime("2026-07-18T10:00:00")},
+				Last:  TrailOp{DateOp: trailTime("2026-07-18T11:00:00")}},
+		},
+	}
+	hrs := 25.0
+	from1, to1 := trailTime("2026-07-15T08:00:00"), trailTime("2026-07-16T09:00:00")
+	from2 := trailTime("2026-07-24T06:00:00")
+	eps := []domain.VagonDelay{
+		{Kind: 4, StationCode: "930000", DateFrom: &from1, DateTo: &to1, Hours: &hrs},
+		{Kind: 5, StationCode: "111111", DateFrom: &from2}, // открытый, визита в трейле нет
+	}
+
+	attachTrailDelays(v, eps, nil, now)
+
+	assert.Equal(t, 396.0, v.TripHours) // 10.07 00:00 → 26.07 12:00
+	assert.Equal(t, 79.0, v.DelayHours) // 25 + 54 (открытый до «сейчас»)
+	require.Len(t, v.Delays, 2)
+	assert.Equal(t, 54.0, v.Delays[1].Hours)
+	require.NotNil(t, v.Visits[0].Delay) // код сматчен сквозь ведущий ноль
+	assert.Equal(t, 4, v.Visits[0].Delay.Kind)
+	assert.Nil(t, v.Visits[1].Delay)
+}
+
+// Рейс завершён — длительность считается до прибытия, а не до «сейчас».
+func TestAttachTrailDelays_TripEndsAtArrival(t *testing.T) {
+	dn, prib := trailTime("2026-07-10T00:00:00"), trailTime("2026-07-20T00:00:00")
+	v := &TrailView{DateNach: &dn}
+
+	attachTrailDelays(v, nil, &prib, trailTime("2026-07-26T12:00:00"))
+
+	assert.Equal(t, 240.0, v.TripHours)
+	assert.Zero(t, v.DelayHours)
+	assert.Empty(t, v.Delays)
+}

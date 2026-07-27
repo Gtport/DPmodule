@@ -38,25 +38,40 @@ type trailOpDTO struct {
 	Index  string `json:"index"`
 }
 
+// trailDelayDTO — эпизод задержки рейса (vagon_delay): kind 4 — долгий простой,
+// 5 — брошен; пустой date_to — стоит до сих пор.
+type trailDelayDTO struct {
+	Kind        int     `json:"kind"`
+	StationCode string  `json:"station_code"`
+	StationName string  `json:"station_name"`
+	DateFrom    string  `json:"date_from"`
+	DateTo      string  `json:"date_to"`
+	Hours       float64 `json:"hours"`
+}
+
 type trailVisitDTO struct {
-	StanOp  string       `json:"stan_op"`
-	Station string       `json:"station"`
-	Road    string       `json:"road"`
-	First   trailOpDTO   `json:"first"`
-	Last    trailOpDTO   `json:"last"`
-	Count   int          `json:"count"`
-	Ops     []trailOpDTO `json:"ops"`
+	StanOp  string         `json:"stan_op"`
+	Station string         `json:"station"`
+	Road    string         `json:"road"`
+	First   trailOpDTO     `json:"first"`
+	Last    trailOpDTO     `json:"last"`
+	Count   int            `json:"count"`
+	Ops     []trailOpDTO   `json:"ops"`
+	Delay   *trailDelayDTO `json:"delay,omitempty"` // визит был задержкой
 }
 
 type trailResponse struct {
-	ID       string          `json:"id"`
-	Vagon    string          `json:"vagon"`
-	DateNach string          `json:"date_nach"`
-	Terminal string          `json:"terminal"`
-	From     string          `json:"from"`
-	To       string          `json:"to"`
-	Count    int             `json:"count"`
-	Visits   []trailVisitDTO `json:"visits"`
+	ID         string          `json:"id"`
+	Vagon      string          `json:"vagon"`
+	DateNach   string          `json:"date_nach"`
+	Terminal   string          `json:"terminal"`
+	From       string          `json:"from"`
+	To         string          `json:"to"`
+	Count      int             `json:"count"`
+	Visits     []trailVisitDTO `json:"visits"`
+	Delays     []trailDelayDTO `json:"delays"`      // все эпизоды задержек рейса
+	TripHours  float64         `json:"trip_hours"`  // длительность рейса, часы
+	DelayHours float64         `json:"delay_hours"` // суммарные задержки, часы
 }
 
 // trail godoc
@@ -103,6 +118,8 @@ func (h *vagonOpsHandler) respondTrail(c *gin.Context, v service.TrailView, err 
 		ID: v.ID, Vagon: v.Vagon, Terminal: v.Terminal, Count: v.Count,
 		DateNach: timeOrEmpty(v.DateNach), From: timeOrEmpty(v.From), To: timeOrEmpty(v.To),
 		Visits: make([]trailVisitDTO, len(v.Visits)),
+		Delays: make([]trailDelayDTO, len(v.Delays)),
+		TripHours: v.TripHours, DelayHours: v.DelayHours,
 	}
 	for i, vis := range v.Visits {
 		ops := make([]trailOpDTO, len(vis.Ops))
@@ -114,8 +131,22 @@ func (h *vagonOpsHandler) respondTrail(c *gin.Context, v service.TrailView, err 
 			First: trailOpToDTO(vis.First), Last: trailOpToDTO(vis.Last),
 			Count: vis.Count, Ops: ops,
 		}
+		if vis.Delay != nil {
+			d := trailDelayToDTO(*vis.Delay)
+			resp.Visits[i].Delay = &d
+		}
+	}
+	for i, d := range v.Delays {
+		resp.Delays[i] = trailDelayToDTO(d)
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func trailDelayToDTO(d service.TrailDelay) trailDelayDTO {
+	return trailDelayDTO{
+		Kind: d.Kind, StationCode: d.StationCode, StationName: d.StationName,
+		DateFrom: d.DateFrom.String(), DateTo: timeOrEmpty(d.DateTo), Hours: d.Hours,
+	}
 }
 
 func trailOpToDTO(o service.TrailOp) trailOpDTO {

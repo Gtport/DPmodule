@@ -13,6 +13,18 @@ export interface TrailOp {
   index: string;
 }
 
+/** Эпизод задержки рейса (vagon_delay): 4 — долгий простой, 5 — брошен. */
+export interface TrailDelay {
+  kind: number;
+  station_code: string;
+  /** Имя станции стоянки из снимка (полезно, когда визита в трейле нет). */
+  station_name: string;
+  date_from: string;
+  /** Пусто — вагон стоит до сих пор. */
+  date_to: string;
+  hours: number;
+}
+
 /** Визит станции — непрерывная серия операций на ней (first/last + все ops). */
 export interface TrailVisit {
   stan_op: string;
@@ -22,6 +34,8 @@ export interface TrailVisit {
   last: TrailOp;
   count: number;
   ops: TrailOp[];
+  /** Визит был задержкой (простой/бросание); нет поля — обычный визит. */
+  delay?: TrailDelay;
 }
 
 /** История движения вагона по рейсу: период полученной истории + визиты. */
@@ -34,6 +48,12 @@ export interface VagonTrail {
   to: string;
   count: number;
   visits: TrailVisit[];
+  /** Все эпизоды задержек рейса (и не попавшие в сохранённый трейл тоже). */
+  delays: TrailDelay[];
+  /** Длительность рейса в часах: погрузка → прибытие (или «сейчас»). */
+  trip_hours: number;
+  /** Суммарные задержки рейса, часы. */
+  delay_hours: number;
 }
 
 /**

@@ -215,6 +215,9 @@ func Build(
 					histClient := asu.NewHTTPClient(ds.Config, secrets)
 					vagonOps = service.NewVagonOpService(vagonOpRepo, histClient, dirCache, actualCache, log)
 					vagonOps.SetHistory(historyRepo) // «История движения вагона»: рейс из vagon_history
+				if delayRepo != nil {
+					vagonOps.SetDelays(delayRepo) // задержки рейса в трейле («ехал N, из них X стоял»)
+				}
 					vagonOps.SetLimits(cfg.WagonOps.Batch, cfg.WagonOps.Pause, cfg.WagonOps.MaxAttempts)
 					proc.SetVagonOps(vagonOps)
 					handler.NewVagonOpsHandler(vagonOps).RegisterRoutes(api)
