@@ -86,3 +86,15 @@ func (r *VagonDelayRepository) Update(ctx context.Context, id int64, fields map[
 	return r.db.WithContext(ctx).Model(&vagonDelayModel{}).
 		Where("id = ?", id).Updates(fields).Error
 }
+
+// PurgeClosedOlderThan удаляет закрытые эпизоды старше cutoff (по date_to);
+// открытые (date_to IS NULL) не трогает.
+func (r *VagonDelayRepository) PurgeClosedOlderThan(ctx context.Context, cutoff domain.LocalTime) (int, error) {
+	res := r.db.WithContext(ctx).
+		Where("date_to IS NOT NULL AND date_to < ?", cutoff).
+		Delete(&vagonDelayModel{})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return int(res.RowsAffected), nil
+}

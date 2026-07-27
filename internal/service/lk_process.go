@@ -145,6 +145,7 @@ type LKProcessResult struct {
 	DelayEscalated   int            `json:"delay_escalated"`    // эскалаций 4 → 5 (простой стал броском)
 	DelayClosed      int            `json:"delay_closed"`       // закрытых эпизодов задержек
 	DelayActive      int            `json:"delay_active"`       // открытых эпизодов после пересбора
+	DelayPurged      int            `json:"delay_purged"`       // автоочистка: удалено закрытых эпизодов старше TTL
 	StatusDist       map[int]int    `json:"status_dist"`        // распределение статусов (Stage 1b)
 }
 
@@ -361,6 +362,16 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// Автоочистка закрытых эпизодов задержек старше порога (status.delay_cleanup_days;
+	// 0 → выключена, хранить бессрочно). ⚠️ Ограничивает глубину отчёта по простоям.
+	var delayPurged int
+	if p.delays != nil && sp.DelayCleanupDays > 0 {
+		cutoffD := domain.LocalTime(time.Time(clock.Now()).Add(-time.Duration(sp.DelayCleanupDays) * 24 * time.Hour))
+		if delayPurged, err = p.delays.PurgeClosedOlderThan(ctx, cutoffD); err != nil {
+			return LKProcessResult{}, fmt.Errorf("автоочистка vagon_delay: %w", err)
+		}
+	}
+
 	// Заявки на историю продвижения (601): прибытие / пропажа / выбытие-10 —
 	// только постановка в очередь (HTTP — у фонового воркера). ДО подмены
 	// снимка. Отказ очереди пересборку не валит: трейл — вторичные данные.
@@ -424,6 +435,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		BrosPurged: brosPurged,
 		DelayOpened: delayStats.Opened, DelayEscalated: delayStats.Escalated,
 		DelayClosed: delayStats.Closed, DelayActive: delayStats.Active,
+		DelayPurged: delayPurged,
 	}, nil
 }
 

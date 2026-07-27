@@ -17,4 +17,7 @@ type VagonDelayRepository interface {
 	Insert(ctx context.Context, d domain.VagonDelay) error
 	// Update точечно обновляет колонки эпизода по id (ключи — имена колонок).
 	Update(ctx context.Context, id int64, fields map[string]any) error
+	// PurgeClosedOlderThan удаляет закрытые эпизоды (date_to не NULL), завершённые
+	// раньше cutoff. Открытые не трогает. Возвращает число удалённых.
+	PurgeClosedOlderThan(ctx context.Context, cutoff domain.LocalTime) (int, error)
 }

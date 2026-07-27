@@ -77,4 +77,16 @@ func TestVagonDelayRepository_Lifecycle(t *testing.T) {
 	for _, d := range open2 {
 		assert.NotEqual(t, vag, d.Vagon, "закрытый эпизод не должен быть среди открытых")
 	}
+
+	// Автоочистка: закрытый эпизод старше cutoff удаляется, открытый — не трогается.
+	require.NoError(t, repo.Insert(ctx, domain.VagonDelay{
+		Vagon: vag, Kind: domain.DelayKindProstoi, StationCode: "880002",
+		DateFrom: to, CreatedAt: now, UpdatedAt: now, // второй эпизод, открытый
+	}))
+	purged, err := repo.PurgeClosedOlderThan(ctx, *domain.NewLocalTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)))
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, purged, 1) // как минимум наш закрытый
+	var left int64
+	require.NoError(t, db.Raw("SELECT count(*) FROM vagon_delay WHERE vagon = ?", vag).Scan(&left).Error)
+	assert.Equal(t, int64(1), left, "открытый эпизод должен пережить автоочистку")
 }
