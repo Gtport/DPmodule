@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 // Настроечная таблица: реестр каналов ввода (data_source) и клиентские параметры
 // (client_settings). Чистые структуры без ORM-тегов; ORM/загрузка — gorm-репозиторий,
 // кэш в RAM — internal/service.ConfigCache. См. миграцию 000003 и TARGET.md §3.10.
@@ -84,6 +86,27 @@ type StatusPolicy struct {
 	// (по date_to); 0 → выключена (хранить бессрочно — объём копеечный).
 	// ⚠️ Ограничивает глубину отчёта по простоям: данные старше срока удаляются.
 	DelayCleanupDays int `json:"delay_cleanup_days"`
+	// Нерабочий парк: коды операций, вычёркивающие вагон из снимка целиком —
+	// его нет ни на экранах, ни в задержках, ни в прогнозах (решение владельца
+	// 27.07.2026: списанные не фигурируют нигде). Отсутствие ключа в настройке →
+	// дефолт ["72"] (Списание); явный пустой список → фильтр выключен.
+	ExcludeOperCodes []string `json:"exclude_oper_codes"`
+}
+
+// ExcludedOperSet — множество кодов исключаемых операций с дефолтом: nil
+// (ключа нет в client_settings.extra.status) → {"72"}; пустой список → пусто.
+func (p StatusPolicy) ExcludedOperSet() map[string]bool {
+	codes := p.ExcludeOperCodes
+	if codes == nil {
+		codes = []string{"72"}
+	}
+	out := make(map[string]bool, len(codes))
+	for _, c := range codes {
+		if c = strings.TrimSpace(c); c != "" {
+			out[c] = true
+		}
+	}
+	return out
 }
 
 // IngestPolicy — пороги приёма по категориям (§3.9). Межфайловые/на загрузку

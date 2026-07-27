@@ -23,9 +23,10 @@ func NewEnricher(dir *DirectoryCache) *Enricher { return &Enricher{dir: dir} }
 
 // Stage1Config — настроечные пороги производных расчётов (не хардкод).
 type Stage1Config struct {
-	CutoffHour int // порог часа для date_op_jd (date_cutoff_hour профиля); ≤0 → 18
-	ProstDnMin int // порог простоя в сутках → статус 4 (client_settings)
-	ProstChMin int // порог простоя в часах → статус 4 (client_settings)
+	CutoffHour  int             // порог часа для date_op_jd (date_cutoff_hour профиля); ≤0 → 18
+	ProstDnMin  int             // порог простоя в сутках → статус 4 (client_settings)
+	ProstChMin  int             // порог простоя в часах → статус 4 (client_settings)
+	ExcludeOper map[string]bool // нерабочий парк: коды операций, вычёркивающие вагон из снимка (StatusPolicy.ExcludedOperSet)
 }
 
 // Stage1Stats — диагностика прогона Stage 1.
@@ -35,6 +36,7 @@ type Stage1Stats struct {
 	NaznEnriched       int         // с заполненной станцией назначения
 	PortUnresolved     int         // отброшено: (ОКПО+станция) не резолвится
 	PortDisabled       int         // отброшено: порт выключен
+	OperExcluded       int         // отброшено: нерабочий парк (код операции из exclude_oper_codes)
 	StationsNotFound   []int       // коды станций вне справочника
 	OperationsNotFound []int       // коды операций вне справочника
 	CargoNotFound      []int       // коды грузов вне словаря cargo
@@ -69,6 +71,14 @@ func (e *Enricher) Stage1(records []domain.Dislocation, cfg Stage1Config) ([]dom
 
 	for i := range records {
 		r := records[i]
+
+		// 0. Нерабочий парк (решение владельца 27.07.2026): вагон с кодом
+		// операции из exclude_oper_codes (дефолт 72 «Списание») в снимок не
+		// попадает — его нет ни на экранах, ни в задержках, ни в прогнозах.
+		if cfg.ExcludeOper[strings.TrimSpace(r.CodeOper)] {
+			st.OperExcluded++
+			continue
+		}
 
 		// 1. Станции.
 		e.enrichStations(&r, stationsNF)

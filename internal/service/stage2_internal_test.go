@@ -264,7 +264,7 @@ func TestReconcile_Status9Live(t *testing.T) {
 		{Vagon: "V5", Status: ip(9)}, // новый сразу 9 → insert
 	}
 
-	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo))
+	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, st.Inserted) // V1, V5
@@ -276,17 +276,20 @@ func TestReconcile_Status9Live(t *testing.T) {
 }
 
 // Пропавшие → статус 8; штатно выбывшие (6 — порожний в пути, 10 — прибыл,
-// 12 — выгружен) не фиксируются; статус-9 при пропаже → 8.
+// 12 — выгружен, нерабочий парк по коду операции) не фиксируются; статус-9
+// при пропаже → 8.
 func TestReconcile_Missing8(t *testing.T) {
 	ctx := context.Background()
 	// актуальная: M1 ехал (2), M2 порожний в пути (6), M3 живой кандидат (9),
-	// M4 прибыл (10), M5 выгружен (12), P — останется в батче
+	// M4 прибыл (10), M5 выгружен (12), M6 списан (код 72, вычеркнут фильтром
+	// Stage 1), P — останется в батче
 	actual := NewActualCache(s9StubDisl{items: []domain.Dislocation{
 		{Vagon: "M1", Status: ip(2)},
 		{Vagon: "M2", Status: ip(6)},
 		{Vagon: "M3", Status: ip(9)},
 		{Vagon: "M4", Status: ip(10)},
 		{Vagon: "M5", Status: ip(12)},
+		{Vagon: "M6", Status: ip(4), CodeOper: "72"},
 		{Vagon: "P", Status: ip(2)},
 	}})
 	require.NoError(t, actual.Load(ctx))
@@ -295,15 +298,16 @@ func TestReconcile_Missing8(t *testing.T) {
 	// В батче только P (остальные пропали).
 	batch := []domain.Dislocation{{Vagon: "P", Status: ip(2)}}
 
-	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo))
+	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo), map[string]bool{"72": true})
 	require.NoError(t, err)
 
-	assert.Equal(t, 2, st.Missing8) // M1 (новый 8) + M3 (перевод 9→8); M2/M4/M5 выбыли
+	assert.Equal(t, 2, st.Missing8) // M1 (новый 8) + M3 (перевод 9→8); M2/M4/M5/M6 выбыли
 	assert.Equal(t, 8, repo.vagons["M1"])
 	assert.Equal(t, 8, repo.vagons["M3"]) // 9 → 8 при пропаже
 	assert.NotContains(t, repo.vagons, "M2")
 	assert.NotContains(t, repo.vagons, "M4") // прибыл и уехал — штатно
 	assert.NotContains(t, repo.vagons, "M5") // выгружен и уехал — штатно
+	assert.NotContains(t, repo.vagons, "M6") // списан — вычеркнут, не пропажа
 	assert.ElementsMatch(t, []string{"M1", "M3"}, repo.missing8)
 }
 
@@ -341,7 +345,7 @@ func TestReconcile_Return8AsLive9(t *testing.T) {
 
 	batch := []domain.Dislocation{{Vagon: "W", Status: ip(9)}} // вернулся, сразу на ст.назн
 
-	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo))
+	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, st.Removed)  // старый 8 снят
@@ -359,7 +363,7 @@ func TestReconcile_Return8ToStream(t *testing.T) {
 
 	batch := []domain.Dislocation{{Vagon: "W", Status: ip(2)}}
 
-	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo))
+	st, err := reconcileCandidates(ctx, batch, actual, s9cache(t, repo), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, st.Removed)
@@ -373,7 +377,7 @@ func TestReconcile_SkipEmptyVagon(t *testing.T) {
 	require.NoError(t, actual.Load(ctx))
 	repo := &s9StubRepo{vagons: map[string]int{}}
 
-	st, err := reconcileCandidates(ctx, []domain.Dislocation{{Vagon: "", Status: ip(9)}}, actual, s9cache(t, repo))
+	st, err := reconcileCandidates(ctx, []domain.Dislocation{{Vagon: "", Status: ip(9)}}, actual, s9cache(t, repo), nil)
 	require.NoError(t, err)
 	assert.Equal(t, 0, st.Inserted)
 }
@@ -415,7 +419,7 @@ func TestReconcileRestoresLineage(t *testing.T) {
 		Index: "9552-248-9857", IndexMain: "9552-248-9857", IndexLast: "9552-248-9857",
 		InvoiceMain: "ЭБ2",
 	}}
-	_, err = reconcileCandidates(ctx, kept, actual, cache)
+	_, err = reconcileCandidates(ctx, kept, actual, cache, nil)
 	require.NoError(t, err)
 
 	r := kept[0]
@@ -435,7 +439,7 @@ func TestReconcileRestoresLineage(t *testing.T) {
 	}}
 	_, err = cache.UpsertMissing(ctx, []domain.Dislocation{old}) // вернуть запись-8
 	require.NoError(t, err)
-	_, err = reconcileCandidates(ctx, kept2, actual, cache)
+	_, err = reconcileCandidates(ctx, kept2, actual, cache, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "9552-248-9857", kept2[0].IndexMain, "новый рейс — без чужой родословной")
 }

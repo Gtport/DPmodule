@@ -115,6 +115,7 @@ type LKProcessResult struct {
 	NaznEnriched     int            `json:"nazn_enriched"`      // записей с заполненной станцией назначения (Stage 1)
 	StationsNotFound []int          `json:"stations_not_found"` // коды станций вне справочника
 	OpsNotFound      []int          `json:"ops_not_found"`      // коды операций вне справочника
+	OperExcluded     int            `json:"oper_excluded"`      // отброшено: нерабочий парк (exclude_oper_codes, напр. 72 «Списание»)
 	PortUnresolved   int            `json:"port_unresolved"`    // отброшено: (ОКПО+станция) не резолвится (Stage 2)
 	PortDisabled     int            `json:"port_disabled"`      // отброшено: порт выключен (Stage 2)
 	Status9Inserted  int            `json:"status9_inserted"`   // новых кандидатов статуса 9 (S2-1)
@@ -258,9 +259,11 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		cutoff = ds.Config.DateCutoffHour
 	}
 	sp := p.intake.cfg.Settings().Status
+	exclOper := sp.ExcludedOperSet() // нерабочий парк (дефолт 72 «Списание»)
 	var enr Stage1Stats
 	all, enr = p.enricher.Stage1(all, Stage1Config{
 		CutoffHour: cutoff, ProstDnMin: sp.ProstDnMin, ProstChMin: sp.ProstChMin,
+		ExcludeOper: exclOper,
 	})
 
 	// Контроль потери данных относительно текущего снимка (размер — из RAM ActualCache,
@@ -392,7 +395,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	// статус 8 для пропавших) — ДО подмены снимка (actual = прежний снимок).
 	var s9 Status9Stats
 	if p.actual != nil && p.status9 != nil {
-		if s9, err = reconcileCandidates(ctx, all, p.actual, p.status9); err != nil {
+		if s9, err = reconcileCandidates(ctx, all, p.actual, p.status9, exclOper); err != nil {
 			return LKProcessResult{}, fmt.Errorf("status9: %w", err)
 		}
 	}
@@ -421,6 +424,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		Count: len(all), Files: files, PrevSnapshot: prevSize, PerFile: perFile,
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
 		PortUnresolved: enr.PortUnresolved, PortDisabled: enr.PortDisabled, StatusDist: enr.StatusDist,
+		OperExcluded: enr.OperExcluded,
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
 		Status8Purged: s8purged,
 		CarryMatched:  co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,

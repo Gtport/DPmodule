@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/Gtport/DPmodule/internal/clock"
@@ -203,6 +204,7 @@ func reconcileCandidates(
 	kept []domain.Dislocation,
 	actual *ActualCache,
 	cache *Status9Cache,
+	excludedOper map[string]bool, // нерабочий парк: выбытие штатное, записи-8 не будет
 ) (Status9Stats, error) {
 	inTable := cache.Statuses() // из RAM
 	var err error
@@ -279,6 +281,9 @@ func reconcileCandidates(
 		}
 		if v.Status != nil && (*v.Status == 6 || *v.Status >= 10) {
 			continue // выбыл штатно: порожний в пути (6) / прибыл (10) / выгружен (12)
+		}
+		if excludedOper[strings.TrimSpace(v.CodeOper)] {
+			continue // нерабочий парк (напр. 72 «Списание»): вычеркнут фильтром Stage 1, не пропажа
 		}
 		rec := v
 		s8 := 8

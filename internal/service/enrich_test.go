@@ -247,3 +247,27 @@ func TestStage1_Delay(t *testing.T) {
 	future := statusOf(t, domain.Dislocation{DateDostav: lt(2026, 7, 15, 0, 0)})
 	assert.Nil(t, future.Delay)
 }
+
+// Нерабочий парк: вагон с кодом операции из exclude_oper_codes (напр. 72
+// «Списание») вычёркивается из снимка целиком — решение владельца 27.07.2026
+// (списанные годами висели в статусе 4 и мусорили экраны и задержки).
+func TestStage1_ExcludeOperCodes(t *testing.T) {
+	recs := []domain.Dislocation{
+		{Vagon: "A", GruzpolOkpo: "1126022", CodeStanNazn: "985702", CodeOper: "72"}, // списан → выброс
+		{Vagon: "B", GruzpolOkpo: "1126022", CodeStanNazn: "985702", CodeOper: "1"},  // обычный
+	}
+	cfg := stage1Cfg
+	cfg.ExcludeOper = domain.StatusPolicy{}.ExcludedOperSet() // дефолт {"72"}
+
+	kept, st := fullEnricher(t).Stage1(recs, cfg)
+
+	require.Len(t, kept, 1)
+	assert.Equal(t, "B", kept[0].Vagon)
+	assert.Equal(t, 1, st.OperExcluded)
+
+	// Явный пустой список в настройке — фильтр выключен.
+	cfg.ExcludeOper = domain.StatusPolicy{ExcludeOperCodes: []string{}}.ExcludedOperSet()
+	kept2, st2 := fullEnricher(t).Stage1(recs, cfg)
+	assert.Len(t, kept2, 2)
+	assert.Zero(t, st2.OperExcluded)
+}
