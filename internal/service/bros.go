@@ -60,12 +60,34 @@ func applyBros(ctx context.Context, kept []domain.Dislocation, actual *ActualCac
 				return BrosStats{}, fmt.Errorf("update bros %s: %w", key, err)
 			}
 			st.Updated++
-		} else {
-			if err := repo.Insert(ctx, buildBrosRecord(g, now)); err != nil {
-				return BrosStats{}, fmt.Errorf("insert bros %s: %w", key, err)
-			}
-			st.New++
+			continue
 		}
+		// Ключа нет среди активных, но он может лежать в таблице ПОДНЯТЫМ:
+		// группа снова в статусе 5 с тем же id_status5 (время операции не
+		// менялось) — повторное бросание. INSERT ронял пересбор дублем PK
+		// (боевой инцидент 27.07.2026, вскрыт эскалацией 4→5) — переоткрываем
+		// строку: снова активна, следы прежнего подъёма стёрты, reason/comment
+		// оператора не трогаем.
+		prev, err := repo.GetByID(ctx, key)
+		if err != nil {
+			return BrosStats{}, fmt.Errorf("get bros %s: %w", key, err)
+		}
+		if prev != nil {
+			fields := brosContinueFields(*prev, g, now)
+			fields["status_br"] = true
+			fields["date_pod_fact"] = nil
+			fields["prog_1"] = nil
+			fields["updated_at"] = now
+			if err := repo.Update(ctx, key, fields); err != nil {
+				return BrosStats{}, fmt.Errorf("reopen bros %s: %w", key, err)
+			}
+			st.New++ // снова активный бросок
+			continue
+		}
+		if err := repo.Insert(ctx, buildBrosRecord(g, now)); err != nil {
+			return BrosStats{}, fmt.Errorf("insert bros %s: %w", key, err)
+		}
+		st.New++
 	}
 
 	// Подъёмы: активные в БД, которых больше нет среди статуса 5.

@@ -11,8 +11,10 @@ import (
 )
 
 // fakeBrosRepo — in-memory port.BrosRepository для тестов reconcile.
+// stored — строки таблицы вне активных (поднятые), их видит только GetByID.
 type fakeBrosRepo struct {
 	active  []domain.Bros
+	stored  []domain.Bros
 	inserts []domain.Bros
 	updates map[string]map[string]any
 }
@@ -39,10 +41,12 @@ func (f *fakeBrosRepo) Filter(context.Context, domain.BrosFilter) ([]domain.Bros
 	return nil, 0, nil
 }
 func (f *fakeBrosRepo) GetByID(_ context.Context, id string) (*domain.Bros, error) {
-	for i := range f.active {
-		if f.active[i].ID == id {
-			b := f.active[i]
-			return &b, nil
+	for _, set := range [][]domain.Bros{f.active, f.stored} {
+		for i := range set {
+			if set[i].ID == id {
+				b := set[i]
+				return &b, nil
+			}
 		}
 	}
 	return nil, nil
@@ -166,4 +170,36 @@ func TestApplyBros_Stop(t *testing.T) {
 	assert.Equal(t, false, repo.updates[key]["status_br"])
 	assert.Contains(t, repo.updates[key], "date_pod_fact")
 	assert.Equal(t, "IDX-A2", repo.updates[key]["index_1"])
+}
+
+// Повторное бросание той же группы: ключ уже лежит в bros ПОДНЯТЫМ (status_br=
+// false, не в Active) → переоткрытие через UPDATE (status_br=true, следы подъёма
+// стёрты, reason/comment не тронуты), НЕ Insert — дубль PK ронял весь пересбор
+// (боевой инцидент 27.07.2026: 71 вагон со статусом 5 после эскалации 4→5,
+// ключ бросания с 24.07 не менялся, строка была поднята 25.07).
+func TestApplyBros_ReopenStopped(t *testing.T) {
+	const key = "8649-312-9847|886600|2026-07-24 10:01:00"
+	repo := &fakeBrosRepo{stored: []domain.Bros{{
+		ID: key, Index1: "8649-312-9847", StatusBr: false,
+		Reason: "01", Comment: "письмо №5", VagonCount: 2, Sostav: "СМЫЧКА УГОЛЬ (2)",
+	}}}
+	kept := []domain.Dislocation{
+		brosVag("100", key, "8649-312-9847", "НАХОДКА", "СМЫЧКА", "УГОЛЬ", 5),
+		brosVag("101", key, "8649-312-9847", "НАХОДКА", "СМЫЧКА", "УГОЛЬ", 5),
+	}
+
+	st, err := applyBros(context.Background(), kept, emptyActual(), repo)
+	require.NoError(t, err)
+
+	assert.Empty(t, repo.inserts, "занятый PK: должен быть UPDATE, не INSERT")
+	assert.Equal(t, 1, st.New)
+	require.Contains(t, repo.updates, key)
+	fields := repo.updates[key]
+	assert.Equal(t, true, fields["status_br"])
+	require.Contains(t, fields, "date_pod_fact")
+	assert.Nil(t, fields["date_pod_fact"])
+	require.Contains(t, fields, "prog_1")
+	assert.Nil(t, fields["prog_1"])
+	assert.NotContains(t, fields, "reason", "код оператора не трогаем")
+	assert.NotContains(t, fields, "comment")
 }
