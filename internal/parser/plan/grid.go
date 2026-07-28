@@ -19,10 +19,17 @@ func hasLetter(s string) bool {
 	return strings.IndexFunc(s, unicode.IsLetter) >= 0
 }
 
-// GridParser — универсальный парсер «новой формы» плана подвода. Формат один для
-// всех станций: шапка с «N п/п», блоки «План на DD-MM-YYYY», строки поездов
-// (числовой N п/п), терминалы с подстолбцами грузов. Специфика станции — только
-// в профиле (какие терминалы «наши» → Activ).
+// GridParser — универсальный парсер «новой формы» плана подвода. Общее у всех
+// станций — не геометрия, а состав: блоки «План на DD-MM-YYYY», строки поездов
+// (индекс 4-3-4 или с.ф.), терминалы с подстолбцами грузов. Специфика станции —
+// только в профиле (какие терминалы «наши» → Activ).
+//
+// ⚠️ Лист верстают руками, и раскладка плывёт (по книге Находки за июль: «Индекс»
+// то в B, то в C; «Кол. ваг.» то подписан, то приходит как «Итого», то отсутствует;
+// уровней шапки 2, 3 или 4; 29.07 терминалы переехали в САМУ строку подписей).
+// Поэтому парсер не считает смещений от строки шапки, а ищет опоры по содержимому:
+// строку шапки — по «План», строку терминалов — по именам вне словаря служебных
+// подписей, недостающие ключевые столбцы — по данным строк поездов.
 type GridParser struct {
 	prof Profile
 }
@@ -45,8 +52,9 @@ type gridCols struct {
 	colFact    int       // «Факт» — HH:MM или пусто
 	colKolVag  int       // «Кол. ваг.» — всего вагонов в поезде
 	colComment int       // «Комментарий»
-	colStation int       // «Станция текущей операции» (нужна для с.ф.; пока не используется)
-	rowHeader  int       // строка с «N п/п»
+	colStation int       // «Станция текущей операции» (нужна для с.ф.)
+	rowHeader  int       // строка подписей столбцов (опора — «План»)
+	rowTerm    int       // строка имён терминалов (может совпадать с rowHeader)
 	leaves     []leafCol // листовые столбцы ВСЕХ терминалов (для Ports); isOur → Activ
 }
 
@@ -97,6 +105,19 @@ func (g *GridParser) Parse(rows [][]string, sourceFile string) (*PlanDoc, error)
 	if err != nil {
 		return nil, err
 	}
+	// Распознанная геометрия — в лог: раскладка листа плывёт, и при разборе спорного
+	// файла это первое, что нужно видеть (что парсер счёл шапкой и терминалами).
+	ourLeaves := 0
+	for _, lf := range cols.leaves {
+		if lf.isOur {
+			ourLeaves++
+		}
+	}
+	fmt.Printf("[plan:%s] шапка стр.%d, терминалы стр.%d; столбцы: индекс=%s план=%s факт=%s ваг=%s станция=%s коммент=%s; листьев %d, из них наших %d\n",
+		g.prof.PlanCode, cols.rowHeader+1, cols.rowTerm+1,
+		colName(cols.colIndex), colName(cols.colPlan), colName(cols.colFact), colName(cols.colKolVag),
+		colName(cols.colStation), colName(cols.colComment), len(cols.leaves), ourLeaves)
+
 	nitki, err := g.collect(rows, cols)
 	if err != nil {
 		return nil, err
@@ -127,30 +148,22 @@ func titleStation(rows [][]string) string {
 	return ""
 }
 
-// findColumns находит строку шапки и ключевые столбцы; классифицирует листовые
-// столбцы терминалов и отбирает «наши» (для Activ).
+// findColumns находит строку шапки, строку терминалов и ключевые столбцы;
+// классифицирует листовые столбцы терминалов и отбирает «наши» (для Activ).
 func (g *GridParser) findColumns(rows [][]string) (gridCols, error) {
-	cols := gridCols{colIndex: -1, colPlan: -1, colFact: -1, colKolVag: -1, colComment: -1, colStation: -1, rowHeader: -1}
+	cols := gridCols{colIndex: -1, colPlan: -1, colFact: -1, colKolVag: -1, colComment: -1, colStation: -1, rowHeader: -1, rowTerm: -1}
 
-	// 1. Строка шапки: ищем «N п/п».
-	for r := 0; r < min(6, len(rows)); r++ {
-		for c := 0; c < min(5, len(rows[r])); c++ {
-			cell := strings.TrimSpace(rows[r][c])
-			if cell == "N п/п" || cell == "№ п/п" || strings.HasPrefix(cell, "N п") || strings.HasPrefix(cell, "№ п") {
-				cols.rowHeader = r
-				break
-			}
-		}
-		if cols.rowHeader != -1 {
-			break
-		}
-	}
+	// 1. Строка шапки. Опора — «План»: единственная подпись, которая есть во ВСЕХ
+	// виденных раскладках обеих станций. «N п/п» опорой быть не может — в листе от
+	// 29.07 её не проставили, и по ней разбор падал целиком.
+	cols.rowHeader = findHeaderRow(rows)
 	if cols.rowHeader == -1 {
-		return cols, fmt.Errorf("plan[%s]: не найдена строка шапки с «N п/п» (не «новая форма»?)", g.prof.PlanCode)
+		return cols, fmt.Errorf("plan[%s]: не найдена строка шапки со столбцом «План» (не «новая форма»?)", g.prof.PlanCode)
 	}
 	row1 := cols.rowHeader
 
-	// 2. Ключевые столбцы — по имени в строке шапки.
+	// 2. Ключевые столбцы — по подписи в строке шапки. Чего не подписали, ниже
+	// доопределим по данным.
 	for c, cell := range rows[row1] {
 		cell = strings.TrimSpace(cell)
 		switch {
@@ -158,41 +171,311 @@ func (g *GridParser) findColumns(rows [][]string) (gridCols, error) {
 			cols.colIndex = c
 		case cell == "План":
 			cols.colPlan = c
-		case cell == "Факт":
+		case strings.EqualFold(cell, "Факт"):
 			cols.colFact = c
 		case strings.HasPrefix(cell, "Кол. ваг") || cell == "Кол.ваг.":
 			cols.colKolVag = c
-		case cell == "Комментарий":
+		case cell == "Комментарий" || cell == "Примечание":
 			cols.colComment = c
 		case (strings.Contains(cell, "Станция текущей") || strings.Contains(cell, "текущей операции")) &&
 			!strings.Contains(cell, "Время") && !strings.Contains(cell, "время"):
 			cols.colStation = c
 		}
 	}
-	if cols.colIndex == -1 {
-		return cols, fmt.Errorf("plan[%s]: не найден столбец «Индекс» в строке %d", g.prof.PlanCode, row1)
-	}
 	if cols.colPlan == -1 {
 		return cols, fmt.Errorf("plan[%s]: не найден столбец «План» в строке %d", g.prof.PlanCode, row1)
 	}
 
-	// «Кол. ваг.» в новой форме обычно отсутствует как отдельный столбец: всего
-	// вагонов поезда — это столбец «Итого» в строке терминалов (row1+1), стоящий
-	// перед первым терминалом. Берём первый итоговый столбец как счётчик вагонов.
-	if cols.colKolVag == -1 && row1+1 < len(rows) {
-		for c, cell := range rows[row1+1] {
-			u := strings.ToUpper(strings.TrimSpace(cell))
-			if strings.Contains(u, "ИТОГО") || strings.Contains(u, "TOTAL") {
-				cols.colKolVag = c
+	// 3. Строка терминалов. Обычно следующая за шапкой, но 29.07 по Находке имена
+	// терминалов встали в саму строку подписей — считать «шапка+1» нельзя.
+	cols.rowTerm = findTerminalRow(rows, row1, cols.colPlan)
+
+	// 4. Столбец «Индекс» без подписи — по данным: где чаще всего встречается
+	// валидный индекс поезда 4-3-4 или маркер с.ф.
+	if cols.colIndex == -1 {
+		cols.colIndex = guessIndexCol(rows, cols.rowTerm)
+	}
+	if cols.colIndex == -1 {
+		return cols, fmt.Errorf("plan[%s]: не найден столбец «Индекс» (нет подписи и нет строк с индексом 4-3-4)", g.prof.PlanCode)
+	}
+
+	// 5. Классификация листовых столбцов терминалов (все, с метками и признаком «наш»).
+	cols.leaves = g.findLeaves(rows, cols.rowTerm)
+
+	// 6. «Кол. ваг.» без подписи — это «Итого» строки терминалов, стоящее ЛЕВЕЕ
+	// первого терминала (итог всего поезда). Раньше брали первое «ИТОГО» в строке,
+	// а в форме 29.07 первым идёт «ИТОГО» терминала Сухой порт — и в вагонах поезда
+	// оказывалось его число.
+	if cols.colKolVag == -1 {
+		cols.colKolVag = findTrainTotalCol(rows, cols.rowTerm, cols.colPlan, firstLeafCol(cols.leaves))
+	}
+
+	// 7. Станция текущей операции (нужна с.ф.) и комментарий без подписей — по данным.
+	if cols.colStation == -1 {
+		cols.colStation = guessStationCol(rows, cols)
+	}
+	if cols.colComment == -1 {
+		cols.colComment = guessCommentCol(rows, cols)
+	}
+
+	return cols, nil
+}
+
+// headerWords — служебные подписи столбцов во всех виденных раскладках. Словарь
+// нужен ровно для одного: отличить строку подписей от строки терминалов. Имя
+// терминала — это текст, которого в словаре НЕТ. Здесь только слова бланка,
+// никаких имён портов (хардкод портов запрещён каноном).
+var headerWords = map[string]bool{
+	"индекс":                               true,
+	"план":                                 true,
+	"факт":                                 true,
+	"номер поезда":                         true,
+	"станция текущей операции":             true,
+	"время текущей операции":               true,
+	"комментарий":                          true,
+	"примечание":                           true,
+	"передвинуть нитку":                    true,
+	"сведения о повагонном составе поезда": true,
+	"остаток на 18:00":                     true,
+}
+
+// normLabel приводит подпись к сравнимому виду: нижний регистр, схлопнутые пробелы.
+func normLabel(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// isHeaderWord — ячейка является служебной подписью шапки (а не именем терминала).
+func isHeaderWord(s string) bool {
+	n := normLabel(s)
+	if headerWords[n] {
+		return true
+	}
+	return strings.HasPrefix(n, "n п") || strings.HasPrefix(n, "№ п") ||
+		strings.HasPrefix(n, "кол. ваг") || strings.HasPrefix(n, "кол.ваг") ||
+		strings.HasPrefix(n, "код прич")
+}
+
+// isTotalCell — ячейка «Итого»/«ИТОГО»/«Total» (агрегат, не имя).
+func isTotalCell(s string) bool {
+	u := strings.ToUpper(strings.TrimSpace(s))
+	return strings.Contains(u, "ИТОГО") || strings.Contains(u, "TOTAL")
+}
+
+// findHeaderRow — строка подписей столбцов: первая из верхних, где есть ячейка
+// ровно «План». Заголовок блока «План на DD-MM-YYYY» не мешает — он не равен «План».
+func findHeaderRow(rows [][]string) int {
+	for r := 0; r < min(8, len(rows)); r++ {
+		for _, cell := range rows[r] {
+			if strings.TrimSpace(cell) == "План" {
+				return r
+			}
+		}
+	}
+	return -1
+}
+
+// termCandidates — столбцы строки r правее «Плана», похожие на имена терминалов:
+// текст, не «Итого», не служебная подпись шапки.
+func termCandidates(row []string, colPlan int) []int {
+	var out []int
+	for c := colPlan + 1; c < len(row); c++ {
+		v := strings.TrimSpace(row[c])
+		if v == "" || isTotalCell(v) || isHeaderWord(v) || !hasLetter(v) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// termScore — сколько кандидатов строки r имеют «детей»: непустую ячейку в строке
+// ниже внутри своего диапазона (до следующего кандидата). У терминала под ним всегда
+// стоят грузы или «ИТОГО»; у случайной подписи шапки под ней пусто.
+func termScore(rows [][]string, r, colPlan int) int {
+	cand := termCandidates(rows[r], colPlan)
+	if r+1 >= len(rows) {
+		return 0
+	}
+	below := rows[r+1]
+	score := 0
+	for i, c := range cand {
+		end := len(rows[r])
+		if i+1 < len(cand) {
+			end = cand[i+1]
+		}
+		for c2 := c; c2 < end && c2 < len(below); c2++ {
+			if strings.TrimSpace(below[c2]) != "" {
+				score++
 				break
 			}
 		}
 	}
+	return score
+}
 
-	// 3. Классификация листовых столбцов терминалов (все, с метками и признаком «наш»).
-	cols.leaves = g.findLeaves(rows, row1)
+// findTerminalRow — строка имён терминалов: самая ВЕРХНЯЯ из окна «шапка … шапка+2»,
+// где есть имена вне словаря служебных подписей И у них есть подстрока-продолжение
+// (грузы или «ИТОГО») в следующей строке. Так строка терминалов отличается от строки
+// подписей независимо от числа уровней шапки:
+//   - форма Мыса — правее «Плана» стоят «Факт»/«Кол. ваг.»/«Сведения о повагонном
+//     составе поезда»/«Комментарий»/«Согл. стан.»: под ними пусто → терминалы ниже;
+//   - форма Находки от 29.07 — там сразу имена терминалов с грузами под ними → та же строка.
+//
+// Для самой строки шапки порог строже (нужно ≥2 таких имени): одна случайная подпись
+// в дальнем столбце не должна выдать строку подписей за строку терминалов — на этом
+// ловился лист «06» Мыса с подписью «Согл. стан.».
+func findTerminalRow(rows [][]string, rowHeader, colPlan int) int {
+	for r := rowHeader; r < min(rowHeader+3, len(rows)); r++ {
+		need := 1
+		if r == rowHeader {
+			need = 2
+		}
+		if termScore(rows, r, colPlan) >= need {
+			return r
+		}
+	}
+	return min(rowHeader+1, max(len(rows)-1, 0))
+}
 
-	return cols, nil
+// firstLeafCol — самый левый листовой столбец (−1, если листьев нет).
+func firstLeafCol(leaves []leafCol) int {
+	first := -1
+	for _, lf := range leaves {
+		if first == -1 || lf.col < first {
+			first = lf.col
+		}
+	}
+	return first
+}
+
+// findTrainTotalCol — столбец «Итого» всего поезда: итоговая ячейка строки
+// терминалов между «Планом» и первым терминалом. Правее — итоги отдельных
+// терминалов, их за состав поезда принимать нельзя.
+func findTrainTotalCol(rows [][]string, rowTerm, colPlan, colFirstLeaf int) int {
+	if rowTerm < 0 || rowTerm >= len(rows) {
+		return -1
+	}
+	limit := len(rows[rowTerm])
+	if colFirstLeaf >= 0 && colFirstLeaf < limit {
+		limit = colFirstLeaf
+	}
+	for c := colPlan + 1; c < limit; c++ {
+		if isTotalCell(rows[rowTerm][c]) {
+			return c
+		}
+	}
+	return -1
+}
+
+// dataRows возвращает индексы строк ниже шапки (кандидаты в строки поездов).
+func dataRows(rows [][]string, from int) []int {
+	out := make([]int, 0, len(rows))
+	for r := from + 1; r < len(rows); r++ {
+		if len(rows[r]) > 0 {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// guessIndexCol — столбец «Индекс» по данным: где больше всего валидных индексов
+// 4-3-4 и маркеров с.ф. Нужен для листов без подписей столбцов (файл 29.07 пришёл
+// без «N п/п» и «Индекс» вовсе).
+func guessIndexCol(rows [][]string, rowTerm int) int {
+	hits := map[int]int{}
+	for _, r := range dataRows(rows, rowTerm) {
+		for c, cell := range rows[r] {
+			v := strings.TrimSpace(cell)
+			if trainIndexRe.MatchString(v) || isSfRow(v) {
+				hits[c]++
+			}
+		}
+	}
+	best, bestN := -1, 0
+	for c, n := range hits {
+		if n > bestN || (n == bestN && best != -1 && c < best) {
+			best, bestN = c, n
+		}
+	}
+	return best
+}
+
+// guessStationCol — «Станция текущей операции» по данным: столбец левее «Плана»,
+// где в строках поездов чаще всего стоит чистое имя (буквы без цифр и двоеточий).
+// Без него строки с.ф. теряются молча — их станция берётся именно отсюда.
+func guessStationCol(rows [][]string, cols gridCols) int {
+	hits := map[int]int{}
+	for _, r := range dataRows(rows, cols.rowTerm) {
+		if !isTrainRow(rows[r], cols.colIndex) {
+			continue
+		}
+		for c := 0; c < min(cols.colPlan, len(rows[r])); c++ {
+			if c == cols.colIndex {
+				continue
+			}
+			v := strings.TrimSpace(rows[r][c])
+			if v == "" || !hasLetter(v) || strings.ContainsAny(v, "0123456789:") {
+				continue
+			}
+			hits[c]++
+		}
+	}
+	best, bestN := -1, 0
+	for c, n := range hits {
+		if n > bestN || (n == bestN && best != -1 && c < best) {
+			best, bestN = c, n
+		}
+	}
+	return best
+}
+
+// guessCommentCol — «Комментарий» по данным: первый столбец правее последнего
+// листа, где в строках поездов встречается текст.
+func guessCommentCol(rows [][]string, cols gridCols) int {
+	last := -1
+	for _, lf := range cols.leaves {
+		if lf.col > last {
+			last = lf.col
+		}
+	}
+	best, bestN := -1, 0
+	for _, r := range dataRows(rows, cols.rowTerm) {
+		if !isTrainRow(rows[r], cols.colIndex) {
+			continue
+		}
+		for c := last + 1; c < len(rows[r]); c++ {
+			if v := strings.TrimSpace(rows[r][c]); v != "" && hasLetter(v) {
+				if n := countTextCells(rows, cols, c); n > bestN {
+					best, bestN = c, n
+				}
+				break
+			}
+		}
+	}
+	return best
+}
+
+// countTextCells — сколько строк поездов несут текст в столбце col.
+func countTextCells(rows [][]string, cols gridCols, col int) int {
+	n := 0
+	for _, r := range dataRows(rows, cols.rowTerm) {
+		if !isTrainRow(rows[r], cols.colIndex) || col >= len(rows[r]) {
+			continue
+		}
+		if v := strings.TrimSpace(rows[r][col]); v != "" && hasLetter(v) {
+			n++
+		}
+	}
+	return n
+}
+
+// isTrainRow — строка несёт нитку поезда (валидный индекс или маркер с.ф.).
+func isTrainRow(row []string, colIndex int) bool {
+	if colIndex < 0 || colIndex >= len(row) {
+		return false
+	}
+	v := strings.TrimSpace(row[colIndex])
+	return trainIndexRe.MatchString(v) || isSfRow(v)
 }
 
 // findLeaves определяет ВСЕ листовые (не агрегатные) подстолбцы терминалов с их
@@ -200,22 +483,23 @@ func (g *GridParser) findColumns(rows [][]string) (gridCols, error) {
 // «Наши» листья суммируются в Activ; полный список идёт в Ports нитки (столбцы
 // портов таблицы) и позволяет фронту фильтровать «чужие» строки.
 //
-// Терминалы задаёт строка row1+1; их подзаголовки-грузы — строки row1+2..row1+4.
+// Терминалы задаёт строка rowTerm (найденная findTerminalRow, НЕ «шапка+1»); их
+// подзаголовки-грузы — строки rowTerm+1..rowTerm+3.
 // «Листовой» столбец — самый глубокий непустой-не-ИТОГО подзаголовок без детей на
 // следующем уровне. Алгоритм классификации листьев дословно повторяет эталон GTport.
-func (g *GridParser) findLeaves(rows [][]string, row1 int) []leafCol {
+func (g *GridParser) findLeaves(rows [][]string, rowTerm int) []leafCol {
+	if rowTerm < 0 || rowTerm >= len(rows) {
+		return nil
+	}
 	// Подзаголовочные строки для анализа листьев.
 	var subRows [][]string
-	for off := 2; off <= 4; off++ {
-		if row1+off < len(rows) {
-			subRows = append(subRows, rows[row1+off])
+	for off := 1; off <= 3; off++ {
+		if rowTerm+off < len(rows) {
+			subRows = append(subRows, rows[rowTerm+off])
 		}
 	}
 
-	isTotal := func(s string) bool {
-		u := strings.ToUpper(strings.TrimSpace(s))
-		return strings.Contains(u, "ИТОГО") || strings.Contains(u, "TOTAL")
-	}
+	isTotal := isTotalCell
 
 	// getLeafName: самый глубокий текстовый (не пустой, не «ИТОГО», не чисто числовой)
 	// подзаголовок столбца col. Числовые строки (перераб. способность, остаток) —
@@ -284,23 +568,21 @@ func (g *GridParser) findLeaves(rows [][]string, row1 int) []leafCol {
 		name  string
 	}
 	var terminals []terminal
-	if row1+1 < len(rows) {
-		for c, cell := range rows[row1+1] {
-			cell = strings.TrimSpace(cell)
-			if cell == "" || isTotal(cell) {
-				continue // пусто или «Итого» всего поезда — не терминал
-			}
-			terminals = append(terminals, terminal{start: c, name: cell})
+	for c, cell := range rows[rowTerm] {
+		cell = strings.TrimSpace(cell)
+		// Пусто, «Итого» всего поезда, служебная подпись столбца — не терминал.
+		// Подписи важны, когда строка терминалов СОВПАДАЕТ со строкой шапки
+		// (форма Находки 29.07): иначе «Индекс»/«План»/«факт» станут терминалами.
+		if cell == "" || isTotal(cell) || isHeaderWord(cell) || !hasLetter(cell) {
+			continue
 		}
+		terminals = append(terminals, terminal{start: c, name: cell})
 	}
 
 	// Правая граница поиска листьев у ПОСЛЕДНЕГО терминала — реальная ширина
 	// заголовочных строк, а не 1<<30: столбца-листа за пределами заголовков быть не
 	// может (getLeafName пуст → не лист), а холостой добег до ~1e9 давал ~6 с на разбор.
-	width := 0
-	if row1+1 < len(rows) {
-		width = len(rows[row1+1])
-	}
+	width := len(rows[rowTerm])
 	for _, sr := range subRows {
 		if len(sr) > width {
 			width = len(sr)
@@ -426,6 +708,23 @@ func (g *GridParser) collect(rows [][]string, cols gridCols) ([]PlanNitka, error
 	}
 	if trains == 0 {
 		return nil, fmt.Errorf("plan[%s]: не найдено строк поездов", g.prof.PlanCode)
+	}
+
+	// Гард «разбор пустой». Лист верстают руками, раскладка плывёт; при сдвиге
+	// столбцов состава нитки находятся, а вагоны у всех нулевые — и такой план
+	// молча ложился в базу (случай Находки 29.07: терминалами стали имена грузов).
+	// Падать здесь громко дешевле, чем чинить последствия у диспетчера.
+	wagons, activ := 0, 0
+	for _, n := range nitki {
+		wagons += n.Wagons
+		activ += n.Activ
+	}
+	if wagons == 0 {
+		return nil, fmt.Errorf("plan[%s]: столбцы состава поезда не распознаны — у всех %d ниток 0 вагонов; похоже, изменилась форма листа", g.prof.PlanCode, trains)
+	}
+	if activ == 0 {
+		fmt.Printf("[plan:%s] ⚠ по «нашим» терминалам (%s) 0 вагонов при %d в плане — проверьте профиль станции и имена терминалов в файле\n",
+			g.prof.PlanCode, strings.Join(g.prof.OurTerminals, ", "), wagons)
 	}
 	return nitki, nil
 }
@@ -584,6 +883,21 @@ func isAllDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+// colName — буквенное имя столбца Excel (A, B, …, AA) для диагностики; «—» для −1.
+func colName(col int) string {
+	if col < 0 {
+		return "—"
+	}
+	name := ""
+	for c := col; ; c = c/26 - 1 {
+		name = string(rune('A'+c%26)) + name
+		if c < 26 {
+			break
+		}
+	}
+	return name
 }
 
 // atoiSafe парсит целое; пусто/мусор → 0.
