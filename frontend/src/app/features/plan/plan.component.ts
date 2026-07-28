@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, ViewChild, WritableSignal, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
+import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzMessageService } from 'ng-zorro-antd/message';
@@ -16,6 +17,7 @@ import { NzModalModule } from 'ng-zorro-antd/modal';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { PlanApiService, PlanApplyResult, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFCandidate, SFRow } from './plan-api.service';
 import { PlanStatusPanelComponent } from './plan-status-panel.component';
+import { PlanUploadHint, planUploadHint } from './plan-upload-hint';
 import { IndexInputComponent } from './index-input.component';
 import { FileDropComponent } from '../../shared/file-drop.component';
 
@@ -42,7 +44,7 @@ function todayMsk(): string {
 @Component({
   selector: 'app-plan',
   imports: [
-    FormsModule, NzButtonModule, NzCardModule, NzTagModule,
+    FormsModule, DragDropModule, NzButtonModule, NzCardModule, NzTagModule,
     NzTableModule, NzSelectModule, NzCheckboxModule, NzIconModule,
     NzSpinModule, NzTabsModule, NzTooltipModule, NzModalModule,
     PlanStatusPanelComponent, IndexInputComponent, FileDropComponent,
@@ -300,6 +302,37 @@ function todayMsk(): string {
         <button nz-button (click)="sfCancel()" [nzLoading]="sfBusy()">Отмена (без правок)</button>
         <button nz-button nzType="primary" (click)="sfApply()" [nzLoading]="sfBusy()">Применить</button>
       </ng-template>
+
+      <!-- Отказ загрузки: показываем диспетчеру, что поправить в файле, а не текст ошибки -->
+      <nz-modal
+        [nzVisible]="uploadHint() !== null"
+        [nzTitle]="hintTtl"
+        [nzWidth]="560"
+        [nzFooter]="hintFooter"
+        (nzOnCancel)="uploadHint.set(null)"
+      >
+        <ng-template #hintTtl>
+          <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
+            <nz-icon nzType="warning" nzTheme="outline" class="warn" />
+            {{ uploadHint()?.title }}
+          </div>
+        </ng-template>
+        <div *nzModalContent>
+          @if (uploadHint(); as h) {
+            <ol class="hint-steps">
+              @for (s of h.steps; track $index) {
+                <li>{{ s }}</li>
+              }
+            </ol>
+            @if (h.note) {
+              <div class="hint-note">{{ h.note }}</div>
+            }
+          }
+        </div>
+      </nz-modal>
+      <ng-template #hintFooter>
+        <button nz-button nzType="primary" (click)="uploadHint.set(null)">Понятно</button>
+      </ng-template>
     </div>
   `,
   styles: [`
@@ -310,6 +343,12 @@ function todayMsk(): string {
     .spacer { flex: 1 1 auto; }
     .summary { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .muted { color: var(--color-text-muted); }
+    /* Подсказка по отказу загрузки: перемещаемый заголовок (канон модалок) + шаги */
+    .ttl { cursor: move; display: flex; align-items: center; gap: var(--space-xs); }
+    .ttl .warn { color: var(--color-warning-text); } /* базовый --color-warning на белом нечитаем (tokens.css) */
+    .hint-steps { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: var(--space-xs); }
+    .hint-steps li { line-height: 1.5; }
+    .hint-note { margin-top: var(--space-md); color: var(--color-text-secondary); font-size: var(--font-size-sm); line-height: 1.5; }
     .c { text-align: center; }
     .bold { font-weight: 600; }
     .idx { font-weight: 500; }
@@ -859,11 +898,27 @@ export class PlanComponent implements OnInit, OnDestroy {
         this.startSfHeartbeat();   // продлевать токен, пока окно открыто
       }
     } catch (err) {
-      this.msg.error(apiErrorMessage(err));
+      this.showUploadError(err);
       this.resubmit = null;
     } finally {
       busy.set(false);
     }
+  }
+
+  /** Подсказка «что поправить в файле» — вместо голого текста ошибки (null — окна нет). */
+  readonly uploadHint = signal<PlanUploadHint | null>(null);
+
+  /**
+   * Отказ загрузки плана: если случай узнан — открываем окно с шагами правки файла,
+   * иначе прежний тост. Диспетчер — логист, а не разработчик: «не найдена строка
+   * шапки со столбцом «План»» ему ничего не говорит, а «подпишите столбец с
+   * временами в строке 2» — говорит.
+   */
+  private showUploadError(err: unknown): void {
+    const text = apiErrorMessage(err);
+    const hint = planUploadHint(text);
+    if (hint) this.uploadHint.set(hint);
+    else this.msg.error(text);
   }
 
   private async applyConfirm(
@@ -894,7 +949,7 @@ export class PlanComponent implements OnInit, OnDestroy {
       await this.reload(this.selectedCode());
       void this.statusPanel?.load(); // загрузка меняет актуальность плана — обновим панель сразу
     } catch (err) {
-      this.msg.error(apiErrorMessage(err));
+      this.showUploadError(err); // напр. «дислокация устарела» — подскажем, что делать
       this.closeSfDialog(); // не запираем пользователя: окно закрывается даже при ошибке
     } finally {
       this.sfBusy.set(false);
