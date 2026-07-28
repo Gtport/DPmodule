@@ -23,7 +23,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Стратегическое планирование шахта → судно',
     url: 'https://mpport.iqport.ru',
     icon: 'calendar',
-    roles: ['manager', 'admin'],
+    roles: ['operator', 'admin'],
   },
   {
     id: 'dpport',
@@ -50,7 +50,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Обязательный документ, основание для компенсаций',
     url: 'https://sspr.iqport.ru',
     icon: 'file-done',
-    roles: ['dispatcher', 'manager', 'admin'],
+    roles: ['operator', 'admin'],
   },
   {
     id: 'rtgeo',
@@ -68,7 +68,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Прогноз формирования и расхода угля по маркам',
     url: 'https://spport.iqport.ru',
     icon: 'database',
-    roles: ['dispatcher', 'manager', 'admin'],
+    roles: ['operator', 'admin'],
   },
   {
     id: 'fpport',

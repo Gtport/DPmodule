@@ -2,7 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
 import { ShellComponent } from './layout/shell/shell.component';
 import { PlaceholderComponent } from './features/placeholder/placeholder.component';
-import { ADMIN, DISP, DISPATCHER_NAV } from './layout/shell/nav.config';
+import { ADMIN, OPER, DISPATCHER_NAV } from './layout/shell/nav.config';
 
 // Разделы, перенесённые из заглушки на реальный экран — исключаем из
 // автогенерации ниже и подключаем явно (см. routes).
@@ -43,42 +43,42 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/dislocation/dislocation.component').then((m) => m.DislocationComponent),
         canActivate: [authGuard],
-        data: { roles: DISP },
+        data: { roles: OPER },
       },
       {
         path: 'missing',
         loadComponent: () =>
           import('./features/missing/missing.component').then((m) => m.MissingComponent),
         canActivate: [authGuard],
-        data: { roles: DISP },
+        data: { roles: OPER },
       },
       {
         path: 'rearrangement',
         loadComponent: () =>
           import('./features/rearrangement/rearrangement.component').then((m) => m.RearrangementComponent),
         canActivate: [authGuard],
-        data: { roles: DISP },
+        data: { roles: OPER },
       },
       {
         path: 'plan',
         loadComponent: () =>
           import('./features/plan/plan.component').then((m) => m.PlanComponent),
         canActivate: [authGuard],
-        data: { roles: DISP },
+        data: { roles: OPER },
       },
       {
         path: 'reference',
         loadComponent: () =>
           import('./features/reference/reference.component').then((m) => m.ReferenceComponent),
         canActivate: [authGuard],
-        data: { roles: DISP },
+        data: { roles: OPER },
       },
       {
         path: 'forecasts',
         loadComponent: () =>
           import('./features/forecasts/forecast.component').then((m) => m.ForecastComponent),
         canActivate: [authGuard],
-        data: { roles: DISP },
+        data: { roles: OPER },
       },
       {
         path: 'admin',

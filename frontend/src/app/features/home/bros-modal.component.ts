@@ -7,6 +7,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { toBlob } from 'html-to-image';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { AuthService } from '../../core/auth/auth.service';
 import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
 import { ReferenceApiService } from '../reference/reference-api.service';
@@ -42,11 +43,13 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
                   nz-tooltip nzTooltipTitle="Сохранить картинку таблицы">
             <span nz-icon nzType="picture"></span>
           </button>
-          <button nz-button nzType="primary" nzSize="small" [nzLoading]="sending()"
-                  (click)="sendToMax()" [disabled]="rows().length === 0"
-                  nz-tooltip nzTooltipTitle="Сохранить журнал и отправить сводку в Оперативный чат MAX">
-            <span nz-icon nzType="send"></span> В MAX
-          </button>
+          @if (canEdit()) {
+            <button nz-button nzType="primary" nzSize="small" [nzLoading]="sending()"
+                    (click)="sendToMax()" [disabled]="rows().length === 0"
+                    nz-tooltip nzTooltipTitle="Сохранить журнал и отправить сводку в Оперативный чат MAX">
+              <span nz-icon nzType="send"></span> В MAX
+            </button>
+          }
           <button nz-button nzSize="small" (click)="showReport.set(true)"
                   nz-tooltip nzTooltipTitle="Отчёт за период (поиск, статистика, Excel)">
             <span nz-icon nzType="bar-chart"></span> Отчёт
@@ -92,10 +95,12 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
                   <td class="ell" [title]="r.sostav">{{ r.sostav || '—' }}</td>
                   <td class="c num">{{ r.vagon_count }}</td>
                   <td class="c no-snap">
-                    <button nz-button nzType="link" nzSize="small" (click)="editing.set(r)"
-                            nz-tooltip nzTooltipTitle="Записать в журнал">
-                      <span nz-icon nzType="edit"></span>
-                    </button>
+                    @if (canEdit()) {
+                      <button nz-button nzType="link" nzSize="small" (click)="editing.set(r)"
+                              nz-tooltip nzTooltipTitle="Записать в журнал">
+                        <span nz-icon nzType="edit"></span>
+                      </button>
+                    }
                   </td>
                 </tr>
               } @empty {
@@ -141,6 +146,8 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
 })
 export class BrosModalComponent implements OnInit {
   private readonly api = inject(BrosApiService);
+  /** Журнал и рассылка в MAX — правки: порог operator. */
+  readonly canEdit = inject(AuthService).canEdit;
   private readonly arrivals = inject(ArrivalsApiService);
   private readonly ref = inject(ReferenceApiService);
   private readonly msg = inject(NzMessageService);

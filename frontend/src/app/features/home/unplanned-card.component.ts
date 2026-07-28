@@ -3,6 +3,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { AuthService } from '../../core/auth/auth.service';
 import { OperativkaApiService, UnplannedTrain } from './operativka-api.service';
 
 /**
@@ -28,9 +29,11 @@ import { OperativkaApiService, UnplannedTrain } from './operativka-api.service';
             <span class="mut">({{ u.vagon_count }})</span>
             <span class="unpl-sost ell" [title]="u.sostav.join(' · ')">{{ u.sostav.join(' · ') }}</span>
             <span class="mut nowrap">{{ u.station_oper }}@if (u.rasst != null) { · {{ u.rasst }} км }</span>
-            <button nz-button nzSize="small" nz-tooltip
-                    nzTooltipTitle="Скрыть (появится снова при следующей смене станции без плана)"
-                    (click)="dismiss(u)">Скрыть</button>
+            @if (canEdit()) {
+              <button nz-button nzSize="small" nz-tooltip
+                      nzTooltipTitle="Скрыть (появится снова при следующей смене станции без плана)"
+                      (click)="dismiss(u)">Скрыть</button>
+            }
           </div>
         }
       </div>
@@ -57,6 +60,8 @@ import { OperativkaApiService, UnplannedTrain } from './operativka-api.service';
 export class UnplannedCardComponent implements OnInit, OnDestroy {
   private readonly api = inject(OperativkaApiService);
   private readonly msg = inject(NzMessageService);
+  /** «Скрыть» пишет пометку в БД — порог operator. */
+  readonly canEdit = inject(AuthService).canEdit;
 
   ngOnInit(): void { this.api.attach(); }
   ngOnDestroy(): void { this.api.detach(); }

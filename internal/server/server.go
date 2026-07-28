@@ -91,15 +91,22 @@ func Build(
 	api := router.Group("/api/v1")
 	if jwtMW != nil {
 		api.Use(jwtMW.Middleware())
+		// Ролевая модель (перенос gtport, решение владельца 28.07.2026):
+		// иерархия admin(100) > operator(80) > client_dispatcher(70) > client(60).
+		// Чтение — любому залогиненному, ЛЮБАЯ мутация (POST/PUT/PATCH/DELETE) —
+		// от operator и выше. Гейт висит на всей группе: новая мутирующая ручка
+		// закрыта автоматически, без отдельной раскладки по роутам.
+		api.Use(jwtMW.RequireMinRoleForWrites(auth.RoleOperator))
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
 
-	// Админ-редактор справочников (реестр list_tables) — только administrator.
+	// Админ-редактор справочников (реестр list_tables) — только admin,
+	// включая чтение (это служебный редактор, не рабочий экран).
 	// Правки применяются к снимку отдельной кнопкой «Обновить справочники».
 	if adminRepo != nil {
 		adminGrp := api.Group("")
 		if jwtMW != nil {
-			adminGrp.Use(jwtMW.RequireRole(auth.RoleAdministrator))
+			adminGrp.Use(jwtMW.RequireMinRole(auth.RoleAdmin))
 		}
 		handler.NewAdminTablesHandler(service.NewAdminTables(adminRepo)).RegisterRoutes(adminGrp)
 	}

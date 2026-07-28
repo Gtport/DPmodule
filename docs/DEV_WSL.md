@@ -201,7 +201,7 @@ npm start                    # ng serve на http://localhost:4200
 Dev-сервер проксирует `/api` на `:8080` и `/realms` на `:8180`
 (`frontend/proxy.conf.json`) — то, что на VPS делает nginx.
 
-Открыть `http://localhost:4200`, войти пользователем `boss` (роль administrator)
+Открыть `http://localhost:4200`, войти пользователем `boss` (роль admin)
 или `disp`. Пароли — те же, что на боевом стенде.
 
 ---

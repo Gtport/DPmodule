@@ -11,6 +11,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 'ng-zorro-antd/dropdown';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { AuthService } from '../../core/auth/auth.service';
 import { todayMsk } from '../../shared/msk-date';
 import {
   ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, ArrivalVagon, CandidateGroup, TerminalTarget,
@@ -90,10 +91,12 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
                 <span class="cand-sost ell" [title]="candSostav(c)">{{ candSostav(c) }}</span>
                 <span class="mut nowrap">оп. {{ fmtDT(c.time_op) }}</span>
                 <span class="spacer"></span>
-                <button nz-button nzType="primary" nzSize="small" (click)="openConfirm(c)">Подтвердить…</button>
-                <button nz-button nzSize="small" nz-tooltip
-                        nzTooltipTitle="Скрыть до новых данных (вагоны остаются кандидатами)"
-                        (click)="dismiss(c)">Скрыть</button>
+                @if (canEdit()) {
+                  <button nz-button nzType="primary" nzSize="small" (click)="openConfirm(c)">Подтвердить…</button>
+                  <button nz-button nzSize="small" nz-tooltip
+                          nzTooltipTitle="Скрыть до новых данных (вагоны остаются кандидатами)"
+                          (click)="dismiss(c)">Скрыть</button>
+                }
               </div>
             }
           </div>
@@ -164,12 +167,14 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
           <li nz-menu-item (click)="openTrail(v)">История движения вагона {{ v.vagon }}…</li>
           <li nz-menu-divider></li>
         }
-        <li nz-menu-item (click)="openEdit()">Изменить прибытие…</li>
-        <li nz-menu-item (click)="openUnload()">Выгрузить…</li>
-        @for (t of terminals(); track t.name) {
-          <li nz-menu-item (click)="applyNaznach(t.name)">В {{ t.name }}</li>
+        @if (canEdit()) {
+          <li nz-menu-item (click)="openEdit()">Изменить прибытие…</li>
+          <li nz-menu-item (click)="openUnload()">Выгрузить…</li>
+          @for (t of terminals(); track t.name) {
+            <li nz-menu-item (click)="applyNaznach(t.name)">В {{ t.name }}</li>
+          }
+          <li nz-menu-item nzDanger (click)="cancelArrival()">Отменить прибытие</li>
         }
-        <li nz-menu-item nzDanger (click)="cancelArrival()">Отменить прибытие</li>
         @if (ctxGroup(); as g) {
           <li nz-menu-divider></li>
           <li nz-menu-item (click)="exportGroup(g)">Экспорт группы в Excel</li>
@@ -316,6 +321,8 @@ export class ArrivalsHistoryComponent implements OnInit {
   private readonly api = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
   private readonly ctxMenu = inject(NzContextMenuService);
+  /** Правки истории и кандидатов — порог operator; клиенту только просмотр. */
+  readonly canEdit = inject(AuthService).canEdit;
 
   /** Станция (заголовок окна) и её терминалы (колонки/фильтр naznach). */
   readonly station = input.required<string>();

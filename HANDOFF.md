@@ -286,7 +286,7 @@ JSON-ingest по HTTP · read-API + фронт для просмотра сам�
   ЛК/плана ещё на входе, до бэкенда). Если снова ловите `413` на загрузке файла — это
   первое, что проверить.
 - **Dev-Keycloak тестовые юзеры** (`deploy/keycloak/realm-iqport.json`, контейнер
-  `dpmodule-keycloak`, `127.0.0.1:8180`): `disp`/`disp123` (роль dispatcher),
+  `dpmodule-keycloak`, `127.0.0.1:8180`): `disp`/`disp123` (роль operator),
   `boss`/`boss123`. Логиниться нужно через nginx-вход (`http://147.45.216.32/login`, а
   когда заработает домен+HTTPS — `https://95850.koara.live/login`) — same-origin с
   Keycloak через nginx `/realms/`. С 2026-07-11 `environment.*.keycloak.url` = `''`

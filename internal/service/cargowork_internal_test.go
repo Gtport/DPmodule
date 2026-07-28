@@ -327,8 +327,8 @@ func TestCargoWorkAccess_OperatorOnlyYesterday(t *testing.T) {
 	yesterday := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
 	old := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 
-	operator := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{"dispatcher"}})
-	admin := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleAdministrator}})
+	operator := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleOperator}})
+	admin := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleAdmin}})
 
 	require.NoError(t, checkCargoWorkAccess(operator, yesterday), "вчера оператору можно")
 	require.ErrorIs(t, checkCargoWorkAccess(operator, old), ErrCargoWorkAccess,
