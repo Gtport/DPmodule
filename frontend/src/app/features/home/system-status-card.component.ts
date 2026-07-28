@@ -5,7 +5,6 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { AuthService } from '../../core/auth/auth.service';
-import { DISP } from '../../layout/shell/nav.config';
 import { DislTermStatus, PlanApiService, PlanStatus, SystemStatus } from '../plan/plan-api.service';
 import { DislocationApiService } from '../dislocation/dislocation-api.service';
 import { LkIntakeModalComponent } from './lk-intake-modal.component';
@@ -145,8 +144,8 @@ export class SystemStatusCardComponent implements OnInit, OnDestroy {
   readonly now = signal(new Date());
   readonly busyAsu = signal(false);
   readonly lkOpen = signal(false);
-  /** Приём ЛК и забор из АСУ — действия диспетчера, прочим ролям не показываем. */
-  readonly canUpdate = computed(() => this.auth.hasAnyRole(DISP));
+  /** Приём ЛК и забор из АСУ — правки данных: порог operator (auth.canEdit). */
+  readonly canUpdate = computed(() => this.auth.canEdit());
 
   private timer: ReturnType<typeof setInterval> | null = null;
   private clock: ReturnType<typeof setInterval> | null = null;

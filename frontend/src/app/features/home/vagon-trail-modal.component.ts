@@ -7,6 +7,7 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { AuthService } from '../../core/auth/auth.service';
 import { TrailDelay, TrailOp, TrailVisit, VagonTrail, VagonTrailApiService } from './vagon-trail-api.service';
 
 /**
@@ -70,10 +71,12 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
             }
           }
           <span class="spacer"></span>
-          <button nz-button nzSize="small" nzType="primary" [nzLoading]="pulling()" (click)="pull()"
-                  nz-tooltip [nzTooltipTitle]="pullHint()">
-            <span nz-icon nzType="cloud-download"></span> Обновить из АСУ
-          </button>
+          @if (canEdit()) {
+            <button nz-button nzSize="small" nzType="primary" [nzLoading]="pulling()" (click)="pull()"
+                    nz-tooltip [nzTooltipTitle]="pullHint()">
+              <span nz-icon nzType="cloud-download"></span> Обновить из АСУ
+            </button>
+          }
           <button nz-button nzType="text" nzSize="small" nz-tooltip nzTooltipTitle="Скачать историю (Excel)"
                   [disabled]="!trail()?.count" (click)="exportExcel()">
             <span nz-icon nzType="download"></span>
@@ -191,6 +194,8 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
 export class VagonTrailModalComponent implements OnInit {
   private readonly api = inject(VagonTrailApiService);
   private readonly msg = inject(NzMessageService);
+  /** Запрос 601 в АСУ (POST pull) — правка данных: порог operator. */
+  readonly canEdit = inject(AuthService).canEdit;
 
   /** id рейса (строка vagon_history) и номер вагона для заголовка. */
   readonly vagonId = input.required<string>();
@@ -212,7 +217,9 @@ export class VagonTrailModalComponent implements OnInit {
     try {
       const t = await this.api.get(this.vagonId());
       this.trail.set(t);
-      if (!t.count) await this.pull();
+      // Пустой сохранённый трейл → автозапрос в АСУ, но только тому, кому
+      // можно писать (клиенту бэкенд ответит 403 — не дёргаем зря).
+      if (!t.count && this.canEdit()) await this.pull();
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     } finally {

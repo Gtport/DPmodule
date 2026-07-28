@@ -69,25 +69,33 @@ func baseClaims() jwt.MapClaims {
 
 func newAuthRouter(kc *middleware.KeycloakJWT) *gin.Engine {
 	r := gin.New()
-	api := r.Group("/api", kc.Middleware())
+	// Как в server.go: аутентификация + гейт «мутации — от operator» на всю группу.
+	api := r.Group("/api", kc.Middleware(), kc.RequireMinRoleForWrites(auth.RoleOperator))
 	api.GET("/me", func(c *gin.Context) {
 		cl := auth.ClaimsFromContext(c.Request.Context())
 		c.JSON(http.StatusOK, gin.H{"username": cl.Username, "sub": cl.Subject})
 	})
-	api.GET("/admin", kc.RequireRole(auth.RoleAdministrator), func(c *gin.Context) {
+	api.POST("/edit", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+	api.GET("/admin", kc.RequireMinRole(auth.RoleAdmin), func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 	return r
 }
 
-func doGet(kc *middleware.KeycloakJWT, path, token string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodGet, path, nil)
+func doReq(kc *middleware.KeycloakJWT, method, path, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	rr := httptest.NewRecorder()
 	newAuthRouter(kc).ServeHTTP(rr, req)
 	return rr
+}
+
+func doGet(kc *middleware.KeycloakJWT, path, token string) *httptest.ResponseRecorder {
+	return doReq(kc, http.MethodGet, path, token)
 }
 
 func TestKeycloakJWT_RoundTrip(t *testing.T) {
@@ -138,16 +146,48 @@ func TestKeycloakJWT_RoundTrip(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, rr.Code)
 	})
 
-	t.Run("RequireRole: dispatcher hits /admin → 403", func(t *testing.T) {
+	t.Run("RequireMinRole: operator (legacy dispatcher) hits /admin → 403", func(t *testing.T) {
 		rr := doGet(middleware.NewKeycloakJWT(cfg), "/api/admin", mintToken(t, key, testKid, baseClaims()))
 		assert.Equal(t, http.StatusForbidden, rr.Code)
 	})
 
-	t.Run("RequireRole: administrator hits /admin → 200", func(t *testing.T) {
+	t.Run("RequireMinRole: admin (legacy administrator) hits /admin → 200", func(t *testing.T) {
 		c := baseClaims()
 		c["realm_access"] = map[string]any{"roles": []any{"dispatcher", "administrator"}}
 		rr := doGet(middleware.NewKeycloakJWT(cfg), "/api/admin", mintToken(t, key, testKid, c))
 		assert.Equal(t, http.StatusOK, rr.Code)
+	})
+
+	// Гейт «порог правок»: чтение — любому залогиненному, мутации — от operator.
+	t.Run("write-gate: client GET → 200, POST → 403", func(t *testing.T) {
+		c := baseClaims()
+		c["realm_access"] = map[string]any{"roles": []any{"client"}}
+		kc := middleware.NewKeycloakJWT(cfg)
+		assert.Equal(t, http.StatusOK, doGet(kc, "/api/me", mintToken(t, key, testKid, c)).Code)
+		assert.Equal(t, http.StatusForbidden, doReq(kc, http.MethodPost, "/api/edit", mintToken(t, key, testKid, c)).Code)
+	})
+
+	t.Run("write-gate: client_dispatcher POST → 403 (ниже порога operator)", func(t *testing.T) {
+		c := baseClaims()
+		c["realm_access"] = map[string]any{"roles": []any{"client_dispatcher"}}
+		rr := doReq(middleware.NewKeycloakJWT(cfg), http.MethodPost, "/api/edit", mintToken(t, key, testKid, c))
+		assert.Equal(t, http.StatusForbidden, rr.Code)
+	})
+
+	t.Run("write-gate: operator POST → 200; legacy dispatcher POST → 200", func(t *testing.T) {
+		kc := middleware.NewKeycloakJWT(cfg)
+		c := baseClaims()
+		c["realm_access"] = map[string]any{"roles": []any{"operator"}}
+		assert.Equal(t, http.StatusOK, doReq(kc, http.MethodPost, "/api/edit", mintToken(t, key, testKid, c)).Code)
+		// baseClaims несёт legacy-роль dispatcher → нормализуется в operator.
+		assert.Equal(t, http.StatusOK, doReq(kc, http.MethodPost, "/api/edit", mintToken(t, key, testKid, baseClaims())).Code)
+	})
+
+	t.Run("write-gate: неизвестная роль POST → 403", func(t *testing.T) {
+		c := baseClaims()
+		c["realm_access"] = map[string]any{"roles": []any{"manager"}}
+		rr := doReq(middleware.NewKeycloakJWT(cfg), http.MethodPost, "/api/edit", mintToken(t, key, testKid, c))
+		assert.Equal(t, http.StatusForbidden, rr.Code)
 	})
 }
 

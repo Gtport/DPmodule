@@ -3,6 +3,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { OPER, normalizeRole } from './roles';
 
 /**
  * Авторизация формой ВНУТРИ Angular (своя страница /login), без редиректа на
@@ -51,7 +52,12 @@ export class AuthService {
     const p = this.payload();
     return p?.name || p?.preferred_username || 'user';
   });
-  readonly roles = computed(() => this.payload()?.realm_access?.roles ?? []);
+  /** Роли из токена, нормализованные к каноническим именам (см. roles.ts). */
+  readonly roles = computed(() =>
+    (this.payload()?.realm_access?.roles ?? []).map(normalizeRole),
+  );
+  /** Порог правок: operator и выше. Клиентские роли видят экраны без действий. */
+  readonly canEdit = computed(() => this.hasAnyRole(OPER));
 
   /**
    * Вызывается в provideAppInitializer. Если в localStorage остался refresh-токен

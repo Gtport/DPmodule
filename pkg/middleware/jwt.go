@@ -65,20 +65,40 @@ func (k *KeycloakJWT) Middleware() gin.HandlerFunc {
 	}
 }
 
-// RequireRole returns middleware that additionally checks Keycloak realm roles.
-func (k *KeycloakJWT) RequireRole(roles ...auth.Role) gin.HandlerFunc {
+// RequireMinRole — доступ от роли min и выше по иерархии (модель gtport:
+// старшая роль включает права младших). 401 без claims, 403 при нехватке роли.
+func (k *KeycloakJWT) RequireMinRole(min auth.Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cl := auth.ClaimsFromContext(c.Request.Context())
-		if cl == nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
-			return
-		}
-		if !cl.HasRole(roles...) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-			return
-		}
-		c.Next()
+		abortUnlessMinRole(c, min)
 	}
+}
+
+// RequireMinRoleForWrites — гейт «порог правок»: чтение (GET/HEAD/OPTIONS)
+// пропускается как есть (аутентификацию уже проверил Middleware), любая
+// мутация (POST/PUT/PATCH/DELETE) требует роль min и выше. Вешается на всю
+// группу /api/v1: новые мутирующие ручки закрыты автоматически.
+func (k *KeycloakJWT) RequireMinRoleForWrites(min auth.Role) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		switch c.Request.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			c.Next()
+			return
+		}
+		abortUnlessMinRole(c, min)
+	}
+}
+
+func abortUnlessMinRole(c *gin.Context, min auth.Role) {
+	cl := auth.ClaimsFromContext(c.Request.Context())
+	if cl == nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	if !cl.HasMinRole(min) {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	c.Next()
 }
 
 // ---- internal ----
@@ -229,12 +249,14 @@ func extractClaims(m jwt.MapClaims) (*auth.Claims, error) {
 	email, _ := m["email"].(string)
 	username, _ := m["preferred_username"].(string)
 
+	// Роли нормализуются сразу при разборе токена: дальше по коду ходят только
+	// канонические имена (administrator→admin, dispatcher→operator).
 	var roles []auth.Role
 	if ra, ok := m["realm_access"].(map[string]any); ok {
 		if rawRoles, ok := ra["roles"].([]any); ok {
 			for _, r := range rawRoles {
 				if s, ok := r.(string); ok {
-					roles = append(roles, auth.Role(s))
+					roles = append(roles, auth.NormalizeRole(auth.Role(s)))
 				}
 			}
 		}

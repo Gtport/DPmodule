@@ -195,14 +195,14 @@ func TestCheckArrivalsEditAccess(t *testing.T) {
 	old := domain.VagonHistory{Vagon: "V", DatePribD: domain.NewLocalTime(time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC))}
 	fresh := domain.VagonHistory{Vagon: "V", DatePribD: domain.NewLocalTime(time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC))}
 
-	disp := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleDispatcher}})
-	admin := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleAdministrator}})
+	disp := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleOperator}})
+	admin := auth.WithClaims(context.Background(), &auth.Claims{Roles: []auth.Role{auth.RoleAdmin}})
 
 	if err := checkArrivalsEditAccess(disp, []domain.VagonHistory{fresh}); err != nil {
-		t.Errorf("вчера для диспетчера должно быть разрешено: %v", err)
+		t.Errorf("вчера для оператора должно быть разрешено: %v", err)
 	}
 	if err := checkArrivalsEditAccess(disp, []domain.VagonHistory{old}); err == nil {
-		t.Error("старое прибытие для диспетчера должно быть запрещено")
+		t.Error("старое прибытие для оператора должно быть запрещено")
 	}
 	if err := checkArrivalsEditAccess(admin, []domain.VagonHistory{old}); err != nil {
 		t.Errorf("администратору можно всё: %v", err)

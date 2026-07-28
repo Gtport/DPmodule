@@ -6,6 +6,8 @@
  * Соответствие оригиналу GTport — меню роли «диспетчер» (в GTport — operator),
  * см. CompactSidebar.tsx (operatorItems).
  */
+import { ADMIN, OPER } from '../../core/auth/roles';
+
 export interface NavItem {
   /** Путь маршрута без ведущего слэша (совпадает с path в Routes). */
   path: string;
@@ -21,11 +23,10 @@ export interface NavItem {
   external?: boolean;
 }
 
-/** Кому доступны рабочие разделы диспетчера (админ видит всё). */
-export const DISP = ['dispatcher', 'administrator'];
-
-/** Только администратор (раздел «Админ»: редактор справочников). */
-export const ADMIN = ['administrator'];
+// Списки ролей — из единого источника core/auth/roles.ts. Рабочие разделы
+// оператора — от operator и выше; клиентские роли видят только «Главную»
+// (просмотр, кнопки действий скрыты через auth.canEdit()).
+export { ADMIN, OPER };
 
 // Иконки подобраны 1:1 с оригиналом GTport (CompactSidebar.tsx): сплошные (fill).
 // train / ship / warehouse — кастомные (см. core/config/custom-icons.ts), т.к. в
@@ -39,15 +40,15 @@ export const DISPATCHER_NAV: NavItem[] = [
   // оба открываются модалками из карточки «Информация» на главной. Маршрут
   // /missing жив (прямой ссылкой, см. app.routes), у «Грузовой работы»
   // отдельной страницы нет вовсе — только модалка.
-  { path: 'rearrangement',  label: 'Перестановки',          icon: 'swap',         theme: 'outline', roles: DISP },
-  { path: 'plan',           label: 'План подвода',          icon: 'train',        theme: 'fill',    roles: DISP },
-  { path: 'reference',      label: 'Справки',               icon: 'edit',         theme: 'fill',    roles: DISP },
-  { path: 'warehouse',      label: 'Склад',                 icon: 'warehouse',    theme: 'fill',    roles: DISP },
-  { path: 'shipments',      label: 'Судовые партии',        icon: 'ship',         theme: 'fill',    roles: DISP },
-  { path: 'daily-work',     label: 'Работа за сутки',       icon: 'clock-circle', theme: 'fill',    roles: DISP },
-  { path: 'operator-tools', label: 'Инструменты оператора', icon: 'tool',         theme: 'fill',    roles: DISP },
-  { path: 'maps',           label: 'Карты',                 icon: 'global',       theme: 'outline', roles: DISP },
-  { path: 'forecasts',      label: 'Прогнозы',              icon: 'line-chart',   theme: 'outline', roles: DISP },
-  { path: 'reports',        label: 'Справки и отчёты',      icon: 'bar-chart',    theme: 'outline', roles: DISP },
+  { path: 'rearrangement',  label: 'Перестановки',          icon: 'swap',         theme: 'outline', roles: OPER },
+  { path: 'plan',           label: 'План подвода',          icon: 'train',        theme: 'fill',    roles: OPER },
+  { path: 'reference',      label: 'Справки',               icon: 'edit',         theme: 'fill',    roles: OPER },
+  { path: 'warehouse',      label: 'Склад',                 icon: 'warehouse',    theme: 'fill',    roles: OPER },
+  { path: 'shipments',      label: 'Судовые партии',        icon: 'ship',         theme: 'fill',    roles: OPER },
+  { path: 'daily-work',     label: 'Работа за сутки',       icon: 'clock-circle', theme: 'fill',    roles: OPER },
+  { path: 'operator-tools', label: 'Инструменты оператора', icon: 'tool',         theme: 'fill',    roles: OPER },
+  { path: 'maps',           label: 'Карты',                 icon: 'global',       theme: 'outline', roles: OPER },
+  { path: 'forecasts',      label: 'Прогнозы',              icon: 'line-chart',   theme: 'outline', roles: OPER },
+  { path: 'reports',        label: 'Справки и отчёты',      icon: 'bar-chart',    theme: 'outline', roles: OPER },
   { path: 'admin',          label: 'Админ',                 icon: 'setting',      theme: 'fill',    roles: ADMIN },
 ];

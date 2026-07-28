@@ -10,6 +10,7 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { AuthService } from '../../core/auth/auth.service';
 import { yesterdayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
 import {
@@ -198,7 +199,7 @@ import {
             <button nz-button nzType="primary" nzSize="small" [nzLoading]="saving()"
                     (click)="save()">Сохранить</button>
             <button nz-button nzSize="small" (click)="cancel()">Отмена</button>
-          } @else {
+          } @else if (canEdit()) {
             <button nz-button nzType="primary" nzSize="small" (click)="edit()">Редактировать</button>
             <button nz-button nzSize="small" nz-tooltip
                     nzTooltipTitle="Пересобрать прибытие, выгрузку по станции и аналитику из истории; введённое вручную сохранится"
@@ -249,6 +250,8 @@ export class CargoWorkModalComponent implements OnInit {
   private readonly api = inject(CargoWorkApiService);
   private readonly arrivalsApi = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
+  /** Правки учётного листа — порог operator; клиенту только просмотр. */
+  readonly canEdit = inject(AuthService).canEdit;
 
   readonly closed = output<void>();
 
