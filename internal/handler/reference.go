@@ -22,6 +22,7 @@ func NewReferenceHandler(svc *service.ReferenceService) *referenceHandler {
 
 func (h *referenceHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/reference", h.byNumber)                // ?number=...
+	g.GET("/reference/excel", h.excelByNumber)     // ?number=... — бланк ГУ-45 в Excel
 	g.POST("/reference/update/pull", h.updatePull) // ручной триггер крон-инкремента
 }
 
@@ -48,6 +49,35 @@ func (h *referenceHandler) byNumber(c *gin.Context) {
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 }
+
+// excelByNumber godoc
+// @Summary  Памятка по номеру бланком ГУ-45 в Excel
+// @Tags     reference
+// @Security BearerAuth
+// @Produce  application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Param    number query string true  "номер памятки (NUMBER_PAMYATKA)"
+// @Param    client query string false "код клиента у провайдера; по умолчанию первый из reference.clients"
+// @Success  200 {file} binary "книга .xlsx с бланком памятки"
+// @Failure  400 {object} object "не задан number"
+// @Failure  502 {object} object "провайдер недоступен / документа нет в ответе / ошибка сборки"
+// @Router   /api/v1/reference/excel [get]
+func (h *referenceHandler) excelByNumber(c *gin.Context) {
+	number := c.Query("number")
+	if number == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "требуется параметр number"})
+		return
+	}
+	data, filename, err := h.svc.FetchExcelByNumber(c.Request.Context(), c.Query("client"), number)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
+	c.Data(http.StatusOK, xlsxContentType, data)
+}
+
+// xlsxContentType — MIME книги Excel (OOXML).
+const xlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 // updatePull godoc
 // @Summary  Инкремент памяток по всем клиентам: разнос вех подачи/уборки по рейсам

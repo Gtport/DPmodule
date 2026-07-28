@@ -15,6 +15,7 @@ import (
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser"
 	"github.com/Gtport/DPmodule/internal/port"
+	"github.com/Gtport/DPmodule/internal/report"
 )
 
 // lastUpdateLayout — формат курсора провайдера: "YYYY-MM-DD HH:MM:SS.sss".
@@ -73,19 +74,53 @@ type PamyatkaPullResult struct {
 // ГУ-45 с полем _decoded_doc), в vagon_history он не раскладывается. Ручка
 // диагностическая — посмотреть исходный документ целиком.
 func (s *ReferenceService) FetchByNumber(ctx context.Context, client, number string) ([]byte, error) {
-	if client == "" {
-		if len(s.clients) == 0 {
-			return nil, errors.New("reference: клиент не задан и список reference.clients пуст")
-		}
-		client = s.clients[0]
-	}
-	body, err := s.cl.ByNumber(ctx, client, number)
+	client, body, err := s.fetchRawByNumber(ctx, client, number)
 	if err != nil {
 		return nil, err
 	}
 	s.log.Info("reference: памятка по номеру получена",
 		zap.String("client", client), zap.String("number", number), zap.Int("bytes", len(body)))
 	return body, nil
+}
+
+// FetchExcelByNumber — та же памятка по номеру, но бланком ГУ-45 в Excel:
+// сырой ответ разбирается [parser.ParseReferenceDocByNumber] (только искомый
+// документ, попутчики по пачке не трогаются) и раскладывается по печатной
+// форме. Возвращает содержимое книги и имя файла для выгрузки.
+func (s *ReferenceService) FetchExcelByNumber(ctx context.Context, client, number string) ([]byte, string, error) {
+	client, body, err := s.fetchRawByNumber(ctx, client, number)
+	if err != nil {
+		return nil, "", err
+	}
+	doc, err := parser.ParseReferenceDocByNumber(body, client, number)
+	if err != nil {
+		return nil, "", err
+	}
+	xlsx, err := report.PamyatkaGU45XLSX(doc)
+	if err != nil {
+		return nil, "", err
+	}
+	s.log.Info("reference: памятка по номеру выгружена в Excel",
+		zap.String("client", client), zap.String("number", number),
+		zap.Int("vagons", len(doc.Vagons)), zap.Int("bytes", len(xlsx)))
+	return xlsx, report.FileName(client, number), nil
+}
+
+// fetchRawByNumber — общий забор по номеру: подстановка клиента по умолчанию
+// и запрос к провайдеру. Возвращает выбранного клиента (он нужен для разбора:
+// номер уникален лишь в его пределах) и тело ответа.
+func (s *ReferenceService) fetchRawByNumber(ctx context.Context, client, number string) (string, []byte, error) {
+	if client == "" {
+		if len(s.clients) == 0 {
+			return "", nil, errors.New("reference: клиент не задан и список reference.clients пуст")
+		}
+		client = s.clients[0]
+	}
+	body, err := s.cl.ByNumber(ctx, client, number)
+	if err != nil {
+		return "", nil, err
+	}
+	return client, body, nil
 }
 
 // PullUpdates — крон-инкремент по всем клиентам. Клиенты независимы: ошибка
