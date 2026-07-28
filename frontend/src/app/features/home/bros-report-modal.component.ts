@@ -81,8 +81,8 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
         @if (loading()) {
           <div class="center"><nz-spin nzSimple></nz-spin></div>
         } @else {
-          <div class="tbl-wrap" id="bros-report-tbl">
-            <table class="tbl">
+          <div class="dp-tbl-wrap" id="bros-report-tbl">
+            <table class="dp-tbl">
               <thead>
                 <tr>
                   <th class="c-idx" (click)="sortBy('index_1')">Индекс {{ arrow('index_1') }}</th>
@@ -167,8 +167,8 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
           @if (detailLoading()) {
             <div class="center"><nz-spin nzSimple nzSize="small"></nz-spin></div>
           } @else {
-            <div class="tbl-wrap" style="max-height: 40vh">
-              <table class="tbl">
+            <div class="dp-tbl-wrap" style="max-height: 40vh">
+              <table class="dp-tbl">
                 <thead><tr>
                   <th class="c-dt">Дата</th><th class="c-code">Код</th><th class="c-b">Тип</th>
                   <th>Причина / Комментарий</th><th class="c-dt">Подъём запл</th>
@@ -216,8 +216,8 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
             </button>
           </div>
           <p class="hint">Поиск по подстроке в index_0/index_1 · минимум 3 символа · по всей истории бросков, не ограничен периодом.</p>
-          <div class="tbl-wrap">
-            <table class="tbl">
+          <div class="dp-tbl-wrap">
+            <table class="dp-tbl">
               <thead><tr>
                 <th class="c-idx">Индекс</th><th>Станция</th><th class="c-dor">Дорога</th>
                 <th class="c-dt">Дата броса</th><th class="c-dt">Дата подъёма</th><th class="c-dt">Подъём запл</th>
@@ -286,7 +286,7 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
 
           @if (topReasons().length) {
             <div class="box-h">Топ причин по поездо-суткам</div>
-            <table class="tbl">
+            <table class="dp-tbl">
               <thead><tr><th class="c-code">Код</th><th>Расшифровка</th><th class="c-b">Поездо-суток</th><th class="c-b">Поездов</th></tr></thead>
               <tbody>
                 @for (t of topReasons(); track t.code) {
@@ -298,8 +298,8 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
           }
 
           <div class="box-h">Динамика по дням</div>
-          <div class="tbl-wrap" style="max-height: 36vh">
-            <table class="tbl">
+          <div class="dp-tbl-wrap" style="max-height: 36vh">
+            <table class="dp-tbl">
               <thead><tr><th class="c-dt">Дата</th><th class="c-b">Наличие</th><th class="c-b">Брошено</th><th class="c-b">Поднято</th></tr></thead>
               <tbody>
                 @for (d of dailyRows(); track d.date) {
@@ -331,17 +331,15 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
     .term { width: 150px; }
     .date { padding: 3px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
     .center { display: flex; justify-content: center; padding: var(--space-lg); }
-    .tbl-wrap { max-height: 62vh; overflow: auto; background: #fff; }
-    .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); table-layout: fixed; }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600; cursor: default;
-              padding: 5px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; white-space: nowrap; }
-    .tbl thead th.c-idx, .tbl thead th:nth-child(2), .tbl thead th.c-dor, .tbl thead th.c-dt { cursor: pointer; }
-    .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
+    .dp-tbl-wrap { background: var(--color-bg-surface); }
+    .dp-tbl { table-layout: fixed; }
+    .dp-tbl th { cursor: default; padding: 5px 8px; white-space: nowrap; }
+    .dp-tbl thead th.c-idx, .dp-tbl thead th:nth-child(2), .dp-tbl thead th.c-dor, .dp-tbl thead th.c-dt { cursor: pointer; }
     .hb05 { color: #1565c0; } .hok { color: #2e7d32; } .hbad { color: #c62828; }
     .c-idx { width: 120px; } .c-dor { width: 56px; } .c-dt { width: 104px; }
     .c-code { width: 58px; } .c-days { width: 62px; } .c-b { width: 74px; } .c-st { width: 78px; } .c-op { width: 100px; }
     .num, .b { font-variant-numeric: tabular-nums; }
-    .idx { color: #0958d9; text-decoration: underline; cursor: pointer; }
+    .idx { color: var(--color-primary-active); text-decoration: underline; cursor: pointer; }
     .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .c { text-align: center; }
     .code { font-weight: 600; cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }

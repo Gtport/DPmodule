@@ -60,8 +60,8 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
           </button>
         </div>
 
-        <div class="tbl-wrap" id="bros-active-tbl">
-          <table class="tbl">
+        <div class="dp-tbl-wrap" id="bros-active-tbl">
+          <table class="dp-tbl">
             <thead>
               <tr>
                 <th class="c-idx">Индекс</th>
@@ -128,11 +128,7 @@ import { BrosReportModalComponent } from './bros-report-modal.component';
            font-size: var(--font-size-sm); }
     .spacer { flex: 1 1 auto; }
     .mut { color: var(--color-text-muted); }
-    .tbl-wrap { max-height: 64vh; overflow: auto; }
-    .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); table-layout: fixed; }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600;
-              padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; }
-    .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
+    .dp-tbl { table-layout: fixed; }
     .c-idx { width: 120px; } .c-dor { width: 56px; } .c-dt { width: 92px; }
     .c-term { width: 66px; } .c-code { width: 48px; } .c-vc { width: 46px; } .c-act { width: 46px; }
     .num { font-variant-numeric: tabular-nums; }

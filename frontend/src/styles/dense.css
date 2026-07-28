@@ -1,0 +1,50 @@
+/* ============================================================================
+ * DPPort — общие утилиты плотных экранов (стиль gtport).
+ * Извлечено из восьми модалок домашней зоны: единый вид «плотной таблицы»
+ * вместо копии базовых правил в каждой модалке (расползались 60/62/64vh).
+ * Только var(--token) из tokens.css (Design Rules §1.2); локальные добавки
+ * (table-layout, vertical-align) остаются в компонентах поверх этих классов.
+ * ========================================================================== */
+
+/* Плотная таблица со sticky-шапкой; обёртка даёт вертикальный скролл. */
+.dp-tbl-wrap {
+  max-height: 62vh;
+  overflow: auto;
+}
+
+.dp-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.dp-tbl th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-bg-subtle);
+  font-weight: 600;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border-light);
+  text-align: center;
+}
+.dp-tbl td {
+  padding: 3px 8px;
+  border: 1px solid var(--color-border-light);
+}
+
+/* Мобильный просмотр (роль client, телефон/планшет): модалки жёсткой ширины
+ * (nzWidth 900–1250px задаётся inline-стилем) не должны вылезать за экран.
+ * Точечное исключение из правила §9.4 «не оверрайдить .ant-*» — как .ant-tag
+ * в styles.less: Less-переменной инлайновая ширина не лечится. Таблицы
+ * скроллятся внутри .dp-tbl-wrap по обеим осям. */
+@media (width <= 768px) {
+  .ant-modal {
+    width: auto !important;
+    max-width: calc(100vw - 12px);
+  }
+
+  .ant-modal .dp-tbl-wrap {
+    max-height: 70vh;
+  }
+}

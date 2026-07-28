@@ -84,8 +84,8 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
         </div>
 
         <nz-spin [nzSpinning]="loading()">
-          <div class="tbl-wrap">
-            <table class="tbl">
+          <div class="dp-tbl-wrap">
+            <table class="dp-tbl">
               <thead>
                 <tr>
                   <th class="c-st">Станция</th>
@@ -167,11 +167,6 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
            margin-bottom: var(--space-sm); font-size: var(--font-size-sm); }
     .spacer { flex: 1 1 auto; }
     .mut { color: var(--color-text-muted); }
-    .tbl-wrap { max-height: 60vh; overflow: auto; }
-    .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600;
-              padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; }
-    .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
     .visit { cursor: pointer; }
     .visit:hover { background: var(--color-bg-hover); }
     .visit.delayed td { background: var(--color-warning-bg); }

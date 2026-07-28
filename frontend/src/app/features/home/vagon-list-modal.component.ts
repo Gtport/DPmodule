@@ -65,8 +65,8 @@ export interface VagonListRow {
           </button>
         </div>
 
-        <div class="tbl-wrap">
-          <table class="tbl">
+        <div class="dp-tbl-wrap">
+          <table class="dp-tbl">
             <thead>
               <tr>
                 <th class="c-vag">Вагон</th>
@@ -83,7 +83,8 @@ export interface VagonListRow {
             </thead>
             <tbody>
               @for (r of filtered(); track r.id) {
-                <tr [class.stale]="r.days >= 3" (contextmenu)="openMenu($event, r, menu)">
+                <tr class="rw" [class.stale]="r.days >= 3" (click)="trailRow.set(r)"
+                    (contextmenu)="openMenu($event, r, menu)">
                   <td class="num">{{ r.vagon }}</td>
                   <td class="num idx" [title]="r.index">{{ r.index || '—' }}</td>
                   <td class="ell" [title]="station(r)">{{ station(r) }}</td>
@@ -104,7 +105,7 @@ export interface VagonListRow {
           </table>
         </div>
 
-        <p class="hint">ПКМ по строке — история движения вагона. Времена — московские.</p>
+        <p class="hint">Клик или ПКМ по строке — история движения вагона. Времена — московские.</p>
       </ng-container>
     </nz-modal>
 
@@ -127,11 +128,10 @@ export interface VagonListRow {
     .spacer { flex: 1 1 auto; }
     .search { width: 140px; }
     .mut { color: var(--color-text-muted); }
-    .tbl-wrap { max-height: 62vh; overflow: auto; }
-    .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); table-layout: fixed; }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600;
-              padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; }
-    .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
+    .dp-tbl { table-layout: fixed; }
+    /* Строка кликабельна (история движения) — как ссылки в отчётах. */
+    .rw { cursor: pointer; }
+    .rw:hover td { background: var(--color-bg-hover); }
     .c-vag { width: 90px; } .c-idx { width: 120px; } .c-op { width: 130px; }
     .c-dt { width: 118px; } .c-term { width: 80px; } .c-cargo { width: 130px; }
     .c-ves { width: 60px; } .c-days { width: 56px; }

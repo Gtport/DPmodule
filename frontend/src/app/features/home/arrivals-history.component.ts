@@ -1,10 +1,10 @@
-import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
-import { NzModalModule } from 'ng-zorro-antd/modal';
+import { NzModalModule, NzModalService } from 'ng-zorro-antd/modal';
 import { NzSliderModule } from 'ng-zorro-antd/slider';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
@@ -39,6 +39,10 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     NzModalModule, NzSliderModule, NzSpinModule, NzTooltipModule, NzDropDownModule,
     VagonTrailModalComponent,
   ],
+  host: {
+    // «/» — фокус в поиск вагона (когда фокус не в поле ввода).
+    '(document:keydown)': 'onDocKeydown($event)',
+  },
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="title" [nzFooter]="null" nzWidth="1250px"
               [nzMask]="false" nzWrapClassName="arrivals-wrap" (nzOnCancel)="closed.emit()">
@@ -52,10 +56,18 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
           <b>Прибывшие {{ terminalNames().join('+') }}</b>
           @if (selected().size) {
             <span class="sel-cnt">выбрано: {{ selected().size }}</span>
+            @if (canEdit()) {
+              <!-- Видимая альтернатива ПКМ (решение владельца «ПКМ + кнопки»):
+                   те же пункты, то же меню; работает с клавиатуры и с тача. -->
+              <button nz-button nzType="primary" nzSize="small" nz-dropdown [nzDropdownMenu]="menu"
+                      nzTrigger="click" (click)="openActions()">
+                Действия <span nz-icon nzType="down"></span>
+              </button>
+            }
             <button nz-button nzSize="small" (click)="clearSelection()">Сбросить</button>
           }
           <span class="spacer"></span>
-          <input nz-input nzSize="small" class="search" placeholder="Поиск вагона…"
+          <input nz-input nzSize="small" class="search" #searchBox placeholder="Поиск вагона… (/)"
                  [ngModel]="search()" (ngModelChange)="onSearch($event)" />
           <span class="lbl">С</span>
           <input class="date" type="date" [ngModel]="from()" (ngModelChange)="from.set($event); load()" />
@@ -103,8 +115,8 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
         }
 
         <nz-spin [nzSpinning]="loading()">
-          <div class="tbl-wrap">
-            <table class="tbl">
+          <div class="dp-tbl-wrap">
+            <table class="dp-tbl">
               <thead>
                 <tr>
                   <th class="c-date">Дата</th>
@@ -137,7 +149,7 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
                               @for (v of sg.vagons; track v.id) {
                                 <span class="chip" [class.hit]="matches(v.vagon)"
                                       [class.sel]="selected().has(v.id)"
-                                      (click)="toggleVagon(v.id)"
+                                      (click)="canEdit() ? toggleVagon(v.id) : openTrail(v)"
                                       (contextmenu)="openVagonMenu($event, g, v, menu)">
                                   {{ v.vagon }}@if (v.shipments) { ({{ v.shipments }}) }
                                 </span>
@@ -156,7 +168,11 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
           </div>
         </nz-spin>
 
-        <p class="hint">Клик по вагону — выбор; ПКМ по поезду/составу/вагону — операции (применяются к выбранным вагонам).</p>
+        @if (canEdit()) {
+          <p class="hint">Клик по вагону — выбор; операции — ПКМ по поезду/составу/вагону или кнопкой «Действия» (применяются к выбранным вагонам).</p>
+        } @else {
+          <p class="hint">Клик по вагону — история движения. Времена — московские.</p>
+        }
       </ng-container>
     </nz-modal>
 
@@ -283,11 +299,7 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .search { width: 160px; }
     .date { height: 26px; padding: 0 6px; border: 1px solid var(--color-border, #d9d9d9);
             border-radius: var(--radius-sm); font-size: var(--font-size-sm); color: inherit; background: transparent; }
-    .tbl-wrap { max-height: 62vh; overflow: auto; }
-    .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600;
-              padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; }
-    .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); vertical-align: top; }
+    .dp-tbl td { vertical-align: top; }
     .c-date, .c-fact, .c-otkl { text-align: center; white-space: nowrap; }
     .c-plan { white-space: nowrap; text-align: center; }
     .num { font-variant-numeric: tabular-nums; }
@@ -331,8 +343,12 @@ export class ArrivalsHistoryComponent implements OnInit {
   private readonly api = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
   private readonly ctxMenu = inject(NzContextMenuService);
-  /** Правки истории и кандидатов — порог operator; клиенту только просмотр. */
+  private readonly modal = inject(NzModalService);
+  /** Правки истории и кандидатов — порог operator; клиенту только просмотр
+   *  (клик по чипу вагона для клиента открывает историю движения — ПКМ на
+   *  таче нет, а выделение без прав на правки бессмысленно). */
   readonly canEdit = inject(AuthService).canEdit;
+  private readonly searchBox = viewChild<ElementRef<HTMLInputElement>>('searchBox');
 
   /** Станция (заголовок окна) и её терминалы (колонки/фильтр naznach). */
   readonly station = input.required<string>();
@@ -571,13 +587,23 @@ export class ArrivalsHistoryComponent implements OnInit {
     void this.applyUpdate({ naznach: term }, `Назначение: ${term}`);
   }
 
-  async cancelArrival(): Promise<void> {
+  cancelArrival(): void {
     if (!this.requireSelection()) return;
-    const ok = window.confirm(
-      `Отменить прибытие для ${this.selected().size} ваг.? Вагоны вернутся в кандидаты ` +
-      `(факт и отклонение сброшены в снимке и истории). Если дату прибытия давала АСУ, ` +
-      `ближайшее обновление (~10 мин) снова отметит их прибывшими.`);
-    if (!ok) return;
+    // nz-modal вместо window.confirm — единый стиль подтверждений (как
+    // nz-popconfirm в «Грузовой работе»), системный диалог выбивался.
+    this.modal.confirm({
+      nzTitle: `Отменить прибытие для ${this.selected().size} ваг.?`,
+      nzContent: `Вагоны: ${this.selectedVagons().join(', ')}. Вернутся в кандидаты ` +
+        `(факт и отклонение сброшены в снимке и истории). Если дату прибытия давала АСУ, ` +
+        `ближайшее обновление (~10 мин) снова отметит их прибывшими.`,
+      nzOkText: 'Отменить прибытие',
+      nzOkDanger: true,
+      nzCancelText: 'Не отменять',
+      nzOnOk: () => this.doCancelArrival(),
+    });
+  }
+
+  private async doCancelArrival(): Promise<void> {
     this.applying.set(true);
     try {
       const res = await this.api.cancelArrival([...this.selected()]);
@@ -588,6 +614,23 @@ export class ArrivalsHistoryComponent implements OnInit {
     } finally {
       this.applying.set(false);
     }
+  }
+
+  /** Кнопка «Действия»: то же меню, что ПКМ, но без контекста строки —
+   *  цели только из текущего выделения, пункты «История…»/«Экспорт группы»
+   *  скрываются (им нужен конкретный вагон/поезд под курсором). */
+  openActions(): void {
+    this.ctxGroup.set(null);
+    this.ctxVagon.set(null);
+  }
+
+  /** «/» вне полей ввода — фокус в поиск вагона. */
+  onDocKeydown(ev: KeyboardEvent): void {
+    if (ev.key !== '/') return;
+    const t = ev.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    ev.preventDefault();
+    this.searchBox()?.nativeElement.focus();
   }
 
   // ── Кандидаты: подтверждение / отклонение ────────────────────────────────

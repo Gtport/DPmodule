@@ -68,8 +68,8 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
         @if (loading()) {
           <div class="center"><nz-spin nzSimple></nz-spin></div>
         } @else if (report()) {
-          <div class="tbl-wrap" style="max-height: 62vh">
-            <table class="tbl">
+          <div class="dp-tbl-wrap" style="max-height: 62vh">
+            <table class="dp-tbl">
               <thead><tr>
                 <th class="c-vag">Вагон</th><th class="c-idx">Индекс</th><th class="c-term">Терминал</th>
                 <th>Станция</th><th class="c-dor">Дорога</th><th class="c-kind">Вид</th>
@@ -120,18 +120,15 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .spacer { flex: 1 1 auto; }
     .center { display: flex; justify-content: center; padding: var(--space-lg); }
     .kind { width: 150px; }
-    .tbl-wrap { overflow: auto; margin-bottom: var(--space-sm); }
-    .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600;
-              padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; white-space: nowrap; }
-    .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
+    .dp-tbl-wrap { max-height: none; margin-bottom: var(--space-sm); }
+    .dp-tbl th { white-space: nowrap; }
     .c { text-align: center; white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; }
     .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
     .c-dor { width: 62px; } .c-h { width: 84px; }
     .c-vag { width: 92px; } .c-idx { width: 116px; } .c-kind { width: 84px; } .c-dt { width: 112px; }
     .warn { color: var(--color-danger); }
-    .idx { color: #0958d9; text-decoration: underline; cursor: pointer; }
+    .idx { color: var(--color-primary-active); text-decoration: underline; cursor: pointer; }
     .dtag { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 11px;
             background: var(--color-warning-bg); border: 1px solid var(--color-warning); }
     .dtag5 { color: var(--color-danger); border-color: var(--color-danger); }

@@ -54,8 +54,8 @@ import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.ser
         </div>
 
         <nz-spin [nzSpinning]="loading()">
-          <div class="tbl-wrap">
-            <table class="tbl">
+          <div class="dp-tbl-wrap">
+            <table class="dp-tbl">
               <thead>
                 <tr>
                   <th class="c-dt">Прибытие</th>
@@ -112,8 +112,8 @@ import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.ser
           </div>
         </ng-template>
         <ng-container *nzModalContent>
-          <div class="tbl-wrap natur">
-            <table class="tbl">
+          <div class="dp-tbl-wrap natur">
+            <table class="dp-tbl">
               <thead>
                 <tr><th>№</th><th>Вагон</th><th>Накладная</th><th>Состав</th><th>Груз</th><th>Собственник</th></tr>
               </thead>
@@ -159,12 +159,8 @@ import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.ser
     .bar { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-sm); }
     .spacer { flex: 1 1 auto; }
     .mut { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-    .tbl-wrap { max-height: 62vh; overflow: auto; }
     .natur { max-height: 56vh; }
-    .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600;
-              padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; }
-    .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); vertical-align: top; }
+    .dp-tbl td { vertical-align: top; }
     .c, .c-dt, .c-idx { text-align: center; white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; }
     .plan { color: var(--color-success); font-weight: 600; }

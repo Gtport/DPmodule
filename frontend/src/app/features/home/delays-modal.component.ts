@@ -73,8 +73,8 @@ interface DelayGroup {
         </div>
 
         <nz-spin [nzSpinning]="loading()">
-          <div class="tbl-wrap">
-            <table class="tbl">
+          <div class="dp-tbl-wrap">
+            <table class="dp-tbl">
               <thead><tr>
                 <th class="c-idx">Индекс</th><th class="c-n">Вагонов</th><th class="c-term">Терминал</th>
                 <th>Станция</th><th class="c-dor">Дорога</th><th class="c-kind">Вид</th>
@@ -137,11 +137,7 @@ interface DelayGroup {
     .bar { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-sm); }
     .kind { width: 170px; }
     .spacer { flex: 1 1 auto; }
-    .tbl-wrap { max-height: 62vh; overflow: auto; }
-    .tbl { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-    .tbl th { position: sticky; top: 0; background: var(--color-bg-subtle); font-weight: 600;
-              padding: 4px 8px; border: 1px solid var(--color-border-light); text-align: center; z-index: 1; white-space: nowrap; }
-    .tbl td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
+    .dp-tbl th { white-space: nowrap; }
     .grp { cursor: pointer; }
     .grp:hover td { background: var(--color-bg-hover); }
     /* Заливки строк нет (решение владельца): брошенные — красным индексом и бейджем. */
@@ -157,7 +153,7 @@ interface DelayGroup {
     .dtag { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 11px;
             background: var(--color-warning-bg); border: 1px solid var(--color-warning); }
     .dtag5 { color: var(--color-danger); border-color: var(--color-danger); }
-    .lnk { color: #0958d9; text-decoration: underline; cursor: pointer; }
+    .lnk { color: var(--color-primary-active); text-decoration: underline; cursor: pointer; }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
   `],

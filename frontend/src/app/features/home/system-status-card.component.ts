@@ -28,6 +28,11 @@ import {
 @Component({
   selector: 'app-system-status-card',
   imports: [NzButtonModule, NzTagModule, NzTooltipModule, LkIntakeModalComponent],
+  host: {
+    // Хоткеи действий диспетчера: Alt+A — «Обновить АСУ», Alt+L — «Приём ЛК».
+    // По ev.code (физическая клавиша) — работают и в русской раскладке.
+    '(document:keydown)': 'onDocKeydown($event)',
+  },
   template: `
     <div class="card">
       <div class="head">
@@ -104,10 +109,10 @@ import {
       @if (canUpdate()) {
         <div class="acts">
           <button nz-button nzSize="small" class="act" [nzLoading]="busyAsu()"
-                  nz-tooltip nzTooltipTitle="Обновить из АСУ: заберёт данные и сразу пересоберёт дислокацию"
+                  nz-tooltip nzTooltipTitle="Обновить из АСУ: заберёт данные и сразу пересоберёт дислокацию (Alt+A)"
                   (click)="asuPull()">Обновить АСУ</button>
           <button nz-button nzSize="small" class="act"
-                  nz-tooltip nzTooltipTitle="Обновить из ЛК: загрузка файлов грузополучателей вручную"
+                  nz-tooltip nzTooltipTitle="Обновить из ЛК: загрузка файлов грузополучателей вручную (Alt+L)"
                   (click)="lkOpen.set(true)">Обновить ЛК</button>
         </div>
       }
@@ -194,6 +199,18 @@ export class SystemStatusCardComponent implements OnInit, OnDestroy {
       // Без тоста (раз в минуту задолбал бы), но не молча: счётчик неудач
       // копится, со второго подряд карточка показывает плашку «нет связи».
       this.failedTicks.update((n) => n + 1);
+    }
+  }
+
+  /** Alt+A / Alt+L — быстрый доступ к действиям диспетчера (только с правами). */
+  onDocKeydown(ev: KeyboardEvent): void {
+    if (!ev.altKey || ev.ctrlKey || ev.metaKey || !this.canUpdate()) return;
+    if (ev.code === 'KeyA') {
+      ev.preventDefault();
+      if (!this.busyAsu()) void this.asuPull();
+    } else if (ev.code === 'KeyL') {
+      ev.preventDefault();
+      this.lkOpen.set(true);
     }
   }
 
