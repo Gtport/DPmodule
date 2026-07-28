@@ -114,6 +114,32 @@ func nkNewForm() [][]string {
 	}
 }
 
+// Подпись «План» ищется без учёта регистра (набирают руками — на листе 29.07
+// соседний «факт» уже строчными). Заголовок блока «План на ДД-ММ-ГГГГ» строкой
+// подписей при этом стать не должен: сравнение с ячейкой целиком.
+func TestHeaderRowCaseInsensitive(t *testing.T) {
+	for _, caption := range []string{"План", "план", "ПЛАН", " ПлАн "} {
+		rows := nkNewForm()
+		rows[1][7] = caption
+		g := &GridParser{prof: Profile{PlanCode: "nk", OurTerminals: []string{"НАХОДКИНСКИЙ"}}}
+		cols, err := g.findColumns(rows)
+		if err != nil {
+			t.Errorf("подпись %q: findColumns: %v", caption, err)
+			continue
+		}
+		if cols.rowHeader != 1 || cols.colPlan != 7 {
+			t.Errorf("подпись %q: шапка=%d план=%d, ожидалось 1 и 7", caption, cols.rowHeader, cols.colPlan)
+		}
+	}
+	// Без подписи вовсе — по-прежнему отказ, а заголовок блока «План на …» её не подменяет.
+	rows := nkNewForm()
+	rows[1][7] = ""
+	g := &GridParser{prof: Profile{PlanCode: "nk", OurTerminals: []string{"НАХОДКИНСКИЙ"}}}
+	if _, err := g.findColumns(rows); err == nil {
+		t.Error("без подписи «План» ожидался отказ, разбор прошёл")
+	}
+}
+
 // Раскладка 29.07: строка терминалов СОВПАДАЕТ со строкой подписей. Прежний парсер
 // считал терминалами «шапка+1», то есть строку ГРУЗОВ, — терминалы не читались,
 // Activ обнулялся у всех ниток.

@@ -169,7 +169,7 @@ func (g *GridParser) findColumns(rows [][]string) (gridCols, error) {
 		switch {
 		case cell == "Индекс":
 			cols.colIndex = c
-		case cell == "План":
+		case strings.EqualFold(cell, "План"):
 			cols.colPlan = c
 		case strings.EqualFold(cell, "Факт"):
 			cols.colFact = c
@@ -262,11 +262,13 @@ func isTotalCell(s string) bool {
 }
 
 // findHeaderRow — строка подписей столбцов: первая из верхних, где есть ячейка
-// ровно «План». Заголовок блока «План на DD-MM-YYYY» не мешает — он не равен «План».
+// ровно «План», без учёта регистра (в файле встречается и «факт» строчными —
+// подпись набирают руками). Заголовок блока «План на DD-MM-YYYY» не мешает:
+// сравнение со всей ячейкой целиком, а не по началу строки.
 func findHeaderRow(rows [][]string) int {
 	for r := 0; r < min(8, len(rows)); r++ {
 		for _, cell := range rows[r] {
-			if strings.TrimSpace(cell) == "План" {
+			if strings.EqualFold(strings.TrimSpace(cell), "План") {
 				return r
 			}
 		}
