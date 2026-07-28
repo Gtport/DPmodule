@@ -252,7 +252,7 @@ export class NearestModalComponent implements OnInit {
     const rows = this.naturVagons().map((v) =>
       `<tr><td>${v.npp_vag ?? '—'}</td><td>${v.vagon}</td><td>${v.invoice || '—'}</td>` +
       `<td>${this.subDisplay(v)}</td><td>${this.cargo(v)}</td><td>${v.owner || '—'}</td></tr>`).join('');
-    printHtml(`Натурный лист поезда ${t.index}`,
+    this.print(`Натурный лист поезда ${t.index}`,
       `<h3>Натурный лист поезда ${t.index} (${this.fmtDT(t.time_jd)}) — ${this.station()}</h3>
        <table><thead><tr><th>№</th><th>Вагон</th><th>Накладная</th><th>Состав</th><th>Груз</th><th>Собственник</th></tr></thead>
        <tbody>${rows}</tbody></table>`);
@@ -293,7 +293,7 @@ export class NearestModalComponent implements OnInit {
   }
 
   printSms(): void {
-    printHtml(`СМС — поезд ${this.ctx()?.index ?? ''}`, `<pre>${this.smsText()}</pre>`);
+    this.print(`СМС — поезд ${this.ctx()?.index ?? ''}`, `<pre>${this.smsText()}</pre>`);
   }
 
   // ── Excel поезда ─────────────────────────────────────────────────────────
@@ -331,7 +331,7 @@ export class NearestModalComponent implements OnInit {
       ];
       return `<tr${t.broshen ? ' class="danger"' : ''}>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
     }).join('');
-    printHtml(`Ближайшие поезда — ${this.station()}`,
+    this.print(`Ближайшие поезда — ${this.station()}`,
       `<h3>Ближайшие поезда — ${this.station()}</h3>
        <table><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`);
   }
@@ -341,12 +341,20 @@ export class NearestModalComponent implements OnInit {
     if (!ts || ts.length < 16) return '—';
     return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(2, 4)} ${ts.slice(11, 16)}`;
   }
+
+  /** Печать с внятным отказом: заблокированный попап — не молчание, а подсказка. */
+  private print(title: string, body: string): void {
+    if (!printHtml(title, body)) {
+      this.msg.warning('Окно печати не открылось: браузер заблокировал всплывающее окно — разрешите их для этого сайта.');
+    }
+  }
 }
 
-/** Печать через отдельное окно (надёжно в SPA; стили — минимальные печатные). */
-function printHtml(title: string, body: string): void {
+/** Печать через отдельное окно (надёжно в SPA; стили — минимальные печатные).
+ *  false — браузер заблокировал попап (сообщает вызывающий, у него есть тосты). */
+function printHtml(title: string, body: string): boolean {
   const w = window.open('', '_blank', 'width=900,height=700');
-  if (!w) return;
+  if (!w) return false;
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
     <style>
       body { font-family: Arial, sans-serif; font-size: 12px; margin: 16px; }
@@ -359,4 +367,5 @@ function printHtml(title: string, body: string): void {
   w.document.close();
   w.focus();
   w.print();
+  return true;
 }

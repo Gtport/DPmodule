@@ -43,6 +43,7 @@
   /* Спец-нейтрали */
   --color-tooltip-bg: #43454a;  /* §10: тёмный фон тултипа */
   --color-warning-bg: #fffbe6;  /* подложка предупреждения (кандидаты, stale-строки) */
+  --color-success-bg: #f6ffed;  /* подложка успеха (назначен план, прибыл) */
 
   /* --- Типографика (§3) --- */
   --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
@@ -52,6 +53,7 @@
   --font-size-subtitle: 14px;
   --font-size-base: 14px;
   --font-size-sm: 12px;
+  --font-size-xs: 11px;  /* самые мелкие подписи (хинты в плотных модалках) */
   --line-height-base: 1.6;
 
   /* --- Spacing (§4) --- */
@@ -118,6 +120,11 @@
   --color-border: #303030;
   --color-border-light: #262626;
   --color-border-dark: #404040;
+
+  /* Подложки статусов: светлые пастели на тёмном фоне слепят — тёмные
+   * варианты того же тона, текст остаётся основным (--color-text). */
+  --color-warning-bg: #3b2f14;
+  --color-success-bg: #16290f;
 }
 
 /* Базовая типографика страницы на токенах */

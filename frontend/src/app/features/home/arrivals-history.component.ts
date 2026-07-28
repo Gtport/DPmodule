@@ -211,7 +211,10 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
               <input class="date" type="time" [ngModel]="edFactT()" (ngModelChange)="edFactT.set($event)" />
             </span>
           </label>
-          <p class="mut">Вагонов: {{ selected().size }}. Отклонение пересчитается автоматически.</p>
+          <p class="mut">Вагонов: {{ selectedVagons().length }}. Отклонение пересчитается автоматически.</p>
+          <div class="sel-chips">
+            @for (v of selectedVagons(); track v) { <span class="chip">{{ v }}</span> }
+          </div>
         </div>
       </ng-container>
     </nz-modal>
@@ -263,7 +266,10 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
           <label>Смерзаемость: {{ unFrost() }}%
             <nz-slider [ngModel]="unFrost()" (ngModelChange)="unFrost.set($event)" [nzStep]="10" />
           </label>
-          <p class="mut">Вагонов: {{ selected().size }}.</p>
+          <p class="mut">Вагонов: {{ selectedVagons().length }}.</p>
+          <div class="sel-chips">
+            @for (v of selectedVagons(); track v) { <span class="chip">{{ v }}</span> }
+          </div>
         </div>
       </ng-container>
     </nz-modal>
@@ -315,6 +321,10 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .frm label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-sm);
                  color: var(--color-text-secondary); }
     .dt { display: flex; gap: var(--space-sm); }
+    /* Предпросмотр затронутых вагонов в диалогах операций (защита от батча
+       «не тем вагонам»): те же чипы, что в таблице, со скроллом при массе. */
+    .sel-chips { display: flex; flex-wrap: wrap; gap: 3px; max-height: 96px; overflow: auto;
+                 font-size: var(--font-size-sm); }
   `],
 })
 export class ArrivalsHistoryComponent implements OnInit {
@@ -368,6 +378,16 @@ export class ArrivalsHistoryComponent implements OnInit {
   readonly unFrost = signal(0);
 
   readonly terminalNames = computed(() => this.terminals().map((t) => t.name));
+  /** Номера выбранных вагонов — предпросмотр в диалогах операций: диспетчер
+   * видит, к КОМУ применится правка, а не только счётчик. */
+  readonly selectedVagons = computed(() => {
+    const sel = this.selected();
+    const out: string[] = [];
+    for (const g of this.groups())
+      for (const sg of g.sub_groups)
+        for (const v of sg.vagons) if (sel.has(v.id)) out.push(v.vagon);
+    return out;
+  });
   readonly editValid = computed(() =>
     !!this.edIndex().trim() && !!this.edPlanD() && !!this.edPlanT() && !!this.edFactD() && !!this.edFactT());
   readonly unloadValid = computed(() => !!this.unD() && !!this.unT() && !!this.unPlace().trim());
@@ -462,8 +482,17 @@ export class ArrivalsHistoryComponent implements OnInit {
     this.selected.set(new Set());
   }
 
-  private addToSelection(ids: string[]): void {
-    const next = new Set(this.selected());
+  /**
+   * ПКМ-выделение по стандарту файловых менеджеров: ПКМ по цели ВНЕ текущего
+   * выбора сбрасывает накопленное и выделяет только её (раньше выбор только
+   * копился — операция уезжала на вагоны из забытого прошлого выделения).
+   * ПКМ по цели, уже входящей в выбор, сохраняет его целиком — батч по
+   * нескольким группам по-прежнему возможен: накликать вагоны, ПКМ по любому.
+   */
+  private selectForMenu(ids: string[]): void {
+    const cur = this.selected();
+    const touchesSelection = ids.some((id) => cur.has(id));
+    const next = touchesSelection ? new Set(cur) : new Set<string>();
     for (const id of ids) next.add(id);
     this.selected.set(next);
   }
@@ -472,7 +501,7 @@ export class ArrivalsHistoryComponent implements OnInit {
     ev.preventDefault();
     this.ctxGroup.set(g);
     this.ctxVagon.set(null);
-    this.addToSelection(g.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id)));
+    this.selectForMenu(g.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id)));
     this.ctxMenu.create(ev, menu);
   }
 
@@ -481,7 +510,7 @@ export class ArrivalsHistoryComponent implements OnInit {
     ev.stopPropagation();
     this.ctxGroup.set(g);
     this.ctxVagon.set(null);
-    this.addToSelection(sg.vagons.map((v) => v.id));
+    this.selectForMenu(sg.vagons.map((v) => v.id));
     this.ctxMenu.create(ev, menu);
   }
 
@@ -490,7 +519,7 @@ export class ArrivalsHistoryComponent implements OnInit {
     ev.stopPropagation();
     this.ctxGroup.set(g);
     this.ctxVagon.set(v); // ПКМ именно по вагону — только здесь есть «История движения»
-    this.addToSelection([v.id]);
+    this.selectForMenu([v.id]);
     this.ctxMenu.create(ev, menu);
   }
 

@@ -37,6 +37,12 @@ interface StationHalf {
   imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent, SystemStatusCardComponent,
             InfoCardComponent, UnplannedCardComponent],
   template: `
+    <!-- Тревога — над колонками, во всю ширину: сигнал «поезд едет без плана»
+         нельзя терять под сгибом (раньше карточка стояла последней в левой
+         колонке и при однокол. раскладке уезжала вниз). Пустой список карточка
+         не рендерит — полоса появляется только когда тревога есть. -->
+    <app-unplanned-card />
+
     <div class="cols">
       <section class="col">
         <h2 class="st-title">Оперативка</h2>
@@ -47,7 +53,6 @@ interface StationHalf {
             <app-operativka-card />
           </div>
         </div>
-        <app-unplanned-card />
       </section>
 
       @for (st of stations(); track st.code) {
@@ -55,7 +60,6 @@ interface StationHalf {
           <h2 class="st-title">{{ title(st.name) }}</h2>
           <app-arrivals-card [station]="title(st.name)" [terminals]="st.terminals" />
           <app-nearest-card [station]="title(st.name)" [terminals]="st.terminals" />
-          <div class="soon">Информация — скоро</div>
         </section>
       } @empty {
         @if (!loading()) { <p class="mut">Нет терминалов в реестре ports.</p> }
@@ -63,6 +67,7 @@ interface StationHalf {
     </div>
   `,
   styles: [`
+    :host { display: flex; flex-direction: column; gap: var(--space-md); }
     .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); align-items: start; }
     .col { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
     /* Верх «Оперативки»: слева статус системы, справа стопка «Информация» +
@@ -70,10 +75,6 @@ interface StationHalf {
     .duo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); align-items: start; }
     .stack { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
     .st-title { margin: 0; font-size: var(--font-size-card-title); font-weight: 600; text-align: center; }
-    .oper { padding: var(--space-sm) var(--space-md) var(--space-md); }
-    .oper-empty { color: var(--color-text-muted); font-size: var(--font-size-sm); text-align: center;
-                  padding: var(--space-lg) 0; }
-    .soon { color: var(--color-text-muted); font-size: var(--font-size-sm); text-align: center; }
     .mut { color: var(--color-text-secondary); }
     @media (max-width: 1100px) { .cols { grid-template-columns: 1fr; } }
   `],
@@ -123,8 +124,17 @@ export class HomeComponent implements OnInit {
     void this.operativka.load();
   }
 
-  /** «МЫС АСТАФЬЕВА» → «Мыс Астафьева» (заголовок половины). */
+  /** «МЫС АСТАФЬЕВА» → «Мыс Астафьева» (заголовок половины). Слова короче
+   *  4 букв, стоящие не первыми, оставляем как в реестре: «…ГЭС» — аббревиатура,
+   *  а не «Гэс» (имя станции — данные, капитализацией их ломать нельзя). */
   title(name: string): string {
-    return name.toLowerCase().replace(/(^|[\s-])\p{L}/gu, (m) => m.toUpperCase());
+    return name
+      .split(/(\s+|-)/)
+      .map((w, i) => {
+        if (/^\s+$|^-$/.test(w) || !w) return w;
+        if (i > 0 && w.length <= 4 && w === w.toUpperCase()) return w; // аббревиатура: ГЭС, ВП
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      })
+      .join('');
   }
 }

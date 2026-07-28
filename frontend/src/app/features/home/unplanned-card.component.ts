@@ -73,7 +73,8 @@ export class UnplannedCardComponent implements OnInit, OnDestroy {
   async dismiss(u: UnplannedTrain): Promise<void> {
     try {
       await this.api.dismissUnplanned(u);
-      this.msg.info(`Скрыто: поезд ${u.index || '—'} (${u.vagon_count} ваг.).`);
+      this.msg.info(`Скрыто: поезд ${u.index || '—'} (${u.vagon_count} ваг.). ` +
+        `Появится снова при следующей смене станции без плана.`);
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     }

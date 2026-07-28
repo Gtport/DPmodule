@@ -34,6 +34,15 @@ import {
         <b>Статус системы</b>
       </div>
 
+      <!-- Потеря связи: чипы свежести ниже показывают возраст ДАННЫХ из
+           последнего удачного ответа и при сбое сети «врут в зелёную сторону» —
+           эта плашка единственная говорит правду про сам канал. -->
+      @if (offline()) {
+        <div class="offline" role="alert">
+          Нет связи с сервером — {{ staleLabel() }}
+        </div>
+      }
+
       <div class="rows">
         <!-- Часы: московские и операционные ЖД-сутки (час ≥ 18 → дата +1) -->
         <div class="row">
@@ -129,6 +138,10 @@ import {
     .chip { margin: 0; }
     .clk { font-variant-numeric: tabular-nums; font-weight: 600; }
     :host ::ng-deep .chip.ant-tag { margin: 0; padding: 0 6px; line-height: 18px; }
+    /* Плашка потери связи: единственный красный блок карточки — заметен сразу. */
+    .offline { background: var(--color-danger); color: var(--color-bg-surface);
+               border-radius: var(--radius-sm); padding: 2px var(--space-sm);
+               margin-bottom: var(--space-xs); font-size: var(--font-size-sm); font-weight: 600; }
   `],
 })
 export class SystemStatusCardComponent implements OnInit, OnDestroy {
@@ -144,6 +157,17 @@ export class SystemStatusCardComponent implements OnInit, OnDestroy {
   readonly now = signal(new Date());
   readonly busyAsu = signal(false);
   readonly lkOpen = signal(false);
+  /** Подряд неудачных фоновых обновлений; с 2-го (≈2 мин) считаем связь потерянной. */
+  private readonly failedTicks = signal(0);
+  /** Момент последнего УДАЧНОГО ответа сервера (null — не было ни одного). */
+  private readonly lastSuccessAt = signal<Date | null>(null);
+  readonly offline = computed(() => this.failedTicks() >= 2);
+  readonly staleLabel = computed(() => {
+    const at = this.lastSuccessAt();
+    if (!at) return 'данные не получены';
+    const min = Math.max(0, Math.floor((this.now().getTime() - at.getTime()) / 60_000));
+    return `данные получены ${min} мин назад`;
+  });
   /** Приём ЛК и забор из АСУ — правки данных: порог operator (auth.canEdit). */
   readonly canUpdate = computed(() => this.auth.canEdit());
 
@@ -164,8 +188,12 @@ export class SystemStatusCardComponent implements OnInit, OnDestroy {
   async load(): Promise<void> {
     try {
       this.status.set(await this.api.getStatus());
+      this.lastSuccessAt.set(new Date());
+      this.failedTicks.set(0);
     } catch {
-      /* тихо: панель некритична, следующий тик повторит */
+      // Без тоста (раз в минуту задолбал бы), но не молча: счётчик неудач
+      // копится, со второго подряд карточка показывает плашку «нет связи».
+      this.failedTicks.update((n) => n + 1);
     }
   }
 
