@@ -40,9 +40,11 @@ export const DISPATCHER_NAV: NavItem[] = [
   // оба открываются модалками из карточки «Информация» на главной. Маршрут
   // /missing жив (прямой ссылкой, см. app.routes), у «Грузовой работы»
   // отдельной страницы нет вовсе — только модалка.
+  // «Справки» убраны из меню (решение владельца 29.07.2026): в gtport вкладка
+  // была байт-в-байт поднабором «Справок и отчётов» — СМС-формы влиты туда
+  // (features/reports), маршрут /reference редиректит на /reports.
   { path: 'rearrangement',  label: 'Перестановки',          icon: 'swap',         theme: 'outline', roles: OPER },
   { path: 'plan',           label: 'План подвода',          icon: 'train',        theme: 'fill',    roles: OPER },
-  { path: 'reference',      label: 'Справки',               icon: 'edit',         theme: 'fill',    roles: OPER },
   { path: 'warehouse',      label: 'Склад',                 icon: 'warehouse',    theme: 'fill',    roles: OPER },
   { path: 'shipments',      label: 'Судовые партии',        icon: 'ship',         theme: 'fill',    roles: OPER },
   { path: 'daily-work',     label: 'Работа за сутки',       icon: 'clock-circle', theme: 'fill',    roles: OPER },

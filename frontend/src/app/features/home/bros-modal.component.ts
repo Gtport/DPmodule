@@ -10,7 +10,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { AuthService } from '../../core/auth/auth.service';
 import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
-import { ReferenceApiService } from '../reference/reference-api.service';
+import { MaxApiService } from '../reports/max-api.service';
 import { BrosApiService, BrosRecord, BrosReasonCode } from './bros-api.service';
 import { BrosJournalModalComponent } from './bros-journal-modal.component';
 import { BrosReportModalComponent } from './bros-report-modal.component';
@@ -145,7 +145,7 @@ export class BrosModalComponent implements OnInit {
   /** Журнал и рассылка в MAX — правки: порог operator. */
   readonly canEdit = inject(AuthService).canEdit;
   private readonly arrivals = inject(ArrivalsApiService);
-  private readonly ref = inject(ReferenceApiService);
+  private readonly ref = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
   private readonly host = inject(ElementRef<HTMLElement>);
 

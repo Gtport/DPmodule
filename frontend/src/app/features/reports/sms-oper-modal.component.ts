@@ -9,8 +9,8 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import {
-  BroadcastResult, PlanFormTerminal, ReferenceApiService, groupTrains,
-} from './reference-api.service';
+  BroadcastResult, PlanFormTerminal, MaxApiService, groupTrains,
+} from './max-api.service';
 import { todayMsk } from '../../shared/msk-date';
 
 /** Раскладка суток: ЖД (18:00→18:00) либо грузовые/МСК (00:00→24:00). */
@@ -113,7 +113,7 @@ type Mode = 'jd' | 'msk';
   `],
 })
 export class SmsOperModalComponent implements OnInit {
-  private readonly api = inject(ReferenceApiService);
+  private readonly api = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
 
   readonly closed = output<void>();

@@ -18,7 +18,7 @@ export interface BroadcastResult {
 }
 
 /** Тип формы рассылки — совпадает с max_route.report на бэке. */
-export type MaxReport = 'spravki' | 'oper' | 'plan';
+export type MaxReport = 'spravki' | 'oper' | 'plan' | 'podhod';
 
 /** Линия учёта карточки: факт вчера + прогноз сегодня. */
 export interface PlanFormLine {
@@ -72,7 +72,7 @@ export function groupTrains(trains: PlanFormTrain[], mode: 'jd' | 'msk'): PlanFo
  * GET /max/chats, POST /max/broadcast/text|image.
  */
 @Injectable({ providedIn: 'root' })
-export class ReferenceApiService {
+export class MaxApiService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiBaseUrl}/v1/max`;
 

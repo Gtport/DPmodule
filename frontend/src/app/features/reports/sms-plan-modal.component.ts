@@ -10,8 +10,8 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { toBlob } from 'html-to-image';
 import { apiErrorMessage } from '../../core/api/api-error';
 import {
-  BroadcastResult, PlanFormLine, PlanFormTerminal, ReferenceApiService, groupTrains,
-} from './reference-api.service';
+  BroadcastResult, PlanFormLine, PlanFormTerminal, MaxApiService, groupTrains,
+} from './max-api.service';
 import { addDaysIso, todayMsk } from '../../shared/msk-date';
 
 /** Строка сводки: подпись + значение из линии. */
@@ -147,7 +147,7 @@ interface Row { label: string; get: (l: PlanFormLine) => string; }
   `],
 })
 export class SmsPlanModalComponent implements OnInit {
-  private readonly api = inject(ReferenceApiService);
+  private readonly api = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
   private readonly host = inject(ElementRef<HTMLElement>);
 

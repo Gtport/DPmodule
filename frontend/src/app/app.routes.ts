@@ -6,7 +6,7 @@ import { ADMIN, OPER, DISPATCHER_NAV } from './layout/shell/nav.config';
 
 // Разделы, перенесённые из заглушки на реальный экран — исключаем из
 // автогенерации ниже и подключаем явно (см. routes).
-const IMPLEMENTED_PATHS = new Set(['dislocation', 'missing', 'rearrangement', 'plan', 'reference', 'forecasts', 'admin']);
+const IMPLEMENTED_PATHS = new Set(['dislocation', 'missing', 'rearrangement', 'plan', 'reports', 'forecasts', 'admin']);
 
 // Разделы диспетчера — генерируем из реестра навигации: каждый пункт (кроме
 // external, напр. home, и уже перенесённых из IMPLEMENTED_PATHS) → маршрут на
@@ -67,12 +67,14 @@ export const routes: Routes = [
         data: { roles: OPER },
       },
       {
-        path: 'reference',
+        path: 'reports',
         loadComponent: () =>
-          import('./features/reference/reference.component').then((m) => m.ReferenceComponent),
+          import('./features/reports/reports.component').then((m) => m.ReportsComponent),
         canActivate: [authGuard],
         data: { roles: OPER },
       },
+      // Старый адрес страницы «Справки» — влита в «Справки и отчёты».
+      { path: 'reference', redirectTo: 'reports' },
       {
         path: 'forecasts',
         loadComponent: () =>
