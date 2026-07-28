@@ -1,0 +1,839 @@
+{
+  "code": 0,
+  "data": {
+    "count": 2,
+    "documents": [
+      {
+        "_summary": {
+          "DocId": "1766398397",
+          "DocNum": "11013",
+          "DocDate": "20.07.2026 01:22:37",
+          "DocState": "Подписан Клиентом",
+          "docPrice": "0",
+          "DocStateId": "469",
+          "NeedForEcp": "0",
+          "DocLastOper": "20.07.2026 04:22:12"
+        },
+        "getPPSReply": {
+          "Request": {
+            "Metadatatab": null,
+            "Documentdata": {
+              "Docid": "1766398397",
+              "Doctype": "GU-45",
+              "Doccontent": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgi...ОБРЕЗАНО-ДЛЯ-ТЕСТА",
+              "Docsigntab": {
+                "item": {
+                  "Signnum": "1",
+                  "Signstage": "0",
+                  "Timestamp": "MjAyNi0wNy0xOVQyMDoyNzoyNC4yNjJa",
+                  "Signcontent": "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"
+                }
+              },
+              "Docfilename": null,
+              "Metadatatab": {
+                "item": [
+                  {
+                    "Key": "number",
+                    "Value": "11013"
+                  },
+                  {
+                    "Key": "railway_code",
+                    "Value": "96"
+                  },
+                  {
+                    "Key": "railway_station_code",
+                    "Value": "985609"
+                  },
+                  {
+                    "Key": "oper_type",
+                    "Value": "Подачу"
+                  },
+                  {
+                    "Key": "oper_code",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "get_place",
+                    "Value": "Аттис -1 путь"
+                  },
+                  {
+                    "Key": "orgid",
+                    "Value": "258772"
+                  },
+                  {
+                    "Key": "inn",
+                    "Value": "2508033063"
+                  },
+                  {
+                    "Key": "kpp",
+                    "Value": "250801001"
+                  },
+                  {
+                    "Key": "okpo",
+                    "Value": "10230304"
+                  },
+                  {
+                    "Key": "doc_creator",
+                    "Value": "Прийма О. В. Приемосдатчик груза и багажа"
+                  },
+                  {
+                    "Key": "doc_date",
+                    "Value": "19.07.2026"
+                  },
+                  {
+                    "Key": "doc_time",
+                    "Value": "23:26"
+                  },
+                  {
+                    "Key": "EDS_GUID",
+                    "Value": "0f016984-bb81-49a1-b8a6-27fdb7fa69b1"
+                  },
+                  {
+                    "Key": "request_datetime",
+                    "Value": "19.07.2026 23:27"
+                  },
+                  {
+                    "Key": "signatories",
+                    "Value": "/Прийма Ольга Викторовна-19.07.2026-23:27:24"
+                  }
+                ]
+              },
+              "Docprintform": null,
+              "Technicaldocstab": null,
+              "Sourcesystemdocid": "1248073"
+            },
+            "Sourcesystem": {
+              "Nodeid": null,
+              "Systemcode": null
+            },
+            "Businessprocesscode": "BPM-GU-45",
+            "Additionaldocumentdatatab": null,
+            "Businessprocessinstanceid": "6A5D093332614E10E10080000A164013"
+          },
+          "DocState": {
+            "StateId": "469",
+            "StateName": "Подписан Клиентом"
+          }
+        },
+        "_decoded_doc": {
+          "data": {
+            "orgid": "258772",
+            "get_by": "ОАО \"РЖД\"",
+            "number": "11013",
+            "wagons": {
+              "wagon": [
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "1",
+                  "wagon_number": "63498000",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "2",
+                  "wagon_number": "62310784",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "3",
+                  "wagon_number": "62676218",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "4",
+                  "wagon_number": "68091834",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "5",
+                  "wagon_number": "68069780",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "6",
+                  "wagon_number": "63709877",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "7",
+                  "wagon_number": "64973258",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "8",
+                  "wagon_number": "62467378",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "9",
+                  "wagon_number": "63288666",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "10",
+                  "wagon_number": "68036367",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "11",
+                  "wagon_number": "64408750",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "12",
+                  "wagon_number": "64293277",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "13",
+                  "wagon_number": "68134857",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "14",
+                  "wagon_number": "62662309",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "15",
+                  "wagon_number": "64917032",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "16",
+                  "wagon_number": "68121888",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "17",
+                  "wagon_number": "68132513",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "18",
+                  "wagon_number": "68093418",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "161128",
+                  "cargo_name": "УГОЛЬ КАМЕННЫЙ МАРКИ Д",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "23:25",
+                  "gr_oper_type": "вгр",
+                  "order_number": "19",
+                  "wagon_number": "64970130",
+                  "wagon_owner_code": "СОБ"
+                }
+              ]
+            },
+            "get_by_id": "1",
+            "get_place": "Аттис -1 путь",
+            "oper_code": "0",
+            "oper_type": "подачу",
+            "text_mark": "переведена 1 стрелка",
+            "client_mark": "принял",
+            "person_mark": "сдал",
+            "railway_name": "Дальневосточная",
+            "path_owner_inn": "2508033063",
+            "path_owner_kpp": "250801001",
+            "path_owner_name": "Общество с ограниченной ответственностью Компания \"Аттис Энтерпрайс\"",
+            "path_owner_okpo": "10230304",
+            "railway_station_code": "985609",
+            "railway_station_name": "МЫС АСТАФЬЕВА"
+          }
+        }
+      },
+      {
+        "_summary": {
+          "DocId": "1766405489",
+          "DocNum": "11017",
+          "DocDate": "20.07.2026 02:16:06",
+          "DocState": "Подписан Клиентом",
+          "docPrice": "0",
+          "DocStateId": "469",
+          "NeedForEcp": "0",
+          "DocLastOper": "20.07.2026 04:20:56"
+        },
+        "getPPSReply": {
+          "Request": {
+            "Metadatatab": null,
+            "Documentdata": {
+              "Docid": "1766405489",
+              "Doctype": "GU-45",
+              "Doccontent": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgi...ОБРЕЗАНО-ДЛЯ-ТЕСТА",
+              "Docsigntab": {
+                "item": {
+                  "Signnum": "1",
+                  "Signstage": "0",
+                  "Timestamp": "MjAyNi0wNy0xOVQyMzoxNDo1OS42NDJa",
+                  "Signcontent": "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"
+                }
+              },
+              "Docfilename": null,
+              "Metadatatab": {
+                "item": [
+                  {
+                    "Key": "number",
+                    "Value": "11017"
+                  },
+                  {
+                    "Key": "railway_code",
+                    "Value": "96"
+                  },
+                  {
+                    "Key": "railway_station_code",
+                    "Value": "985609"
+                  },
+                  {
+                    "Key": "oper_type",
+                    "Value": "Уборку"
+                  },
+                  {
+                    "Key": "oper_code",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "get_place",
+                    "Value": "Аттис - 2 путь"
+                  },
+                  {
+                    "Key": "orgid",
+                    "Value": "258772"
+                  },
+                  {
+                    "Key": "inn",
+                    "Value": "2508033063"
+                  },
+                  {
+                    "Key": "kpp",
+                    "Value": "250801001"
+                  },
+                  {
+                    "Key": "okpo",
+                    "Value": "10230304"
+                  },
+                  {
+                    "Key": "doc_creator",
+                    "Value": "Шумова В. А. Приемосдатчик груза и багажа"
+                  },
+                  {
+                    "Key": "doc_date",
+                    "Value": "20.07.2026"
+                  },
+                  {
+                    "Key": "doc_time",
+                    "Value": "02:13"
+                  },
+                  {
+                    "Key": "EDS_GUID",
+                    "Value": "4eeef718-8dda-4680-b138-c856dfef7444"
+                  },
+                  {
+                    "Key": "request_datetime",
+                    "Value": "20.07.2026 02:15"
+                  },
+                  {
+                    "Key": "signatories",
+                    "Value": "/Шумова Валерия Алексеевна-20.07.2026-02:14:59"
+                  }
+                ]
+              },
+              "Docprintform": null,
+              "Technicaldocstab": null,
+              "Sourcesystemdocid": "1248114"
+            },
+            "Sourcesystem": {
+              "Nodeid": null,
+              "Systemcode": null
+            },
+            "Businessprocesscode": "BPM-GU-45",
+            "Additionaldocumentdatatab": null,
+            "Businessprocessinstanceid": "6A5D8CE24FE63A20E10080010A164013"
+          },
+          "DocState": {
+            "StateId": "469",
+            "StateName": "Подписан Клиентом"
+          }
+        },
+        "_decoded_doc": {
+          "data": {
+            "orgid": "258772",
+            "get_by": "ОАО \"РЖД\"",
+            "number": "11017",
+            "wagons": {
+              "wagon": [
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "1",
+                  "wagon_number": "62691159",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "2",
+                  "wagon_number": "61284816",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "3",
+                  "wagon_number": "68297027",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "4",
+                  "wagon_number": "61506887",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "5",
+                  "wagon_number": "62658778",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "6",
+                  "wagon_number": "62607403",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "7",
+                  "wagon_number": "62672340",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "8",
+                  "wagon_number": "64856925",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "9",
+                  "wagon_number": "62473186",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "10",
+                  "wagon_number": "62609045",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "11",
+                  "wagon_number": "64308182",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "12",
+                  "wagon_number": "62502760",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "13",
+                  "wagon_number": "68215011",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "14",
+                  "wagon_number": "62286364",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "15",
+                  "wagon_number": "60908639",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "16",
+                  "wagon_number": "60825155",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421195",
+                  "cargo_name": "ВАГ.Ж.Д.ПОР.НА СВ.ОСЯХ В РЕМ.ИЗ РЕМ.",
+                  "containers": null,
+                  "get_in_date": "19.07",
+                  "get_in_time": "07:50",
+                  "number_memo": "Памятка подачи №10983",
+                  "report_date": "19.07",
+                  "report_time": "17:13",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "17",
+                  "wagon_number": "62015359",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "18.07",
+                  "get_in_time": "08:40",
+                  "number_memo": "Памятка подачи №10939",
+                  "report_date": "19.07",
+                  "report_time": "16:44",
+                  "get_out_date": "20.07",
+                  "get_out_time": "02:10",
+                  "gr_oper_type": "вгр",
+                  "order_number": "18",
+                  "wagon_number": "54698485",
+                  "wagon_agent_name": "АО  Находкинский Морской Торговый Порт",
+                  "wagon_agent_okpo": "01126022",
+                  "wagon_owner_code": "СОБ"
+                }
+              ]
+            },
+            "get_by_id": "1",
+            "get_place": "Аттис - 2 путь",
+            "oper_code": "0",
+            "oper_type": "уборку",
+            "client_mark": "сдал",
+            "person_mark": "принял",
+            "railway_name": "Дальневосточная",
+            "path_owner_inn": "2508033063",
+            "path_owner_kpp": "250801001",
+            "path_owner_name": "Общество с ограниченной ответственностью Компания \"Аттис Энтерпрайс\"",
+            "path_owner_okpo": "10230304",
+            "railway_station_code": "985609",
+            "railway_station_name": "МЫС АСТАФЬЕВА"
+          }
+        }
+      }
+    ],
+    "new_oper_id": "13025673368"
+  },
+  "status": "success",
+  "message": "Получено 5 памяток ГУ-45 (ATTIS)",
+  "received_at": "2026-07-20T02:48:39.673Z"
+}
