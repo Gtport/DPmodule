@@ -1,0 +1,651 @@
+{
+  "code": 0,
+  "data": {
+    "count": 3,
+    "documents": [
+      {
+        "_summary": {
+          "DocId": "1766359009",
+          "DocNum": "11010",
+          "DocDate": "19.07.2026 20:16:03",
+          "DocState": "Автоматически согласован",
+          "docPrice": "0",
+          "DocStateId": "696",
+          "NeedForEcp": "-2",
+          "DocLastOper": "20.07.2026 08:22:10"
+        },
+        "getPPSReply": {
+          "Request": {
+            "Metadatatab": null,
+            "Documentdata": {
+              "Docid": "1766359009",
+              "Doctype": "GU-45",
+              "Doccontent": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgi...ОБРЕЗАНО-ДЛЯ-ТЕСТА",
+              "Docsigntab": {
+                "item": {
+                  "Signnum": "1",
+                  "Signstage": "0",
+                  "Timestamp": "MjAyNi0wNy0xOVQxNzoxNTo1OS4wMjRa",
+                  "Signcontent": "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"
+                }
+              },
+              "Docfilename": null,
+              "Metadatatab": {
+                "item": [
+                  {
+                    "Key": "number",
+                    "Value": "11010"
+                  },
+                  {
+                    "Key": "railway_code",
+                    "Value": "96"
+                  },
+                  {
+                    "Key": "railway_station_code",
+                    "Value": "985609"
+                  },
+                  {
+                    "Key": "oper_type",
+                    "Value": "Уборку"
+                  },
+                  {
+                    "Key": "oper_code",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "get_place",
+                    "Value": "1 путь - 73, 74, 75 причал (металл)"
+                  },
+                  {
+                    "Key": "orgid",
+                    "Value": "37787"
+                  },
+                  {
+                    "Key": "inn",
+                    "Value": null
+                  },
+                  {
+                    "Key": "kpp",
+                    "Value": null
+                  },
+                  {
+                    "Key": "okpo",
+                    "Value": "01126022"
+                  },
+                  {
+                    "Key": "doc_creator",
+                    "Value": "Федотова Н. С. Приемосдатчик груза и багажа"
+                  },
+                  {
+                    "Key": "doc_date",
+                    "Value": "19.07.2026"
+                  },
+                  {
+                    "Key": "doc_time",
+                    "Value": "20:14"
+                  },
+                  {
+                    "Key": "EDS_GUID",
+                    "Value": "6760fcfd-a149-414a-98c7-a7d4fc6920c5"
+                  },
+                  {
+                    "Key": "request_datetime",
+                    "Value": "19.07.2026 20:15"
+                  },
+                  {
+                    "Key": "signatories",
+                    "Value": "/Федотова Наталья Сергеевна-19.07.2026-20:15:58"
+                  }
+                ]
+              },
+              "Docprintform": null,
+              "Technicaldocstab": null,
+              "Sourcesystemdocid": "1248021"
+            },
+            "Sourcesystem": {
+              "Nodeid": null,
+              "Systemcode": null
+            },
+            "Businessprocesscode": "BPM-GU-45",
+            "Additionaldocumentdatatab": null,
+            "Businessprocessinstanceid": "6A5D1396053E4980E10080010A164013"
+          },
+          "DocState": {
+            "StateId": "696",
+            "StateName": "Автоматически согласован"
+          }
+        },
+        "_decoded_doc": {
+          "data": {
+            "orgid": "37787",
+            "get_by": "ОАО \"РЖД\"",
+            "number": "11010",
+            "wagons": {
+              "wagon": {
+                "adm_code": "20",
+                "cargo_code": "421195",
+                "cargo_name": "ВАГ.Ж.Д.ПОР.НА СВ.ОСЯХ В РЕМ.ИЗ РЕМ.",
+                "containers": null,
+                "get_in_date": "15.07",
+                "get_in_time": "08:14",
+                "number_memo": "Памятка подачи №10817",
+                "report_date": "16.07",
+                "report_time": "02:40",
+                "get_out_date": "19.07",
+                "get_out_time": "20:10",
+                "gr_oper_type": "вгр",
+                "order_number": "1",
+                "wagon_number": "65119620",
+                "wagon_owner_code": "АРС"
+              }
+            },
+            "get_by_id": "1",
+            "get_place": "1 путь - 73, 74, 75 причал (металл)",
+            "oper_code": "0",
+            "oper_type": "уборку",
+            "client_mark": "сдал",
+            "person_mark": "принял",
+            "railway_name": "Дальневосточная",
+            "path_owner_name": "АО  Находкинский Морской Торговый Порт",
+            "path_owner_okpo": "01126022",
+            "railway_station_code": "985609",
+            "railway_station_name": "МЫС АСТАФЬЕВА"
+          }
+        }
+      },
+      {
+        "_summary": {
+          "DocId": "1766390411",
+          "DocNum": "11007",
+          "DocDate": "20.07.2026 00:18:03",
+          "DocState": "Подписан Клиентом",
+          "docPrice": "0",
+          "DocStateId": "469",
+          "NeedForEcp": "0",
+          "DocLastOper": "20.07.2026 09:34:04"
+        },
+        "getPPSReply": {
+          "Request": {
+            "Metadatatab": null,
+            "Documentdata": {
+              "Docid": "1766390411",
+              "Doctype": "GU-45",
+              "Doccontent": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgi...ОБРЕЗАНО-ДЛЯ-ТЕСТА",
+              "Docsigntab": {
+                "item": {
+                  "Signnum": "1",
+                  "Signstage": "0",
+                  "Timestamp": "MjAyNi0wNy0xOVQyMToxNzo1OS4yNTJa",
+                  "Signcontent": "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"
+                }
+              },
+              "Docfilename": null,
+              "Metadatatab": {
+                "item": [
+                  {
+                    "Key": "number",
+                    "Value": "11007"
+                  },
+                  {
+                    "Key": "railway_code",
+                    "Value": "96"
+                  },
+                  {
+                    "Key": "railway_station_code",
+                    "Value": "985609"
+                  },
+                  {
+                    "Key": "oper_type",
+                    "Value": "Уборку"
+                  },
+                  {
+                    "Key": "oper_code",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "get_place",
+                    "Value": "1 путь - 71, 72, 73 причал (уголь)"
+                  },
+                  {
+                    "Key": "orgid",
+                    "Value": "37787"
+                  },
+                  {
+                    "Key": "inn",
+                    "Value": null
+                  },
+                  {
+                    "Key": "kpp",
+                    "Value": null
+                  },
+                  {
+                    "Key": "okpo",
+                    "Value": "01126022"
+                  },
+                  {
+                    "Key": "doc_creator",
+                    "Value": "Федотова Н. С. Приемосдатчик груза и багажа"
+                  },
+                  {
+                    "Key": "doc_date",
+                    "Value": "19.07.2026"
+                  },
+                  {
+                    "Key": "doc_time",
+                    "Value": "20:05"
+                  },
+                  {
+                    "Key": "EDS_GUID",
+                    "Value": "ff1bce52-ab9f-4c2b-8aec-ed3013705a9d"
+                  },
+                  {
+                    "Key": "request_datetime",
+                    "Value": "20.07.2026 00:17"
+                  },
+                  {
+                    "Key": "signatories",
+                    "Value": "/Селезнева Валерия Викторовна-20.07.2026-00:17:59"
+                  }
+                ]
+              },
+              "Docprintform": null,
+              "Technicaldocstab": null,
+              "Sourcesystemdocid": "1248017"
+            },
+            "Sourcesystem": {
+              "Nodeid": null,
+              "Systemcode": null
+            },
+            "Businessprocesscode": "BPM-GU-45",
+            "Additionaldocumentdatatab": null,
+            "Businessprocessinstanceid": "6A5D25703AD6DCA0E10080010A164013"
+          },
+          "DocState": {
+            "StateId": "469",
+            "StateName": "Подписан Клиентом"
+          }
+        },
+        "_decoded_doc": {
+          "data": {
+            "orgid": "37787",
+            "get_by": "ОАО \"РЖД\"",
+            "number": "11007",
+            "wagons": {
+              "wagon": [
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "14:04",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "1",
+                  "wagon_number": "65552788",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "09:54",
+                  "number_memo": "Памятка подачи №10899",
+                  "report_date": "19.07",
+                  "report_time": "14:04",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "2",
+                  "wagon_number": "54729629",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "3",
+                  "wagon_number": "66255845",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "4",
+                  "wagon_number": "65073348",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "5",
+                  "wagon_number": "66013988",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "6",
+                  "wagon_number": "65987745",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "7",
+                  "wagon_number": "54875323",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "8",
+                  "wagon_number": "63412324",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "9",
+                  "wagon_number": "64571664",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "10",
+                  "wagon_number": "66137514",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "471071",
+                  "cargo_name": "ПЕК КАМЕННОУГОЛЬНЫЙ ТВЕРДЫЙ",
+                  "containers": null,
+                  "get_in_date": "17.07",
+                  "get_in_time": "08:58",
+                  "number_memo": "Памятка подачи №10893",
+                  "report_date": "19.07",
+                  "report_time": "09:41",
+                  "get_out_date": "19.07",
+                  "get_out_time": "20:00",
+                  "gr_oper_type": "пгр",
+                  "order_number": "11",
+                  "wagon_number": "65266975",
+                  "wagon_owner_code": "СОБ"
+                }
+              ]
+            },
+            "get_by_id": "1",
+            "get_place": "1 путь - 71, 72, 73 причал (уголь)",
+            "oper_code": "0",
+            "oper_type": "уборку",
+            "client_mark": "сдал",
+            "person_mark": "принял",
+            "railway_name": "Дальневосточная",
+            "contragent_inn": "2508120936",
+            "contragent_kpp": "250801001",
+            "contragent_name": "ООО \"ФЛК\"",
+            "contragent_okpo": "31170931",
+            "path_owner_name": "АО  Находкинский Морской Торговый Порт",
+            "path_owner_okpo": "01126022",
+            "railway_station_code": "985609",
+            "railway_station_name": "МЫС АСТАФЬЕВА"
+          }
+        }
+      },
+      {
+        "_summary": {
+          "DocId": "1766448220",
+          "DocNum": "11032",
+          "DocDate": "20.07.2026 06:33:02",
+          "DocState": "Подписан Клиентом",
+          "docPrice": "0",
+          "DocStateId": "469",
+          "NeedForEcp": "0",
+          "DocLastOper": "20.07.2026 09:19:47"
+        },
+        "getPPSReply": {
+          "Request": {
+            "Metadatatab": null,
+            "Documentdata": {
+              "Docid": "1766448220",
+              "Doctype": "GU-45",
+              "Doccontent": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgi...ОБРЕЗАНО-ДЛЯ-ТЕСТА",
+              "Docsigntab": {
+                "item": {
+                  "Signnum": "1",
+                  "Signstage": "0",
+                  "Timestamp": "MjAyNi0wNy0yMFQwMzozMjo1Mi4yMTBa",
+                  "Signcontent": "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"
+                }
+              },
+              "Docfilename": null,
+              "Metadatatab": {
+                "item": [
+                  {
+                    "Key": "number",
+                    "Value": "11032"
+                  },
+                  {
+                    "Key": "railway_code",
+                    "Value": "96"
+                  },
+                  {
+                    "Key": "railway_station_code",
+                    "Value": "985609"
+                  },
+                  {
+                    "Key": "oper_type",
+                    "Value": "Подачу"
+                  },
+                  {
+                    "Key": "oper_code",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "get_place",
+                    "Value": "1 путь - 73, 74, 75 причал (металл)"
+                  },
+                  {
+                    "Key": "orgid",
+                    "Value": "37787"
+                  },
+                  {
+                    "Key": "inn",
+                    "Value": null
+                  },
+                  {
+                    "Key": "kpp",
+                    "Value": null
+                  },
+                  {
+                    "Key": "okpo",
+                    "Value": "01126022"
+                  },
+                  {
+                    "Key": "doc_creator",
+                    "Value": "Ульянцева Т. А. Приемосдатчик груза и багажа"
+                  },
+                  {
+                    "Key": "doc_date",
+                    "Value": "20.07.2026"
+                  },
+                  {
+                    "Key": "doc_time",
+                    "Value": "06:31"
+                  },
+                  {
+                    "Key": "EDS_GUID",
+                    "Value": "c521f6c1-3585-4850-92b5-d268489c88ea"
+                  },
+                  {
+                    "Key": "request_datetime",
+                    "Value": "20.07.2026 06:32"
+                  },
+                  {
+                    "Key": "signatories",
+                    "Value": "/Ульянцева Татьяна Александровна-20.07.2026-06:32:51"
+                  }
+                ]
+              },
+              "Docprintform": null,
+              "Technicaldocstab": null,
+              "Sourcesystemdocid": "1248215"
+            },
+            "Sourcesystem": {
+              "Nodeid": null,
+              "Systemcode": null
+            },
+            "Businessprocesscode": "BPM-GU-45",
+            "Additionaldocumentdatatab": null,
+            "Businessprocessinstanceid": "6A5DBA018CD3DDD0E10080010A164013"
+          },
+          "DocState": {
+            "StateId": "469",
+            "StateName": "Подписан Клиентом"
+          }
+        },
+        "_decoded_doc": {
+          "data": {
+            "orgid": "37787",
+            "get_by": "ОАО \"РЖД\"",
+            "number": "11032",
+            "wagons": {
+              "wagon": [
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "20.07",
+                  "get_in_time": "06:10",
+                  "gr_oper_type": "пгр",
+                  "order_number": "1",
+                  "wagon_number": "65816357",
+                  "wagon_owner_code": "СОБ"
+                },
+                {
+                  "adm_code": "20",
+                  "cargo_code": "421034",
+                  "cargo_name": "ВАГОНЫ Ж/Д ВС.ПЕРЕВОЗ.НА СВОИХ ОСЯХ",
+                  "containers": null,
+                  "get_in_date": "20.07",
+                  "get_in_time": "06:10",
+                  "gr_oper_type": "пгр",
+                  "order_number": "2",
+                  "wagon_number": "63639868",
+                  "wagon_owner_code": "СОБ"
+                }
+              ]
+            },
+            "get_by_id": "1",
+            "get_place": "1 путь - 73, 74, 75 причал (металл)",
+            "oper_code": "0",
+            "oper_type": "подачу",
+            "client_mark": "принял",
+            "person_mark": "сдал",
+            "railway_name": "Дальневосточная",
+            "contragent_inn": "2508120936",
+            "contragent_kpp": "250801001",
+            "contragent_name": "ООО \"ФЛК\"",
+            "contragent_okpo": "31170931",
+            "path_owner_name": "АО  Находкинский Морской Торговый Порт",
+            "path_owner_okpo": "01126022",
+            "railway_station_code": "985609",
+            "railway_station_name": "МЫС АСТАФЬЕВА"
+          }
+        }
+      }
+    ],
+    "new_oper_id": "13026225430"
+  },
+  "status": "success",
+  "message": "Получено 18 памяток ГУ-45 (NMTP)",
+  "received_at": "2026-07-20T07:13:26.416Z"
+}
