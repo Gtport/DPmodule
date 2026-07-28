@@ -3,22 +3,50 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
-/** Поезд на экране «Прогнозы»: состав + прогнозные поля Stage 3/4. Времена — МСК naive. */
-export interface ForecastTrain {
-  id_disl: string;
-  index: string;
-  naznach: string;
-  gruzpol_s: string;
-  sms_2: string;
-  stan_nazn: string;
+/**
+ * Экран «Новый прогноз» (перенос gtport PrognozNew): сервер отдаёт сырьё одним
+ * ответом, раскладку по датам-колонкам и итоги считает компонент.
+ */
+
+/** Подгруппа вагонов поезда: станция отправления × назначение × группа груза. */
+export interface ForecastSubGroup {
+  station_nach: string;
+  date_nach: string | null; // дата погрузки (максимум по вагонам)
   vagon_count: number;
-  ves: number;
-  has_plan: boolean;
-  plan_msk: string | null;
-  rasch_msk: string | null;
-  prog_msk: string | null;
+  cargo_group: string;
+  naznach: string;
+  color: string;
+}
+
+/** Едущий поезд с прогнозом прибытия (Stage 4). */
+export interface ForecastTrainGroup {
+  index: string;
+  station_oper: string;
+  status: number | null; // 5 — брошен (красная подсветка)
   prog_jd: string | null;
-  mistake: number | null;
+  sub_groups: ForecastSubGroup[];
+}
+
+/** Поезд, прибывший за сегодняшние сутки (vagon_history). */
+export interface ForecastArrivedGroup {
+  index_pp: string;
+  date_prib: string | null;
+  sub_groups: ForecastSubGroup[];
+}
+
+/** Линия выгрузки терминала: подтаблица экрана, норма и входящий остаток. */
+export interface ForecastLine {
+  terminal: string;
+  cargo_key: string; // пусто — терминал считается одной таблицей
+  label: string;
+  pc: number; // норма выгрузки, ваг/сут (стартовое значение поля «Выгрузка»)
+  ost: number; // «Остаток на 18:00»: вчерашний остаток линии из грузовой работы
+}
+
+export interface ForecastBoardDTO {
+  groups: ForecastTrainGroup[];
+  arrived: ForecastArrivedGroup[];
+  lines: ForecastLine[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -26,7 +54,7 @@ export class ForecastApiService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiBaseUrl}/v1/dislocation`;
 
-  getForecast(): Promise<ForecastTrain[]> {
-    return firstValueFrom(this.http.get<ForecastTrain[]>(`${this.base}/forecast`));
+  getBoard(): Promise<ForecastBoardDTO> {
+    return firstValueFrom(this.http.get<ForecastBoardDTO>(`${this.base}/forecast/board`));
   }
 }

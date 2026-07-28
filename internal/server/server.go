@@ -131,11 +131,6 @@ func Build(
 		handler.NewBrosOpsHandler(service.NewBrosService(brosRepo, brosJournalRepo), brosJournal).RegisterRoutes(api)
 	}
 
-	// Экран «Прогнозы»: сводка поездов с прогнозными полями Stage 3/4 из RAM-снимка.
-	if actualCache != nil {
-		handler.NewForecastHandler(service.NewForecastBoard(actualCache)).RegisterRoutes(api)
-	}
-
 	// Экран «Пропавшие вагоны»: записи-8 из таблицы кандидатов (status9).
 	if status9Cache != nil {
 		handler.NewMissingHandler(service.NewMissingService(status9Cache, status6Cache)).RegisterRoutes(api)
@@ -279,6 +274,12 @@ func Build(
 				// подходом) + список поездов (приб + подход). Перенос gtport SmsPlan.
 				planForm := service.NewPlanFormService(cwSvc, actualCache, historyRepo, dirCache)
 				handler.NewPlanFormHandler(planForm).RegisterRoutes(api)
+
+				// Экран «Новый прогноз» (перенос gtport PrognozNew): поезда в
+				// подходе с прогнозом Stage 4 + прибывшие за сутки + линии
+				// выгрузки (норма и вчерашний остаток из грузовой работы).
+				handler.NewForecastHandler(service.NewForecastBoard(
+					actualCache, dirCache, historyRepo, cwSvc)).RegisterRoutes(api)
 			}
 		}
 	}

@@ -8,7 +8,8 @@ import (
 	"github.com/Gtport/DPmodule/internal/service"
 )
 
-// forecastHandler — экран «Прогнозы»: сводка поездов с прогнозными полями Stage 3/4.
+// forecastHandler — экран «Новый прогноз»: сырьё доски одним ответом
+// (едущие поезда с прогнозом + прибывшие за сутки + линии выгрузки).
 type forecastHandler struct {
 	board *service.ForecastBoard
 }
@@ -18,15 +19,20 @@ func NewForecastHandler(board *service.ForecastBoard) *forecastHandler {
 }
 
 func (h *forecastHandler) RegisterRoutes(g *gin.RouterGroup) {
-	g.GET("/dislocation/forecast", h.forecast)
+	g.GET("/dislocation/forecast/board", h.forecastBoard)
 }
 
-// forecast godoc
-// @Summary  Сводка прогнозов прибытия по поездам (Stage 3/4)
+// forecastBoard godoc
+// @Summary  Доска «Новый прогноз»: поезда в подходе, прибывшие за сутки, линии выгрузки
 // @Tags     dislocation
 // @Security BearerAuth
-// @Success  200 {array} service.ForecastTrain
-// @Router   /api/v1/dislocation/forecast [get]
-func (h *forecastHandler) forecast(c *gin.Context) {
-	c.JSON(http.StatusOK, h.board.Trains())
+// @Success  200 {object} service.ForecastBoardDTO
+// @Router   /api/v1/dislocation/forecast/board [get]
+func (h *forecastHandler) forecastBoard(c *gin.Context) {
+	dto, err := h.board.Board(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, dto)
 }

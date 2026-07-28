@@ -389,6 +389,12 @@ func (s *CargoWorkService) LinePc(ln domain.PortCargoLine, terminal string) int 
 	return s.linePc(ln, terminal)
 }
 
+// UnloadLines — линии выгрузки терминала (экспорт для доски прогноза:
+// подтаблицы «Нового прогноза» повторяют линии учёта грузовой работы).
+func (s *CargoWorkService) UnloadLines(ctx context.Context, terminal string) ([]domain.PortCargoLine, error) {
+	return s.unloadLines(ctx, terminal)
+}
+
 // planRemainders — «Остаток на 18:00» по линиям терминала: берём план станции
 // (ports.plan_code) за эти сутки и разбираем служебную строку плана по меткам
 // колонок (port_cargo_line.plan_label). Нет плана/метки — остаток 0, это не
