@@ -4,6 +4,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { StaleTracker } from '../../shared/stale';
 
 /** Поезд «бесплановых в подходе» (сигнал: движется без плана ближе порога). */
 export interface UnplannedTrain {
@@ -49,6 +50,8 @@ export class OperativkaApiService {
 
   readonly loading = signal(false);
   readonly data = signal<Operativka | null>(null);
+  /** Свежесть общего опроса: бейдж «данные N мин» в карточке «Прибытие/выгрузка». */
+  readonly stale = new StaleTracker();
 
   private consumers = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -76,7 +79,9 @@ export class OperativkaApiService {
     this.inflight = (async () => {
       try {
         this.data.set(await firstValueFrom(this.http.get<Operativka>(this.url)));
+        this.stale.ok();
       } catch (err) {
+        this.stale.fail();
         if (initial) this.msg.error(apiErrorMessage(err));
       } finally {
         if (initial) this.loading.set(false);

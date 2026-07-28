@@ -15,6 +15,12 @@ import { OperativkaApiService } from './operativka-api.service';
   selector: 'app-operativka-card',
   template: `
     <div class="card">
+      @if (api.stale.stale()) {
+        <div class="stale-row">
+          <span class="dp-stale"
+                title="Автообновление не проходит — показаны последние полученные данные">{{ api.stale.label() }}</span>
+        </div>
+      }
       <table class="mini">
         <thead>
           <tr>
@@ -46,6 +52,7 @@ import { OperativkaApiService } from './operativka-api.service';
   styles: [`
     .card { background: var(--color-bg-surface); border-radius: var(--radius-card);
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-md); }
+    .stale-row { display: flex; justify-content: center; margin-bottom: var(--space-xs); }
     .mini { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
     .mini th { background: var(--color-bg-subtle); font-weight: 600; padding: 3px 6px;
                border: 1px solid var(--color-border-light); text-align: center; }

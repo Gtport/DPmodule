@@ -4,6 +4,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { StaleTracker } from '../../shared/stale';
 import { ArrivalGroup, ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
 import { ArrivalsHistoryComponent } from './arrivals-history.component';
 
@@ -19,6 +20,10 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
     <div class="card">
       <div class="head">
         <b>Прибывшие</b>
+        @if (stale.stale()) {
+          <span class="dp-stale" nz-tooltip
+                nzTooltipTitle="Автообновление не проходит — показаны последние полученные данные">{{ stale.label() }}</span>
+        }
         @if (candidatesCount()) {
           <span class="cand-badge" nz-tooltip
                 nzTooltipTitle="Кандидаты на прибытие — АСУ не дала дату, требуется подтверждение (открыть историю)"
@@ -59,7 +64,7 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
     .head { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); }
     .spacer { flex: 1 1 auto; }
     /* Чип-предупреждение (канон: без заливки, контур и текст в цвете). */
-    .cand-badge { border: 1px solid var(--color-warning); color: var(--color-warning);
+    .cand-badge { border: 1px solid var(--color-warning); color: var(--color-warning-text);
                   border-radius: 10px; padding: 0 8px; font-size: var(--font-size-sm);
                   font-weight: 600; cursor: pointer; white-space: nowrap; }
     .mini { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
@@ -84,6 +89,8 @@ export class ArrivalsCardComponent implements OnInit, OnDestroy {
   readonly terminals = input.required<TerminalTarget[]>();
 
   readonly loading = signal(false);
+  /** Свежесть фоновых обновлений: бейдж «данные N мин» при сбоях. */
+  readonly stale = new StaleTracker();
   readonly groups = signal<ArrivalGroup[]>([]);
   readonly expanded = signal(false);
   /** Вагонов-кандидатов на прибытие (статус 9, ждут подтверждения). */
@@ -118,7 +125,9 @@ export class ArrivalsCardComponent implements OnInit, OnDestroy {
       ]);
       this.groups.set(res.groups);
       this.candidatesCount.set((cands ?? []).reduce((n, c) => n + c.vagon_count, 0));
+      this.stale.ok();
     } catch (err) {
+      this.stale.fail();
       if (initial) this.msg.error(apiErrorMessage(err));
     } finally {
       if (initial) this.loading.set(false);

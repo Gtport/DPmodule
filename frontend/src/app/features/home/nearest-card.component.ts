@@ -5,6 +5,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { TerminalTarget } from './arrivals-api.service';
+import { StaleTracker } from '../../shared/stale';
 import { NearestApiService, NearestTrain } from './nearest-api.service';
 import { NearestModalComponent } from './nearest-modal.component';
 
@@ -22,6 +23,10 @@ import { NearestModalComponent } from './nearest-modal.component';
     <div class="card">
       <div class="head">
         <b>Ближайшие поезда</b>
+        @if (stale.stale()) {
+          <span class="dp-stale" nz-tooltip
+                nzTooltipTitle="Автообновление не проходит — показаны последние полученные данные">{{ stale.label() }}</span>
+        }
         <span class="spacer"></span>
         <button nz-button nzType="text" nzSize="small" nz-tooltip
                 nzTooltipTitle="Все подходящие поезда (полная таблица)" (click)="expanded.set(true)">
@@ -66,8 +71,8 @@ import { NearestModalComponent } from './nearest-modal.component';
     .mini td { padding: 3px 8px; border: 1px solid var(--color-border-light); }
     .c { text-align: center; white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; font-weight: 500; }
-    .plan { color: var(--color-success); font-weight: 600; } /* время из нитки плана */
-    .danger { color: var(--color-danger); } /* в составе брошенные */
+    .plan { color: var(--color-success-text); font-weight: 600; } /* время из нитки плана */
+    .danger { color: var(--color-danger-text); } /* в составе брошенные */
     .w-dt { width: 92px; }
     .w-idx { width: 118px; }
     .sost { max-width: 0; }
@@ -83,6 +88,8 @@ export class NearestCardComponent implements OnInit, OnDestroy {
   readonly terminals = input.required<TerminalTarget[]>();
 
   readonly loading = signal(false);
+  /** Свежесть фоновых обновлений: бейдж «данные N мин» при сбоях. */
+  readonly stale = new StaleTracker();
   readonly trains = signal<NearestTrain[]>([]);
   readonly expanded = signal(false);
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -103,7 +110,9 @@ export class NearestCardComponent implements OnInit, OnDestroy {
     if (initial) this.loading.set(true);
     try {
       this.trains.set(await this.api.getNearest(this.terminals().map((t) => t.name)));
+      this.stale.ok();
     } catch (err) {
+      this.stale.fail();
       if (initial) this.msg.error(apiErrorMessage(err));
     } finally {
       if (initial) this.loading.set(false);

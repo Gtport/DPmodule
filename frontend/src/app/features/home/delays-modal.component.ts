@@ -141,7 +141,7 @@ interface DelayGroup {
     .grp { cursor: pointer; }
     .grp:hover td { background: var(--color-bg-hover); }
     /* Заливки строк нет (решение владельца): брошенные — красным индексом и бейджем. */
-    .grp.g5 .c-idx { color: var(--color-danger); font-weight: 600; }
+    .grp.g5 .c-idx { color: var(--color-danger-text); font-weight: 600; }
     .vag td { background: var(--color-bg-subtle); }
     .term { width: 150px; }
     .tw { font-size: 10px; color: var(--color-text-muted); margin-right: 4px; }
@@ -152,7 +152,7 @@ interface DelayGroup {
     .c-dor { width: 62px; } .c-kind { width: 86px; } .c-dt { width: 108px; } .c-h { width: 84px; }
     .dtag { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 11px;
             background: var(--color-warning-bg); border: 1px solid var(--color-warning); }
-    .dtag5 { color: var(--color-danger); border-color: var(--color-danger); }
+    .dtag5 { color: var(--color-danger-text); border-color: var(--color-danger); }
     .lnk { color: var(--color-primary-active); text-decoration: underline; cursor: pointer; }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }

@@ -303,8 +303,8 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .c-date, .c-fact, .c-otkl { text-align: center; white-space: nowrap; }
     .c-plan { white-space: nowrap; text-align: center; }
     .num { font-variant-numeric: tabular-nums; }
-    .c-otkl.late { color: var(--color-danger); }
-    .c-otkl.early { color: var(--color-success); }
+    .c-otkl.late { color: var(--color-danger-text); }
+    .c-otkl.early { color: var(--color-success-text); }
     .sg { display: flex; align-items: center; gap: 4px; cursor: pointer; border-radius: var(--radius-sm);
           padding: 1px 4px; white-space: nowrap; }
     .sg:hover { background: var(--color-bg-hover); }

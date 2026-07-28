@@ -90,7 +90,7 @@ import { DelaysModalComponent } from './delays-modal.component';
     /* Текст — как в таблицах «Прибывшие»/«Ближайшие»: основной цвет, не серый. */
     .lbl { color: inherit; }
     .cnt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
-    .cnt.warn { color: var(--color-danger); }
+    .cnt.warn { color: var(--color-danger-text); }
     .go { font-size: 10px; color: var(--color-text-muted); }
     /* У «Грузовой работы» нет счётчика — стрелку прижимаем сами. */
     .go.ml { margin-left: auto; }

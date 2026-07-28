@@ -165,7 +165,7 @@ import { FileDropComponent } from '../../shared/file-drop.component';
     .rsum { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap;
             font-size: var(--font-size-sm); margin-top: var(--space-md); }
     .details { margin-top: var(--space-md); }
-    .warn-line { margin: var(--space-sm) 0 0; color: var(--color-warning); font-size: var(--font-size-sm); }
+    .warn-line { margin: var(--space-sm) 0 0; color: var(--color-warning-text); font-size: var(--font-size-sm); }
   `],
 })
 export class LkIntakeModalComponent implements OnInit {

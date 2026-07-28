@@ -127,11 +127,11 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
     .c-dor { width: 62px; } .c-h { width: 84px; }
     .c-vag { width: 92px; } .c-idx { width: 116px; } .c-kind { width: 84px; } .c-dt { width: 112px; }
-    .warn { color: var(--color-danger); }
+    .warn { color: var(--color-danger-text); }
     .idx { color: var(--color-primary-active); text-decoration: underline; cursor: pointer; }
     .dtag { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 11px;
             background: var(--color-warning-bg); border: 1px solid var(--color-warning); }
-    .dtag5 { color: var(--color-danger); border-color: var(--color-danger); }
+    .dtag5 { color: var(--color-danger-text); border-color: var(--color-danger); }
     /* Заливки строк нет (решение владельца) — открытый эпизод виден по «стоит» в колонке «По». */
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }

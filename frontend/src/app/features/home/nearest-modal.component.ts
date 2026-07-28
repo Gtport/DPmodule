@@ -163,8 +163,8 @@ import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.ser
     .dp-tbl td { vertical-align: top; }
     .c, .c-dt, .c-idx { text-align: center; white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; }
-    .plan { color: var(--color-success); font-weight: 600; }
-    .danger { color: var(--color-danger); }
+    .plan { color: var(--color-success-text); font-weight: 600; }
+    .danger { color: var(--color-danger-text); }
     .sg { white-space: nowrap; }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }

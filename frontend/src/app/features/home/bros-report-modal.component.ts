@@ -335,7 +335,7 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
     .dp-tbl { table-layout: fixed; }
     .dp-tbl th { cursor: default; padding: 5px 8px; white-space: nowrap; }
     .dp-tbl thead th.c-idx, .dp-tbl thead th:nth-child(2), .dp-tbl thead th.c-dor, .dp-tbl thead th.c-dt { cursor: pointer; }
-    .hb05 { color: #1565c0; } .hok { color: #2e7d32; } .hbad { color: #c62828; }
+    .hb05 { color: var(--color-info-text); } .hok { color: var(--color-success-text); } .hbad { color: var(--color-danger-text); }
     .c-idx { width: 120px; } .c-dor { width: 56px; } .c-dt { width: 104px; }
     .c-code { width: 58px; } .c-days { width: 62px; } .c-b { width: 74px; } .c-st { width: 78px; } .c-op { width: 100px; }
     .num, .b { font-variant-numeric: tabular-nums; }
@@ -343,10 +343,14 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
     .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .c { text-align: center; }
     .code { font-weight: 600; cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
-    td.b.c05 { color: #1565c0; } td.b.ok { color: #2e7d32; } td.b.bad { color: #c62828; font-weight: 600; }
+    td.b.c05 { color: var(--color-info-text); } td.b.ok { color: var(--color-success-text); }
+    td.b.bad { color: var(--color-danger-text); font-weight: 600; }
     .chip { display: inline-block; min-width: 26px; padding: 1px 8px; border-radius: 11px; font-weight: 600;
-            background: #e5e5e5; color: #333; font-variant-numeric: tabular-nums; }
-    .chip.warn { background: #fa8c16; color: #fff; } .chip.danger { background: #cf1322; color: #fff; }
+            background: var(--color-bg-hover); color: var(--color-text); font-variant-numeric: tabular-nums; }
+    /* Чипы-акценты — язык бейджей приложения (dtag/dp-stale), не material. */
+    .chip.warn { background: var(--color-warning-bg); color: var(--color-warning-text);
+                 border: 1px solid var(--color-warning); }
+    .chip.danger { background: var(--color-danger); color: var(--color-bg-surface); }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
     /* Детали: сетка полей */
@@ -359,7 +363,7 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
     /* Статистика */
     .tiles { display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-md); }
     .tile { flex: 1 1 0; min-width: 92px; text-align: center; padding: 6px 8px; border: 1px solid var(--color-border-light);
-            border-radius: var(--radius-sm); background: #fff; }
+            border-radius: var(--radius-sm); background: var(--color-bg-surface); }
     .tile b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
     .tile span { font-size: var(--font-size-sm); color: var(--color-text-muted); }
     .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-sm); margin-bottom: var(--space-sm); }
@@ -370,15 +374,25 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
     .bar { height: 4px; border-radius: 2px; background: rgba(0,0,0,.08); margin: 4px 0; overflow: hidden; }
     .bar.big { height: 8px; }
     .bar i { display: block; height: 100%; }
-    .pc.c05 { background: #e3f2fd; } .pc.c05 .pc-t, .pc.c05 b { color: #1565c0; } .pc.c05 .bar i { background: #1565c0; }
-    .pc.ok { background: #e8f5e9; } .pc.ok .pc-t, .pc.ok b { color: #2e7d32; } .pc.ok .bar i { background: #2e7d32; }
-    .pc.bad { background: #ffebee; } .pc.bad .pc-t, .pc.bad b { color: #c62828; } .pc.bad .bar i { background: #c62828; }
-    .pc.oth { background: #f5f5f5; } .pc.oth .bar i { background: #757575; }
-    .prot { border: 1px solid #9c27b0; border-radius: var(--radius-sm); padding: var(--space-sm); background: #f3e5f5; margin-bottom: var(--space-md); }
-    .prot-t { font-weight: 600; color: #6a1b9a; font-size: var(--font-size-sm); }
-    .prot .bar i { background: #7b1fa2; }
+    /* Карточки причин — статусные тинты токенов (совместимо с тёмной темой). */
+    .pc.c05 { background: var(--color-info-bg); }
+    .pc.c05 .pc-t, .pc.c05 b { color: var(--color-info-text); }
+    .pc.c05 .bar i { background: var(--color-info); }
+    .pc.ok { background: var(--color-success-bg); }
+    .pc.ok .pc-t, .pc.ok b { color: var(--color-success-text); }
+    .pc.ok .bar i { background: var(--color-success); }
+    .pc.bad { background: var(--color-danger-bg); }
+    .pc.bad .pc-t, .pc.bad b { color: var(--color-danger-text); }
+    .pc.bad .bar i { background: var(--color-danger); }
+    .pc.oth { background: var(--color-bg-subtle); }
+    .pc.oth .bar i { background: var(--color-text-muted); }
+    /* Блок «в ожидании подъёма» — брендовая сине-голубая гамма (был material-фиолет). */
+    .prot { border: 1px solid var(--color-primary); border-radius: var(--radius-sm); padding: var(--space-sm);
+            background: var(--color-info-bg); margin-bottom: var(--space-md); }
+    .prot-t { font-weight: 600; color: var(--color-info-text); font-size: var(--font-size-sm); }
+    .prot .bar i { background: var(--color-primary); }
     tr.tot > td { background: var(--color-bg-subtle); }
-    tr.peak > td { background: #fff9c4; }
+    tr.peak > td { background: var(--color-warning-bg); }
   `],
 })
 export class BrosReportModalComponent implements OnInit {

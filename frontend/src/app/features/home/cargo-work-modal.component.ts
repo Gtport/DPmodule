@@ -232,7 +232,7 @@ import {
     .head { font-weight: 600; text-align: left; }
     .num { text-align: center; font-variant-numeric: tabular-nums; }
     .lbl-cell { font-weight: 500; white-space: nowrap; }
-    .warn { color: var(--color-danger); font-weight: 600; }
+    .warn { color: var(--color-danger-text); font-weight: 600; }
     .cell { width: 64px; text-align: center; font-size: var(--font-size-sm); padding: 1px 4px;
             border: 1px solid var(--color-border); border-radius: var(--radius-sm);
             background: var(--color-bg-surface); color: inherit; }

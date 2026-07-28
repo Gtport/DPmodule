@@ -28,9 +28,24 @@
   border: 1px solid var(--color-border-light);
   text-align: center;
 }
+
 .dp-tbl td {
   padding: 3px 8px;
   border: 1px solid var(--color-border-light);
+}
+
+/* Бейдж протухших данных на автообновляемых карточках (shared/stale.ts):
+ * фоновые тики не тостят, но сбой обязан быть видим — иначе старая таблица
+ * выглядит живой. Тот же язык, что плашка offline в «Статусе системы». */
+
+.dp-stale {
+  background: var(--color-danger);
+  color: var(--color-bg-surface);
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* Мобильный просмотр (роль client, телефон/планшет): модалки жёсткой ширины

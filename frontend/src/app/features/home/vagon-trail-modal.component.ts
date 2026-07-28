@@ -174,7 +174,7 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
     .dtag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 10px;
             font-size: 11px; white-space: nowrap; background: var(--color-warning-bg);
             border: 1px solid var(--color-warning); }
-    .dtag5 { color: var(--color-danger); border-color: var(--color-danger); }
+    .dtag5 { color: var(--color-danger-text); border-color: var(--color-danger); }
     .dlist { margin-top: var(--space-sm); font-size: var(--font-size-sm); }
     .dlist-title { font-weight: 600; margin-bottom: 2px; }
     .dlist .dtag { margin-left: 0; margin-right: 4px; }
