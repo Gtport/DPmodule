@@ -1,5 +1,8 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzMessageService } from 'ng-zorro-antd/message';
+import { apiErrorMessage } from '../../core/api/api-error';
+import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { BrosModalComponent } from '../home/bros-modal.component';
 import { PodhodApiService, ReportPreset } from './podhod-api.service';
@@ -19,9 +22,10 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
  * - «Подход»: кнопка на каждый терминал из реестра (`GET /dislocation/terminals`);
  * - «Подход {пресет}» — карточка на каждый пресет из report_preset («Марис»):
  *   те же терминалы с предзаполненным фильтром клиентов. Нет пресетов — нет
- *   карточек.
- * Остальные блоки оригинала (Погрузка/Выгрузка, Повагонка, Отчёты НМТП)
- * добавляются по мере переноса соответствующих отчётов — пустых кнопок не заводим.
+ *   карточек;
+ * - «Скачать повагонку»: полная либо по терминалу (.xlsx собирает сервер).
+ * Остальные блоки оригинала (Погрузка/Выгрузка, Отчёты НМТП) добавляются по
+ * мере переноса соответствующих отчётов — пустых кнопок не заводим.
  */
 @Component({
   selector: 'app-reports',
@@ -65,6 +69,20 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
               </div>
             </div>
           }
+
+          <div class="card">
+            <div class="head">Скачать повагонку</div>
+            <div class="body">
+              <button nz-button nzBlock [nzLoading]="vagonkaBusy() === 'all'" (click)="downloadVagonka('')">
+                Полная повагонка
+              </button>
+              @for (t of terminals(); track t.name) {
+                <button nz-button nzBlock [nzLoading]="vagonkaBusy() === t.name" (click)="downloadVagonka(t.name)">
+                  <span class="dot" [style.background]="t.color"></span>Повагонка {{ t.name }}
+                </button>
+              }
+            </div>
+          </div>
         }
       </div>
     </div>
@@ -93,7 +111,9 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
 export class ReportsComponent implements OnInit {
   private readonly arrivals = inject(ArrivalsApiService);
   private readonly podhodApi = inject(PodhodApiService);
+  private readonly msg = inject(NzMessageService);
 
+  readonly vagonkaBusy = signal<string | null>(null);
   readonly planOpen = signal(false);
   readonly operOpen = signal(false);
   readonly brosOpen = signal(false);
@@ -118,5 +138,25 @@ export class ReportsComponent implements OnInit {
 
   openPodhod(terminal: string, clients: string, preset: string): void {
     this.podhod.set({ terminal, clients, preset });
+  }
+
+  /** Скачивание повагонки (.xlsx собирает сервер; терминал пусто — весь снимок). */
+  async downloadVagonka(terminal: string): Promise<void> {
+    this.vagonkaBusy.set(terminal || 'all');
+    try {
+      const blob = await this.podhodApi.vagonkaExcel(terminal);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = terminal
+        ? `Повагонка ${terminal} ${todayMsk()}.xlsx`
+        : `Полная повагонка ${todayMsk()}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.vagonkaBusy.set(null);
+    }
   }
 }

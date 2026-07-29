@@ -261,6 +261,10 @@ func Build(
 			// варианты карточек) — из report_preset; без БД их просто нет.
 			handler.NewPodhodHandler(service.NewPodhodService(actualCache, dirCache, reportPresetRepo)).RegisterRoutes(api)
 
+			// «Повагонка»: снимок книгой .xlsx (собирает сервер — полный снимок
+			// до фронта не доезжает), полная либо по терминалу.
+			handler.NewVagonkaHandler(actualCache, dirCache).RegisterRoutes(api)
+
 			// «Оперативка» домашней страницы: суточные счётчики по терминалам
 			// (вехи истории + статус 10 из снимка), только чтение.
 			opSvc := service.NewOperativkaService(historyRepo, actualCache, dirCache, unplannedRepo)

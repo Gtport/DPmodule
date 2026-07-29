@@ -48,7 +48,7 @@ export interface ReportPreset {
   enabled: boolean;
 }
 
-/** Клиент отчёта «Подход» (страница «Справки и отчёты»). */
+/** Клиент отчётов страницы «Справки и отчёты» («Подход», «Повагонка»). */
 @Injectable({ providedIn: 'root' })
 export class PodhodApiService {
   private readonly http = inject(HttpClient);
@@ -64,5 +64,13 @@ export class PodhodApiService {
   /** Пресеты формы (карточки «Подход {имя}»). */
   presets(): Promise<ReportPreset[]> {
     return firstValueFrom(this.http.get<ReportPreset[]>(`${this.base}/presets`));
+  }
+
+  /** «Повагонка»: книга .xlsx со снимком (сервер собирает; пусто — весь снимок). */
+  vagonkaExcel(terminal = ''): Promise<Blob> {
+    const params: Record<string, string> = {};
+    if (terminal) params['terminal'] = terminal;
+    return firstValueFrom(this.http.get(`${environment.apiBaseUrl}/v1/reports/vagonka/excel`,
+      { params, responseType: 'blob' }));
   }
 }
