@@ -8,8 +8,9 @@ package report
 // функция значения):
 //   - полная (без терминала) — gtport GetExportColumns("all") с правками
 //     владельца от 29.07.2026: убраны «Для СМС1»/«Для СМС2»/«Данные броса»,
-//     добавлены «Заявка» (zayavka) и «Марка груза» (cargo_sms — марка из
-//     словаря грузов: Д/Г/Т/КОНЦ…);
+//     добавлены «Заявка» (zayavka), «Марка груза» (freight_exact_name —
+//     точное наименование груза из источника, с маркой) и «ГТД» (gtd_number);
+//     «Операция с вагоном» — полное имя (oper), не краткое;
 //   - терминальная (?terminal=) — короткий набор gtport «Повагонка Аттис»
 //     (GetExportColumns("at")), обобщённый на любой терминал (решение
 //     владельца 29.07.2026): рабочая выгрузка порта без служебных полей.
@@ -110,7 +111,8 @@ func vagonkaColumns() []vagonkaColumn {
 		{"Станция назначения", 19, func(d *domain.Dislocation) any { return d.StanNazn }},
 		{"Грузополучатель", 28, func(d *domain.Dislocation) any { return d.Gruzpol }},
 		{"Наименование груза", 22, func(d *domain.Dislocation) any { return d.CargoS }},
-		{"Марка груза", 12, func(d *domain.Dislocation) any { return d.CargoSms }},
+		{"Марка груза", 40, func(d *domain.Dislocation) any { return d.FreightExactName }},
+		{"ГТД", 14, func(d *domain.Dislocation) any { return d.GtdNumber }},
 		{"Вес (тн)", 9, func(d *domain.Dislocation) any { return vagF64(d.Ves) }},
 		{"Вес (кг)", 9, func(d *domain.Dislocation) any {
 			if d.Ves == nil {
@@ -121,7 +123,7 @@ func vagonkaColumns() []vagonkaColumn {
 		{"Станция операции", 30, func(d *domain.Dislocation) any { return d.StationOper }},
 		{"Дорога операции", 20, func(d *domain.Dislocation) any { return d.DorogaOper }},
 		{"Код ст операции", 13, func(d *domain.Dislocation) any { return d.CodeStationOper }},
-		{"Операция с вагоном", 19, func(d *domain.Dislocation) any { return d.OperS }},
+		{"Операция с вагоном", 47, func(d *domain.Dislocation) any { return d.Oper }},
 		{"Код операции", 14, func(d *domain.Dislocation) any { return d.CodeOper }},
 		{"Дата операции", 16, func(d *domain.Dislocation) any { return vagDate(d.TimeOp, vagMin) }},
 		{"Номер в поезде", 15, func(d *domain.Dislocation) any { return vagInt(d.NppVag) }},
