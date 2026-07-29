@@ -5,6 +5,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { BrosModalComponent } from '../home/bros-modal.component';
+import { LoadingModalComponent } from './loading-modal.component';
 import { PodhodApiService, ReportPreset } from './podhod-api.service';
 import { PodhodModalComponent } from './podhod-modal.component';
 import { SmsOperModalComponent } from './sms-oper-modal.component';
@@ -31,7 +32,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
   selector: 'app-reports',
   imports: [
     NzButtonModule, SmsPlanModalComponent, SmsOperModalComponent,
-    BrosModalComponent, PodhodModalComponent,
+    BrosModalComponent, PodhodModalComponent, LoadingModalComponent,
   ],
   template: `
     <div class="page">
@@ -71,6 +72,13 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
           }
 
           <div class="card">
+            <div class="head">Погрузка/Выгрузка</div>
+            <div class="body">
+              <button nz-button nzBlock (click)="loadingOpen.set(true)">Погрузка в адрес портов</button>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="head">Скачать повагонку</div>
             <div class="body">
               <button nz-button nzBlock [nzLoading]="vagonkaBusy() === 'all'" (click)="downloadVagonka('')">
@@ -94,6 +102,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
       <app-podhod-modal [terminal]="p.terminal" [clients]="p.clients" [presetName]="p.preset"
                         (closed)="podhod.set(null)" />
     }
+    @if (loadingOpen()) { <app-loading-modal (closed)="loadingOpen.set(false)" /> }
   `,
   styles: [`
     .page { padding: var(--space-lg); display: flex; justify-content: center; align-items: flex-start; }
@@ -114,6 +123,7 @@ export class ReportsComponent implements OnInit {
   private readonly msg = inject(NzMessageService);
 
   readonly vagonkaBusy = signal<string | null>(null);
+  readonly loadingOpen = signal(false);
   readonly planOpen = signal(false);
   readonly operOpen = signal(false);
   readonly brosOpen = signal(false);
