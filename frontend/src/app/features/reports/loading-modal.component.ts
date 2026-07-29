@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { toBlob } from 'html-to-image';
@@ -218,7 +218,6 @@ export class LoadingModalComponent implements OnInit {
   private readonly arrivals = inject(ArrivalsApiService);
   private readonly max = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
-  private readonly host = inject(ElementRef<HTMLElement>);
 
   readonly closed = output<void>();
 
@@ -402,7 +401,8 @@ export class LoadingModalComponent implements OnInit {
   }
 
   private summaryEl(): HTMLElement {
-    const el = this.host.nativeElement.querySelector('#loading-summary') as HTMLElement | null;
+    // Содержимое модалки живёт в overlay-портале CDK, вне host — ищем по документу.
+    const el = document.querySelector('#loading-summary') as HTMLElement | null;
     if (!el) throw new Error('сводка не найдена');
     return el;
   }

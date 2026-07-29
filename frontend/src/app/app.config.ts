@@ -29,6 +29,7 @@ import {
   DownloadOutline, // экспорт истории прибывших в Excel
   SendOutline, PictureOutline, MessageOutline, // экран «Рассылка»: MAX-картинкой/текстом
   SearchOutline, FileSearchOutline, FilterOutline, HistoryOutline, // отчёт «Брошенные»: поиск/фильтр/журнал
+  CameraOutline, // «Погрузка»/«Выгрузка за день»: сохранить PNG
   // Сплошные (fill) — как в GTport; сайдбар диспетчера использует именно их.
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
   SettingFill, // сайдбар: «Админ»
@@ -53,7 +54,7 @@ const icons = [
   CheckOutline, BookOutline, CopyOutline, DeleteOutline, EditOutline, PlusOutline,
   ExpandAltOutline, EyeInvisibleOutline, LoadingOutline, DownloadOutline,
   SendOutline, PictureOutline, MessageOutline,
-  SearchOutline, FileSearchOutline, FilterOutline, HistoryOutline,
+  SearchOutline, FileSearchOutline, FilterOutline, HistoryOutline, CameraOutline,
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill, SettingFill,
   ...CUSTOM_ICONS,
 ];

@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -147,7 +147,6 @@ export class BrosModalComponent implements OnInit {
   private readonly arrivals = inject(ArrivalsApiService);
   private readonly ref = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
-  private readonly host = inject(ElementRef<HTMLElement>);
 
   readonly closed = output<void>();
 
@@ -213,7 +212,8 @@ export class BrosModalComponent implements OnInit {
 
   // ── PNG / MAX (колонка действий в снимок не попадает — .no-snap) ─────────────
   private async png(): Promise<Blob> {
-    const el = this.host.nativeElement.querySelector('#bros-active-tbl') as HTMLElement | null;
+    // Содержимое модалки живёт в overlay-портале CDK, вне host — ищем по документу.
+    const el = document.querySelector('#bros-active-tbl') as HTMLElement | null;
     if (!el) throw new Error('таблица не найдена');
     const blob = await toBlob(el, {
       pixelRatio: 2, backgroundColor: '#ffffff',

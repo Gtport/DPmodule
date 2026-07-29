@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { toBlob } from 'html-to-image';
@@ -145,7 +145,6 @@ export class PodhodModalComponent implements OnInit {
   private readonly arrivals = inject(ArrivalsApiService);
   private readonly max = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
-  private readonly host = inject(ElementRef<HTMLElement>);
 
   /** Терминал (ports.name_s), обязателен. */
   readonly terminal = input.required<string>();
@@ -249,7 +248,8 @@ export class PodhodModalComponent implements OnInit {
 
   // ── PNG / MAX ──────────────────────────────────────────────────────────────
   private async png(): Promise<Blob> {
-    const el = this.host.nativeElement.querySelector('#podhod-tbl') as HTMLElement | null;
+    // Содержимое модалки живёт в overlay-портале CDK, вне host — ищем по документу.
+    const el = document.querySelector('#podhod-tbl') as HTMLElement | null;
     if (!el) throw new Error('таблица не найдена');
     // Снимаем ограничение высоты, чтобы в кадр попала вся таблица (как gtport).
     const maxH = el.style.maxHeight;

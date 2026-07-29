@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { toBlob } from 'html-to-image';
@@ -161,7 +161,6 @@ export class VygruzkaDayModalComponent implements OnInit {
   private readonly arrivals = inject(ArrivalsApiService);
   private readonly max = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
-  private readonly host = inject(ElementRef<HTMLElement>);
 
   readonly closed = output<void>();
 
@@ -218,7 +217,8 @@ export class VygruzkaDayModalComponent implements OnInit {
   }
 
   private async png(): Promise<Blob> {
-    const el = this.host.nativeElement.querySelector('#vygruzka-day') as HTMLElement | null;
+    // Содержимое модалки живёт в overlay-портале CDK, вне host — ищем по документу.
+    const el = document.querySelector('#vygruzka-day') as HTMLElement | null;
     if (!el) throw new Error('форма не найдена');
     const blob = await toBlob(el, { pixelRatio: 2, backgroundColor: '#ffffff' });
     if (!blob) throw new Error('не удалось отрисовать картинку');

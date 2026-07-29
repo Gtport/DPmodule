@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, inject, output, signal } from '@angular/core';
+import { Component, OnInit, inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -56,7 +56,7 @@ interface Row { label: string; get: (l: PlanFormLine) => string; }
         @if (loading()) {
           <div class="center"><nz-spin nzSimple></nz-spin></div>
         } @else {
-          <div class="grid">
+          <div class="grid" id="sp-grid">
             @for (f of forms(); track f.terminal) {
               <div class="term" [id]="'sp-' + f.terminal">
                 <div class="term-head" [style.background]="f.color || '#eee'">{{ f.terminal }} ЖД СУТКИ</div>
@@ -149,7 +149,6 @@ interface Row { label: string; get: (l: PlanFormLine) => string; }
 export class SmsPlanModalComponent implements OnInit {
   private readonly api = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
-  private readonly host = inject(ElementRef<HTMLElement>);
 
   readonly closed = output<void>();
 
@@ -211,7 +210,8 @@ export class SmsPlanModalComponent implements OnInit {
   }
 
   async exportPng(terminal: string): Promise<void> {
-    const el = this.host.nativeElement.querySelector(`#sp-${CSS.escape(terminal)}`) as HTMLElement | null;
+    // Содержимое модалки живёт в overlay-портале CDK, вне host — ищем по документу.
+    const el = document.querySelector(`#sp-${CSS.escape(terminal)}`) as HTMLElement | null;
     if (!el) return;
     try {
       const blob = await this.png(el);
@@ -225,7 +225,7 @@ export class SmsPlanModalComponent implements OnInit {
   }
 
   async sendImage(terminal: string): Promise<void> {
-    const el = this.host.nativeElement.querySelector(`#sp-${CSS.escape(terminal)}`) as HTMLElement | null;
+    const el = document.querySelector(`#sp-${CSS.escape(terminal)}`) as HTMLElement | null;
     if (!el) return;
     this.busy.set(terminal);
     try {
@@ -239,7 +239,7 @@ export class SmsPlanModalComponent implements OnInit {
   }
 
   async sendComposite(): Promise<void> {
-    const el = this.host.nativeElement.querySelector('.grid') as HTMLElement | null;
+    const el = document.querySelector('#sp-grid') as HTMLElement | null;
     if (!el) return;
     this.sending.set(true);
     try {
