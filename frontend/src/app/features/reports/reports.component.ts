@@ -5,8 +5,8 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { BrosModalComponent } from '../home/bros-modal.component';
-import { CargoWorkModalComponent } from '../home/cargo-work-modal.component';
 import { LoadingModalComponent } from './loading-modal.component';
+import { VygruzkaDayModalComponent } from './vygruzka-day-modal.component';
 import { VygruzkaModalComponent } from './vygruzka-modal.component';
 import { PodhodApiService, ReportPreset } from './podhod-api.service';
 import { PodhodModalComponent } from './podhod-modal.component';
@@ -27,9 +27,9 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
  *   те же терминалы с предзаполненным фильтром клиентов. Нет пресетов — нет
  *   карточек;
  * - «Погрузка/Выгрузка»: «Погрузка в адрес портов» (loading-modal),
- *   «Выгрузка за период» (vygruzka-modal) и «Выгрузка за день» — существующая
- *   модалка «Грузовая работа» из features/home (дневная форма gtport
- *   CargoReport была её read-only копией — отдельно не переносится);
+ *   «Выгрузка за период» (vygruzka-modal) и «Выгрузка за день»
+ *   (vygruzka-day-modal — скрин-форма для отправки в MAX, перенос gtport
+ *   CargoReport; правится лист в «Грузовой работе» на главной);
  * - «Скачать повагонку»: полная либо по терминалу (.xlsx собирает сервер).
  * Оставшийся блок оригинала (Отчёты НМТП) добавится по мере переноса —
  * пустых кнопок не заводим.
@@ -39,7 +39,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
   imports: [
     NzButtonModule, SmsPlanModalComponent, SmsOperModalComponent,
     BrosModalComponent, PodhodModalComponent, LoadingModalComponent,
-    VygruzkaModalComponent, CargoWorkModalComponent,
+    VygruzkaModalComponent, VygruzkaDayModalComponent,
   ],
   template: `
     <div class="page">
@@ -83,7 +83,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
             <div class="body">
               <button nz-button nzBlock (click)="loadingOpen.set(true)">Погрузка в адрес портов</button>
               <button nz-button nzBlock (click)="vygruzkaOpen.set(true)">Выгрузка за период</button>
-              <button nz-button nzBlock (click)="cargoWorkOpen.set(true)">Выгрузка за день</button>
+              <button nz-button nzBlock (click)="vygruzkaDayOpen.set(true)">Выгрузка за день</button>
             </div>
           </div>
 
@@ -113,7 +113,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
     }
     @if (loadingOpen()) { <app-loading-modal (closed)="loadingOpen.set(false)" /> }
     @if (vygruzkaOpen()) { <app-vygruzka-modal (closed)="vygruzkaOpen.set(false)" /> }
-    @if (cargoWorkOpen()) { <app-cargo-work-modal (closed)="cargoWorkOpen.set(false)" /> }
+    @if (vygruzkaDayOpen()) { <app-vygruzka-day-modal (closed)="vygruzkaDayOpen.set(false)" /> }
   `,
   styles: [`
     .page { padding: var(--space-lg); display: flex; justify-content: center; align-items: flex-start; }
@@ -136,7 +136,7 @@ export class ReportsComponent implements OnInit {
   readonly vagonkaBusy = signal<string | null>(null);
   readonly loadingOpen = signal(false);
   readonly vygruzkaOpen = signal(false);
-  readonly cargoWorkOpen = signal(false);
+  readonly vygruzkaDayOpen = signal(false);
   readonly planOpen = signal(false);
   readonly operOpen = signal(false);
   readonly brosOpen = signal(false);

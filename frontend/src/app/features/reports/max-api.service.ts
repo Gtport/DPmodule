@@ -18,7 +18,7 @@ export interface BroadcastResult {
 }
 
 /** Тип формы рассылки — совпадает с max_route.report на бэке. */
-export type MaxReport = 'spravki' | 'oper' | 'plan' | 'podhod' | 'pogruzka';
+export type MaxReport = 'spravki' | 'oper' | 'plan' | 'podhod' | 'pogruzka' | 'vygruzka';
 
 /** Линия учёта карточки: факт вчера + прогноз сегодня. */
 export interface PlanFormLine {

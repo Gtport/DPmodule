@@ -34,8 +34,9 @@ func vagTestRecord() domain.Dislocation {
 		DateNach: vagLT(1, 8), DorogaNach: "ЗСБ", StationNach: "ЕРУНАКОВО",
 		GruzotprOkpo: "12345678", Gruzotpr: "РАЗРЕЗ",
 		StanNazn: "МЫС АСТАФЬЕВА", Gruzpol: "АО ПОРТ", GruzpolS: "АЭ", Naznach: "ГУТ-2",
-		CargoS: "УГОЛЬ", Ves: &ves,
+		Zayavka: "0012345678", CargoS: "УГОЛЬ Д", CargoSms: "Д", Ves: &ves,
 		StationOper: "РУЖИНО", DorogaOper: "ДВС", CodeStationOper: "98010",
+		Oper:  "Бросание поезда на промежуточной станции",
 		OperS: "Брошен", CodeOper: "92", TimeOp: vagLT(28, 14),
 		NppVag: &npp, DateDostav: vagLT(30, 0), RasstStanNazn: &rasst,
 		PlanMsk: vagLT(30, 9), PlanJd: vagLT(30, 18), RaschJd: vagLT(30, 20), ProgJd: vagLT(30, 21),
@@ -74,6 +75,8 @@ func TestVagonkaXLSX_Values(t *testing.T) {
 		"Индекс ПП":           "12340-555-98050",
 		"Начало рейса":        "01.07.2026",
 		"Станция отправления": "ЕРУНАКОВО",
+		"Заявка":              "0012345678", // добавлена по замечанию владельца 29.07.2026
+		"Марка груза":         "Д",          // cargo_sms — марка из словаря грузов
 		"Вес (тн)":            "69.5",
 		"Вес (кг)":            "69500",
 		"Операция с вагоном":  "Брошен",
@@ -93,10 +96,16 @@ func TestVagonkaXLSX_Values(t *testing.T) {
 	for header, exp := range want {
 		assert.Equal(t, exp, byHeader[header], "колонка %q", header)
 	}
+	// Служебные поля убраны из полной раскладки (замечание владельца 29.07.2026).
+	for _, gone := range []string{"Для СМС1", "Для СМС2", "Данные броса"} {
+		assert.NotContains(t, rows[0], gone)
+	}
 }
 
-// Фильтр терминала: чужая запись выпадает; пустые указатели дают пустые ячейки.
-func TestVagonkaXLSX_TerminalFilterAndNils(t *testing.T) {
+// Терминальная выгрузка: чужая запись выпадает, раскладка — короткий рабочий
+// набор gtport «Повагонка Аттис» (обобщён на любой терминал), «Операция с
+// вагоном» — полное имя операции.
+func TestVagonkaXLSX_TerminalShortLayout(t *testing.T) {
 	own := vagTestRecord()
 	foreign := vagTestRecord()
 	foreign.Vagon, foreign.GruzpolS = "61000001", "УТ-1"
@@ -113,13 +122,24 @@ func TestVagonkaXLSX_TerminalFilterAndNils(t *testing.T) {
 	rows, err := f.GetRows("Повагонка")
 	require.NoError(t, err)
 	require.Len(t, rows, 3) // шапка + своя + пустая (чужая выпала)
+
+	assert.Equal(t, []string{
+		"Номер вагона", "Накладная", "Нач. накладная", "Индекс поезда",
+		"Родительский индекс", "Начало рейса", "Дорога отправления",
+		"Станция отправления", "Грузоотправитель", "Грузополучатель",
+		"Наименование груза", "Вес (тн)", "Станция операции", "Дорога операции",
+		"Операция с вагоном", "Дата операции", "Номер в поезде", "Срок доставки",
+		"Расстояние ост(км)", "Собственник",
+	}, rows[0])
+
 	assert.Equal(t, "60000001", rows[1][0])
 	assert.Equal(t, "62000001", rows[2][0])
-	// У пустой записи перестановки нет (назначение совпадает с получателем).
-	got := rows[2]
+	byHeader := map[string]string{}
 	for i, h := range rows[0] {
-		if h == "Перестановка" && i < len(got) {
-			assert.Equal(t, "", got[i])
+		if i < len(rows[1]) {
+			byHeader[h] = rows[1][i]
 		}
 	}
+	assert.Equal(t, "Бросание поезда на промежуточной станции", byHeader["Операция с вагоном"])
+	assert.Equal(t, "СОБСТВЕННИК ООО", byHeader["Собственник"])
 }

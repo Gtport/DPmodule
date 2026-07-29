@@ -4,17 +4,22 @@ package report
 // export_handler.go). Полный снимок до фронта не доезжает (на экранах — только
 // агрегаты), поэтому книга собирается на сервере — ровно случай политики пакета.
 //
-// Набор колонок — полная раскладка gtport GetExportColumns("all"), но
-// декларативно и без рефлексии: колонка = подпись + ширина + функция значения.
-// Отличия от gtport (решения владельца, план 29.07.2026):
+// Две раскладки (декларативно, без рефлексии: колонка = подпись + ширина +
+// функция значения):
+//   - полная (без терминала) — gtport GetExportColumns("all") с правками
+//     владельца от 29.07.2026: убраны «Для СМС1»/«Для СМС2»/«Данные броса»,
+//     добавлены «Заявка» (zayavka) и «Марка груза» (cargo_sms — марка из
+//     словаря грузов: Д/Г/Т/КОНЦ…);
+//   - терминальная (?terminal=) — короткий набор gtport «Повагонка Аттис»
+//     (GetExportColumns("at")), обобщённый на любой терминал (решение
+//     владельца 29.07.2026): рабочая выгрузка порта без служебных полей.
+// Общие отличия от gtport:
 //   - «Собственник» = owner (в gtport колонку заполнял rod_vag_uch — код рода
 //     вагона, подпись была ошибочной);
 //   - «Перестановка» вычисляется на месте (gruzpol_s/naznach при расхождении) —
 //     отдельного поля в DPmodule нет;
 //   - подписи «План гр»/«План МСК» выправлены в «План МСК»/«План ЖД» (в gtport
-//     подписи стояли наоборот к содержимому полей);
-//   - упрощённый 20-колоночный набор «для Аттиса» не переносится (порт-хардкод):
-//     одна полная раскладка + фильтр ?terminal=.
+//     подписи стояли наоборот к содержимому полей).
 
 import (
 	"fmt"
@@ -59,6 +64,34 @@ const (
 	vagMin = "02.01.2006 15:04"
 )
 
+// vagonkaTerminalColumns — короткая раскладка повагонки терминала (порядок и
+// ширины gtport «Повагонка Аттис»; «Операция с вагоном» — полное имя операции,
+// как в gtport at-наборе).
+func vagonkaTerminalColumns() []vagonkaColumn {
+	return []vagonkaColumn{
+		{"Номер вагона", 13, func(d *domain.Dislocation) any { return d.Vagon }},
+		{"Накладная", 13, func(d *domain.Dislocation) any { return d.Invoice }},
+		{"Нач. накладная", 15, func(d *domain.Dislocation) any { return d.InvoiceMain }},
+		{"Индекс поезда", 18, func(d *domain.Dislocation) any { return d.Index }},
+		{"Родительский индекс", 18, func(d *domain.Dislocation) any { return d.IndexMain }},
+		{"Начало рейса", 13, func(d *domain.Dislocation) any { return vagDate(d.DateNach, vagDay) }},
+		{"Дорога отправления", 20, func(d *domain.Dislocation) any { return d.DorogaNach }},
+		{"Станция отправления", 30, func(d *domain.Dislocation) any { return d.StationNach }},
+		{"Грузоотправитель", 28, func(d *domain.Dislocation) any { return d.Gruzotpr }},
+		{"Грузополучатель", 28, func(d *domain.Dislocation) any { return d.Gruzpol }},
+		{"Наименование груза", 22, func(d *domain.Dislocation) any { return d.CargoS }},
+		{"Вес (тн)", 9, func(d *domain.Dislocation) any { return vagF64(d.Ves) }},
+		{"Станция операции", 30, func(d *domain.Dislocation) any { return d.StationOper }},
+		{"Дорога операции", 20, func(d *domain.Dislocation) any { return d.DorogaOper }},
+		{"Операция с вагоном", 47, func(d *domain.Dislocation) any { return d.Oper }},
+		{"Дата операции", 16, func(d *domain.Dislocation) any { return vagDate(d.TimeOp, vagMin) }},
+		{"Номер в поезде", 15, func(d *domain.Dislocation) any { return vagInt(d.NppVag) }},
+		{"Срок доставки", 13, func(d *domain.Dislocation) any { return vagDate(d.DateDostav, vagDay) }},
+		{"Расстояние ост(км)", 18.5, func(d *domain.Dislocation) any { return vagInt(d.RasstStanNazn) }},
+		{"Собственник", 40, func(d *domain.Dislocation) any { return d.Owner }},
+	}
+}
+
 // vagonkaColumns — полная раскладка повагонки (порядок и ширины gtport "all").
 func vagonkaColumns() []vagonkaColumn {
 	return []vagonkaColumn{
@@ -71,11 +104,13 @@ func vagonkaColumns() []vagonkaColumn {
 		{"Начало рейса", 13, func(d *domain.Dislocation) any { return vagDate(d.DateNach, vagDay) }},
 		{"Дорога отправления", 20, func(d *domain.Dislocation) any { return d.DorogaNach }},
 		{"Станция отправления", 30, func(d *domain.Dislocation) any { return d.StationNach }},
+		{"Заявка", 14, func(d *domain.Dislocation) any { return d.Zayavka }},
 		{"Грузоотправитель (ОКПО)", 24, func(d *domain.Dislocation) any { return d.GruzotprOkpo }},
 		{"Грузоотправитель", 28, func(d *domain.Dislocation) any { return d.Gruzotpr }},
 		{"Станция назначения", 19, func(d *domain.Dislocation) any { return d.StanNazn }},
 		{"Грузополучатель", 28, func(d *domain.Dislocation) any { return d.Gruzpol }},
 		{"Наименование груза", 22, func(d *domain.Dislocation) any { return d.CargoS }},
+		{"Марка груза", 12, func(d *domain.Dislocation) any { return d.CargoSms }},
 		{"Вес (тн)", 9, func(d *domain.Dislocation) any { return vagF64(d.Ves) }},
 		{"Вес (кг)", 9, func(d *domain.Dislocation) any {
 			if d.Ves == nil {
@@ -110,10 +145,7 @@ func vagonkaColumns() []vagonkaColumn {
 		{"Простой час", 10, func(d *domain.Dislocation) any { return vagInt(d.ProstCh) }},
 		{"Статус", 7, func(d *domain.Dislocation) any { return vagInt(d.Status) }},
 		{"Сегмент", 10, func(d *domain.Dislocation) any { return d.CargoGroup }},
-		{"Для СМС1", 13, func(d *domain.Dislocation) any { return d.Sms1 }},
-		{"Для СМС2", 13, func(d *domain.Dislocation) any { return d.Sms2 }},
 		{"Клиент", 12, func(d *domain.Dislocation) any { return d.Client }},
-		{"Данные броса", 40, func(d *domain.Dislocation) any { return d.Param1 }},
 		{"Собственник", 40, func(d *domain.Dislocation) any { return d.Owner }},
 	}
 }
@@ -130,7 +162,11 @@ func VagonkaXLSX(records []domain.Dislocation, terminal string) ([]byte, string,
 		return nil, "", fmt.Errorf("повагонка: имя листа: %w", err)
 	}
 
+	// Терминальная выгрузка — короткий рабочий набор, полная — все колонки.
 	cols := vagonkaColumns()
+	if terminal != "" {
+		cols = vagonkaTerminalColumns()
+	}
 	for i, col := range cols {
 		name, _ := excelize.ColumnNumberToName(i + 1)
 		if err := f.SetColWidth(sheet, name, name, col.Width); err != nil {
