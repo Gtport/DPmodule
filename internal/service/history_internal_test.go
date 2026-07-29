@@ -193,6 +193,10 @@ func (r *histStubRepo) DailyCargoUnloaded(_ context.Context, _, _ domain.LocalTi
 	return nil, nil
 }
 
+func (r *histStubRepo) LoadingDaily(_ context.Context, _, _ domain.LocalTime) ([]domain.LoadingDailyRow, error) {
+	return nil, nil
+}
+
 // TestApplyUnloadOnLeave — авто-веха выгрузки при выбытии статуса-10 из батча
 // (случай АЭ 143/144: выгружен и уехал между снимками, перехода 10→12 не было).
 func TestApplyUnloadOnLeave(t *testing.T) {

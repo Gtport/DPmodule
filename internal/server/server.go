@@ -125,6 +125,12 @@ func Build(
 		handler.NewDelaysHandler(service.NewDelayService(delayRepo)).RegisterRoutes(api)
 	}
 
+	// Отчёт «Погрузка» страницы «Справки и отчёты»: дневные агрегаты погрузки
+	// из vagon_history за период, только чтение.
+	if historyRepo != nil {
+		handler.NewLoadingHandler(service.NewLoadingReportService(historyRepo)).RegisterRoutes(api)
+	}
+
 	// Снимок брошенных: активные/история/отчёт/поиск (чтение). Reconcile статуса 5
 	// цепляется к конвейеру ниже (proc.SetBros). Правки/журнал — следующая ветка.
 	if brosRepo != nil {

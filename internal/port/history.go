@@ -39,4 +39,10 @@ type HistoryRepository interface {
 	// (уголь/металл/чугун), тогда как «Оперативке» достаточно суммы. Ключ карты:
 	// "yyyy-MM-dd|терминал|группа" (группа пустая, если у вагона её нет).
 	DailyCargoUnloaded(ctx context.Context, from, to domain.LocalTime) (map[string]int, error)
+	// LoadingDaily — погрузка в адрес терминалов по ЖД-суткам диапазона
+	// [from; to] (отчёт «Погрузка»): строки-агрегаты по дате × терминалу ×
+	// sms_1 × станции × клиенту × группе груза. Перегрузы (peregruz непустой)
+	// исключены — это не фактическая погрузка (TARGET.md §3.17; в gtport
+	// фильтра не было — осознанный отход).
+	LoadingDaily(ctx context.Context, from, to domain.LocalTime) ([]domain.LoadingDailyRow, error)
 }

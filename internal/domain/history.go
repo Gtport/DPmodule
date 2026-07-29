@@ -101,6 +101,23 @@ type VagonOpRequest struct {
 	UpdatedAt LocalTime
 }
 
+// LoadingDailyRow — агрегат погрузки в адрес терминала за ЖД-сутки (отчёт
+// «Погрузка», перенос gtport loading-report): строка = дата погрузки ×
+// терминал × метка отправителя (sms_1) × станция × клиент × группа груза.
+// Разбивка «уголь/металл» ведётся по cargo_group из словаря грузов, а не по
+// клиенту «ЕВРАЗ ТК», как было захардкожено в gtport (решение владельца
+// 29.07.2026, HARDCODE_INVENTORY §6.2).
+type LoadingDailyRow struct {
+	Day         LocalTime `json:"day"` // date_nach_d (сутки)
+	GruzpolS    string    `json:"gruzpol_s"`
+	Sms1        string    `json:"sms_1"`
+	StationNach string    `json:"station_nach"`
+	Client      string    `json:"client"`
+	CargoGroup  string    `json:"cargo_group"`
+	VagonCount  int       `json:"vagon_count"`
+	TotalWeight float64   `json:"total_weight"`
+}
+
 // TripKeyOf — детерминированный ключ рейса: vagon*100000 + дней_от_эпохи(date_nach_d).
 // ОБЯЗАН совпадать с GENERATED-колонкой vagon_history.trip_key
 // (vagon::bigint*100000 + (date_nach_d::date - DATE '1970-01-01')).

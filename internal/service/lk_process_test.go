@@ -386,3 +386,7 @@ func (f *fakeHistoryRepo) DailyTerminalCounts(_ context.Context, _, _ domain.Loc
 func (f *fakeHistoryRepo) DailyCargoUnloaded(_ context.Context, _, _ domain.LocalTime) (map[string]int, error) {
 	return nil, nil
 }
+
+func (f *fakeHistoryRepo) LoadingDaily(_ context.Context, _, _ domain.LocalTime) ([]domain.LoadingDailyRow, error) {
+	return nil, nil
+}

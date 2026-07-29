@@ -324,3 +324,49 @@ func (r *HistoryRepository) DailyCargoUnloaded(ctx context.Context, from, to dom
 	}
 	return out, nil
 }
+
+// LoadingDaily — погрузка в адрес терминалов по ЖД-суткам (сырой SQL — канон
+// для аналитики). Перегрузы исключены: непустой peregruz — это перегруз в
+// вагон-донор, а не фактическая погрузка (TARGET.md §3.17).
+func (r *HistoryRepository) LoadingDaily(ctx context.Context, from, to domain.LocalTime) ([]domain.LoadingDailyRow, error) {
+	// Локальная структура с явными column-тегами: плоские структуры для
+	// Raw().Scan, маппинг колонок не доверяем авто-стратегии (sms_1).
+	var rows []struct {
+		Day         domain.LocalTime `gorm:"column:day"`
+		GruzpolS    string           `gorm:"column:gruzpol_s"`
+		Sms1        string           `gorm:"column:sms_1"`
+		StationNach string           `gorm:"column:station_nach"`
+		Client      string           `gorm:"column:client"`
+		CargoGroup  string           `gorm:"column:cargo_group"`
+		VagonCount  int              `gorm:"column:vagon_count"`
+		TotalWeight float64          `gorm:"column:total_weight"`
+	}
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT date_nach_d AS day, gruzpol_s,
+		       COALESCE(sms_1, '') AS sms_1,
+		       COALESCE(station_nach, '') AS station_nach,
+		       COALESCE(client, '') AS client,
+		       COALESCE(cargo_group, '') AS cargo_group,
+		       count(*) AS vagon_count,
+		       COALESCE(SUM(ves), 0) AS total_weight
+		  FROM vagon_history
+		 WHERE date_nach_d BETWEEN ? AND ?
+		   AND gruzpol_s <> ''
+		   AND COALESCE(peregruz, '') = ''
+		 GROUP BY date_nach_d, gruzpol_s, COALESCE(sms_1, ''),
+		          COALESCE(station_nach, ''), COALESCE(client, ''),
+		          COALESCE(cargo_group, '')
+		 ORDER BY date_nach_d, gruzpol_s, sms_1`,
+		from, to).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.LoadingDailyRow, 0, len(rows))
+	for _, x := range rows {
+		out = append(out, domain.LoadingDailyRow{
+			Day: x.Day, GruzpolS: x.GruzpolS, Sms1: x.Sms1,
+			StationNach: x.StationNach, Client: x.Client, CargoGroup: x.CargoGroup,
+			VagonCount: x.VagonCount, TotalWeight: x.TotalWeight,
+		})
+	}
+	return out, nil
+}

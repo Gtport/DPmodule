@@ -80,6 +80,10 @@ func (s *refHistStub) DailyCargoUnloaded(context.Context, domain.LocalTime, doma
 	return nil, nil
 }
 
+func (s *refHistStub) LoadingDaily(context.Context, domain.LocalTime, domain.LocalTime) ([]domain.LoadingDailyRow, error) {
+	return nil, nil
+}
+
 // refCursorStub — курсор в памяти.
 type refCursorStub struct {
 	saved map[string]string

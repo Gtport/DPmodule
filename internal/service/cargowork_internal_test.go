@@ -133,6 +133,10 @@ func (h cwHist) DailyCargoUnloaded(context.Context, domain.LocalTime, domain.Loc
 	return h.unloaded, nil
 }
 
+func (h cwHist) LoadingDaily(context.Context, domain.LocalTime, domain.LocalTime) ([]domain.LoadingDailyRow, error) {
+	return nil, nil
+}
+
 // cwPlans — стаб плана подвода без загрузок (остаток на станции = 0).
 type cwPlans struct{}
 
