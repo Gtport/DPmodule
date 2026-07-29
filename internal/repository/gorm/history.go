@@ -198,6 +198,30 @@ func (r *HistoryRepository) ArrivedRows(ctx context.Context, from, to domain.Loc
 	return out, nil
 }
 
+// PerestanovkaRows — строки с перестановкой (получатель ≠ назначение, оба
+// заполнены) за период: byVigr=false — по дате прибытия (date_prib_d), true —
+// по дате выгрузки (date_vigr_d). Отчёт «Факт перестановок».
+func (r *HistoryRepository) PerestanovkaRows(ctx context.Context, from, to domain.LocalTime, byVigr bool) ([]domain.VagonHistory, error) {
+	dateCol := "date_prib_d"
+	if byVigr {
+		dateCol = "date_vigr_d"
+	}
+	var ms []vagonHistoryModel
+	err := r.db.WithContext(ctx).Model(&vagonHistoryModel{}).
+		Where(dateCol+" BETWEEN ? AND ?", from, to).
+		Where("gruzpol_s <> '' AND naznach <> '' AND gruzpol_s <> naznach").
+		Order(dateCol + ", index_pp, vagon").
+		Find(&ms).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.VagonHistory, len(ms))
+	for i, m := range ms {
+		out[i] = toHistoryDomain(m)
+	}
+	return out, nil
+}
+
 // toHistoryDomain — обратный маппинг ORM-модели в доменную структуру (полный,
 // зеркало toHistoryModel).
 func toHistoryDomain(m vagonHistoryModel) domain.VagonHistory {

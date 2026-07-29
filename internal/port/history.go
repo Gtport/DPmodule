@@ -39,6 +39,10 @@ type HistoryRepository interface {
 	// (уголь/металл/чугун), тогда как «Оперативке» достаточно суммы. Ключ карты:
 	// "yyyy-MM-dd|терминал|группа" (группа пустая, если у вагона её нет).
 	DailyCargoUnloaded(ctx context.Context, from, to domain.LocalTime) (map[string]int, error)
+	// PerestanovkaRows — строки истории с перестановкой (получатель ≠ назначение,
+	// оба заполнены) за период: byVigr=false — по дате прибытия (date_prib_d),
+	// true — по дате выгрузки (date_vigr_d). Отчёт «Факт перестановок».
+	PerestanovkaRows(ctx context.Context, from, to domain.LocalTime, byVigr bool) ([]domain.VagonHistory, error)
 	// LoadingDaily — погрузка в адрес терминалов по ЖД-суткам диапазона
 	// [from; to] (отчёт «Погрузка»): строки-агрегаты по дате × терминалу ×
 	// sms_1 × станции × клиенту × группе груза. Перегрузы (peregruz непустой)

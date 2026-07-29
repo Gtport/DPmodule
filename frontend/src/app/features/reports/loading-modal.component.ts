@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { toBlob } from 'html-to-image';
@@ -221,6 +221,9 @@ export class LoadingModalComponent implements OnInit {
 
   readonly closed = output<void>();
 
+  /** Стартовый вид: «Сводка» — из верхнего ряда «Справок», «По дням» — из отчётов. */
+  readonly initialView = input<'summary' | 'daily'>('summary');
+
   readonly view = signal<'summary' | 'daily'>('summary');
   readonly loading = signal(false);
   readonly sending = signal(false);
@@ -325,6 +328,7 @@ export class LoadingModalComponent implements OnInit {
       if (ts.length && !this.terminal()) this.terminal.set(ts[0].name);
     } catch { /* без реестра сводка будет пустой — тост даст загрузка */ }
     await this.loadSummary();
+    if (this.initialView() === 'daily') this.switchView('daily');
   }
 
   periodLabel(): string {

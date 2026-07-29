@@ -271,6 +271,12 @@ func Build(
 			// до фронта не доезжает), полная либо по терминалу.
 			handler.NewVagonkaHandler(actualCache, dirCache).RegisterRoutes(api)
 
+			// Блок «Перестановки» страницы «Справки и отчёты»: текущие
+			// перестановки на терминал книгой .xlsx + «Факт перестановок»
+			// за период из vagon_history.
+			handler.NewPerestanovkaHandler(service.NewPerestanovkaService(
+				actualCache, dirCache, historyRepo)).RegisterRoutes(api)
+
 			// «Оперативка» домашней страницы: суточные счётчики по терминалам
 			// (вехи истории + статус 10 из снимка), только чтение.
 			opSvc := service.NewOperativkaService(historyRepo, actualCache, dirCache, unplannedRepo)

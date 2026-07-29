@@ -390,3 +390,7 @@ func (f *fakeHistoryRepo) DailyCargoUnloaded(_ context.Context, _, _ domain.Loca
 func (f *fakeHistoryRepo) LoadingDaily(_ context.Context, _, _ domain.LocalTime) ([]domain.LoadingDailyRow, error) {
 	return nil, nil
 }
+
+func (f *fakeHistoryRepo) PerestanovkaRows(_ context.Context, _, _ domain.LocalTime, _ bool) ([]domain.VagonHistory, error) {
+	return nil, nil
+}

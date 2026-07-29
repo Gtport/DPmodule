@@ -193,6 +193,10 @@ func (r *histStubRepo) DailyCargoUnloaded(_ context.Context, _, _ domain.LocalTi
 	return nil, nil
 }
 
+func (r *histStubRepo) PerestanovkaRows(_ context.Context, _, _ domain.LocalTime, _ bool) ([]domain.VagonHistory, error) {
+	return nil, nil
+}
+
 func (r *histStubRepo) LoadingDaily(_ context.Context, _, _ domain.LocalTime) ([]domain.LoadingDailyRow, error) {
 	return nil, nil
 }
