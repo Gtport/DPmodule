@@ -73,4 +73,15 @@ export class PodhodApiService {
     return firstValueFrom(this.http.get(`${environment.apiBaseUrl}/v1/reports/vagonka/excel`,
       { params, responseType: 'blob' }));
   }
+
+  /** Терминалы с настроенной раскладкой НМТП-отчёта (кнопки карточки). */
+  nmtpTerminals(): Promise<string[]> {
+    return firstValueFrom(this.http.get<string[]>(`${environment.apiBaseUrl}/v1/reports/nmtp/terminals`));
+  }
+
+  /** «Подход вагонов» по форме порта (НМТП): книга .xlsx (сервер собирает). */
+  nmtpExcel(terminal: string): Promise<Blob> {
+    return firstValueFrom(this.http.get(`${environment.apiBaseUrl}/v1/reports/nmtp/excel`,
+      { params: { terminal }, responseType: 'blob' }));
+  }
 }

@@ -82,6 +82,8 @@ type portsModel struct {
 	SortOrder   int    `gorm:"column:sort_order"`
 	// Клиент провайдера АСУ для запросов 601 по вагонам этого грузополучателя.
 	ProviderClient string `gorm:"column:provider_client"`
+	// НМТП: норма вагонов на сети (блок «Нагрузка на ж/д сеть»; 0 — не считать).
+	NmtpNorm int `gorm:"column:nmtp_norm"`
 }
 
 func (portsModel) TableName() string { return "ports" }
@@ -191,7 +193,7 @@ func (r *DirectoryRepository) LoadPorts(ctx context.Context) ([]domain.Ports, er
 			PlanCode: m.PlanCode, StationCode: m.StationCode,
 			PcCoal: m.PcCoal, PcMetal: m.PcMetal, PcOther: m.PcOther, PcTotal: m.PcTotal,
 			Front: m.Front, Color: m.Color, Enabled: m.Enabled, SortOrder: m.SortOrder,
-			ProviderClient: m.ProviderClient,
+			ProviderClient: m.ProviderClient, NmtpNorm: m.NmtpNorm,
 		}
 	}
 	return out, nil

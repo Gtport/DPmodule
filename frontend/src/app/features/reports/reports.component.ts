@@ -91,6 +91,19 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
               </div>
             }
 
+            @if (nmtpTerminals().length) {
+              <div class="card">
+                <div class="head">Отчёты НМТП</div>
+                <div class="body">
+                  @for (t of nmtpTerminals(); track t) {
+                    <button nz-button nzBlock [nzLoading]="nmtpBusy() === t" (click)="downloadNmtp(t)">
+                      <span class="dot" [style.background]="terminalColor(t)"></span>Подход {{ t }}
+                    </button>
+                  }
+                </div>
+              </div>
+            }
+
             <div class="card">
               <div class="head">Погрузка/Выгрузка</div>
               <div class="body">
@@ -183,6 +196,8 @@ export class ReportsComponent implements OnInit {
 
   readonly vagonkaBusy = signal<string | null>(null);
   readonly perestanovkaBusy = signal<string | null>(null);
+  readonly nmtpBusy = signal<string | null>(null);
+  readonly nmtpTerminals = signal<string[]>([]);
   readonly loadingView = signal<'summary' | 'daily' | null>(null);
   readonly vygruzkaOpen = signal(false);
   readonly vygruzkaDayOpen = signal(false);
@@ -208,6 +223,27 @@ export class ReportsComponent implements OnInit {
     try {
       this.presets.set(await this.podhodApi.presets());
     } catch { /* без пресетов — без карточек пресетов */ }
+    try {
+      this.nmtpTerminals.set(await this.podhodApi.nmtpTerminals());
+    } catch { /* без раскладки НМТП — без карточки */ }
+  }
+
+  /** Цвет маркера терминала из реестра (для кнопок НМТП). */
+  terminalColor(name: string): string {
+    return this.terminals().find((t) => t.name === name)?.color || '#eee';
+  }
+
+  /** «Подход вагонов» по форме порта (НМТП) — книга .xlsx с сервера. */
+  async downloadNmtp(terminal: string): Promise<void> {
+    this.nmtpBusy.set(terminal);
+    try {
+      const blob = await this.podhodApi.nmtpExcel(terminal);
+      this.saveBlob(blob, `Подход вагонов ${terminal} ${todayMsk()}.xlsx`);
+    } catch (err) {
+      this.msg.error(await blobErrorMessage(err));
+    } finally {
+      this.nmtpBusy.set(null);
+    }
   }
 
   openPodhod(terminal: string, clients: string, preset: string): void {

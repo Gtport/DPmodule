@@ -51,6 +51,7 @@ func Build(
 	maxChatRepo port.MaxChatRepository,
 	pamCursorRepo port.PamyatkaCursorRepository,
 	reportPresetRepo port.ReportPresetRepository,
+	nmtpRepo port.NmtpRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -276,6 +277,13 @@ func Build(
 			// за период из vagon_history.
 			handler.NewPerestanovkaHandler(service.NewPerestanovkaService(
 				actualCache, dirCache, historyRepo)).RegisterRoutes(api)
+
+			// «Отчёты НМТП»: «Подход вагонов» по форме порта — книга .xlsx
+			// по раскладке справочника nmtp_column (собирает сервер).
+			if nmtpRepo != nil {
+				handler.NewNmtpHandler(service.NewNmtpService(
+					actualCache, dirCache, nmtpRepo, brosRepo)).RegisterRoutes(api)
+			}
 
 			// «Оперативка» домашней страницы: суточные счётчики по терминалам
 			// (вехи истории + статус 10 из снимка), только чтение.
