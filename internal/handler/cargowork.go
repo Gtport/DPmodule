@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Gtport/DPmodule/internal/clock"
+	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/service"
 )
 
@@ -28,6 +30,10 @@ func (h *cargoWorkHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.PUT("/cargo-work/:date/:terminal", h.save)
 	g.POST("/cargo-work/:date/:terminal/recalc", h.recalc)
 	g.DELETE("/cargo-work/:date/:terminal", h.remove)
+	// Отчёт «Выгрузка за период» страницы «Справки и отчёты» — те же данные
+	// «Грузовой работы», поэтому живёт в этом же обработчике, но в
+	// пространстве /reports (как остальные отчёты страницы).
+	g.GET("/reports/vygruzka", h.period)
 }
 
 // parseDay разбирает дату учётных суток из пути (yyyy-MM-dd).
@@ -48,6 +54,45 @@ func writeCargoWorkErr(c *gin.Context, err error) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
+}
+
+// period godoc
+// @Summary  Отчёт «Выгрузка за период»: сохранённые учётные листы терминала по суткам
+// @Tags     reports
+// @Security BearerAuth
+// @Produce  json
+// @Param    terminal query string true  "Терминал (ports.name_s)"
+// @Param    from     query string false "начало периода YYYY-MM-DD (дефолт: 1-е число месяца даты to)"
+// @Param    to       query string false "конец периода YYYY-MM-DD, включительно (дефолт: вчера МСК)"
+// @Success  200 {object} service.CargoWorkPeriodDTO
+// @Router   /api/v1/reports/vygruzka [get]
+func (h *cargoWorkHandler) period(c *gin.Context) {
+	terminal := c.Query("terminal")
+	if terminal == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "требуется параметр terminal"})
+		return
+	}
+	to, ok := parseReportDate(c, c.Query("to"), time.Time(clock.Now()).AddDate(0, 0, -1))
+	if !ok {
+		return
+	}
+	from, ok := parseReportDate(c, c.Query("from"), time.Date(to.Year(), to.Month(), 1, 0, 0, 0, 0, to.Location()))
+	if !ok {
+		return
+	}
+	if to.Before(from) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "конец периода раньше начала"})
+		return
+	}
+	dto, err := h.svc.Period(c.Request.Context(), from, to, terminal)
+	switch {
+	case errors.Is(err, domain.ErrBadRequest):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusOK, dto)
 	}
 }
 

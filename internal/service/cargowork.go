@@ -143,6 +143,73 @@ func (s *CargoWorkService) Day(ctx context.Context, day time.Time, terminal stri
 	return s.assemble(ctx, day, terminal, rows, loadRows)
 }
 
+// CargoWorkPeriodDTO — «Выгрузка за период» (страница «Справки и отчёты»,
+// перенос gtport OperatorToolsCargoPeriod): сохранённые учётные листы терминала
+// по суткам диапазона. Дни без листа не выдумываются (gtport так же отдавал
+// только существующие строки vigr_*); среднесуточные считает фронт.
+type CargoWorkPeriodDTO struct {
+	From     string            `json:"from"` // yyyy-MM-dd
+	To       string            `json:"to"`
+	Terminal string            `json:"terminal"`
+	Color    string            `json:"color"`
+	Days     []CargoWorkDayDTO `json:"days"` // по возрастанию даты
+}
+
+// Period — сохранённые сутки «Грузовой работы» терминала за [from; to].
+func (s *CargoWorkService) Period(ctx context.Context, from, to time.Time, terminal string) (CargoWorkPeriodDTO, error) {
+	p, ok := s.dir.PortByNameS(terminal)
+	if !ok {
+		return CargoWorkPeriodDTO{}, fmt.Errorf("%w: неизвестный терминал %q", domain.ErrBadRequest, terminal)
+	}
+	rows, err := s.repo.Rows(ctx, domain.LocalTime(dayStart(from)), domain.LocalTime(dayStart(to)), terminal)
+	if err != nil {
+		return CargoWorkPeriodDTO{}, err
+	}
+	loadRows, err := s.repo.LoadRows(ctx, domain.LocalTime(dayStart(from)), domain.LocalTime(dayStart(to)), terminal)
+	if err != nil {
+		return CargoWorkPeriodDTO{}, err
+	}
+
+	byDay := map[string][]domain.CargoWorkRow{}
+	for _, r := range rows {
+		byDay[r.DateJd.String()[:10]] = append(byDay[r.DateJd.String()[:10]], r)
+	}
+	loadByDay := map[string][]domain.CargoWorkLoadRow{}
+	for _, r := range loadRows {
+		loadByDay[r.DateJd.String()[:10]] = append(loadByDay[r.DateJd.String()[:10]], r)
+	}
+	days := make([]string, 0, len(byDay))
+	for d := range byDay {
+		days = append(days, d)
+	}
+	for d := range loadByDay {
+		if _, ok := byDay[d]; !ok {
+			days = append(days, d)
+		}
+	}
+	sort.Strings(days)
+
+	out := CargoWorkPeriodDTO{
+		From:     dayStart(from).Format("2006-01-02"),
+		To:       dayStart(to).Format("2006-01-02"),
+		Terminal: terminal,
+		Color:    p.Color,
+		Days:     make([]CargoWorkDayDTO, 0, len(days)),
+	}
+	for _, d := range days {
+		day, err := time.Parse("2006-01-02", d)
+		if err != nil {
+			continue
+		}
+		dto, err := s.assemble(ctx, day, terminal, byDay[d], loadByDay[d])
+		if err != nil {
+			return CargoWorkPeriodDTO{}, err
+		}
+		out.Days = append(out.Days, dto)
+	}
+	return out, nil
+}
+
 // Recalc пересобирает авто-слой суток, СОХРАНЯЯ ручные поля (план, факт
 // выгрузки, комментарий) и пересчитывая производные. Кнопка «Пересчитать»:
 // история дополняется (подтверждение кандидатов, sticky-10, «Обновить
