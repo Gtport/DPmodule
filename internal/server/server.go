@@ -50,6 +50,7 @@ func Build(
 	cargoWorkRepo port.CargoWorkRepository,
 	maxChatRepo port.MaxChatRepository,
 	pamCursorRepo port.PamyatkaCursorRepository,
+	reportPresetRepo port.ReportPresetRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -254,6 +255,11 @@ func Build(
 			// «Ближайшие поезда» домашней страницы: подходящие поезда из снимка
 			// (план → прогноз → расчёт), только чтение.
 			handler.NewNearestHandler(service.NewNearestService(actualCache, dirCache)).RegisterRoutes(api)
+
+			// Отчёт «Подход» страницы «Справки и отчёты»: двухуровневая
+			// группировка из снимка, только чтение. Пресеты (клиентские
+			// варианты карточек) — из report_preset; без БД их просто нет.
+			handler.NewPodhodHandler(service.NewPodhodService(actualCache, dirCache, reportPresetRepo)).RegisterRoutes(api)
 
 			// «Оперативка» домашней страницы: суточные счётчики по терминалам
 			// (вехи истории + статус 10 из снимка), только чтение.
