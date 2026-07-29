@@ -1,6 +1,9 @@
-import { Component, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { BrosModalComponent } from '../home/bros-modal.component';
+import { PodhodApiService, ReportPreset } from './podhod-api.service';
+import { PodhodModalComponent } from './podhod-modal.component';
 import { SmsOperModalComponent } from './sms-oper-modal.component';
 import { SmsPlanModalComponent } from './sms-plan-modal.component';
 
@@ -10,15 +13,22 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
  * «Справки и отчёты», «Инструменты оператора → Типовые отчеты») — здесь он
  * живёт один раз; страница «Справки» влита сюда (решение владельца 29.07.2026).
  *
- * Карточки-блоки с кнопками, каждая открывает форму перемещаемой модалкой.
- * Блок «Оперативка»: «Утренняя СМС с ПП», «Оперативная СМС с ПП» и «Брошенные
- * поезда» (модалка из features/home). Остальные блоки оригинала (Подход,
- * Погрузка/Выгрузка, Повагонка, Отчёты НМТП) добавляются по мере переноса
- * соответствующих отчётов — пустых кнопок не заводим.
+ * Карточки-блоки с кнопками, каждая открывает форму перемещаемой модалкой:
+ * - «Оперативка»: «Утренняя СМС с ПП», «Оперативная СМС с ПП», «Брошенные
+ *   поезда» (модалка из features/home);
+ * - «Подход»: кнопка на каждый терминал из реестра (`GET /dislocation/terminals`);
+ * - «Подход {пресет}» — карточка на каждый пресет из report_preset («Марис»):
+ *   те же терминалы с предзаполненным фильтром клиентов. Нет пресетов — нет
+ *   карточек.
+ * Остальные блоки оригинала (Погрузка/Выгрузка, Повагонка, Отчёты НМТП)
+ * добавляются по мере переноса соответствующих отчётов — пустых кнопок не заводим.
  */
 @Component({
   selector: 'app-reports',
-  imports: [NzButtonModule, SmsPlanModalComponent, SmsOperModalComponent, BrosModalComponent],
+  imports: [
+    NzButtonModule, SmsPlanModalComponent, SmsOperModalComponent,
+    BrosModalComponent, PodhodModalComponent,
+  ],
   template: `
     <div class="page">
       <div class="blocks">
@@ -30,12 +40,42 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
             <button nz-button nzBlock (click)="brosOpen.set(true)">Брошенные поезда</button>
           </div>
         </div>
+
+        @if (terminals().length) {
+          <div class="card">
+            <div class="head">Подход</div>
+            <div class="body">
+              @for (t of terminals(); track t.name) {
+                <button nz-button nzBlock (click)="openPodhod(t.name, '', '')">
+                  <span class="dot" [style.background]="t.color"></span>{{ t.name }}
+                </button>
+              }
+            </div>
+          </div>
+
+          @for (p of presets(); track p.id) {
+            <div class="card">
+              <div class="head">Подход {{ p.name }}</div>
+              <div class="body">
+                @for (t of terminals(); track t.name) {
+                  <button nz-button nzBlock (click)="openPodhod(t.name, p.clients, p.name)">
+                    <span class="dot" [style.background]="t.color"></span>{{ t.name }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        }
       </div>
     </div>
 
     @if (planOpen()) { <app-sms-plan-modal (closed)="planOpen.set(false)" /> }
     @if (operOpen()) { <app-sms-oper-modal (closed)="operOpen.set(false)" /> }
     @if (brosOpen()) { <app-bros-modal (closed)="brosOpen.set(false)" /> }
+    @if (podhod(); as p) {
+      <app-podhod-modal [terminal]="p.terminal" [clients]="p.clients" [presetName]="p.preset"
+                        (closed)="podhod.set(null)" />
+    }
   `,
   styles: [`
     .page { padding: var(--space-lg); display: flex; justify-content: center; align-items: flex-start; }
@@ -46,10 +86,37 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
     .head { padding: var(--space-sm) var(--space-md); background: var(--color-bg-subtle);
             border-bottom: 1px solid var(--color-border-light); font-weight: 600; }
     .body { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+           border: 1px solid var(--color-border); margin-right: 8px; vertical-align: baseline; }
   `],
 })
-export class ReportsComponent {
+export class ReportsComponent implements OnInit {
+  private readonly arrivals = inject(ArrivalsApiService);
+  private readonly podhodApi = inject(PodhodApiService);
+
   readonly planOpen = signal(false);
   readonly operOpen = signal(false);
   readonly brosOpen = signal(false);
+  readonly podhod = signal<{ terminal: string; clients: string; preset: string } | null>(null);
+
+  readonly terminals = signal<TerminalTarget[]>([]);
+  readonly presets = signal<ReportPreset[]>([]);
+
+  ngOnInit(): void {
+    void this.loadRegistry();
+  }
+
+  private async loadRegistry(): Promise<void> {
+    // Реестры не критичны: без них страница живёт с одной «Оперативкой».
+    try {
+      this.terminals.set(await this.arrivals.getTerminals());
+    } catch { /* тост не нужен — карточка просто не покажется */ }
+    try {
+      this.presets.set(await this.podhodApi.presets());
+    } catch { /* без пресетов — без карточек пресетов */ }
+  }
+
+  openPodhod(terminal: string, clients: string, preset: string): void {
+    this.podhod.set({ terminal, clients, preset });
+  }
 }
