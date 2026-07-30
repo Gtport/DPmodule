@@ -160,9 +160,12 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 			return nil, "", fmt.Errorf("нмтп: ширина: %w", err)
 		}
 	}
+	// Колонки матрицы: в файле порта 7.5, расширены до 10 — длинные списки
+	// станций АЭ иначе заворачивались на десяток строк (владелец, 31.07.2026).
+	const cargoColW = 10.0
 	firstCargo, _ := excelize.ColumnNumberToName(nFixed + 1)
 	lastCargo, _ := excelize.ColumnNumberToName(nFixed + cargoCols)
-	if err := f.SetColWidth(sheet, firstCargo, lastCargo, 7.5); err != nil {
+	if err := f.SetColWidth(sheet, firstCargo, lastCargo, cargoColW); err != nil {
 		return nil, "", fmt.Errorf("нмтп: ширина матрицы: %w", err)
 	}
 	totalName, _ := excelize.ColumnNumberToName(lastCol)
@@ -234,12 +237,12 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		set(nFixed+1+i, row+2, c.Mark, stMark)
 	}
 	_ = f.SetRowHeight(sheet, headTop, 18)
-	// Строка станций: колонки матрицы узкие (7.5), и длинный список станций
+	// Строка станций: колонки матрицы узкие, и длинный список станций
 	// заворачивается на много строк — высота по самой длинной подписи, иначе
 	// текст обрезается (у АЭ «Терент, Байкаим, …» не влезал в фиксированные 30).
 	stationH := 30.0
 	for _, c := range r.Columns {
-		if h := float64(wrapLines(c.Station, 7.5))*13 + 4; h > stationH {
+		if h := float64(wrapLines(c.Station, cargoColW))*13 + 4; h > stationH {
 			stationH = h
 		}
 	}
@@ -307,9 +310,10 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 			style = "sectionAb"
 		}
 		for _, sec := range secs {
-			// Пустые причальные станции у брошенных не печатаем (экран их тоже
-			// прячет); пустые дороги печатаем — полный список, как на экране.
-			if abandoned && sec.IsStation && len(sec.Rows) == 0 {
+			// Пустые причальные станции не печатаем — как на экране (владелец,
+			// 31.07.2026: в файле порта они стояли и пустыми, больше не держим);
+			// пустые дороги печатаем — полный список, тоже как на экране.
+			if sec.IsStation && len(sec.Rows) == 0 {
 				continue
 			}
 			set(1, row, sec.Label, style)

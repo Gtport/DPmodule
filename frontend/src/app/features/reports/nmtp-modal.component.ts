@@ -371,11 +371,13 @@ interface RowForm {
      * они уезжают вместе с контентом, и под sticky-шапкой просвечивают строки.
      * separate отдаёт границу каждой ячейке: у шапки она липнет вместе с ней. */
     .nmtp { border-collapse: separate; border-spacing: 0; }
-    .nmtp th, .nmtp td { border: 0; border-right: 1px solid var(--color-border-light);
-      border-bottom: 1px solid var(--color-border-light); }
-    .nmtp thead tr:nth-child(1) th { border-top: 1px solid var(--color-border-light); }
-    .nmtp thead tr:nth-child(1) th:first-child { border-left: 1px solid var(--color-border-light); }
-    .nmtp tbody td:first-child { border-left: 1px solid var(--color-border-light); }
+    /* Сетка заметная (--color-border-dark): с border-light границ на экране
+     * практически не было видно — замечание владельца 31.07.2026. */
+    .nmtp th, .nmtp td { border: 0; border-right: 1px solid var(--color-border-dark);
+      border-bottom: 1px solid var(--color-border-dark); }
+    .nmtp thead tr:nth-child(1) th { border-top: 1px solid var(--color-border-dark); }
+    .nmtp thead tr:nth-child(1) th:first-child { border-left: 1px solid var(--color-border-dark); }
+    .nmtp tbody td:first-child { border-left: 1px solid var(--color-border-dark); }
     /* Шапка из трёх рядов: глобальный .dp-tbl клеит все th к top:0 и при
      * скролле ряды наезжают друг на друга. Даём рядам фиксированные высоты
      * и каждому — свой sticky-отступ (rowspan-ячейки живут в первом ряду). */
@@ -390,8 +392,9 @@ interface RowForm {
     /* Ряд станций не должен вырасти выше 64px — иначе отступы разъедутся. */
     .nmtp .st .clip { max-height: 58px; overflow: hidden; }
     .nmtp .mark { background: #e4e4e4; font-size: 11px; }
-    /* Утолщённый стык групп клиентов — как в книге. */
-    .nmtp .grp-l { border-left: 2px solid var(--color-text, #000); }
+    /* Стыки групп клиентов на экране не выделяем — обычная сетка (замечание
+     * владельца 31.07.2026); утолщённые стыки остаются только в книге .xlsx.
+     * Класс .grp-l в шаблоне сохранён на случай возврата выделения. */
     .nmtp .itogo { background: #ffffcc; }
     .nmtp .other { background: #ffe7ba; }
     /* Полосы дорог — зелёные, брошенных — голубые (цвета экрана gtport). */
