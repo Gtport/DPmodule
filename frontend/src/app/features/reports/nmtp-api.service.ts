@@ -94,11 +94,14 @@ export class NmtpApiService {
   }
 
   /**
-   * Перенос состава поезда в колонку: привязка по номерам вагонов
-   * (nmtp_vagon_column), переживает переформирование. column_id = 0 — снять.
+   * Перенос поезда в колонку: привязка по номерам вагонов (nmtp_vagon_column),
+   * переживает переформирование. column_id = 0 — снять. from_column_id сужает
+   * перенос до одной группы состава (id колонки, -1 — «прочее», 0 — весь состав).
    */
-  move(req: { terminal: string; index: string; station_oper: string; prog: string; column_id: number }):
-    Promise<{ vagons: number }> {
+  move(req: {
+    terminal: string; index: string; station_oper: string; prog: string;
+    column_id: number; from_column_id: number;
+  }): Promise<{ vagons: number }> {
     return firstValueFrom(this.http.post<{ vagons: number }>(`${this.base}/move`, req));
   }
 }

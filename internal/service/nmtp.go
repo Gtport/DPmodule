@@ -203,6 +203,88 @@ type nmtpOverride struct {
 	created time.Time
 }
 
+// nmtpLayout — раскладка вагона в колонку формы: правила nmtp_column (матч по
+// специфичности) + ручные привязки. Общая для агрегации отчёта и MoveTrain,
+// чтобы «что видит пользователь» и «что переносится» никогда не расходились.
+type nmtpLayout struct {
+	matchers   []nmtpMatcher
+	checkOrder []int
+	otherIdx   int
+	norm       *MarkNormalizer
+}
+
+func newNmtpLayout(cols []domain.NmtpColumn, markDict []string) *nmtpLayout {
+	l := &nmtpLayout{
+		matchers: make([]nmtpMatcher, len(cols)),
+		otherIdx: len(cols),
+		norm:     NewMarkNormalizer(markDict),
+	}
+	for i, c := range cols {
+		m := nmtpMatcher{
+			head:     domain.NmtpColumnHead{Group: c.GroupLabel, Station: c.StationLabel, Mark: c.MarkLabel},
+			clients:  splitSet(c.MatchClients),
+			stations: splitSet(c.MatchStations),
+			marks:    splitSet(c.MatchMarks),
+			order:    i,
+		}
+		for _, set := range []map[string]bool{m.clients, m.stations, m.marks} {
+			if set != nil {
+				m.specificity++
+			}
+		}
+		l.matchers[i] = m
+	}
+	// Порядок проверки: специфичные раньше («СЛЯБЫ» раньше «ПРОКАТ» без марки);
+	// порядок отображения (order) не трогаем.
+	l.checkOrder = make([]int, len(l.matchers))
+	for i := range l.checkOrder {
+		l.checkOrder[i] = i
+	}
+	sort.SliceStable(l.checkOrder, func(a, b int) bool {
+		ma, mb := l.matchers[l.checkOrder[a]], l.matchers[l.checkOrder[b]]
+		if ma.specificity != mb.specificity {
+			return ma.specificity > mb.specificity
+		}
+		return ma.order < mb.order
+	})
+	return l
+}
+
+// columnOf — колонка вагона: живая привязка сильнее правил; привязка старого
+// рейса (дата приёма позже назначения) протухает — stale=true, вагон по
+// правилам. Не сматчился ничем — otherIdx («прочее»).
+func (l *nmtpLayout) columnOf(rec *domain.Dislocation, overrides map[string]nmtpOverride) (col int, applied, stale bool) {
+	ov, hasOv := overrides[rec.Vagon]
+	if hasOv && rec.DateNach != nil && rec.DateNach.Time().After(ov.created) {
+		hasOv = false
+		stale = true
+	}
+	if hasOv {
+		return ov.col, true, false
+	}
+	mark := l.norm.Mark(rec.FreightExactName, rec.CargoSms)
+	client := strings.ToUpper(strings.TrimSpace(rec.Client))
+	station := strings.ToUpper(strings.TrimSpace(rec.StationNach))
+	for _, mi := range l.checkOrder {
+		m := &l.matchers[mi]
+		if m.clients != nil && !m.clients[client] {
+			continue
+		}
+		if m.stations != nil && !m.stations[station] {
+			continue
+		}
+		if m.marks != nil && !m.marks[mark] {
+			continue
+		}
+		return m.order, false, stale
+	}
+	return l.otherIdx, false, stale
+}
+
+// nmtpFromOther — сентинел «исходная колонка — „прочее"» для MoveTrain:
+// у колонки «прочее» нет id в nmtp_column, а переносить из неё нужно.
+const nmtpFromOther int64 = -1
+
 // nmtpBindingMaxAge — страховочный срок жизни привязки «вагон → колонка»:
 // рейс длится недели, 60 суток с запасом. Основные механизмы гашения — новый
 // рейс и выпадение из подхода; возраст ловит сирот, когда отчёт долго не строят.
@@ -231,36 +313,63 @@ func (s *NmtpService) vagonOverrides(ctx context.Context, cols []domain.NmtpColu
 	return overrides, ours
 }
 
-// MoveTrain — ручной перенос состава поезда в колонку (указание грузовладельца):
-// привязка пишется поимённо по номерам вагонов состава (nmtp_vagon_column) и
-// переживает переформирование поезда. columnID = 0 — снять привязку («вернуть
-// по правилам»). Возвращает число вагонов.
+// MoveTrain — ручной перенос поезда в колонку (указание грузовладельца):
+// привязка пишется поимённо по номерам вагонов (nmtp_vagon_column) и переживает
+// переформирование поезда. columnID = 0 — снять привязку («вернуть по
+// правилам»). fromColumnID сужает перенос до одной группы состава: > 0 —
+// вагоны, показанные сейчас в этой колонке; nmtpFromOther — вагоны «прочего»;
+// 0 — весь состав (сборные поезда: переносить группу, не весь поезд —
+// замечание владельца 30.07.2026). Возвращает число вагонов.
 func (s *NmtpService) MoveTrain(ctx context.Context, terminal, index, station string,
-	prog *domain.LocalTime, columnID int64, who string) (int, error) {
+	prog *domain.LocalTime, columnID, fromColumnID int64, who string) (int, error) {
 	if _, ok := s.dir.PortByNameS(terminal); !ok {
 		return 0, fmt.Errorf("неизвестный терминал: %s", terminal)
 	}
-	if columnID != 0 {
-		cols, err := s.repo.Columns(ctx, terminal)
-		if err != nil {
-			return 0, err
-		}
-		found := false
-		for _, c := range cols {
-			if c.ID == columnID {
-				found = true
-				break
+	cols, err := s.repo.Columns(ctx, terminal)
+	if err != nil {
+		return 0, err
+	}
+	colIdx := func(id int64) int {
+		for i, c := range cols {
+			if c.ID == id {
+				return i
 			}
 		}
-		if !found {
-			return 0, fmt.Errorf("колонка %d не принадлежит терминалу %s", columnID, terminal)
+		return -1
+	}
+	if columnID != 0 && colIdx(columnID) < 0 {
+		return 0, fmt.Errorf("колонка %d не принадлежит терминалу %s", columnID, terminal)
+	}
+	// Фильтр «откуда»: индекс исходной колонки в раскладке (или «прочее»).
+	fromIdx := -1
+	switch {
+	case fromColumnID == nmtpFromOther:
+		fromIdx = len(cols) // otherIdx
+	case fromColumnID != 0:
+		if fromIdx = colIdx(fromColumnID); fromIdx < 0 {
+			return 0, fmt.Errorf("исходная колонка %d не принадлежит терминалу %s", fromColumnID, terminal)
 		}
 	}
 	if prog == nil {
 		return 0, fmt.Errorf("не задан прогноз поезда (ключ строки)")
 	}
+
+	// Текущая колонка вагона считается ТОЙ ЖЕ раскладкой, что отчёт (правила +
+	// живые привязки) — переносится ровно то, что пользователь видит в колонке.
+	var layout *nmtpLayout
+	var overrides map[string]nmtpOverride
+	if fromIdx >= 0 {
+		marks, err := s.repo.Marks(ctx)
+		if err != nil {
+			return 0, err
+		}
+		layout = newNmtpLayout(cols, marks)
+		overrides, _ = s.vagonOverrides(ctx, cols)
+	}
+
 	// Вагоны состава — тем же отбором и ключом строки, что агрегация отчёта.
 	progKey := prog.Time().Format("2006-01-02 15:04")
+	trainFound := false
 	var vagons []string
 	for _, rec := range s.actual.All() {
 		if rec.GruzpolS != terminal && rec.Naznach != terminal {
@@ -279,10 +388,19 @@ func (s *NmtpService) MoveTrain(ctx context.Context, terminal, index, station st
 		if idx != index || rec.StationOper != station {
 			continue
 		}
+		trainFound = true
+		if fromIdx >= 0 {
+			if col, _, _ := layout.columnOf(&rec, overrides); col != fromIdx {
+				continue
+			}
+		}
 		vagons = append(vagons, rec.Vagon)
 	}
-	if len(vagons) == 0 {
+	if !trainFound {
 		return 0, fmt.Errorf("поезд %s (%s) не найден в подходе — обновите отчёт", index, station)
+	}
+	if len(vagons) == 0 {
+		return 0, fmt.Errorf("в выбранной колонке у поезда %s нет вагонов — обновите отчёт", index)
 	}
 	if columnID == 0 {
 		return len(vagons), s.repo.DeleteVagonColumns(ctx, vagons)
@@ -331,39 +449,9 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 	seenOverrides := map[string]bool{}
 	staleOverrides := map[string]bool{}
 
-	norm := NewMarkNormalizer(markDict)
-	matchers := make([]nmtpMatcher, len(cols))
-	for i, c := range cols {
-		m := nmtpMatcher{
-			head:     domain.NmtpColumnHead{Group: c.GroupLabel, Station: c.StationLabel, Mark: c.MarkLabel},
-			clients:  splitSet(c.MatchClients),
-			stations: splitSet(c.MatchStations),
-			marks:    splitSet(c.MatchMarks),
-			order:    i,
-		}
-		for _, set := range []map[string]bool{m.clients, m.stations, m.marks} {
-			if set != nil {
-				m.specificity++
-			}
-		}
-		matchers[i] = m
-	}
-	// Порядок проверки: специфичные раньше («СЛЯБЫ» раньше «ПРОКАТ» без марки);
-	// порядок отображения (order) не трогаем.
-	checkOrder := make([]int, len(matchers))
-	for i := range checkOrder {
-		checkOrder[i] = i
-	}
-	sort.SliceStable(checkOrder, func(a, b int) bool {
-		ma, mb := matchers[checkOrder[a]], matchers[checkOrder[b]]
-		if ma.specificity != mb.specificity {
-			return ma.specificity > mb.specificity
-		}
-		return ma.order < mb.order
-	})
-
+	layout := newNmtpLayout(cols, markDict)
 	nCols := len(cols) + 1 // + «прочее»
-	otherIdx := len(cols)
+	otherIdx := layout.otherIdx
 
 	type train struct {
 		row      domain.NmtpTrainRow
@@ -449,37 +537,13 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 			}
 		}
 
-		// Раскладка вагона в колонку.
-		mark := norm.Mark(rec.FreightExactName, rec.CargoSms)
-		client := strings.ToUpper(strings.TrimSpace(rec.Client))
-		station := strings.ToUpper(strings.TrimSpace(rec.StationNach))
-		col := otherIdx
-		ov, hasOv := overrides[rec.Vagon]
-		if hasOv && rec.DateNach != nil && rec.DateNach.Time().After(ov.created) {
-			// Вагон в НОВОМ рейсе (принят к перевозке позже привязки) —
-			// привязка старого рейса протухла, раскладываем по правилам.
-			hasOv = false
-			staleOverrides[rec.Vagon] = true
-		}
-		if hasOv {
-			// Ручная привязка вагона (указание грузовладельца) сильнее правил.
-			col = ov.col
+		// Раскладка вагона в колонку (привязка сильнее правил, см. columnOf).
+		col, applied, staleOv := layout.columnOf(rec, overrides)
+		if applied {
 			seenOverrides[rec.Vagon] = true
-		} else {
-			for _, mi := range checkOrder {
-				m := &matchers[mi]
-				if m.clients != nil && !m.clients[client] {
-					continue
-				}
-				if m.stations != nil && !m.stations[station] {
-					continue
-				}
-				if m.marks != nil && !m.marks[mark] {
-					continue
-				}
-				col = m.order
-				break
-			}
+		}
+		if staleOv {
+			staleOverrides[rec.Vagon] = true
 		}
 		tr.row.Counts[col]++
 		tr.row.Total++

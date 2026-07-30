@@ -329,9 +329,19 @@ interface RowForm {
                 (nzOnCancel)="moveCtx.set(null)">
         <ng-container *nzModalContent>
           <p class="hint">
-            Привязка запоминается по номерам вагонов состава и действует, пока вагоны
-            в подходе — даже если поезд переформируется. «Вернуть по правилам» снимает её.
+            Привязка запоминается по номерам вагонов и действует, пока вагоны в
+            подходе — даже если поезд переформируется. «Вернуть по правилам» снимает её.
           </p>
+          @if (moveFromOptions().length > 1) {
+            <div class="mv-lbl">Что переносим</div>
+            <nz-select style="width: 100%" [(ngModel)]="moveFromId">
+              <nz-option [nzValue]="0" nzLabel="Весь состав ({{ m.row.total }} ваг.)"></nz-option>
+              @for (o of moveFromOptions(); track o.value) {
+                <nz-option [nzValue]="o.value" [nzLabel]="o.label"></nz-option>
+              }
+            </nz-select>
+          }
+          <div class="mv-lbl">Куда</div>
           <nz-select style="width: 100%" [(ngModel)]="moveColumnId">
             <nz-option [nzValue]="0" nzLabel="— вернуть по правилам раскладки —"></nz-option>
             @for (c of report()?.columns ?? []; track $index) {
@@ -409,6 +419,7 @@ interface RowForm {
     .cnt-l .cap { font-size: 11px; color: var(--color-text-secondary); }
     .frm-total { text-align: right; }
     .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
+    .mv-lbl { margin: var(--space-sm) 0 4px; font-weight: 600; font-size: var(--font-size-sm); }
   `],
 })
 export class NmtpModalComponent implements OnInit {
@@ -439,7 +450,25 @@ export class NmtpModalComponent implements OnInit {
   editForm: RowForm = { index: '', station: '', date: '', note: '', vagon: '', counts: [] };
   readonly moveCtx = signal<{ row: NmtpTrainRow } | null>(null);
   moveColumnId = 0;
+  /** Что переносим: 0 — весь состав, id — вагоны колонки, -1 — «прочее». */
+  moveFromId = 0;
   readonly moving = signal(false);
+
+  /** Занятые колонки строки переноса — варианты «что переносим» (сборный поезд). */
+  readonly moveFromOptions = computed<{ value: number; label: string }[]>(() => {
+    const row = this.moveCtx()?.row;
+    const r = this.report();
+    if (!row || !r) return [];
+    const out: { value: number; label: string }[] = [];
+    r.columns.forEach((c, ci) => {
+      if ((row.counts[ci] || 0) > 0 && c.id) {
+        out.push({ value: c.id, label: `${c.group} · ${c.station} (${c.mark}) — ${row.counts[ci]} ваг.` });
+      }
+    });
+    const other = row.counts[r.columns.length] || 0;
+    if (other > 0) out.push({ value: -1, label: `ПРОЧЕЕ — ${other} ваг.` });
+    return out;
+  });
 
   /** Фиксированные колонки слева (как в книге). */
   readonly fixedCols = 7;
@@ -593,6 +622,7 @@ export class NmtpModalComponent implements OnInit {
     const row = this.menuRow();
     if (!row) return;
     this.moveColumnId = 0;
+    this.moveFromId = 0;
     this.moveCtx.set({ row });
   }
 
@@ -608,7 +638,7 @@ export class NmtpModalComponent implements OnInit {
     try {
       const res = await this.api.move({
         terminal: this.terminal(), index: m.row.index, station_oper: m.row.station_oper,
-        prog: m.row.prog, column_id: this.moveColumnId,
+        prog: m.row.prog, column_id: this.moveColumnId, from_column_id: this.moveFromId,
       });
       this.msg.success(this.moveColumnId
         ? `Перенесено вагонов: ${res.vagons} — привязка запомнена по номерам`

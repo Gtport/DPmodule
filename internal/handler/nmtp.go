@@ -128,14 +128,17 @@ func (h *nmtpHandler) excelEdited(c *gin.Context) {
 	c.Data(http.StatusOK, xlsxContentType, data)
 }
 
-// nmtpMoveRequest — перенос состава поезда в колонку. Ключ строки — как в
-// агрегации отчёта: индекс + станция + прогноз. column_id = 0 — снять привязку.
+// nmtpMoveRequest — перенос поезда в колонку. Ключ строки — как в агрегации
+// отчёта: индекс + станция + прогноз. column_id = 0 — снять привязку.
+// from_column_id сужает перенос до одной группы состава: id исходной колонки,
+// -1 — «прочее», 0 — весь состав (сборные поезда).
 type nmtpMoveRequest struct {
-	Terminal    string            `json:"terminal" binding:"required"`
-	Index       string            `json:"index" binding:"required"`
-	StationOper string            `json:"station_oper" binding:"required"`
-	Prog        *domain.LocalTime `json:"prog" binding:"required"`
-	ColumnID    int64             `json:"column_id"`
+	Terminal     string            `json:"terminal" binding:"required"`
+	Index        string            `json:"index" binding:"required"`
+	StationOper  string            `json:"station_oper" binding:"required"`
+	Prog         *domain.LocalTime `json:"prog" binding:"required"`
+	ColumnID     int64             `json:"column_id"`
+	FromColumnID int64             `json:"from_column_id"`
 }
 
 // move godoc
@@ -156,7 +159,7 @@ func (h *nmtpHandler) move(c *gin.Context) {
 		who = cl.Username
 	}
 	n, err := h.svc.MoveTrain(c.Request.Context(), req.Terminal, req.Index, req.StationOper,
-		req.Prog, req.ColumnID, who)
+		req.Prog, req.ColumnID, req.FromColumnID, who)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
