@@ -255,7 +255,11 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 		if rec.IndexPp != "" {
 			idx = rec.IndexPp
 		}
-		tr, ok := trains[idx]
+		// Ключ строки — индекс + станция + прогноз до минуты (как ключ L1 у
+		// «Подхода»): один индекс ≠ один поезд — безиндексные («Б/И») стоят на
+		// разных станциях и по одному индексу слипались бы в одну строку.
+		key := idx + "|" + rec.StationOper + "|" + rec.ProgJd.Time().Format("2006-01-02 15:04")
+		tr, ok := trains[key]
 		if !ok {
 			note := ""
 			if rec.GruzpolS != rec.Naznach && rec.GruzpolS != "" && rec.Naznach != "" {
@@ -270,8 +274,8 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 				Prog:   rec.ProgJd,
 				Counts: make([]int, nCols), Tons: make([]float64, nCols),
 			}}
-			trains[idx] = tr
-			order = append(order, idx)
+			trains[key] = tr
+			order = append(order, key)
 		}
 		if tr.road == "" && rec.DorogaOper != "" {
 			tr.road = rec.DorogaOper

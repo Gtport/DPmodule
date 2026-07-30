@@ -180,3 +180,42 @@ func TestBuildNmtpReport(t *testing.T) {
 	}
 	assert.True(t, groups["ЗСМК"] && groups["САВИТАР"] && groups["КЛЦ МАРИС"] && groups["ПРОЧЕЕ"])
 }
+
+// Безиндексные поезда («Б/И») не слипаются: ключ строки — индекс + станция +
+// прогноз, иначе все Б/И подхода сливались в одну строку (баг, найден сверкой
+// с выгрузкой gtport по АЭ 30.07.2026: 5 поездов Б/И → одна строка на 285 ваг).
+func TestBuildNmtpReport_BezindeksnyeNeSlipayutsya(t *testing.T) {
+	a1 := nmtpVagon("60000011", "", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 1, 69)
+	a1.Index = "Б/И"
+	a1.StationOper = "ПЕТРОВСКИЙ ЗАВОД"
+	a2 := nmtpVagon("60000012", "", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 2, 69)
+	a2.Index = "Б/И"
+	a2.StationOper = "ПЕТРОВСКИЙ ЗАВОД"
+	b := nmtpVagon("60000013", "", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 1, 69)
+	b.Index = "Б/И"
+	b.StationOper = "СУХОВСКАЯ"
+	// Та же станция, что у a1/a2, но другой прогноз — тоже отдельный поезд.
+	c := nmtpVagon("60000014", "", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 1, 69)
+	c.Index = "Б/И"
+	c.StationOper = "ПЕТРОВСКИЙ ЗАВОД"
+	prog := nmtpLT(2026, 7, 30, 9, 30)
+	c.ProgJd = &prog
+
+	rep := buildNmtpReport([]domain.Dislocation{a1, a2, b, c}, nmtpTestCols(), nmtpTestMarks,
+		"ГУТ-2", []string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil)
+
+	assert.Equal(t, 3, rep.TrainsActive)
+	var rows []domain.NmtpTrainRow
+	for _, s := range rep.Sections {
+		rows = append(rows, s.Rows...)
+	}
+	require.Len(t, rows, 3)
+	totals := map[string]int{}
+	for _, r := range rows {
+		assert.Equal(t, "Б/И", r.Index)
+		totals[r.StationOper+"|"+r.Prog.String()] += r.Total
+	}
+	assert.Equal(t, 2, totals["ПЕТРОВСКИЙ ЗАВОД|2026-07-30T06:00:00"])
+	assert.Equal(t, 1, totals["СУХОВСКАЯ|2026-07-30T06:00:00"])
+	assert.Equal(t, 1, totals["ПЕТРОВСКИЙ ЗАВОД|2026-07-30T09:30:00"])
+}
