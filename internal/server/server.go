@@ -153,7 +153,12 @@ func Build(
 	if historyRepo != nil && pamCursorRepo != nil {
 		refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS, cfg.Reference.AuthSecretKey, secret.NewEnvSource())
 		refSvc = service.NewReferenceService(refClient, historyRepo, pamCursorRepo, journalRepo,
-			cfg.Reference.Clients, cfg.Reference.PullInterval, log)
+			cfg.Reference.Clients, service.ReferenceTiming{
+				Interval:        cfg.Reference.PullInterval,
+				InitialLookback: cfg.Reference.InitialLookback,
+				CursorOverlap:   cfg.Reference.CursorOverlap,
+				StaleAfter:      cfg.Reference.StaleAfter,
+			}, log)
 		handler.NewReferenceHandler(refSvc).RegisterRoutes(api)
 	}
 

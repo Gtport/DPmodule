@@ -19,7 +19,12 @@ type ASUClient interface {
 // провайдер, что дислокация). Оба маршрута адресуются по клиенту: ByNumber — памятка
 // по номеру, Update — инкремент с курсором last_update. Возвращает сырые байты
 // ответа; разбор — выше.
+//
+// Памятку определяет ТРОЙКА «клиент + номер + дата создания» (контракт провайдера
+// от 30.07.2026): номер повторяется у разных портов и переиспользуется внутри
+// одного, поэтому ByNumber обязан нести dateCreate — дословное DATE_CREATE из
+// инкремента по этой памятке.
 type ReferenceClient interface {
-	ByNumber(ctx context.Context, client, number string) ([]byte, error)
+	ByNumber(ctx context.Context, client, number, dateCreate string) ([]byte, error)
 	Update(ctx context.Context, client, lastUpdate string) ([]byte, error)
 }

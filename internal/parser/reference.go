@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
@@ -75,16 +76,33 @@ func ParseReferenceUpdate(raw []byte, client string) (ReferenceUpdate, error) {
 	return out, nil
 }
 
+// convertPamyatka — памятка контракта в доменную.
+//
+// DATE_CREATE с 30.07.2026 несёт ДАТУ ОФОРМЛЕНИЯ документа ГУ-45 с настоящим
+// годом (прежде — MIN(GET_IN_DATE) с подставленным текущим годом; у 10326 NMTP
+// разошлось на шесть суток: было 06-28-2026, стало 07-04-2026). Для нас это
+// двойная роль: сама веха «дата документа» (date_gu45_pod/ubor) и опора для
+// подстановки года в даты вагонов — те приходят «дд.мм» без года. Дата документа
+// как опора не хуже прежней: от операций она отстоит на дни, а не на месяцы.
+//
+// Даты создания может не быть вовсе — тогда DATE_CREATE приходит пустой строкой.
+// Это не повод терять вехи всей памятки: год берём от «сейчас» (памятки идут
+// инкрементом, свежими), а саму веху даты документа оставляем пустой.
 func convertPamyatka(src *refPamyatka, client string) (domain.Pamyatka, error) {
-	created, err := time.Parse(refDateCreateLayout, src.DateCreate)
-	if err != nil {
-		return domain.Pamyatka{}, fmt.Errorf("памятка %s/%s: DATE_CREATE %q не в формате MM-DD-YYYY: %w",
-			client, src.NumberPamyatka, src.DateCreate, err)
+	var dateCreate *domain.LocalTime
+	created := clock.Now().Time()
+	if src.DateCreate != "" {
+		t, err := time.Parse(refDateCreateLayout, src.DateCreate)
+		if err != nil {
+			return domain.Pamyatka{}, fmt.Errorf("памятка %s/%s: DATE_CREATE %q не в формате MM-DD-YYYY: %w",
+				client, src.NumberPamyatka, src.DateCreate, err)
+		}
+		created, dateCreate = t, domain.NewLocalTime(t)
 	}
 	p := domain.Pamyatka{
 		Client:        client,
 		Number:        src.NumberPamyatka,
-		DateCreate:    domain.NewLocalTime(created),
+		DateCreate:    dateCreate,
 		OperationType: src.OperationType,
 		GetPlace:      src.GetPlace,
 		NameStation:   src.NameStation,

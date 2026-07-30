@@ -13,12 +13,13 @@ import (
 //     offset, offset+interval, ... от границы интервала (interval=10m, offset=5m →
 //     :05, :15, :25, :35, :45, :55 каждого часа, независимо от времени старта).
 type CronWorker struct {
-	name     string
-	interval time.Duration
-	offset   time.Duration
-	aligned  bool
-	log      *zap.Logger
-	job      func(ctx context.Context) error
+	name       string
+	interval   time.Duration
+	offset     time.Duration
+	aligned    bool
+	runAtStart bool
+	log        *zap.Logger
+	job        func(ctx context.Context) error
 }
 
 func NewCronWorker(name string, interval time.Duration, log *zap.Logger, job func(ctx context.Context) error) *CronWorker {
@@ -33,7 +34,19 @@ func NewAlignedCronWorker(name string, interval, offset time.Duration, log *zap.
 
 func (w *CronWorker) Name() string { return w.name }
 
+// WithRunAtStart — выполнить job сразу при старте, не дожидаясь первого тика.
+// Нужно для редких тиков: рестарт процесса иначе отодвигает работу на весь
+// interval, а деплои идут пачками (часовой инкремент памяток при рестарте раз
+// в сорок минут не срабатывал вовсе).
+func (w *CronWorker) WithRunAtStart() *CronWorker {
+	w.runAtStart = true
+	return w
+}
+
 func (w *CronWorker) Run(ctx context.Context) error {
+	if w.runAtStart {
+		w.runJob(ctx)
+	}
 	if w.aligned {
 		return w.runAligned(ctx)
 	}

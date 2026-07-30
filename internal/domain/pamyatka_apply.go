@@ -184,7 +184,11 @@ func decide(p *Pamyatka, v PamyatkaVagon, trip *PamyatkaTrip) (map[string]any, s
 		// Блок подачи пишем из подачной памятки, а из уборочной — только когда
 		// подачи ещё не было (уборочная несёт GET_IN всегда).
 		fields["nom_gu45_pod"] = p.Number
-		fields["date_gu45_pod"] = p.DateCreate
+		if p.DateCreate != nil {
+			// Даты оформления документа может не быть (DATE_CREATE пустой) —
+			// тогда веху не трогаем вовсе, а не затираем NULL'ом прежнюю.
+			fields["date_gu45_pod"] = p.DateCreate
+		}
 		fields["date_pod"] = v.GetIn
 		fields["place_pod"] = p.GetPlace
 		trip.NomGu45Pod = p.Number
@@ -196,7 +200,9 @@ func decide(p *Pamyatka, v PamyatkaVagon, trip *PamyatkaTrip) (map[string]any, s
 	}
 	if v.GetOut != nil {
 		fields["nom_gu45_ubor"] = p.Number
-		fields["date_gu45_ubor"] = p.DateCreate
+		if p.DateCreate != nil {
+			fields["date_gu45_ubor"] = p.DateCreate
+		}
 		fields["date_ubor"] = v.GetOut
 		trip.NomGu45Ubor = p.Number
 		trip.DateUbor = v.GetOut

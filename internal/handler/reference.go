@@ -21,28 +21,28 @@ func NewReferenceHandler(svc *service.ReferenceService) *referenceHandler {
 }
 
 func (h *referenceHandler) RegisterRoutes(g *gin.RouterGroup) {
-	g.GET("/reference", h.byNumber)                // ?number=...
-	g.GET("/reference/excel", h.excelByNumber)     // ?number=... — бланк ГУ-45 в Excel
+	g.GET("/reference", h.byNumber)                // ?number=...&date_create=...
+	g.GET("/reference/excel", h.excelByNumber)     // ?number=...&date_create=... — бланк ГУ-45 в Excel
 	g.POST("/reference/update/pull", h.updatePull) // ручной триггер крон-инкремента
 }
 
 // byNumber godoc
-// @Summary  Памятка по номеру — сырой документ провайдера (диагностика)
+// @Summary  Памятка по номеру и дате создания — сырой документ провайдера (диагностика)
 // @Tags     reference
 // @Security BearerAuth
-// @Param    number query string true  "номер памятки (NUMBER_PAMYATKA)"
-// @Param    client query string false "код клиента у провайдера; по умолчанию первый из reference.clients"
+// @Param    number      query string true  "номер памятки (NUMBER_PAMYATKA)"
+// @Param    date_create query string true  "DATE_CREATE памятки из инкремента, дословно (MM-DD-YYYY); у документа без даты — пустое значение"
+// @Param    client      query string false "код клиента у провайдера; по умолчанию первый из reference.clients"
 // @Success  200 {object} object
-// @Failure  400 {object} object "не задан number"
+// @Failure  400 {object} object "не задан number или date_create"
 // @Failure  502 {object} object "провайдер недоступен / ошибка забора"
 // @Router   /api/v1/reference [get]
 func (h *referenceHandler) byNumber(c *gin.Context) {
-	number := c.Query("number")
-	if number == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "требуется параметр number"})
+	number, dateCreate, ok := pamyatkaKey(c)
+	if !ok {
 		return
 	}
-	body, err := h.svc.FetchByNumber(c.Request.Context(), c.Query("client"), number)
+	body, err := h.svc.FetchByNumber(c.Request.Context(), c.Query("client"), number, dateCreate)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -50,24 +50,47 @@ func (h *referenceHandler) byNumber(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 }
 
+// pamyatkaKey — ключ памятки из запроса: номер и дата создания. Номер один
+// памятку не определяет (повторяется у портов и переиспользуется внутри порта),
+// поэтому провайдер требует и date_create; сам ответ на 400 пишем здесь.
+//
+// ПУСТОЕ значение date_create законно (у документа без даты создания DATE_CREATE
+// приходит пустой строкой), а вот отсутствие параметра — нет: иначе забыть его
+// в вызове означало бы молча получить чужую памятку.
+func pamyatkaKey(c *gin.Context) (number, dateCreate string, ok bool) {
+	number = c.Query("number")
+	if number == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "требуется параметр number"})
+		return "", "", false
+	}
+	dateCreate, exists := c.GetQuery("date_create")
+	if !exists {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "требуется параметр date_create — значение DATE_CREATE этой памятки из инкремента (MM-DD-YYYY); у документа без даты создания передавать пустым",
+		})
+		return "", "", false
+	}
+	return number, dateCreate, true
+}
+
 // excelByNumber godoc
 // @Summary  Памятка по номеру бланком ГУ-45 в Excel
 // @Tags     reference
 // @Security BearerAuth
 // @Produce  application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-// @Param    number query string true  "номер памятки (NUMBER_PAMYATKA)"
-// @Param    client query string false "код клиента у провайдера; по умолчанию первый из reference.clients"
+// @Param    number      query string true  "номер памятки (NUMBER_PAMYATKA)"
+// @Param    date_create query string true  "DATE_CREATE памятки из инкремента, дословно (MM-DD-YYYY); у документа без даты — пустое значение"
+// @Param    client      query string false "код клиента у провайдера; по умолчанию первый из reference.clients"
 // @Success  200 {file} binary "книга .xlsx с бланком памятки"
-// @Failure  400 {object} object "не задан number"
+// @Failure  400 {object} object "не задан number или date_create"
 // @Failure  502 {object} object "провайдер недоступен / документа нет в ответе / ошибка сборки"
 // @Router   /api/v1/reference/excel [get]
 func (h *referenceHandler) excelByNumber(c *gin.Context) {
-	number := c.Query("number")
-	if number == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "требуется параметр number"})
+	number, dateCreate, ok := pamyatkaKey(c)
+	if !ok {
 		return
 	}
-	data, filename, err := h.svc.FetchExcelByNumber(c.Request.Context(), c.Query("client"), number)
+	data, filename, err := h.svc.FetchExcelByNumber(c.Request.Context(), c.Query("client"), number, dateCreate)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return

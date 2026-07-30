@@ -100,6 +100,26 @@ func TestApplyPamyatki_PodachaFieldMapping(t *testing.T) {
 	}
 }
 
+// Даты оформления документа может не быть (DATE_CREATE приходит пустой строкой,
+// контракт от 30.07.2026): остальные вехи пишем, а колонку даты документа не
+// трогаем вовсе — иначе затёрли бы NULL'ом уже заполненное.
+func TestApplyPamyatki_NoDateCreateKeepsDocDateColumn(t *testing.T) {
+	trips := []PamyatkaTrip{{ID: "t1", Vagon: "62428651", DatePrib: lt("2026-07-24 08:00")}}
+	p := pam("11255", PamyatkaOperUbor, "2026-07-25", "Аттис -1 путь",
+		vag("62428651", "2026-07-25 00:10", "", "2026-07-25 18:40"))
+	p.DateCreate = nil
+
+	got := applyOne(t, []Pamyatka{p}, trips)
+
+	wantField(t, got.Fields, "date_pod", lt("2026-07-25 00:10"))
+	wantField(t, got.Fields, "date_ubor", lt("2026-07-25 18:40"))
+	for _, col := range []string{"date_gu45_pod", "date_gu45_ubor"} {
+		if _, ok := got.Fields[col]; ok {
+			t.Fatalf("без даты оформления колонка %s заполняться не должна", col)
+		}
+	}
+}
+
 // Замок по времени: у вагона два рейса, памятка обязана лечь на тот, что
 // прибыл до подачи, а не на самый свежий. Это тот случай, что на боевых данных
 // уводил 510 строк из 1564 на посторонний рейс.

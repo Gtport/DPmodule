@@ -31,7 +31,7 @@ func TestByNumber(t *testing.T) {
 	defer srv.Close()
 
 	cl := NewHTTPClient(srv.URL, false, "ASU_TOKEN", staticSecrets{"ASU_TOKEN": "SEKRET"})
-	if _, err := cl.ByNumber(context.Background(), "attis", "10272"); err != nil {
+	if _, err := cl.ByNumber(context.Background(), "attis", "10272", "07-04-2026"); err != nil {
 		t.Fatalf("ByNumber: %v", err)
 	}
 	if got.URL.Path != "/attis/reference" {
@@ -40,8 +40,26 @@ func TestByNumber(t *testing.T) {
 	if q := got.URL.Query().Get("number"); q != "10272" {
 		t.Fatalf("number: ждали 10272, получили %q", q)
 	}
+	if q := got.URL.Query().Get("date_create"); q != "07-04-2026" {
+		t.Fatalf("date_create: ждали 07-04-2026 дословно, получили %q", q)
+	}
 	if h := got.Header.Get("X-API-Key"); h != "SEKRET" {
 		t.Fatalf("X-API-Key: ждали SEKRET, получили %q", h)
+	}
+}
+
+// Пустая дата создания — законное значение (документ без даты оформления), но
+// параметр обязан УЙТИ: провайдер отбивает 400, когда его нет вовсе.
+func TestByNumber_EmptyDateCreateStillSent(t *testing.T) {
+	srv, got := captureServer(t, false)
+	defer srv.Close()
+
+	cl := NewHTTPClient(srv.URL, false, "", staticSecrets{})
+	if _, err := cl.ByNumber(context.Background(), "attis", "10272", ""); err != nil {
+		t.Fatalf("ByNumber: %v", err)
+	}
+	if _, ok := got.URL.Query()["date_create"]; !ok {
+		t.Fatalf("параметр date_create должен присутствовать пустым, query: %q", got.URL.RawQuery)
 	}
 }
 
@@ -69,12 +87,12 @@ func TestInsecureTLS(t *testing.T) {
 	defer srv.Close()
 
 	strict := NewHTTPClient(srv.URL, false, "", staticSecrets{})
-	if _, err := strict.ByNumber(context.Background(), "attis", "1"); err == nil {
+	if _, err := strict.ByNumber(context.Background(), "attis", "1", "07-04-2026"); err == nil {
 		t.Fatal("ждали ошибку TLS-проверки для самоподписанного серта")
 	}
 
 	lax := NewHTTPClient(srv.URL, true, "", staticSecrets{})
-	if _, err := lax.ByNumber(context.Background(), "attis", "1"); err != nil {
+	if _, err := lax.ByNumber(context.Background(), "attis", "1", "07-04-2026"); err != nil {
 		t.Fatalf("с insecure_tls запрос должен пройти: %v", err)
 	}
 }

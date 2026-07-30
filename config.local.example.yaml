@@ -72,6 +72,9 @@ reference:
   base_url: ""
   insecure_tls: false
   pull_interval: 1h
+  initial_lookback: 48h # окно первого захода (курсора нет); глубже задержки публикации провайдера
+  cursor_overlap: 30m   # нахлёст курсора на запоздавшие записи
+  stale_after: 6h       # молчание дольше — пустой проход в журнал
   clients: [attis, nmtp]
 
 max:

@@ -45,13 +45,20 @@ type MAX struct {
 // Reference — забор памяток на подачу/уборку из внешнего сервиса (тот же провайдер,
 // что дислокация: base_url и ключ те же). Крон-инкремент раз в час + ручной забор по
 // номеру. На этом этапе данные только логируются, в БД не кладутся.
+//
+// Тайминги окна запроса разведены по разным параметрам (урок боя 30.07.2026):
+// pull_interval — только «как часто спрашивать», глубина окна первого захода —
+// initial_lookback, запас на запоздавшие записи — cursor_overlap.
 type Reference struct {
-	Enabled       bool          `yaml:"enabled"`         // включить фоновый забор обновлений по тикеру
-	BaseURL       string        `yaml:"base_url"`        // базовый URL провайдера (тот же, что у АСУ)
-	InsecureTLS   bool          `yaml:"insecure_tls"`    // не проверять серт (самоподписанный на IP)
-	PullInterval  time.Duration `yaml:"pull_interval"`   // период крон-инкремента; дефолт 1h
-	Clients       []string      `yaml:"clients"`         // коды клиентов провайдера: ["attis","nmtp"]
-	AuthSecretKey string        `yaml:"auth_secret_key"` // env-ключ X-API-Key; дефолт ASU_TOKEN (тот же провайдер)
+	Enabled         bool          `yaml:"enabled"`          // включить фоновый забор обновлений по тикеру
+	BaseURL         string        `yaml:"base_url"`         // базовый URL провайдера (тот же, что у АСУ)
+	InsecureTLS     bool          `yaml:"insecure_tls"`     // не проверять серт (самоподписанный на IP)
+	PullInterval    time.Duration `yaml:"pull_interval"`    // период крон-инкремента; дефолт 1h
+	InitialLookback time.Duration `yaml:"initial_lookback"` // глубина окна, когда курсора ещё нет; дефолт 48h
+	CursorOverlap   time.Duration `yaml:"cursor_overlap"`   // нахлёст: курсор храним на столько раньше LAST_UPDATE; дефолт 30m
+	StaleAfter      time.Duration `yaml:"stale_after"`      // курсор не двигается дольше — пустой проход идёт в журнал; дефолт 6h
+	Clients         []string      `yaml:"clients"`          // коды клиентов провайдера: ["attis","nmtp"]
+	AuthSecretKey   string        `yaml:"auth_secret_key"`  // env-ключ X-API-Key; дефолт ASU_TOKEN (тот же провайдер)
 }
 
 // ASU — фоновый забор дислокации из АСУ-АСУ (внутренний крон). Сами источники
@@ -238,6 +245,15 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Reference.PullInterval == 0 {
 		cfg.Reference.PullInterval = time.Hour
+	}
+	if cfg.Reference.InitialLookback == 0 {
+		cfg.Reference.InitialLookback = 48 * time.Hour
+	}
+	if cfg.Reference.CursorOverlap == 0 {
+		cfg.Reference.CursorOverlap = 30 * time.Minute
+	}
+	if cfg.Reference.StaleAfter == 0 {
+		cfg.Reference.StaleAfter = 6 * time.Hour
 	}
 	if cfg.Reference.AuthSecretKey == "" {
 		cfg.Reference.AuthSecretKey = "ASU_TOKEN" // тот же провайдер/ключ, что и АСУ

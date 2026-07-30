@@ -2,8 +2,8 @@
 // сервиса (тот же провайдер, что дислокация). Реализует port.ReferenceClient
 // поверх двух маршрутов провайдера (клиент — в пути, как у дислокации):
 //
-//	GET <base_url>/<client>/reference?number=<n>              — памятка по номеру
-//	GET <base_url>/<client>/reference/update?last_update=<t>  — инкремент по клиенту
+//	GET <base_url>/<client>/reference?number=<n>&date_create=<d> — памятка по тройке
+//	GET <base_url>/<client>/reference/update?last_update=<t>     — инкремент по клиенту
 //
 // Авторизация — заголовок X-API-Key (ключ из SecretSource). Клиент только достаёт
 // сырые байты; разбор JSON — не здесь (на этом этапе разбор ещё не подключён).
@@ -51,10 +51,19 @@ func NewHTTPClient(baseURL string, insecureTLS bool, authSecretKey string, secre
 	}
 }
 
-// ByNumber — памятка по номеру: GET <base>/<client>/reference?number=<n>.
-func (c *HTTPClient) ByNumber(ctx context.Context, client, number string) ([]byte, error) {
-	u := c.baseURL + "/" + url.PathEscape(client) + "/reference?number=" + url.QueryEscape(number)
-	return c.get(ctx, u, "памятка "+client+" number="+number)
+// ByNumber — памятка по тройке «клиент + номер + дата создания»:
+// GET <base>/<client>/reference?number=<n>&date_create=<d>.
+//
+// dateCreate передаём ДОСЛОВНО, как пришло в DATE_CREATE инкремента (MM-DD-YYYY;
+// провайдер принимает и YYYY-MM-DD, но не DD-MM-YYYY — для чисел ≤ 12 он
+// неотличим от MM-DD-YYYY, и вместо ошибки вернулась бы чужая памятка).
+// Параметр ставим ВСЕГДА, даже пустым: у документа без даты создания DATE_CREATE
+// приходит пустой строкой, и «пусто» — законное значение, тогда как отсутствие
+// параметра провайдер отбивает 400.
+func (c *HTTPClient) ByNumber(ctx context.Context, client, number, dateCreate string) ([]byte, error) {
+	u := c.baseURL + "/" + url.PathEscape(client) + "/reference?number=" + url.QueryEscape(number) +
+		"&date_create=" + url.QueryEscape(dateCreate)
+	return c.get(ctx, u, "памятка "+client+" number="+number+" date_create="+dateCreate)
 }
 
 // Update — инкремент по клиенту: GET <base>/<client>/reference/update?last_update=<t>.

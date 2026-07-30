@@ -3,6 +3,9 @@ package parser
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/Gtport/DPmodule/internal/clock"
 )
 
 // Фрагмент боевого ответа attis/reference/update от 2026-07-20 (обрезан до двух
@@ -166,6 +169,35 @@ func TestParseReferenceUpdate_BadDateCreate(t *testing.T) {
 	_, err := ParseReferenceUpdate([]byte(raw), "nmtp")
 	if err == nil || !strings.Contains(err.Error(), "nmtp/4") {
 		t.Fatalf("ждали ошибку с адресом nmtp/4, получили: %v", err)
+	}
+}
+
+// DATE_CREATE пустой (у документа нет даты оформления — законный случай
+// контракта от 30.07.2026): памятку не теряем, веху даты документа оставляем
+// пустой, а год дат вагона берём от «сейчас».
+func TestParseReferenceUpdate_EmptyDateCreate(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC))
+	defer restore()
+
+	raw := `{"LAST_UPDATE":"2026-07-30 03:00:00.000","PAMYATKI":[{"NUMBER_PAMYATKA":"4","DATE_CREATE":"",
+	  "OPERATION_TYPE":"подачу","GET_PLACE":"1 путь","NAME_STATION":"Мыс Астафьева","PATH_OWNER_OKPO":"10230304",
+	  "VAGONS":[{"NUMBER_VAGON":"60935210","GR_OPERATION_TYPE":"вгр","GET_IN_DATE":"29.07","GET_IN_TIME":"14:30"}]}]}`
+	got, err := ParseReferenceUpdate([]byte(raw), "attis")
+	if err != nil {
+		t.Fatalf("пустой DATE_CREATE не должен ронять разбор: %v", err)
+	}
+	if len(got.Pamyatki) != 1 {
+		t.Fatalf("памяток: %d, ждали 1", len(got.Pamyatki))
+	}
+	p := got.Pamyatki[0]
+	if p.DateCreate != nil {
+		t.Fatalf("веха даты документа должна остаться пустой, получили %v", p.DateCreate)
+	}
+	if len(p.Vagons) != 1 || p.Vagons[0].GetIn == nil {
+		t.Fatalf("вагон с подачей должен разобраться: %+v", p.Vagons)
+	}
+	if got := p.Vagons[0].GetIn.Time().Format("2006-01-02 15:04"); got != "2026-07-29 14:30" {
+		t.Fatalf("год подачи должен взяться от «сейчас», получили %s", got)
 	}
 }
 

@@ -240,9 +240,12 @@ func run() error {
 		workers = append(workers, worker.NewAlignedCronWorker("asu-pull", cfg.ASU.PullInterval, cfg.ASU.PullOffset, log, job))
 	}
 
-	// Инкремент памяток на подачу/уборку (пока только лог, без сохранения).
+	// Инкремент памяток на подачу/уборку: вехи подачи/уборки в vagon_history.
+	// Тик и при старте — иначе рестарты (деплой) отодвигают часовой тик и
+	// инкремент может не сработать ни разу за смену.
 	if cfg.Reference.Enabled && refSvc != nil {
-		workers = append(workers, worker.NewCronWorker("reference-update", cfg.Reference.PullInterval, log, refSvc.PullUpdates))
+		workers = append(workers,
+			worker.NewCronWorker("reference-update", cfg.Reference.PullInterval, log, refSvc.PullUpdates).WithRunAtStart())
 	}
 
 	// Очередь запросов 601 «История продвижения вагона»: частый лёгкий тик,

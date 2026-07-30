@@ -32,13 +32,23 @@ const lastUpdateLayout = "2006-01-02 15:04:05.000"
 // Сами памятки не храним: нужны не документы, а вехи рейса. Единственное
 // служебное состояние — курсор last_update по клиентам (таблица pamyatka_cursor).
 type ReferenceService struct {
-	cl       port.ReferenceClient
-	history  port.HistoryRepository
-	cursors  port.PamyatkaCursorRepository
-	journal  port.JournalRepository
-	clients  []string
-	interval time.Duration
-	log      *zap.Logger
+	cl      port.ReferenceClient
+	history port.HistoryRepository
+	cursors port.PamyatkaCursorRepository
+	journal port.JournalRepository
+	clients []string
+	timing  ReferenceTiming
+	log     *zap.Logger
+}
+
+// ReferenceTiming — тайминги инкремента (config reference.*). Отдельной
+// структурой, а не четырьмя аргументами подряд: длительности одного типа
+// слишком легко перепутать местами, а цена ошибки здесь — молчащий крон.
+type ReferenceTiming struct {
+	Interval        time.Duration // период крон-тика (pull_interval)
+	InitialLookback time.Duration // глубина окна первого захода, когда курсора нет
+	CursorOverlap   time.Duration // запас: курсор храним на столько раньше LAST_UPDATE
+	StaleAfter      time.Duration // курсор не двигался дольше — пустой проход идёт в журнал
 }
 
 func NewReferenceService(
@@ -47,12 +57,12 @@ func NewReferenceService(
 	cursors port.PamyatkaCursorRepository,
 	journal port.JournalRepository,
 	clients []string,
-	interval time.Duration,
+	timing ReferenceTiming,
 	log *zap.Logger,
 ) *ReferenceService {
 	return &ReferenceService{
 		cl: cl, history: history, cursors: cursors, journal: journal,
-		clients: clients, interval: interval, log: log,
+		clients: clients, timing: timing, log: log,
 	}
 }
 
@@ -66,29 +76,32 @@ type PamyatkaPullResult struct {
 	Reasons  map[string]int `json:"reasons"`  // причины пропуска: код → сколько
 }
 
-// FetchByNumber — ручной забор памятки по номеру у конкретного клиента. Пустой
-// client → первый из настроенных (reference.clients). Номер уникален в пределах
-// клиента: у чужого клиента тот же номер даёт другой документ.
+// FetchByNumber — ручной забор памятки по тройке «клиент + номер + дата
+// создания» у конкретного клиента. Пустой client → первый из настроенных
+// (reference.clients). Одного номера НЕ достаточно: он повторяется у разных
+// портов и переиспользуется внутри одного (11224 был и 01.07, и 24.07), поэтому
+// провайдер требует dateCreate — дословное DATE_CREATE из инкремента.
 //
 // Отдаёт сырой ответ провайдера: это иной контракт, чем у инкремента (обёртка
 // ГУ-45 с полем _decoded_doc), в vagon_history он не раскладывается. Ручка
 // диагностическая — посмотреть исходный документ целиком.
-func (s *ReferenceService) FetchByNumber(ctx context.Context, client, number string) ([]byte, error) {
-	client, body, err := s.fetchRawByNumber(ctx, client, number)
+func (s *ReferenceService) FetchByNumber(ctx context.Context, client, number, dateCreate string) ([]byte, error) {
+	client, body, err := s.fetchRawByNumber(ctx, client, number, dateCreate)
 	if err != nil {
 		return nil, err
 	}
 	s.log.Info("reference: памятка по номеру получена",
-		zap.String("client", client), zap.String("number", number), zap.Int("bytes", len(body)))
+		zap.String("client", client), zap.String("number", number),
+		zap.String("date_create", dateCreate), zap.Int("bytes", len(body)))
 	return body, nil
 }
 
-// FetchExcelByNumber — та же памятка по номеру, но бланком ГУ-45 в Excel:
-// сырой ответ разбирается [parser.ParseReferenceDocByNumber] (только искомый
-// документ, попутчики по пачке не трогаются) и раскладывается по печатной
-// форме. Возвращает содержимое книги и имя файла для выгрузки.
-func (s *ReferenceService) FetchExcelByNumber(ctx context.Context, client, number string) ([]byte, string, error) {
-	client, body, err := s.fetchRawByNumber(ctx, client, number)
+// FetchExcelByNumber — та же памятка, но бланком ГУ-45 в Excel: сырой ответ
+// разбирается [parser.ParseReferenceDocByNumber] (только искомый документ,
+// попутчики по пачке не трогаются) и раскладывается по печатной форме.
+// Возвращает содержимое книги и имя файла для выгрузки.
+func (s *ReferenceService) FetchExcelByNumber(ctx context.Context, client, number, dateCreate string) ([]byte, string, error) {
+	client, body, err := s.fetchRawByNumber(ctx, client, number, dateCreate)
 	if err != nil {
 		return nil, "", err
 	}
@@ -109,14 +122,14 @@ func (s *ReferenceService) FetchExcelByNumber(ctx context.Context, client, numbe
 // fetchRawByNumber — общий забор по номеру: подстановка клиента по умолчанию
 // и запрос к провайдеру. Возвращает выбранного клиента (он нужен для разбора:
 // номер уникален лишь в его пределах) и тело ответа.
-func (s *ReferenceService) fetchRawByNumber(ctx context.Context, client, number string) (string, []byte, error) {
+func (s *ReferenceService) fetchRawByNumber(ctx context.Context, client, number, dateCreate string) (string, []byte, error) {
 	if client == "" {
 		if len(s.clients) == 0 {
 			return "", nil, errors.New("reference: клиент не задан и список reference.clients пуст")
 		}
 		client = s.clients[0]
 	}
-	body, err := s.cl.ByNumber(ctx, client, number)
+	body, err := s.cl.ByNumber(ctx, client, number, dateCreate)
 	if err != nil {
 		return "", nil, err
 	}
@@ -156,9 +169,9 @@ func (s *ReferenceService) PullUpdatesDetailed(ctx context.Context) ([]PamyatkaP
 // pullClient — один клиент: забрать с курсора, разобрать, разнести по рейсам,
 // сдвинуть курсор.
 //
-// Курсор двигаем ТОЛЬКО после успешной записи в БД и только на непустое
-// LAST_UPDATE: на пустой пачке провайдер отдаёт пустую строку, и запись её в
-// курсор потеряла бы позицию.
+// Курсор двигаем ТОЛЬКО после успешной записи в БД, только на непустое
+// LAST_UPDATE (на пустой пачке провайдер отдаёт пустую строку, и запись её в
+// курсор потеряла бы позицию) и только вперёд.
 func (s *ReferenceService) pullClient(ctx context.Context, client string) (PamyatkaPullResult, error) {
 	res := PamyatkaPullResult{Client: client, Reasons: map[string]int{}}
 
@@ -167,8 +180,16 @@ func (s *ReferenceService) pullClient(ctx context.Context, client string) (Pamya
 		return res, fmt.Errorf("reference (%s): чтение курсора: %w", client, err)
 	}
 	if cursor == "" {
-		// Первый заход: курсора нет — берём окно в один интервал назад.
-		cursor = clock.Now().Time().Add(-s.interval).Format(lastUpdateLayout)
+		// Первый заход: курсора нет — берём окно initial_lookback назад.
+		//
+		// Раньше здесь стоял pull_interval (час), и это заклинивало холодный
+		// старт наглухо (бой 27–30.07.2026: 80 тиков подряд по нулям, ни одной
+		// вехи в vagon_history). Провайдер публикует памятки ПОЗЖЕ их
+		// собственного LAST_UPDATE — на часовом окне ответ пуст всегда, пустой
+		// ответ не даёт LAST_UPDATE, курсор не сохраняется, следующий тик снова
+		// первый заход. Окно первого захода должно быть заметно глубже
+		// задержки публикации провайдера.
+		cursor = clock.Now().Time().Add(-s.lookback()).Format(lastUpdateLayout)
 	}
 
 	body, err := s.cl.Update(ctx, client, cursor)
@@ -190,20 +211,67 @@ func (s *ReferenceService) pullClient(ctx context.Context, client string) (Pamya
 		}
 	}
 
-	if upd.LastUpdate != "" {
-		if err := s.cursors.Set(ctx, client, upd.LastUpdate); err != nil {
+	// Сдвиг только вперёд: нахлёст возвращает ту же пачку каждый тик, и запись
+	// того же значения ничего не меняет, зато advanced отличает «пришло новое»
+	// от «повтор нахлёста» — для журнала это разные события.
+	var advanced bool
+	stored := s.cursorWithOverlap(upd.LastUpdate)
+	if stored != "" && stored > cursor {
+		if err := s.cursors.Set(ctx, client, stored); err != nil {
 			return res, fmt.Errorf("reference (%s): сохранение курсора: %w", client, err)
 		}
+		advanced = true
 	}
 
 	s.log.Info("reference: инкремент памяток обработан",
 		zap.String("client", client), zap.String("cursor", cursor),
-		zap.String("next_cursor", upd.LastUpdate), zap.Int("pamyatki", res.Pamyatki),
+		zap.String("next_cursor", upd.LastUpdate), zap.String("stored_cursor", stored),
+		zap.Bool("advanced", advanced), zap.Int("pamyatki", res.Pamyatki),
 		zap.Int("vagons", res.Vagons), zap.Int("applied", res.Applied),
 		zap.Int("skipped", res.Skipped), zap.Any("reasons", res.Reasons))
 
-	s.appendJournal(ctx, res)
+	s.appendJournal(ctx, res, cursor, advanced)
 	return res, nil
+}
+
+// lookback — глубина окна первого захода. Конфиг подставляет дефолт (48h);
+// страховка на нулевое значение — сутки, лишь бы не скатиться к pull_interval.
+func (s *ReferenceService) lookback() time.Duration {
+	if s.timing.InitialLookback > 0 {
+		return s.timing.InitialLookback
+	}
+	return 24 * time.Hour
+}
+
+// cursorWithOverlap — курсор с нахлёстом: храним не сам LAST_UPDATE, а на
+// cursor_overlap раньше него. Провайдер публикует записи не в порядке их
+// штампов (пачка со штампом 22:50 становится видна после пачки с 23:08) —
+// сохрани мы верхний штамп встык, запоздавшая памятка не попала бы в окно уже
+// никогда. Перечитать памятку не вредно: разнос идемпотентен (тот же документ
+// обновляется на месте, движок решает так же).
+func (s *ReferenceService) cursorWithOverlap(lastUpdate string) string {
+	if lastUpdate == "" || s.timing.CursorOverlap <= 0 {
+		return lastUpdate
+	}
+	t, err := time.Parse(lastUpdateLayout, lastUpdate)
+	if err != nil {
+		// Формат провайдера сменился — храним как пришло, инкремент не рвём.
+		s.log.Warn("reference: LAST_UPDATE не разобран, курсор без нахлёста",
+			zap.String("last_update", lastUpdate), zap.Error(err))
+		return lastUpdate
+	}
+	return t.Add(-s.timing.CursorOverlap).Format(lastUpdateLayout)
+}
+
+// cursorAge — сколько прошло с момента, на котором стоит курсор. Обе величины
+// московские naive и однородны: clock.Now() отдаёт то же представление, что
+// time.Parse без зоны.
+func cursorAge(cursor string) (time.Duration, bool) {
+	t, err := time.Parse(lastUpdateLayout, cursor)
+	if err != nil {
+		return 0, false
+	}
+	return clock.Now().Time().Sub(t), true
 }
 
 // applyToHistory — сердце разноса: собрать вагоны пачки, поднять их рейсы,
@@ -233,16 +301,36 @@ func (s *ReferenceService) applyToHistory(ctx context.Context, client string, pa
 	return nil
 }
 
-// appendJournal — след в едином журнале событий. Пустые проходы не пишем, иначе
-// журнал забьётся тиками крона (памятки приходят далеко не каждый час).
-func (s *ReferenceService) appendJournal(ctx context.Context, res PamyatkaPullResult) {
-	if s.journal == nil || res.Pamyatki == 0 {
+// appendJournal — след в едином журнале событий. Пишем три разных случая
+// по-разному, чтобы журнал не забился тиками крона (памятки приходят далеко не
+// каждый час), но и молчание не осталось незамеченным:
+//   - пришло новое (курсор сдвинулся) — обычная запись прохода;
+//   - повтор пачки нахлёста (курсор на месте) — не пишем, нового нет;
+//   - пусто И курсор не двигается дольше stale_after — пишем тревогу с полем
+//     silent_hours. Именно её не хватило в бою 27–30.07.2026: трое суток
+//     пустых тиков выглядели в журнале как тишина, а не как поломка.
+func (s *ReferenceService) appendJournal(ctx context.Context, res PamyatkaPullResult, cursor string, advanced bool) {
+	if s.journal == nil {
 		return
 	}
-	detail, err := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"pamyatki": res.Pamyatki, "vagons": res.Vagons,
 		"applied": res.Applied, "skipped": res.Skipped, "reasons": res.Reasons,
-	})
+	}
+	switch {
+	case res.Pamyatki > 0 && advanced:
+		// Обычный проход с новыми данными.
+	case res.Pamyatki == 0:
+		age, ok := cursorAge(cursor)
+		if !ok || s.timing.StaleAfter <= 0 || age < s.timing.StaleAfter {
+			return
+		}
+		fields["cursor"] = cursor
+		fields["silent_hours"] = int(age.Hours())
+	default:
+		return // тот же LAST_UPDATE: пачка нахлёста, писать нечего
+	}
+	detail, err := json.Marshal(fields)
 	if err != nil {
 		s.log.Warn("reference: сборка detail журнала не удалась", zap.Error(err))
 		return
