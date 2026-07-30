@@ -95,14 +95,14 @@ type nmtpVagonColumnModel struct {
 
 func (nmtpVagonColumnModel) TableName() string { return "nmtp_vagon_column" }
 
-func (r *NmtpRepository) VagonColumns(ctx context.Context) (map[string]int64, error) {
+func (r *NmtpRepository) VagonColumns(ctx context.Context) (map[string]domain.NmtpVagonBinding, error) {
 	var ms []nmtpVagonColumnModel
 	if err := r.db.WithContext(ctx).Find(&ms).Error; err != nil {
 		return nil, err
 	}
-	out := make(map[string]int64, len(ms))
+	out := make(map[string]domain.NmtpVagonBinding, len(ms))
 	for _, m := range ms {
-		out[m.Vagon] = m.ColumnID
+		out[m.Vagon] = domain.NmtpVagonBinding{ColumnID: m.ColumnID, CreatedAt: domain.LocalTime(m.CreatedAt)}
 	}
 	return out, nil
 }
@@ -128,5 +128,11 @@ func (r *NmtpRepository) DeleteVagonColumns(ctx context.Context, vagons []string
 	}
 	return r.db.WithContext(ctx).
 		Where("vagon IN ?", vagons).
+		Delete(&nmtpVagonColumnModel{}).Error
+}
+
+func (r *NmtpRepository) DeleteVagonColumnsBefore(ctx context.Context, before time.Time) error {
+	return r.db.WithContext(ctx).
+		Where("created_at < ?", before).
 		Delete(&nmtpVagonColumnModel{}).Error
 }

@@ -118,7 +118,7 @@ func TestBuildNmtpReport(t *testing.T) {
 
 	records := []domain.Dislocation{sl, kat, shx, kon, alien, swap, bros, near, arrived, foreign}
 	brosDate := nmtpLTP(2026, 7, 25)
-	rep, _ := buildNmtpReport(records, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
+	rep, _, _ := buildNmtpReport(records, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
 		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, map[string]*domain.LocalTime{"4444-444-4444": brosDate}, false, nil)
 
 	// «прочее» появилось (alien), специфичность: СЛЯБЫ не съедены ПРОКАТОМ.
@@ -203,7 +203,7 @@ func TestBuildNmtpReport_BezindeksnyeNeSlipayutsya(t *testing.T) {
 	prog := nmtpLT(2026, 7, 30, 9, 30)
 	c.ProgJd = &prog
 
-	rep, _ := buildNmtpReport([]domain.Dislocation{a1, a2, b, c}, nmtpTestCols(), nmtpTestMarks,
+	rep, _, _ := buildNmtpReport([]domain.Dislocation{a1, a2, b, c}, nmtpTestCols(), nmtpTestMarks,
 		"ГУТ-2", []string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false, nil)
 
 	var rows []domain.NmtpTrainRow
@@ -248,7 +248,7 @@ func TestBuildNmtpReport_PorogPlanRezhim(t *testing.T) {
 	away.IndexMain = "9999-182-9999"
 	recs = append(recs, away)
 
-	def, _ := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
+	def, _, _ := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
 		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false, nil)
 	assert.Equal(t, 1, def.TrainsActive) // только полный поезд
 	assert.Equal(t, 40, def.TotalVagons) // 20 + 19 + перестановка
@@ -274,7 +274,7 @@ func TestBuildNmtpReport_PorogPlanRezhim(t *testing.T) {
 	assert.False(t, short.Planned)
 	assert.Equal(t, "был 182, НА АЭ", moved.Note)
 
-	nazn, _ := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
+	nazn, _, _ := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
 		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, true, nil)
 	assert.Equal(t, 39, nazn.TotalVagons) // перестановки «НА АЭ» нет
 	for _, s := range nazn.Sections {
@@ -285,14 +285,26 @@ func TestBuildNmtpReport_PorogPlanRezhim(t *testing.T) {
 }
 
 // Ручная привязка «вагон → колонка» (указание грузовладельца) сильнее правил;
-// привязки вагонов, не встреченных в подходе, возвращаются как непогашенные.
+// привязка старого рейса (дата приёма позже привязки) протухает и возвращается
+// в stale; привязки вагонов вне подхода — непогашенные (не в seen).
 func TestBuildNmtpReport_VagonOverride(t *testing.T) {
 	v := nmtpVagon("60000021", "1111-111-1111", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 1, 69)
-	// По правилам вагон лёг бы в колонку 4 (КЛЦ МАРИС/ЧЕЛУТАЙ) — привязка ведёт в 0.
-	overrides := map[string]int{"60000021": 0, "60999999": 3}
-	rep, seen := buildNmtpReport([]domain.Dislocation{v}, nmtpTestCols(), nmtpTestMarks,
+	// Тот же поезд, но вагон принят к перевозке ПОСЛЕ назначения привязки —
+	// это уже новый рейс, привязка обязана протухнуть и лечь по правилам.
+	fresh := nmtpVagon("60000022", "1111-111-1111", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 2, 69)
+	fresh.DateNach = nmtpLTP(2026, 7, 29)
+
+	bindTime := nmtpLT(2026, 7, 25, 12, 0).Time() // позже DateNach v (20.07), раньше fresh (29.07)
+	// По правилам вагоны легли бы в колонку 4 (КЛЦ МАРИС/ЧЕЛУТАЙ) — привязка ведёт в 0.
+	overrides := map[string]nmtpOverride{
+		"60000021": {col: 0, created: bindTime},
+		"60000022": {col: 0, created: bindTime},
+		"60999999": {col: 3, created: bindTime},
+	}
+	rep, seen, stale := buildNmtpReport([]domain.Dislocation{v, fresh}, nmtpTestCols(), nmtpTestMarks,
 		"ГУТ-2", []string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false, overrides)
-	assert.Equal(t, []int{1, 0, 0, 0, 0, 0}, rep.ColCounts)
+	assert.Equal(t, []int{1, 0, 0, 0, 1, 0}, rep.ColCounts) // 60000021 → привязка, 60000022 → правила
 	assert.True(t, seen["60000021"])
-	assert.False(t, seen["60999999"]) // вагона нет в подходе — кандидат на гашение
+	assert.True(t, stale["60000022"])                        // новый рейс — кандидат на гашение
+	assert.False(t, seen["60999999"] || stale["60999999"]) // вне подхода — гасится по отсутствию
 }

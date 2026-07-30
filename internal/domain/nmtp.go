@@ -49,6 +49,14 @@ type NmtpSection struct {
 	Total     int            `json:"total"`
 }
 
+// NmtpVagonBinding — привязка вагона к колонке формы (nmtp_vagon_column):
+// момент назначения нужен, чтобы отличить рейс привязки от нового рейса
+// вагона (дата приёма к перевозке позже привязки — привязка протухла).
+type NmtpVagonBinding struct {
+	ColumnID  int64
+	CreatedAt LocalTime
+}
+
 // NmtpClientTons — строка свода «клиент → тоннаж» (подвал файла порта).
 type NmtpClientTons struct {
 	Client string  `json:"client"`

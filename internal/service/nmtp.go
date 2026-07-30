@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
 )
@@ -168,28 +170,48 @@ func (s *NmtpService) Report(ctx context.Context, terminal string, naznachOnly b
 	// Ручные привязки «вагон → колонка» ЭТОГО терминала (сильнее правил).
 	overrides, ours := s.vagonOverrides(ctx, cols)
 
-	report, seen := buildNmtpReport(s.actual.All(), cols, marks, terminal, termStations, brosDates, naznachOnly, overrides)
+	report, seen, stale := buildNmtpReport(s.actual.All(), cols, marks, terminal, termStations, brosDates, naznachOnly, overrides)
 	report.Norm = p.NmtpNorm
 
-	// Гашение: вагон с привязкой выпал из подхода (прибыл/выбыл) — привязка
-	// мертва. Best-effort: сбой удаления не роняет отчёт. В режиме naznachOnly
-	// не гасим — уходящие «НА {сосед}» скрыты отбором, но живы.
+	// Гашение (best-effort: сбой удаления не роняет отчёт):
+	// 1) привязка протухла — у вагона НОВЫЙ рейс (дата приёма позже привязки);
+	//    гасим в любом режиме, распознание положительное;
+	// 2) вагон выпал из подхода (прибыл/выбыл) — только в режиме по умолчанию:
+	//    в naznachOnly уходящие «НА {сосед}» скрыты отбором, но живы;
+	// 3) страховка от вечных сирот (отчёт могли долго не строить):
+	//    всё старше nmtpBindingMaxAge.
+	var dead []string
+	for v := range stale {
+		dead = append(dead, v)
+	}
 	if !naznachOnly {
-		var dead []string
 		for _, v := range ours {
-			if !seen[v] {
+			if !seen[v] && !stale[v] {
 				dead = append(dead, v)
 			}
 		}
-		_ = s.repo.DeleteVagonColumns(ctx, dead)
 	}
+	_ = s.repo.DeleteVagonColumns(ctx, dead)
+	_ = s.repo.DeleteVagonColumnsBefore(ctx, clock.Now().Time().Add(-nmtpBindingMaxAge))
 	return report, nil
 }
 
+// nmtpOverride — привязка вагона в терминах агрегации: индекс колонки в cols
+// и момент назначения (для протухания по новому рейсу).
+type nmtpOverride struct {
+	col     int
+	created time.Time
+}
+
+// nmtpBindingMaxAge — страховочный срок жизни привязки «вагон → колонка»:
+// рейс длится недели, 60 суток с запасом. Основные механизмы гашения — новый
+// рейс и выпадение из подхода; возраст ловит сирот, когда отчёт долго не строят.
+const nmtpBindingMaxAge = 60 * 24 * time.Hour
+
 // vagonOverrides — привязки вагонов к колонкам данного терминала: карта
-// vagon → индекс колонки в cols и список «наших» вагонов (для гашения).
-// Привязки чужих терминалов игнорируются и не гасятся.
-func (s *NmtpService) vagonOverrides(ctx context.Context, cols []domain.NmtpColumn) (map[string]int, []string) {
+// vagon → {индекс колонки, момент назначения} и список «наших» вагонов (для
+// гашения). Привязки чужих терминалов игнорируются и не гасятся.
+func (s *NmtpService) vagonOverrides(ctx context.Context, cols []domain.NmtpColumn) (map[string]nmtpOverride, []string) {
 	all, err := s.repo.VagonColumns(ctx)
 	if err != nil || len(all) == 0 {
 		return nil, nil // best-effort: без привязок отчёт живёт по правилам
@@ -198,11 +220,11 @@ func (s *NmtpService) vagonOverrides(ctx context.Context, cols []domain.NmtpColu
 	for i, c := range cols {
 		byID[c.ID] = i
 	}
-	overrides := map[string]int{}
+	overrides := map[string]nmtpOverride{}
 	var ours []string
-	for v, colID := range all {
-		if idx, ok := byID[colID]; ok {
-			overrides[v] = idx
+	for v, b := range all {
+		if idx, ok := byID[b.ColumnID]; ok {
+			overrides[v] = nmtpOverride{col: idx, created: b.CreatedAt.Time()}
 			ours = append(ours, v)
 		}
 	}
@@ -300,12 +322,14 @@ func terminalStationNames(dir *DirectoryCache) []string {
 const nmtpMinTrainVagons = 20
 
 // buildNmtpReport — чистая агрегация (покрыта тестами). overrides — ручные
-// привязки «вагон → индекс колонки» (сильнее правил); второй результат — какие
-// из привязанных вагонов встретились в подходе (для гашения остальных).
+// привязки «вагон → колонка» (сильнее правил); возвращает также, какие из
+// привязанных вагонов применились (seen) и какие протухли из-за нового рейса
+// вагона — дата приёма позже привязки (stale, кандидаты на гашение).
 func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, markDict []string,
 	terminal string, termStations []string, brosDates map[string]*domain.LocalTime,
-	naznachOnly bool, overrides map[string]int) (domain.NmtpReport, map[string]bool) {
+	naznachOnly bool, overrides map[string]nmtpOverride) (domain.NmtpReport, map[string]bool, map[string]bool) {
 	seenOverrides := map[string]bool{}
+	staleOverrides := map[string]bool{}
 
 	norm := NewMarkNormalizer(markDict)
 	matchers := make([]nmtpMatcher, len(cols))
@@ -430,9 +454,16 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 		client := strings.ToUpper(strings.TrimSpace(rec.Client))
 		station := strings.ToUpper(strings.TrimSpace(rec.StationNach))
 		col := otherIdx
-		if ov, ok := overrides[rec.Vagon]; ok {
+		ov, hasOv := overrides[rec.Vagon]
+		if hasOv && rec.DateNach != nil && rec.DateNach.Time().After(ov.created) {
+			// Вагон в НОВОМ рейсе (принят к перевозке позже привязки) —
+			// привязка старого рейса протухла, раскладываем по правилам.
+			hasOv = false
+			staleOverrides[rec.Vagon] = true
+		}
+		if hasOv {
 			// Ручная привязка вагона (указание грузовладельца) сильнее правил.
-			col = ov
+			col = ov.col
 			seenOverrides[rec.Vagon] = true
 		} else {
 			for _, mi := range checkOrder {
@@ -598,5 +629,5 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 	}
 	report.UnloadForecast = float64(near) / 7
 
-	return report, seenOverrides
+	return report, seenOverrides, staleOverrides
 }
