@@ -260,7 +260,9 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 				set(6, row, "", "cellC")
 			}
 			set(7, row, "", "cellC")
-		} else if t.Prog != nil {
+		} else if t.Prog != nil && t.Planned {
+			// Прибытие печатается только плановым поездам (есть plan_jd) —
+			// правило владельца 30.07.2026; бесплановым — пусто.
 			v := vladTime(t.Prog)
 			set(6, row, v.Format("02.01.06"), "cellC")
 			set(7, row, v.Format("15:04"), "cellC")

@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { blobErrorMessage } from '../../shared/blob-error';
 import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { BrosModalComponent } from '../home/bros-modal.component';
@@ -11,6 +12,8 @@ import { VygruzkaDayModalComponent } from './vygruzka-day-modal.component';
 import { VygruzkaModalComponent } from './vygruzka-modal.component';
 import { PerestanovkaApiService } from './perestanovka-api.service';
 import { PerestanovkaFactModalComponent } from './perestanovka-fact-modal.component';
+import { NmtpApiService } from './nmtp-api.service';
+import { NmtpModalComponent } from './nmtp-modal.component';
 import { PodhodApiService, ReportPreset } from './podhod-api.service';
 import { PodhodModalComponent } from './podhod-modal.component';
 import { SmsOperModalComponent } from './sms-oper-modal.component';
@@ -49,8 +52,8 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
   imports: [
     NzButtonModule, SmsPlanModalComponent, SmsOperModalComponent,
     BrosModalComponent, BrosReportModalComponent, PodhodModalComponent,
-    LoadingModalComponent, VygruzkaModalComponent, VygruzkaDayModalComponent,
-    PerestanovkaFactModalComponent,
+    NmtpModalComponent, LoadingModalComponent, VygruzkaModalComponent,
+    VygruzkaDayModalComponent, PerestanovkaFactModalComponent,
   ],
   template: `
     <div class="page">
@@ -96,7 +99,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
                 <div class="head">Отчёты НМТП</div>
                 <div class="body">
                   @for (t of nmtpTerminals(); track t) {
-                    <button nz-button nzBlock [nzLoading]="nmtpBusy() === t" (click)="downloadNmtp(t)">
+                    <button nz-button nzBlock (click)="nmtpOpen.set(t)">
                       <span class="dot" [style.background]="terminalColor(t)"></span>Подход {{ t }}
                     </button>
                   }
@@ -165,6 +168,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
       <app-podhod-modal [terminal]="p.terminal" [clients]="p.clients" [presetName]="p.preset"
                         (closed)="podhod.set(null)" />
     }
+    @if (nmtpOpen(); as t) { <app-nmtp-modal [terminal]="t" (closed)="nmtpOpen.set(null)" /> }
     @if (loadingView(); as v) { <app-loading-modal [initialView]="v" (closed)="loadingView.set(null)" /> }
     @if (vygruzkaOpen()) { <app-vygruzka-modal (closed)="vygruzkaOpen.set(false)" /> }
     @if (vygruzkaDayOpen()) { <app-vygruzka-day-modal (closed)="vygruzkaDayOpen.set(false)" /> }
@@ -191,13 +195,14 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
 export class ReportsComponent implements OnInit {
   private readonly arrivals = inject(ArrivalsApiService);
   private readonly podhodApi = inject(PodhodApiService);
+  private readonly nmtpApi = inject(NmtpApiService);
   private readonly perestanovkaApi = inject(PerestanovkaApiService);
   private readonly msg = inject(NzMessageService);
 
   readonly vagonkaBusy = signal<string | null>(null);
   readonly perestanovkaBusy = signal<string | null>(null);
-  readonly nmtpBusy = signal<string | null>(null);
   readonly nmtpTerminals = signal<string[]>([]);
+  readonly nmtpOpen = signal<string | null>(null);
   readonly loadingView = signal<'summary' | 'daily' | null>(null);
   readonly vygruzkaOpen = signal(false);
   readonly vygruzkaDayOpen = signal(false);
@@ -224,7 +229,7 @@ export class ReportsComponent implements OnInit {
       this.presets.set(await this.podhodApi.presets());
     } catch { /* без пресетов — без карточек пресетов */ }
     try {
-      this.nmtpTerminals.set(await this.podhodApi.nmtpTerminals());
+      this.nmtpTerminals.set(await this.nmtpApi.terminals());
     } catch { /* без раскладки НМТП — без карточки */ }
   }
 
@@ -233,18 +238,6 @@ export class ReportsComponent implements OnInit {
     return this.terminals().find((t) => t.name === name)?.color || '#eee';
   }
 
-  /** «Подход вагонов» по форме порта (НМТП) — книга .xlsx с сервера. */
-  async downloadNmtp(terminal: string): Promise<void> {
-    this.nmtpBusy.set(terminal);
-    try {
-      const blob = await this.podhodApi.nmtpExcel(terminal);
-      this.saveBlob(blob, `Подход вагонов ${terminal} ${todayMsk()}.xlsx`);
-    } catch (err) {
-      this.msg.error(await blobErrorMessage(err));
-    } finally {
-      this.nmtpBusy.set(null);
-    }
-  }
 
   openPodhod(terminal: string, clients: string, preset: string): void {
     this.podhod.set({ terminal, clients, preset });
@@ -288,17 +281,3 @@ export class ReportsComponent implements OnInit {
   }
 }
 
-/**
- * Текст ошибки скачивания: при responseType 'blob' HttpClient заворачивает и
- * JSON-тело ошибки в Blob — разбираем его, чтобы показать сообщение сервера
- * («нет вагонов на перестановку…»), а не безликое «Не удалось выполнить запрос».
- */
-async function blobErrorMessage(err: unknown): Promise<string> {
-  const body = (err as { error?: unknown } | undefined)?.error;
-  if (body instanceof Blob) {
-    try {
-      return apiErrorMessage({ error: JSON.parse(await body.text()) });
-    } catch { /* не JSON — падаем в общий текст */ }
-  }
-  return apiErrorMessage(err);
-}

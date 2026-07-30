@@ -5,6 +5,7 @@ package service
 // «прочее», секции, брошенные, пометки перестановок, формула прогноза).
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -118,7 +119,7 @@ func TestBuildNmtpReport(t *testing.T) {
 	records := []domain.Dislocation{sl, kat, shx, kon, alien, swap, bros, near, arrived, foreign}
 	brosDate := nmtpLTP(2026, 7, 25)
 	rep := buildNmtpReport(records, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
-		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, map[string]*domain.LocalTime{"4444-444-4444": brosDate})
+		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, map[string]*domain.LocalTime{"4444-444-4444": brosDate}, false)
 
 	// «прочее» появилось (alien), специфичность: СЛЯБЫ не съедены ПРОКАТОМ.
 	assert.True(t, rep.HasOther)
@@ -163,10 +164,11 @@ func TestBuildNmtpReport(t *testing.T) {
 	// Вагон для контроля — головной (npp=1).
 	assert.Equal(t, "60000001", zab.Rows[0].ControlVagon)
 
-	// Счётчики и прогноз: активных поездов 4 (метал, савитар, перестановка, near),
-	// брошенных 1; ближние = МЫС(1) + ДВС(0) + ЗАБ(5) + ВСБ(1) = 7 → 1.0.
-	assert.Equal(t, 4, rep.TrainsActive)
-	assert.Equal(t, 1, rep.TrainsAbandoned)
+	// Счётчики: все поезда фикстуры короче nmtpMinTrainVagons — поездами не
+	// считаются (правило владельца 30.07.2026), хотя строки и вагоны на месте.
+	// Ближние = МЫС(1) + ДВС(0) + ЗАБ(5) + ВСБ(1) = 7 → 1.0.
+	assert.Equal(t, 0, rep.TrainsActive)
+	assert.Equal(t, 0, rep.TrainsAbandoned)
 	assert.InDelta(t, 1.0, rep.UnloadForecast, 0.001)
 
 	// Тоннаж: 8 вагонов всего, тыс. тонн.
@@ -202,9 +204,8 @@ func TestBuildNmtpReport_BezindeksnyeNeSlipayutsya(t *testing.T) {
 	c.ProgJd = &prog
 
 	rep := buildNmtpReport([]domain.Dislocation{a1, a2, b, c}, nmtpTestCols(), nmtpTestMarks,
-		"ГУТ-2", []string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil)
+		"ГУТ-2", []string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false)
 
-	assert.Equal(t, 3, rep.TrainsActive)
 	var rows []domain.NmtpTrainRow
 	for _, s := range rep.Sections {
 		rows = append(rows, s.Rows...)
@@ -218,4 +219,65 @@ func TestBuildNmtpReport_BezindeksnyeNeSlipayutsya(t *testing.T) {
 	assert.Equal(t, 2, totals["ПЕТРОВСКИЙ ЗАВОД|2026-07-30T06:00:00"])
 	assert.Equal(t, 1, totals["СУХОВСКАЯ|2026-07-30T06:00:00"])
 	assert.Equal(t, 1, totals["ПЕТРОВСКИЙ ЗАВОД|2026-07-30T09:30:00"])
+}
+
+// Правила владельца 30.07.2026: короткий состав (<20 ваг.) — не поезд в
+// счётчиках; «ожид. прибытие» — только плановым (есть plan_jd); режим
+// naznachOnly («скрыть перестановки») отбирает строго по назначению.
+func TestBuildNmtpReport_PorogPlanRezhim(t *testing.T) {
+	// Полный поезд: 20 вагонов, один из них в плане подвода → плановый.
+	var recs []domain.Dislocation
+	for i := 0; i < 20; i++ {
+		v := nmtpVagon(fmt.Sprintf("610000%02d", i), "1111-111-1111", "КЛЦ МАРИС", "ЧЕЛУТАЙ",
+			"УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", i+1, 69)
+		recs = append(recs, v)
+	}
+	plan := nmtpLT(2026, 8, 1, 9, 0)
+	recs[0].PlanJd = &plan
+
+	// Короткий бесплановый (19 вагонов) — строка есть, поездом не считается.
+	for i := 0; i < 19; i++ {
+		recs = append(recs, nmtpVagon(fmt.Sprintf("620000%02d", i), "2222-222-2222", "КЛЦ МАРИС", "ЧЕЛУТАЙ",
+			"УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", i+1, 69))
+	}
+
+	// Перестановка «НА АЭ» (уходит от нас): в режиме по умолчанию видна, в naznachOnly — нет.
+	away := nmtpVagon("63000001", "3333-333-3333", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 1, 69)
+	away.GruzpolS, away.Naznach = "ГУТ-2", "АЭ"
+	recs = append(recs, away)
+
+	def := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
+		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false)
+	assert.Equal(t, 1, def.TrainsActive) // только полный поезд
+	assert.Equal(t, 40, def.TotalVagons) // 20 + 19 + перестановка
+
+	var full, short, moved *domain.NmtpTrainRow
+	for si := range def.Sections {
+		for ri := range def.Sections[si].Rows {
+			r := &def.Sections[si].Rows[ri]
+			switch r.Index {
+			case "1111-111-1111":
+				full = r
+			case "2222-222-2222":
+				short = r
+			case "3333-333-3333":
+				moved = r
+			}
+		}
+	}
+	require.NotNil(t, full)
+	require.NotNil(t, short)
+	require.NotNil(t, moved)
+	assert.True(t, full.Planned)
+	assert.False(t, short.Planned)
+	assert.Equal(t, "НА АЭ", moved.Note)
+
+	nazn := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
+		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, true)
+	assert.Equal(t, 39, nazn.TotalVagons) // перестановки «НА АЭ» нет
+	for _, s := range nazn.Sections {
+		for _, r := range s.Rows {
+			assert.NotEqual(t, "3333-333-3333", r.Index)
+		}
+	}
 }

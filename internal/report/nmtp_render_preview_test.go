@@ -34,7 +34,7 @@ func TestNmtpXLSXPreview(t *testing.T) {
 	row := func(idx, st string, counts []int, total int) domain.NmtpTrainRow {
 		return domain.NmtpTrainRow{
 			Index: idx, StationOper: st, DateNach: lt("2026-07-24T00:00:00"),
-			ControlVagon: "60594728", Prog: lt("2026-07-31T05:39:00"),
+			ControlVagon: "60594728", Prog: lt("2026-07-31T05:39:00"), Planned: true,
 			Counts: counts, Total: total,
 		}
 	}

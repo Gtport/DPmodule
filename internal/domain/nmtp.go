@@ -31,6 +31,7 @@ type NmtpTrainRow struct {
 	Note         string     `json:"note,omitempty"` // перестановка: «НА {терминал}» / «С {терминал}»
 	ControlVagon string     `json:"control_vagon"`  // «вагон для контроля» — первый вагон состава
 	Prog         *LocalTime `json:"prog"`           // ожидаемое прибытие (prog_jd, МСК)
+	Planned      bool       `json:"planned"`        // поезд в плане подвода (есть plan_jd) — только таким печатается прибытие
 	DateBros     *LocalTime `json:"date_bros,omitempty"`
 	Counts       []int      `json:"counts"` // по колонкам; последний элемент — «прочее»
 	Tons         []float64  `json:"-"`      // тонны по колонкам (для подвала)

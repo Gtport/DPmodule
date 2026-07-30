@@ -129,8 +129,10 @@ func (s *NmtpService) Terminals(ctx context.Context) ([]string, error) {
 	return s.repo.Terminals(ctx)
 }
 
-// Report — форма терминала из текущего снимка.
-func (s *NmtpService) Report(ctx context.Context, terminal string) (domain.NmtpReport, error) {
+// Report — форма терминала из текущего снимка. naznachOnly — режим «скрыть
+// перестановки» (как gtport UseNaznachOnly): строго по назначению, без поездов,
+// переставляемых на соседний терминал; по умолчанию — получатель ИЛИ назначение.
+func (s *NmtpService) Report(ctx context.Context, terminal string, naznachOnly bool) (domain.NmtpReport, error) {
 	p, ok := s.dir.PortByNameS(terminal)
 	if !ok {
 		return domain.NmtpReport{}, fmt.Errorf("неизвестный терминал: %s", terminal)
@@ -163,7 +165,7 @@ func (s *NmtpService) Report(ctx context.Context, terminal string) (domain.NmtpR
 	// реестра, отсортированные по коду по убыванию (порядок главной страницы).
 	termStations := terminalStationNames(s.dir)
 
-	report := buildNmtpReport(s.actual.All(), cols, marks, terminal, termStations, brosDates)
+	report := buildNmtpReport(s.actual.All(), cols, marks, terminal, termStations, brosDates, naznachOnly)
 	report.Norm = p.NmtpNorm
 	return report, nil
 }
@@ -194,9 +196,15 @@ func terminalStationNames(dir *DirectoryCache) []string {
 	return out
 }
 
+// nmtpMinTrainVagons — порог счётчиков поездов: состав короче не считается
+// поездом (правило владельца 30.07.2026; в gtport та же идея порогом >25 в
+// формуле листа). Строку в форме короткий состав всё равно получает.
+const nmtpMinTrainVagons = 20
+
 // buildNmtpReport — чистая агрегация (покрыта тестами).
 func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, markDict []string,
-	terminal string, termStations []string, brosDates map[string]*domain.LocalTime) domain.NmtpReport {
+	terminal string, termStations []string, brosDates map[string]*domain.LocalTime,
+	naznachOnly bool) domain.NmtpReport {
 
 	norm := NewMarkNormalizer(markDict)
 	matchers := make([]nmtpMatcher, len(cols))
@@ -242,7 +250,11 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 
 	for i := range records {
 		rec := &records[i]
-		if rec.GruzpolS != terminal && rec.Naznach != terminal {
+		if naznachOnly {
+			if rec.Naznach != terminal {
+				continue // «скрыть перестановки»: без уходящих «НА {сосед}»
+			}
+		} else if rec.GruzpolS != terminal && rec.Naznach != terminal {
 			continue
 		}
 		if rec.Status != nil && (*rec.Status == 10 || *rec.Status == 12) {
@@ -279,6 +291,11 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 		}
 		if tr.road == "" && rec.DorogaOper != "" {
 			tr.road = rec.DorogaOper
+		}
+		// Плановый поезд — хоть один вагон в плане подвода; только плановым
+		// печатается «ожид. дата/время приб.» (правило владельца 30.07.2026).
+		if rec.PlanJd != nil {
+			tr.row.Planned = true
 		}
 		// «Вагон для контроля» — головной вагон состава (мин. номер в поезде).
 		if tr.row.ControlVagon == "" || (rec.NppVag != nil && (tr.firstNpp == nil || *rec.NppVag < *tr.firstNpp)) {
@@ -414,7 +431,11 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 	addTotals := func(secs []domain.NmtpSection, trainsCounter *int) {
 		for _, sec := range secs {
 			for _, r := range sec.Rows {
-				*trainsCounter++
+				// Короткий состав поездом не считается (< nmtpMinTrainVagons),
+				// но в строках, вагонах и тоннаже участвует полностью.
+				if r.Total >= nmtpMinTrainVagons {
+					*trainsCounter++
+				}
 				report.TotalVagons += r.Total
 				for c := 0; c < nCols; c++ {
 					report.ColCounts[c] += r.Counts[c]

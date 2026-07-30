@@ -22,9 +22,14 @@ func NewNmtpHandler(svc *service.NmtpService) *nmtpHandler {
 }
 
 func (h *nmtpHandler) RegisterRoutes(g *gin.RouterGroup) {
+	g.GET("/reports/nmtp", h.report)
 	g.GET("/reports/nmtp/terminals", h.terminals)
 	g.GET("/reports/nmtp/excel", h.excel)
 }
+
+// naznachOnly — режим отбора из query: mode=naznach («скрыть перестановки»,
+// строго по назначению, как gtport UseNaznachOnly); иначе получатель ИЛИ назначение.
+func naznachOnly(c *gin.Context) bool { return c.Query("mode") == "naznach" }
 
 // terminals godoc
 // @Summary  Терминалы с настроенной раскладкой НМТП-отчёта (nmtp_column)
@@ -41,11 +46,35 @@ func (h *nmtpHandler) terminals(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+// report godoc
+// @Summary  «Подход вагонов» по форме порта (НМТП): данные формы для экрана
+// @Tags     reports
+// @Security BearerAuth
+// @Param    terminal query string true  "терминал (ports.name_s)"
+// @Param    mode     query string false "naznach — скрыть перестановки (строго по назначению)"
+// @Success  200 {object} domain.NmtpReport
+// @Failure  400 {object} object "терминал не задан / неизвестен / раскладка не настроена"
+// @Router   /api/v1/reports/nmtp [get]
+func (h *nmtpHandler) report(c *gin.Context) {
+	terminal := c.Query("terminal")
+	if terminal == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "не задан терминал"})
+		return
+	}
+	rep, err := h.svc.Report(c.Request.Context(), terminal, naznachOnly(c))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rep)
+}
+
 // excel godoc
 // @Summary  «Подход вагонов» по форме порта (НМТП): книга .xlsx из текущего снимка
 // @Tags     reports
 // @Security BearerAuth
-// @Param    terminal query string true "терминал (ports.name_s)"
+// @Param    terminal query string true  "терминал (ports.name_s)"
+// @Param    mode     query string false "naznach — скрыть перестановки (строго по назначению)"
 // @Success  200 {file} binary "книга .xlsx"
 // @Failure  400 {object} object "терминал не задан / неизвестен / раскладка не настроена"
 // @Router   /api/v1/reports/nmtp/excel [get]
@@ -55,7 +84,7 @@ func (h *nmtpHandler) excel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "не задан терминал"})
 		return
 	}
-	rep, err := h.svc.Report(c.Request.Context(), terminal)
+	rep, err := h.svc.Report(c.Request.Context(), terminal, naznachOnly(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
