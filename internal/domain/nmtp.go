@@ -40,10 +40,11 @@ type NmtpTrainRow struct {
 
 // NmtpSection — секция строк (станция терминала либо дорога) с итогом.
 type NmtpSection struct {
-	Label string         `json:"label"`
-	Near  bool           `json:"near"` // участвует в «Прогнозе выгрузки по подходу»
-	Rows  []NmtpTrainRow `json:"rows"`
-	Total int            `json:"total"`
+	Label     string         `json:"label"`
+	Near      bool           `json:"near"`                 // участвует в «Прогнозе выгрузки по подходу»
+	IsStation bool           `json:"is_station,omitempty"` // причальная станция (не дорога) — экран пустую прячет
+	Rows      []NmtpTrainRow `json:"rows"`
+	Total     int            `json:"total"`
 }
 
 // NmtpClientTons — строка свода «клиент → тоннаж» (подвал файла порта).

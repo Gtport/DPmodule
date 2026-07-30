@@ -27,6 +27,8 @@ export interface NmtpTrainRow {
 export interface NmtpSection {
   label: string;
   near: boolean;
+  /** Причальная станция (не дорога): пустая на экране прячется, дорога — нет. */
+  is_station?: boolean;
   /** null у пустых секций старого бэка (Go nil-слайс) — читать через `?? []`. */
   rows: NmtpTrainRow[] | null;
   total: number;

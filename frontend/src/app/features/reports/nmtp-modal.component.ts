@@ -25,10 +25,12 @@ interface HeadGroup {
 /**
  * Перемещаемая модалка «Подход вагонов {терминал}» по форме порта (НМТП) —
  * экранное представление той же формы, что серверная книга .xlsx: шапка в три
- * уровня (клиент / станции погрузки / марка), секции по станциям терминалов и
- * дорогам, «БРОШЕННЫЕ ПОЕЗДА» (в колонке прибытия — дата бросания), подвал
- * с вагонами/тоннажом. Цвета повторяют книгу: жёлтая колонка «итого», серые
- * секции, голубые брошенные, оранжевое «прочее».
+ * уровня (клиент / станции погрузки / марка), секции-дороги (пустая дорога —
+ * одна полоса-заголовок, причальные станции показываются только с поездами),
+ * «БРОШЕННЫЕ ПОЕЗДА - {дорога}» (в колонке прибытия — дата бросания), итоги
+ * в ходу/брошенных/на сети и блок «Итог по грузовым колонкам». Раскраска —
+ * как экран gtport (замечание владельца 30.07.2026): зелёные полосы дорог,
+ * голубые брошенных; жёлтая колонка «итого» и оранжевое «прочее» — из книги.
  *
  * Переключатель «скрыть перестановки» — режим gtport UseNaznachOnly (строго по
  * назначению, без поездов «НА {сосед}»; актуален для терминалов одной станции —
@@ -113,7 +115,7 @@ interface HeadGroup {
                 </tr>
               </thead>
               <tbody>
-                @for (s of r.sections; track s.label) {
+                @for (s of activeSections(); track s.label) {
                   <tr class="section">
                     <td [attr.colspan]="fixedCols + cargoCols()">{{ s.label }}</td>
                     <td class="c">{{ s.total || '' }}</td>
@@ -140,16 +142,18 @@ interface HeadGroup {
                   }
                 }
                 <tr class="counter">
-                  <td [attr.colspan]="fixedCols + cargoCols()">кол-во поездов в движении (составы от 20 ваг.):</td>
+                  <td [attr.colspan]="fixedCols + cargoCols()">Итого вагонов в ходу</td>
+                  <td class="c itogo">{{ activeVagons() }}</td>
+                </tr>
+                <tr class="counter">
+                  <td [attr.colspan]="fixedCols + cargoCols()" title="составы от 20 вагонов">Итого поездов в ходу</td>
                   <td class="c itogo">{{ r.trains_active }}</td>
                 </tr>
 
-                <tr class="banner"><td [attr.colspan]="fixedCols + cargoCols() + 1">
-                  БРОШЕННЫЕ ПОЕЗДА (в колонке прибытия — дата бросания)
-                </td></tr>
-                @for (s of abandonedNonEmpty(); track s.label) {
+                @for (s of abandonedSections(); track s.label) {
                   <tr class="section ab">
-                    <td [attr.colspan]="fixedCols + cargoCols()">{{ s.label }}</td>
+                    <td [attr.colspan]="fixedCols + cargoCols()"
+                        title="в колонке прибытия — дата бросания">БРОШЕННЫЕ ПОЕЗДА - {{ s.label }}</td>
                     <td class="c">{{ s.total || '' }}</td>
                   </tr>
                   @for (row of s.rows ?? []; track $index) {
@@ -174,12 +178,36 @@ interface HeadGroup {
                   }
                 }
                 <tr class="counter">
-                  <td [attr.colspan]="fixedCols + cargoCols()">кол-во брошенных поездов (составы от 20 ваг.):</td>
+                  <td [attr.colspan]="fixedCols + cargoCols()">Итого вагонов брошенных</td>
+                  <td class="c itogo">{{ abandonedVagons() }}</td>
+                </tr>
+                <tr class="counter">
+                  <td [attr.colspan]="fixedCols + cargoCols()" title="составы от 20 вагонов">Итого поездов брошенных</td>
                   <td class="c itogo">{{ r.trains_abandoned }}</td>
                 </tr>
+                <tr class="counter">
+                  <td [attr.colspan]="fixedCols + cargoCols()">Итого поездов на сети</td>
+                  <td class="c itogo">{{ r.trains_active + r.trains_abandoned }}</td>
+                </tr>
 
+                <tr class="fhead">
+                  <td [attr.colspan]="fixedCols" class="c">Итог по грузовым колонкам</td>
+                  @for (g of headGroups(); track $index) {
+                    <td [attr.colspan]="g.span" class="c b grp-l">{{ g.label }}</td>
+                  }
+                  @if (r.has_other) { <td class="c b other grp-l">ПРОЧЕЕ</td> }
+                  <td class="c b itogo grp-l">ИТОГО</td>
+                </tr>
+                <tr class="fhead">
+                  <td [attr.colspan]="fixedCols" class="c">Названия колонок</td>
+                  @for (c of r.columns; track $index; let ci = $index) {
+                    <td class="c wrap" [class.grp-l]="groupStart()[ci]">{{ c.station }}</td>
+                  }
+                  @if (r.has_other) { <td class="c other grp-l"></td> }
+                  <td class="c itogo grp-l"></td>
+                </tr>
                 <tr class="foot">
-                  <td [attr.colspan]="fixedCols">ВСЕГО вагонов</td>
+                  <td [attr.colspan]="fixedCols" class="c">вагонов (шт.)</td>
                   @for (c of r.columns; track $index; let ci = $index) {
                     <td class="c num cnt" [class.grp-l]="groupStart()[ci]">{{ r.col_counts[ci] || '' }}</td>
                   }
@@ -189,7 +217,7 @@ interface HeadGroup {
                   <td class="c num cnt itogo grp-l">{{ r.total_vagons }}</td>
                 </tr>
                 <tr class="foot">
-                  <td [attr.colspan]="fixedCols">тоннаж (тыс. т.)</td>
+                  <td [attr.colspan]="fixedCols" class="c">тонн (тыс. т.)</td>
                   @for (c of r.columns; track $index; let ci = $index) {
                     <td class="c num" [class.grp-l]="groupStart()[ci]">{{ fmtTons(r.col_tons[ci]) }}</td>
                   }
@@ -234,6 +262,15 @@ interface HeadGroup {
     .cnt { font-weight: 600; }
     .nmtp th { text-align: center; vertical-align: middle; }
     .nmtp th small { font-weight: 400; }
+    /* border-collapse: collapse рисует границы «сеткой» таблицы — при скролле
+     * они уезжают вместе с контентом, и под sticky-шапкой просвечивают строки.
+     * separate отдаёт границу каждой ячейке: у шапки она липнет вместе с ней. */
+    .nmtp { border-collapse: separate; border-spacing: 0; }
+    .nmtp th, .nmtp td { border: 0; border-right: 1px solid var(--color-border-light);
+      border-bottom: 1px solid var(--color-border-light); }
+    .nmtp thead tr:nth-child(1) th { border-top: 1px solid var(--color-border-light); }
+    .nmtp thead tr:nth-child(1) th:first-child { border-left: 1px solid var(--color-border-light); }
+    .nmtp tbody td:first-child { border-left: 1px solid var(--color-border-light); }
     /* Шапка из трёх рядов: глобальный .dp-tbl клеит все th к top:0 и при
      * скролле ряды наезжают друг на друга. Даём рядам фиксированные высоты
      * и каждому — свой sticky-отступ (rowspan-ячейки живут в первом ряду). */
@@ -252,12 +289,14 @@ interface HeadGroup {
     .nmtp .grp-l { border-left: 2px solid var(--color-text, #000); }
     .nmtp .itogo { background: #ffffcc; }
     .nmtp .other { background: #ffe7ba; }
-    .nmtp .section td { background: #e4e4e4; font-weight: 600; text-align: center;
-      border-top: 2px solid var(--color-text, #000); border-bottom: 2px solid var(--color-text, #000); }
-    .nmtp .section.ab td { background: #abe9ff; }
-    .nmtp .banner td { font-weight: 600; text-align: center; }
+    /* Полосы дорог — зелёные, брошенных — голубые (цвета экрана gtport). */
+    .nmtp .section td { background: #a9d08e; font-weight: 600; text-align: center; }
+    .nmtp .section.ab td { background: #cff0fc; }
     .nmtp .counter td { text-align: right; font-weight: 600; }
     .nmtp .counter td.itogo { text-align: center; }
+    .nmtp .fhead td { font-weight: 600; background: var(--color-bg-subtle); }
+    .nmtp .wrap { white-space: normal; font-size: 10px; max-width: 110px; }
+    .nmtp .b { font-weight: 600; }
     .nmtp .foot td { font-weight: 600; text-align: center; }
     .c-idx { min-width: 110px; } .c-d { width: 74px; } .c-t { width: 70px; }
     .c-note { width: 96px; } .c-vag { width: 84px; }
@@ -309,9 +348,20 @@ export class NmtpModalComponent implements OnInit {
     return cols.map((c, i) => i === 0 || c.group !== cols[i - 1].group);
   });
 
-  /** Пустые секции брошенных не показываем (как в книге); rows терпим к null. */
-  readonly abandonedNonEmpty = computed(() =>
-    (this.report()?.abandoned ?? []).filter((s) => (s.rows?.length ?? 0) > 0));
+  /**
+   * Секции экрана — как gtport: дороги показываются всегда (пустая — одна
+   * полоса-заголовок), причальные станции (Мыс, Находка) — только с поездами.
+   */
+  readonly activeSections = computed(() =>
+    (this.report()?.sections ?? []).filter((s) => !s.is_station || (s.rows?.length ?? 0) > 0));
+  readonly abandonedSections = computed(() =>
+    (this.report()?.abandoned ?? []).filter((s) => !s.is_station || (s.rows?.length ?? 0) > 0));
+
+  /** Вагоны в ходу / брошенные — суммы секций (сервер отдаёт общий итог). */
+  readonly activeVagons = computed(() =>
+    (this.report()?.sections ?? []).reduce((a, s) => a + s.total, 0));
+  readonly abandonedVagons = computed(() =>
+    (this.report()?.abandoned ?? []).reduce((a, s) => a + s.total, 0));
 
   readonly terminalColor = computed(() =>
     this.terminals().find((t) => t.name === this.terminal())?.color || 'transparent');

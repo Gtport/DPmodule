@@ -381,15 +381,16 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 
 	// Секции в порядке файла: терминальные станции → дороги (восток → запад).
 	type sectionKey struct {
-		label string
-		near  bool
+		label     string
+		near      bool
+		isStation bool
 	}
 	var keys []sectionKey
 	for _, st := range termStations {
-		keys = append(keys, sectionKey{st, true})
+		keys = append(keys, sectionKey{st, true, true})
 	}
 	for _, r := range nmtpRoads {
-		keys = append(keys, sectionKey{r.Label, nmtpNearRoads[r.Code]})
+		keys = append(keys, sectionKey{r.Label, nmtpNearRoads[r.Code], false})
 	}
 
 	active := map[string][]domain.NmtpTrainRow{}
@@ -403,7 +404,7 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 		label := sectionOf(tr)
 		if !known[label] { // дорога вне известного списка — секция в конец
 			known[label] = true
-			keys = append(keys, sectionKey{label, false})
+			keys = append(keys, sectionKey{label, false, false})
 		}
 		if tr.row.DateBros != nil {
 			abandoned[label] = append(abandoned[label], tr.row)
@@ -431,7 +432,7 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 			for _, r := range rows {
 				total += r.Total
 			}
-			out = append(out, domain.NmtpSection{Label: k.label, Near: k.near, Rows: rows, Total: total})
+			out = append(out, domain.NmtpSection{Label: k.label, Near: k.near, IsStation: k.isStation, Rows: rows, Total: total})
 		}
 		return out
 	}
