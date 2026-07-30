@@ -27,7 +27,8 @@ export interface NmtpTrainRow {
 export interface NmtpSection {
   label: string;
   near: boolean;
-  rows: NmtpTrainRow[];
+  /** null у пустых секций старого бэка (Go nil-слайс) — читать через `?? []`. */
+  rows: NmtpTrainRow[] | null;
   total: number;
 }
 

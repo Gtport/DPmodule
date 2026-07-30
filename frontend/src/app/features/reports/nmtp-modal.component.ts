@@ -116,7 +116,7 @@ interface HeadGroup {
                     <td [attr.colspan]="fixedCols + cargoCols()">{{ s.label }}</td>
                     <td class="c">{{ s.total || '' }}</td>
                   </tr>
-                  @for (row of s.rows; track $index) {
+                  @for (row of s.rows ?? []; track $index) {
                     <tr>
                       <td class="c">{{ row.index }}</td>
                       <td class="c">{{ row.station_oper }}</td>
@@ -150,7 +150,7 @@ interface HeadGroup {
                     <td [attr.colspan]="fixedCols + cargoCols()">{{ s.label }}</td>
                     <td class="c">{{ s.total || '' }}</td>
                   </tr>
-                  @for (row of s.rows; track $index) {
+                  @for (row of s.rows ?? []; track $index) {
                     <tr>
                       <td class="c">{{ row.index }}</td>
                       <td class="c">{{ row.station_oper }}</td>
@@ -295,9 +295,9 @@ export class NmtpModalComponent implements OnInit {
     return cols.map((c, i) => i === 0 || c.group !== cols[i - 1].group);
   });
 
-  /** Пустые секции брошенных не показываем (как в книге). */
+  /** Пустые секции брошенных не показываем (как в книге); rows терпим к null. */
   readonly abandonedNonEmpty = computed(() =>
-    (this.report()?.abandoned ?? []).filter((s) => s.rows.length > 0));
+    (this.report()?.abandoned ?? []).filter((s) => (s.rows?.length ?? 0) > 0));
 
   readonly terminalColor = computed(() =>
     this.terminals().find((t) => t.name === this.terminal())?.color || 'transparent');

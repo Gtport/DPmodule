@@ -406,6 +406,9 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 		var out []domain.NmtpSection
 		for _, k := range keys {
 			rows := src[k.label]
+			if rows == nil {
+				rows = []domain.NmtpTrainRow{} // в JSON — [], не null (экран ждёт массив)
+			}
 			// Внутри секции — по прогнозу по возрастанию (как файл: ближние выше).
 			sort.SliceStable(rows, func(a, b int) bool {
 				pa, pb := rows[a].Prog, rows[b].Prog
