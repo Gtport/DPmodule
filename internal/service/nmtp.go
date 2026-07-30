@@ -273,12 +273,22 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 		key := idx + "|" + rec.StationOper + "|" + rec.ProgJd.Time().Format("2006-01-02 15:04")
 		tr, ok := trains[key]
 		if !ok {
+			// Примечание: смена индекса «был NNN» (середина index_main, как
+			// gtport buildPrimFields) + пометка перестановки, через запятую.
 			note := ""
+			if rec.IndexMain != "" && rec.IndexMain != idx {
+				if parts := strings.Split(rec.IndexMain, "-"); len(parts) == 3 && len(parts[1]) >= 3 {
+					note = "был " + parts[1]
+				}
+			}
 			if rec.GruzpolS != rec.Naznach && rec.GruzpolS != "" && rec.Naznach != "" {
+				if note != "" {
+					note += ", "
+				}
 				if rec.Naznach == terminal {
-					note = "С " + rec.GruzpolS
+					note += "С " + rec.GruzpolS
 				} else {
-					note = "НА " + rec.Naznach
+					note += "НА " + rec.Naznach
 				}
 			}
 			tr = &train{row: domain.NmtpTrainRow{

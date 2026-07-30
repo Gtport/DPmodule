@@ -241,9 +241,11 @@ func TestBuildNmtpReport_PorogPlanRezhim(t *testing.T) {
 			"УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", i+1, 69))
 	}
 
-	// Перестановка «НА АЭ» (уходит от нас): в режиме по умолчанию видна, в naznachOnly — нет.
+	// Перестановка «НА АЭ» (уходит от нас): в режиме по умолчанию видна, в
+	// naznachOnly — нет. Индекс менялся → в примечании ещё «был NNN» (gtport prim1).
 	away := nmtpVagon("63000001", "3333-333-3333", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 1, 69)
 	away.GruzpolS, away.Naznach = "ГУТ-2", "АЭ"
+	away.IndexMain = "9999-182-9999"
 	recs = append(recs, away)
 
 	def := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
@@ -270,7 +272,7 @@ func TestBuildNmtpReport_PorogPlanRezhim(t *testing.T) {
 	require.NotNil(t, moved)
 	assert.True(t, full.Planned)
 	assert.False(t, short.Planned)
-	assert.Equal(t, "НА АЭ", moved.Note)
+	assert.Equal(t, "был 182, НА АЭ", moved.Note)
 
 	nazn := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
 		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, true)

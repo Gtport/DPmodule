@@ -101,7 +101,9 @@ interface HeadGroup {
                 </tr>
                 <tr>
                   @for (c of r.columns; track $index) {
-                    <th class="st" [class.grp-l]="groupStart()[$index]">{{ c.station }}</th>
+                    <th class="st" [class.grp-l]="groupStart()[$index]">
+                      <div class="clip" [title]="c.station">{{ c.station }}</div>
+                    </th>
                   }
                 </tr>
                 <tr>
@@ -232,7 +234,19 @@ interface HeadGroup {
     .cnt { font-weight: 600; }
     .nmtp th { text-align: center; vertical-align: middle; }
     .nmtp th small { font-weight: 400; }
-    .nmtp .st { max-width: 90px; white-space: normal; font-size: 11px; }
+    /* Шапка из трёх рядов: глобальный .dp-tbl клеит все th к top:0 и при
+     * скролле ряды наезжают друг на друга. Даём рядам фиксированные высоты
+     * и каждому — свой sticky-отступ (rowspan-ячейки живут в первом ряду). */
+    .nmtp thead tr:nth-child(1) { height: 24px; }
+    .nmtp thead tr:nth-child(2) { height: 64px; }
+    .nmtp thead tr:nth-child(3) { height: 22px; }
+    .nmtp thead th { z-index: 2; }
+    .nmtp thead tr:nth-child(1) th { top: 0; }
+    .nmtp thead tr:nth-child(2) th { top: 24px; }
+    .nmtp thead tr:nth-child(3) th { top: 88px; }
+    .nmtp .st { max-width: 110px; white-space: normal; font-size: 10px; padding: 2px 4px; }
+    /* Ряд станций не должен вырасти выше 64px — иначе отступы разъедутся. */
+    .nmtp .st .clip { max-height: 58px; overflow: hidden; }
     .nmtp .mark { background: #e4e4e4; font-size: 11px; }
     /* Утолщённый стык групп клиентов — как в книге. */
     .nmtp .grp-l { border-left: 2px solid var(--color-text, #000); }
