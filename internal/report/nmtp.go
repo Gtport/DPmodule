@@ -234,7 +234,16 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		set(nFixed+1+i, row+2, c.Mark, stMark)
 	}
 	_ = f.SetRowHeight(sheet, headTop, 18)
-	_ = f.SetRowHeight(sheet, headTop+1, 30)
+	// Строка станций: колонки матрицы узкие (7.5), и длинный список станций
+	// заворачивается на много строк — высота по самой длинной подписи, иначе
+	// текст обрезается (у АЭ «Терент, Байкаим, …» не влезал в фиксированные 30).
+	stationH := 30.0
+	for _, c := range r.Columns {
+		if h := float64(wrapLines(c.Station, 7.5))*13 + 4; h > stationH {
+			stationH = h
+		}
+	}
+	_ = f.SetRowHeight(sheet, headTop+1, stationH)
 	_ = f.SetRowHeight(sheet, headTop+2, 26)
 	row += 3
 	// Шапка закреплена, как в файле порта (там FREEZE над первой строкой данных).
@@ -298,8 +307,10 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 			style = "sectionAb"
 		}
 		for _, sec := range secs {
-			if abandoned && len(sec.Rows) == 0 {
-				continue // пустые секции брошенных не печатаем
+			// Пустые причальные станции у брошенных не печатаем (экран их тоже
+			// прячет); пустые дороги печатаем — полный список, как на экране.
+			if abandoned && sec.IsStation && len(sec.Rows) == 0 {
+				continue
 			}
 			set(1, row, sec.Label, style)
 			merge(1, row, lastCol-1, row)
