@@ -2,9 +2,12 @@ package gormrepo
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
@@ -52,7 +55,7 @@ func (r *NmtpRepository) Columns(ctx context.Context, terminal string) ([]domain
 	out := make([]domain.NmtpColumn, len(ms))
 	for i, m := range ms {
 		out[i] = domain.NmtpColumn{
-			Terminal: m.Terminal, SortOrder: m.SortOrder,
+			ID: m.ID, Terminal: m.Terminal, SortOrder: m.SortOrder,
 			GroupLabel: m.GroupLabel, StationLabel: m.StationLabel, MarkLabel: m.MarkLabel,
 			MatchClients: m.MatchClients, MatchStations: m.MatchStations, MatchMarks: m.MatchMarks,
 		}
@@ -79,4 +82,51 @@ func (r *NmtpRepository) Terminals(ctx context.Context) ([]string, error) {
 		Order("terminal").
 		Pluck("terminal", &out).Error
 	return out, err
+}
+
+// ── Привязки «вагон → колонка» (nmtp_vagon_column, миграция 000055) ─────────
+
+type nmtpVagonColumnModel struct {
+	Vagon     string    `gorm:"column:vagon;primaryKey"`
+	ColumnID  int64     `gorm:"column:column_id"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	CreatedBy string    `gorm:"column:created_by"`
+}
+
+func (nmtpVagonColumnModel) TableName() string { return "nmtp_vagon_column" }
+
+func (r *NmtpRepository) VagonColumns(ctx context.Context) (map[string]int64, error) {
+	var ms []nmtpVagonColumnModel
+	if err := r.db.WithContext(ctx).Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]int64, len(ms))
+	for _, m := range ms {
+		out[m.Vagon] = m.ColumnID
+	}
+	return out, nil
+}
+
+func (r *NmtpRepository) SetVagonColumns(ctx context.Context, vagons []string, columnID int64, who string) error {
+	if len(vagons) == 0 {
+		return nil
+	}
+	now := clock.Now().Time()
+	ms := make([]nmtpVagonColumnModel, len(vagons))
+	for i, v := range vagons {
+		ms[i] = nmtpVagonColumnModel{Vagon: v, ColumnID: columnID, CreatedAt: now, CreatedBy: who}
+	}
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "vagon"}},
+		DoUpdates: clause.AssignmentColumns([]string{"column_id", "created_at", "created_by"}),
+	}).Create(&ms).Error
+}
+
+func (r *NmtpRepository) DeleteVagonColumns(ctx context.Context, vagons []string) error {
+	if len(vagons) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).
+		Where("vagon IN ?", vagons).
+		Delete(&nmtpVagonColumnModel{}).Error
 }

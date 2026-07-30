@@ -3,8 +3,11 @@ import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { toBlob } from 'html-to-image';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzModalModule } from 'ng-zorro-antd/modal';
+import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzSwitchModule } from 'ng-zorro-antd/switch';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
@@ -14,12 +17,22 @@ import { blobErrorMessage } from '../../shared/blob-error';
 import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { MaxApiService } from './max-api.service';
-import { NmtpApiService, NmtpMode, NmtpReport, NmtpTrainRow } from './nmtp-api.service';
+import { NmtpApiService, NmtpMode, NmtpReport, NmtpSection, NmtpTrainRow } from './nmtp-api.service';
 
 /** Группа шапки первого уровня: подпись клиента + сколько колонок накрывает. */
 interface HeadGroup {
   label: string;
   span: number;
+}
+
+/** Форма диалога правки/новой строки (редактор живёт только на экране). */
+interface RowForm {
+  index: string;
+  station: string;
+  date: string; // yyyy-MM-dd
+  note: string;
+  vagon: string;
+  counts: number[];
 }
 
 /**
@@ -42,8 +55,9 @@ interface HeadGroup {
 @Component({
   selector: 'app-nmtp-modal',
   imports: [
-    FormsModule, DragDropModule, NzButtonModule, NzIconModule, NzModalModule,
-    NzSpinModule, NzSwitchModule, NzTooltipModule,
+    FormsModule, DragDropModule, NzButtonModule, NzDropDownModule, NzIconModule,
+    NzInputModule, NzModalModule, NzSelectModule, NzSpinModule, NzSwitchModule,
+    NzTooltipModule,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="ttl" [nzFooter]="null" nzWidth="1500px"
@@ -53,6 +67,12 @@ interface HeadGroup {
           <span class="tbadge" [style.background]="terminalColor()">{{ terminal() }}</span>
           Подход вагонов (форма порта)
           <span class="sub">поездов: {{ report()?.trains_active ?? 0 }}</span>
+          @if (dirty()) {
+            <span class="edited" nz-tooltip
+                  nzTooltipTitle="Правки живут только на экране и уйдут в Excel/MAX/PNG; «Обновить» их сбросит">
+              изменено
+            </span>
+          }
         </div>
       </ng-template>
 
@@ -117,11 +137,17 @@ interface HeadGroup {
               <tbody>
                 @for (s of activeSections(); track s.label) {
                   <tr class="section">
-                    <td [attr.colspan]="fixedCols + cargoCols()">{{ s.label }}</td>
+                    <td [attr.colspan]="fixedCols + cargoCols()">
+                      {{ s.label }}
+                      <button nz-button nzType="text" nzSize="small" class="addb"
+                              title="Добавить свою строку (только на экране)" (click)="openAdd(s)">
+                        <span nz-icon nzType="plus"></span>
+                      </button>
+                    </td>
                     <td class="c">{{ s.total || '' }}</td>
                   </tr>
                   @for (row of s.rows ?? []; track $index) {
-                    <tr>
+                    <tr (contextmenu)="openMenu($event, s, row, rowMenu)" [class.custom]="row.custom">
                       <td class="c">{{ row.index }}</td>
                       <td class="c">{{ row.station_oper }}</td>
                       <td class="c">{{ fmtDate(row.date_nach) }}</td>
@@ -153,11 +179,17 @@ interface HeadGroup {
                 @for (s of abandonedSections(); track s.label) {
                   <tr class="section ab">
                     <td [attr.colspan]="fixedCols + cargoCols()"
-                        title="в колонке прибытия — дата бросания">БРОШЕННЫЕ ПОЕЗДА - {{ s.label }}</td>
+                        title="в колонке прибытия — дата бросания">
+                      БРОШЕННЫЕ ПОЕЗДА - {{ s.label }}
+                      <button nz-button nzType="text" nzSize="small" class="addb"
+                              title="Добавить свою строку (только на экране)" (click)="openAdd(s)">
+                        <span nz-icon nzType="plus"></span>
+                      </button>
+                    </td>
                     <td class="c">{{ s.total || '' }}</td>
                   </tr>
                   @for (row of s.rows ?? []; track $index) {
-                    <tr>
+                    <tr (contextmenu)="openMenu($event, s, row, rowMenu)" [class.custom]="row.custom">
                       <td class="c">{{ row.index }}</td>
                       <td class="c">{{ row.station_oper }}</td>
                       <td class="c">{{ fmtDate(row.date_nach) }}</td>
@@ -248,6 +280,69 @@ interface HeadGroup {
         }
       </ng-container>
     </nz-modal>
+
+    <nz-dropdown-menu #rowMenu="nzDropdownMenu">
+      <ul nz-menu>
+        <li nz-menu-item (click)="openEdit()">Изменить строку…</li>
+        @if (!menuRow()?.custom) {
+          <li nz-menu-item (click)="openMove()">Переместить в колонку…</li>
+        }
+        <li nz-menu-item nzDanger (click)="deleteRow()">Убрать строку (с экрана)</li>
+      </ul>
+    </nz-dropdown-menu>
+
+    @if (editCtx(); as e) {
+      <nz-modal [nzVisible]="true" nzWidth="540px"
+                [nzTitle]="e.isNew ? 'Своя строка — ' + e.section.label : 'Изменить строку (только на экране)'"
+                nzOkText="Применить" (nzOnOk)="applyEdit()" (nzOnCancel)="editCtx.set(null)">
+        <ng-container *nzModalContent>
+          <div class="frm">
+            <label>Поезд <input nz-input [(ngModel)]="editForm.index" /></label>
+            <label>Станция <input nz-input [(ngModel)]="editForm.station" /></label>
+            <label>Дата (принято к перевозке) <input nz-input type="date" [(ngModel)]="editForm.date" /></label>
+            <label>Примечание <input nz-input [(ngModel)]="editForm.note" /></label>
+            <label>Вагон для контроля <input nz-input [(ngModel)]="editForm.vagon" /></label>
+            <div class="cnts">
+              @for (c of report()?.columns ?? []; track $index; let ci = $index) {
+                <label class="cnt-l">
+                  <span class="cap">{{ c.group }} · {{ c.station }} ({{ c.mark }})</span>
+                  <input nz-input type="number" min="0" [(ngModel)]="editForm.counts[ci]" />
+                </label>
+              }
+              @if (report()?.has_other) {
+                <label class="cnt-l"><span class="cap">ПРОЧЕЕ</span>
+                  <input nz-input type="number" min="0"
+                         [(ngModel)]="editForm.counts[report()!.columns.length]" />
+                </label>
+              }
+            </div>
+            <div class="frm-total">Итого вагонов: <b>{{ formTotal() }}</b></div>
+          </div>
+        </ng-container>
+      </nz-modal>
+    }
+
+    @if (moveCtx(); as m) {
+      <nz-modal [nzVisible]="true" nzWidth="480px"
+                [nzTitle]="'Переместить поезд ' + m.row.index + ' (' + m.row.station_oper + ')'"
+                nzOkText="Переместить" [nzOkLoading]="moving()" (nzOnOk)="applyMove()"
+                (nzOnCancel)="moveCtx.set(null)">
+        <ng-container *nzModalContent>
+          <p class="hint">
+            Привязка запоминается по номерам вагонов состава и действует, пока вагоны
+            в подходе — даже если поезд переформируется. «Вернуть по правилам» снимает её.
+          </p>
+          <nz-select style="width: 100%" [(ngModel)]="moveColumnId">
+            <nz-option [nzValue]="0" nzLabel="— вернуть по правилам раскладки —"></nz-option>
+            @for (c of report()?.columns ?? []; track $index) {
+              @if (c.id) {
+                <nz-option [nzValue]="c.id" [nzLabel]="c.group + ' · ' + c.station + ' (' + c.mark + ')'"></nz-option>
+              }
+            }
+          </nz-select>
+        </ng-container>
+      </nz-modal>
+    }
   `,
   styles: [`
     .ttl { cursor: move; user-select: none; display: flex; align-items: center; gap: var(--space-sm); }
@@ -302,6 +397,18 @@ interface HeadGroup {
     .c-note { width: 96px; } .c-vag { width: 84px; }
     .below { padding: var(--space-sm) 2px; display: flex; flex-direction: column; gap: 2px;
       font-size: var(--font-size-sm); background: #fff; }
+    .edited { color: var(--color-warning-text, #d48806); font-weight: 600; font-size: var(--font-size-sm); }
+    .nmtp tr.custom td { font-style: italic; }
+    .nmtp .section .addb { height: 18px; padding: 0 4px; line-height: 1; }
+    .frm { display: flex; flex-direction: column; gap: var(--space-sm); }
+    .frm label { display: flex; align-items: center; gap: var(--space-sm); justify-content: space-between; }
+    .frm input { max-width: 300px; }
+    .cnts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px var(--space-md);
+      border-top: 1px dashed var(--color-border); padding-top: var(--space-sm); }
+    .cnt-l { display: flex; flex-direction: column; gap: 2px; }
+    .cnt-l .cap { font-size: 11px; color: var(--color-text-secondary); }
+    .frm-total { text-align: right; }
+    .hint { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
   `],
 })
 export class NmtpModalComponent implements OnInit {
@@ -309,6 +416,7 @@ export class NmtpModalComponent implements OnInit {
   private readonly arrivals = inject(ArrivalsApiService);
   private readonly max = inject(MaxApiService);
   private readonly msg = inject(NzMessageService);
+  private readonly ctxMenu = inject(NzContextMenuService);
 
   /** Терминал (ports.name_s), обязателен. */
   readonly terminal = input.required<string>();
@@ -320,6 +428,18 @@ export class NmtpModalComponent implements OnInit {
   readonly naznachOnly = signal(false);
   readonly report = signal<NmtpReport | null>(null);
   private readonly terminals = signal<TerminalTarget[]>([]);
+
+  // ── Редактор (правки живут ТОЛЬКО на экране — решение владельца 30.07.2026):
+  // экспорт в Excel уходит правленым отчётом, база не трогается. Исключение —
+  // «переместить в колонку»: это привязка вагонов на сервере (nmtp_vagon_column).
+  readonly dirty = signal(false);
+  readonly menuRow = signal<NmtpTrainRow | null>(null);
+  private menuSection: NmtpSection | null = null;
+  readonly editCtx = signal<{ section: NmtpSection; row: NmtpTrainRow | null; isNew: boolean } | null>(null);
+  editForm: RowForm = { index: '', station: '', date: '', note: '', vagon: '', counts: [] };
+  readonly moveCtx = signal<{ row: NmtpTrainRow } | null>(null);
+  moveColumnId = 0;
+  readonly moving = signal(false);
 
   /** Фиксированные колонки слева (как в книге). */
   readonly fixedCols = 7;
@@ -390,12 +510,157 @@ export class NmtpModalComponent implements OnInit {
     this.loading.set(true);
     try {
       this.report.set(await this.api.report(this.terminal(), this.mode()));
+      this.dirty.set(false); // свежие данные затирают экранные правки
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
       this.report.set(null);
     } finally {
       this.loading.set(false);
     }
+  }
+
+  // ── Редактор ───────────────────────────────────────────────────────────────
+  openMenu(ev: MouseEvent, section: NmtpSection, row: NmtpTrainRow, menu: NzDropdownMenuComponent): void {
+    ev.preventDefault();
+    this.menuRow.set(row);
+    this.menuSection = section;
+    this.ctxMenu.create(ev, menu);
+  }
+
+  openAdd(section: NmtpSection): void {
+    const nCols = (this.report()?.columns.length ?? 0) + 1;
+    this.editForm = { index: '', station: '', date: '', note: '', vagon: '', counts: new Array(nCols).fill(0) };
+    this.editCtx.set({ section, row: null, isNew: true });
+  }
+
+  openEdit(): void {
+    const row = this.menuRow();
+    const section = this.menuSection;
+    if (!row || !section) return;
+    const nCols = (this.report()?.columns.length ?? 0) + 1;
+    const counts = new Array(nCols).fill(0);
+    row.counts?.forEach((v, i) => (counts[i] = v || 0));
+    this.editForm = {
+      index: row.index,
+      station: row.station_oper,
+      date: row.date_nach?.slice(0, 10) ?? '',
+      note: row.note ?? '',
+      vagon: row.control_vagon,
+      counts,
+    };
+    this.editCtx.set({ section, row, isNew: false });
+  }
+
+  formTotal(): number {
+    return this.editForm.counts.reduce((a, b) => a + (Number(b) || 0), 0);
+  }
+
+  applyEdit(): void {
+    const ctx = this.editCtx();
+    const r = this.report();
+    if (!ctx || !r) return;
+    const f = this.editForm;
+    const counts = f.counts.map((v) => Number(v) || 0);
+    let row = ctx.row;
+    if (ctx.isNew) {
+      row = {
+        index: f.index || 'Б/И', station_oper: f.station, date_nach: null, note: f.note,
+        control_vagon: f.vagon, prog: null, planned: false, counts, total: 0, custom: true,
+      };
+      ctx.section.rows = [...(ctx.section.rows ?? []), row];
+    } else if (row) {
+      row.index = f.index;
+      row.station_oper = f.station;
+      row.note = f.note;
+      row.control_vagon = f.vagon;
+      row.counts = counts;
+    }
+    if (row) row.date_nach = f.date ? `${f.date}T00:00:00` : null;
+    this.editCtx.set(null);
+    this.afterLocalEdit(r);
+  }
+
+  deleteRow(): void {
+    const row = this.menuRow();
+    const section = this.menuSection;
+    const r = this.report();
+    if (!row || !section || !r) return;
+    section.rows = (section.rows ?? []).filter((x) => x !== row);
+    this.afterLocalEdit(r);
+  }
+
+  openMove(): void {
+    const row = this.menuRow();
+    if (!row) return;
+    this.moveColumnId = 0;
+    this.moveCtx.set({ row });
+  }
+
+  /** Привязка вагонов состава к колонке на сервере; после — свежий отчёт. */
+  async applyMove(): Promise<void> {
+    const m = this.moveCtx();
+    if (!m) return;
+    if (!m.row.prog) {
+      this.msg.warning('У поезда нет прогноза — перенести нельзя');
+      return;
+    }
+    this.moving.set(true);
+    try {
+      const res = await this.api.move({
+        terminal: this.terminal(), index: m.row.index, station_oper: m.row.station_oper,
+        prog: m.row.prog, column_id: this.moveColumnId,
+      });
+      this.msg.success(this.moveColumnId
+        ? `Перенесено вагонов: ${res.vagons} — привязка запомнена по номерам`
+        : `Привязка снята с ${res.vagons} вагонов`);
+      this.moveCtx.set(null);
+      await this.load();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.moving.set(false);
+    }
+  }
+
+  /**
+   * Пересчёт после экранной правки: итоги строк/секций/колонок, счётчики
+   * (порог 20), прогноз выгрузки. Тоннаж не трогаем — весов у ручных цифр нет,
+   * тонны остаются серверными.
+   */
+  private afterLocalEdit(r: NmtpReport): void {
+    const nCols = r.columns.length + 1;
+    const colCounts = new Array(nCols).fill(0);
+    let near = 0;
+    const walk = (secs: NmtpSection[]) => {
+      let vagons = 0;
+      let trains = 0;
+      for (const s of secs) {
+        let total = 0;
+        for (const row of s.rows ?? []) {
+          row.counts = row.counts ?? [];
+          row.total = row.counts.reduce((a, b) => a + (b || 0), 0);
+          total += row.total;
+          if (row.total >= 20) trains++;
+          row.counts.forEach((v, i) => (colCounts[i] += v || 0));
+        }
+        s.total = total;
+        vagons += total;
+      }
+      return { vagons, trains };
+    };
+    const act = walk(r.sections);
+    const ab = walk(r.abandoned);
+    for (const s of r.sections) {
+      if (s.near) near += s.total;
+    }
+    r.col_counts = colCounts;
+    r.has_other = r.has_other || colCounts[nCols - 1] > 0;
+    r.total_vagons = act.vagons + ab.vagons;
+    r.trains_active = act.trains;
+    r.trains_abandoned = ab.trains;
+    r.unload_forecast = near / 7;
+    this.dirty.set(true);
+    this.report.set({ ...r }); // новый объект — computed пересчитаются
   }
 
   /** «2026-07-24…» → «24.07.26». */
@@ -485,11 +750,13 @@ export class NmtpModalComponent implements OnInit {
     }
   }
 
-  /** Книга .xlsx с сервера — в текущем режиме отбора. */
+  /** Книга .xlsx с сервера: с экранными правками — POST правленого отчёта. */
   async exportExcel(): Promise<void> {
     this.downloading.set(true);
     try {
-      const blob = await this.api.excel(this.terminal(), this.mode());
+      const blob = this.dirty()
+        ? await this.api.excelEdited(this.report()!)
+        : await this.api.excel(this.terminal(), this.mode());
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

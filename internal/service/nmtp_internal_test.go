@@ -118,8 +118,8 @@ func TestBuildNmtpReport(t *testing.T) {
 
 	records := []domain.Dislocation{sl, kat, shx, kon, alien, swap, bros, near, arrived, foreign}
 	brosDate := nmtpLTP(2026, 7, 25)
-	rep := buildNmtpReport(records, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
-		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, map[string]*domain.LocalTime{"4444-444-4444": brosDate}, false)
+	rep, _ := buildNmtpReport(records, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
+		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, map[string]*domain.LocalTime{"4444-444-4444": brosDate}, false, nil)
 
 	// «прочее» появилось (alien), специфичность: СЛЯБЫ не съедены ПРОКАТОМ.
 	assert.True(t, rep.HasOther)
@@ -203,8 +203,8 @@ func TestBuildNmtpReport_BezindeksnyeNeSlipayutsya(t *testing.T) {
 	prog := nmtpLT(2026, 7, 30, 9, 30)
 	c.ProgJd = &prog
 
-	rep := buildNmtpReport([]domain.Dislocation{a1, a2, b, c}, nmtpTestCols(), nmtpTestMarks,
-		"ГУТ-2", []string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false)
+	rep, _ := buildNmtpReport([]domain.Dislocation{a1, a2, b, c}, nmtpTestCols(), nmtpTestMarks,
+		"ГУТ-2", []string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false, nil)
 
 	var rows []domain.NmtpTrainRow
 	for _, s := range rep.Sections {
@@ -248,8 +248,8 @@ func TestBuildNmtpReport_PorogPlanRezhim(t *testing.T) {
 	away.IndexMain = "9999-182-9999"
 	recs = append(recs, away)
 
-	def := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
-		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false)
+	def, _ := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
+		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false, nil)
 	assert.Equal(t, 1, def.TrainsActive) // только полный поезд
 	assert.Equal(t, 40, def.TotalVagons) // 20 + 19 + перестановка
 
@@ -274,12 +274,25 @@ func TestBuildNmtpReport_PorogPlanRezhim(t *testing.T) {
 	assert.False(t, short.Planned)
 	assert.Equal(t, "был 182, НА АЭ", moved.Note)
 
-	nazn := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
-		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, true)
+	nazn, _ := buildNmtpReport(recs, nmtpTestCols(), nmtpTestMarks, "ГУТ-2",
+		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, true, nil)
 	assert.Equal(t, 39, nazn.TotalVagons) // перестановки «НА АЭ» нет
 	for _, s := range nazn.Sections {
 		for _, r := range s.Rows {
 			assert.NotEqual(t, "3333-333-3333", r.Index)
 		}
 	}
+}
+
+// Ручная привязка «вагон → колонка» (указание грузовладельца) сильнее правил;
+// привязки вагонов, не встреченных в подходе, возвращаются как непогашенные.
+func TestBuildNmtpReport_VagonOverride(t *testing.T) {
+	v := nmtpVagon("60000021", "1111-111-1111", "КЛЦ МАРИС", "ЧЕЛУТАЙ", "УГОЛЬ КАМЕННЫЙ МАРКИ Д", "Д", 1, 69)
+	// По правилам вагон лёг бы в колонку 4 (КЛЦ МАРИС/ЧЕЛУТАЙ) — привязка ведёт в 0.
+	overrides := map[string]int{"60000021": 0, "60999999": 3}
+	rep, seen := buildNmtpReport([]domain.Dislocation{v}, nmtpTestCols(), nmtpTestMarks,
+		"ГУТ-2", []string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false, overrides)
+	assert.Equal(t, []int{1, 0, 0, 0, 0, 0}, rep.ColCounts)
+	assert.True(t, seen["60000021"])
+	assert.False(t, seen["60999999"]) // вагона нет в подходе — кандидат на гашение
 }

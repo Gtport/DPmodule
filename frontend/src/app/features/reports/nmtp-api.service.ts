@@ -5,6 +5,8 @@ import { environment } from '../../../environments/environment';
 
 /** Колонка шапки формы (три уровня, как в файле порта). */
 export interface NmtpColumnHead {
+  /** nmtp_column.id — цель ручного переноса поезда. */
+  id?: number;
   group: string;
   station: string;
   mark: string;
@@ -22,6 +24,8 @@ export interface NmtpTrainRow {
   date_bros?: string | null;
   counts: number[];
   total: number;
+  /** Только на клиенте: строка добавлена руками в модалке (сервер поле игнорирует). */
+  custom?: boolean;
 }
 
 export interface NmtpSection {
@@ -82,5 +86,19 @@ export class NmtpApiService {
     const params: Record<string, string> = { terminal };
     if (mode) params['mode'] = mode;
     return firstValueFrom(this.http.get(`${this.base}/excel`, { params, responseType: 'blob' }));
+  }
+
+  /** Книга .xlsx из ПРАВЛЕНОГО на экране отчёта — правки нигде не хранятся. */
+  excelEdited(report: NmtpReport): Promise<Blob> {
+    return firstValueFrom(this.http.post(`${this.base}/excel`, report, { responseType: 'blob' }));
+  }
+
+  /**
+   * Перенос состава поезда в колонку: привязка по номерам вагонов
+   * (nmtp_vagon_column), переживает переформирование. column_id = 0 — снять.
+   */
+  move(req: { terminal: string; index: string; station_oper: string; prog: string; column_id: number }):
+    Promise<{ vagons: number }> {
+    return firstValueFrom(this.http.post<{ vagons: number }>(`${this.base}/move`, req));
   }
 }

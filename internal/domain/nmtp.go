@@ -6,6 +6,7 @@ package domain
 // универсальный админ-редактор правит как строку); пустое правило — любое
 // значение. Справочник nmtp_column (миграция 000053), правится в Админе.
 type NmtpColumn struct {
+	ID            int64 // ключ привязок nmtp_vagon_column
 	Terminal      string
 	SortOrder     int
 	GroupLabel    string
@@ -18,6 +19,7 @@ type NmtpColumn struct {
 
 // NmtpColumnHead — шапка колонки (три уровня, как в файле порта).
 type NmtpColumnHead struct {
+	ID      int64  `json:"id,omitempty"` // nmtp_column.id — цель ручного переноса поезда
 	Group   string `json:"group"`
 	Station string `json:"station"`
 	Mark    string `json:"mark"`

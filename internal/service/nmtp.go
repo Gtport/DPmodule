@@ -165,9 +165,107 @@ func (s *NmtpService) Report(ctx context.Context, terminal string, naznachOnly b
 	// реестра, отсортированные по коду по убыванию (порядок главной страницы).
 	termStations := terminalStationNames(s.dir)
 
-	report := buildNmtpReport(s.actual.All(), cols, marks, terminal, termStations, brosDates, naznachOnly)
+	// Ручные привязки «вагон → колонка» ЭТОГО терминала (сильнее правил).
+	overrides, ours := s.vagonOverrides(ctx, cols)
+
+	report, seen := buildNmtpReport(s.actual.All(), cols, marks, terminal, termStations, brosDates, naznachOnly, overrides)
 	report.Norm = p.NmtpNorm
+
+	// Гашение: вагон с привязкой выпал из подхода (прибыл/выбыл) — привязка
+	// мертва. Best-effort: сбой удаления не роняет отчёт. В режиме naznachOnly
+	// не гасим — уходящие «НА {сосед}» скрыты отбором, но живы.
+	if !naznachOnly {
+		var dead []string
+		for _, v := range ours {
+			if !seen[v] {
+				dead = append(dead, v)
+			}
+		}
+		_ = s.repo.DeleteVagonColumns(ctx, dead)
+	}
 	return report, nil
+}
+
+// vagonOverrides — привязки вагонов к колонкам данного терминала: карта
+// vagon → индекс колонки в cols и список «наших» вагонов (для гашения).
+// Привязки чужих терминалов игнорируются и не гасятся.
+func (s *NmtpService) vagonOverrides(ctx context.Context, cols []domain.NmtpColumn) (map[string]int, []string) {
+	all, err := s.repo.VagonColumns(ctx)
+	if err != nil || len(all) == 0 {
+		return nil, nil // best-effort: без привязок отчёт живёт по правилам
+	}
+	byID := map[int64]int{}
+	for i, c := range cols {
+		byID[c.ID] = i
+	}
+	overrides := map[string]int{}
+	var ours []string
+	for v, colID := range all {
+		if idx, ok := byID[colID]; ok {
+			overrides[v] = idx
+			ours = append(ours, v)
+		}
+	}
+	return overrides, ours
+}
+
+// MoveTrain — ручной перенос состава поезда в колонку (указание грузовладельца):
+// привязка пишется поимённо по номерам вагонов состава (nmtp_vagon_column) и
+// переживает переформирование поезда. columnID = 0 — снять привязку («вернуть
+// по правилам»). Возвращает число вагонов.
+func (s *NmtpService) MoveTrain(ctx context.Context, terminal, index, station string,
+	prog *domain.LocalTime, columnID int64, who string) (int, error) {
+	if _, ok := s.dir.PortByNameS(terminal); !ok {
+		return 0, fmt.Errorf("неизвестный терминал: %s", terminal)
+	}
+	if columnID != 0 {
+		cols, err := s.repo.Columns(ctx, terminal)
+		if err != nil {
+			return 0, err
+		}
+		found := false
+		for _, c := range cols {
+			if c.ID == columnID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0, fmt.Errorf("колонка %d не принадлежит терминалу %s", columnID, terminal)
+		}
+	}
+	if prog == nil {
+		return 0, fmt.Errorf("не задан прогноз поезда (ключ строки)")
+	}
+	// Вагоны состава — тем же отбором и ключом строки, что агрегация отчёта.
+	progKey := prog.Time().Format("2006-01-02 15:04")
+	var vagons []string
+	for _, rec := range s.actual.All() {
+		if rec.GruzpolS != terminal && rec.Naznach != terminal {
+			continue
+		}
+		if rec.Status != nil && (*rec.Status == 10 || *rec.Status == 12) {
+			continue
+		}
+		if rec.ProgJd == nil || rec.ProgJd.Time().Format("2006-01-02 15:04") != progKey {
+			continue
+		}
+		idx := rec.Index
+		if rec.IndexPp != "" {
+			idx = rec.IndexPp
+		}
+		if idx != index || rec.StationOper != station {
+			continue
+		}
+		vagons = append(vagons, rec.Vagon)
+	}
+	if len(vagons) == 0 {
+		return 0, fmt.Errorf("поезд %s (%s) не найден в подходе — обновите отчёт", index, station)
+	}
+	if columnID == 0 {
+		return len(vagons), s.repo.DeleteVagonColumns(ctx, vagons)
+	}
+	return len(vagons), s.repo.SetVagonColumns(ctx, vagons, columnID, who)
 }
 
 // terminalStationNames — имена причальных станций из реестра ports (уникальные,
@@ -201,10 +299,13 @@ func terminalStationNames(dir *DirectoryCache) []string {
 // формуле листа). Строку в форме короткий состав всё равно получает.
 const nmtpMinTrainVagons = 20
 
-// buildNmtpReport — чистая агрегация (покрыта тестами).
+// buildNmtpReport — чистая агрегация (покрыта тестами). overrides — ручные
+// привязки «вагон → индекс колонки» (сильнее правил); второй результат — какие
+// из привязанных вагонов встретились в подходе (для гашения остальных).
 func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, markDict []string,
 	terminal string, termStations []string, brosDates map[string]*domain.LocalTime,
-	naznachOnly bool) domain.NmtpReport {
+	naznachOnly bool, overrides map[string]int) (domain.NmtpReport, map[string]bool) {
+	seenOverrides := map[string]bool{}
 
 	norm := NewMarkNormalizer(markDict)
 	matchers := make([]nmtpMatcher, len(cols))
@@ -329,19 +430,25 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 		client := strings.ToUpper(strings.TrimSpace(rec.Client))
 		station := strings.ToUpper(strings.TrimSpace(rec.StationNach))
 		col := otherIdx
-		for _, mi := range checkOrder {
-			m := &matchers[mi]
-			if m.clients != nil && !m.clients[client] {
-				continue
+		if ov, ok := overrides[rec.Vagon]; ok {
+			// Ручная привязка вагона (указание грузовладельца) сильнее правил.
+			col = ov
+			seenOverrides[rec.Vagon] = true
+		} else {
+			for _, mi := range checkOrder {
+				m := &matchers[mi]
+				if m.clients != nil && !m.clients[client] {
+					continue
+				}
+				if m.stations != nil && !m.stations[station] {
+					continue
+				}
+				if m.marks != nil && !m.marks[mark] {
+					continue
+				}
+				col = m.order
+				break
 			}
-			if m.stations != nil && !m.stations[station] {
-				continue
-			}
-			if m.marks != nil && !m.marks[mark] {
-				continue
-			}
-			col = m.order
-			break
 		}
 		tr.row.Counts[col]++
 		tr.row.Total++
@@ -376,7 +483,7 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 		ColTons:   make([]float64, nCols),
 	}
 	for _, c := range cols {
-		report.Columns = append(report.Columns, domain.NmtpColumnHead{Group: c.GroupLabel, Station: c.StationLabel, Mark: c.MarkLabel})
+		report.Columns = append(report.Columns, domain.NmtpColumnHead{ID: c.ID, Group: c.GroupLabel, Station: c.StationLabel, Mark: c.MarkLabel})
 	}
 
 	// Секции в порядке файла: терминальные станции → дороги (восток → запад).
@@ -491,5 +598,5 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 	}
 	report.UnloadForecast = float64(near) / 7
 
-	return report
+	return report, seenOverrides
 }
