@@ -384,7 +384,11 @@ interface RowForm {
     .nmtp thead tr:nth-child(1) { height: 24px; }
     .nmtp thead tr:nth-child(2) { height: 64px; }
     .nmtp thead tr:nth-child(3) { height: 22px; }
-    .nmtp thead th { z-index: 2; }
+    /* Отступы и межстрочный интервал держим меньше заданных высот рядов:
+     * с паддингами .dp-tbl (4px) контент перерастал 24/64/22, фактическая
+     * граница рядов уезжала ниже sticky-отступов — при прокрутке ряд марок
+     * съезжал относительно остальной шапки (замечание владельца 31.07.2026). */
+    .nmtp thead th { z-index: 2; padding: 2px 6px; line-height: 1.2; }
     .nmtp thead tr:nth-child(1) th { top: 0; }
     .nmtp thead tr:nth-child(2) th { top: 24px; }
     .nmtp thead tr:nth-child(3) th { top: 88px; }

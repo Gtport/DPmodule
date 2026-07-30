@@ -5,13 +5,16 @@ package report
 // уровня (клиент / станции погрузки / марка), слева реквизиты поезда, секции
 // строк по станциям терминалов и дорогам (восток → запад) с итогами, ниже —
 // секция «БРОШЕННЫЕ ПОЕЗДА» (в колонке прибытия — дата бросания, как в файле),
-// подвал: вагоны и тоннаж по колонкам, счётчики поездов, «Прогноз выгрузки по
-// подходу», «Нагрузка на ж/д сеть», свод тоннажа по клиентам.
+// низ — как на экране (решение владельца 31.07.2026): счётчики «Итого …
+// в ходу/брошенных/на сети», блок «Итог по грузовым колонкам» с повторением
+// шапки, затем «Прогноз выгрузки по подходу», «Нагрузка на ж/д сеть», свод
+// тоннажа по клиентам.
 //
-// Оформление тоже по файлу порта: белая жирная шапка, серая полоса марок и
-// секции дорог (E4E4E4), голубые секции брошенных (ABE9FF), жёлтая колонка
-// «итого» (FFFFCC), утолщённые границы на стыках групп клиентов, шапка
-// закреплена. Ручную раскраску отдельных клиентов из файла не переносим.
+// Оформление: белая жирная шапка и серая полоса марок — по файлу порта; секции
+// дорог зелёные (A9D08E) и брошенных голубые (CFF0FC) — цвета экрана gtport
+// (решение владельца 31.07.2026, в файле порта были серые/голубые ABE9FF);
+// жёлтая колонка «итого» (FFFFCC), утолщённые границы на стыках групп клиентов,
+// шапка закреплена. Ручную раскраску отдельных клиентов из файла не переносим.
 //
 // Отличия от файла порта (осознанные): колонка «СУДНО» называется «ПРИМЕЧАНИЕ»
 // (в файле в ней жили пометки перестановок и смен индекса — они и выводятся:
@@ -47,10 +50,11 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("нмтп: имя листа: %w", err)
 	}
 
-	// ── Стили (палитра и веса — из файла порта) ─────────────────────────────
+	// ── Стили (веса — из файла порта; цвета секций — экранные, владелец 31.07) ──
 	const (
-		fillGray   = "E4E4E4" // марки в шапке, секции дорог, счётчики
-		fillBlue   = "ABE9FF" // секции брошенных
+		fillGray   = "E4E4E4" // марки в шапке
+		fillGreen  = "A9D08E" // секции дорог в ходу (цвет экрана gtport)
+		fillBlue   = "CFF0FC" // секции брошенных (цвет экрана gtport)
 		fillYellow = "FFFFCC" // колонка «итого»
 		fillOrange = "FFE7BA" // «прочее» — несматченный груз, громко
 	)
@@ -100,7 +104,7 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		{"totalCol", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 12}, Border: thinGL,
 			Fill: solid(fillYellow), Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}}},
 		{"section", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 11}, Border: sectionBd,
-			Fill: solid(fillGray), Alignment: center}},
+			Fill: solid(fillGreen), Alignment: center}},
 		{"sectionAb", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 11}, Border: sectionBd,
 			Fill: solid(fillBlue), Alignment: center}},
 		{"banner", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 12}, Alignment: center}},
@@ -331,22 +335,76 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		}
 	}
 
+	// Счётчики — построчно, подписи и порядок как на экране (владелец, 31.07.2026:
+	// низ книги приводим к экрану; в файле порта были «кол-во поездов…»).
+	sumVagons := func(secs []domain.NmtpSection) int {
+		n := 0
+		for _, s := range secs {
+			n += s.Total
+		}
+		return n
+	}
+	counter := func(label string, v int) {
+		set(1, row, label, "counterLbl")
+		merge(1, row, lastCol-1, row)
+		set(lastCol, row, v, "counterVal")
+		row++
+	}
+
 	writeSections(r.Sections, false)
-	set(1, row, "кол-во поездов в движении:", "counterLbl")
-	merge(1, row, lastCol-1, row)
-	set(lastCol, row, r.TrainsActive, "counterVal")
-	row++
+	counter("Итого вагонов в ходу", sumVagons(r.Sections))
+	counter("Итого поездов в ходу", r.TrainsActive)
 
 	set(1, row, "БРОШЕННЫЕ ПОЕЗДА (в колонке прибытия — дата бросания)", "banner")
 	merge(1, row, lastCol, row)
 	row++
 	writeSections(r.Abandoned, true)
-	set(1, row, "кол-во брошенных поездов:", "counterLbl")
-	merge(1, row, lastCol-1, row)
-	set(lastCol, row, r.TrainsAbandoned, "counterVal")
+	counter("Итого вагонов брошенных", sumVagons(r.Abandoned))
+	counter("Итого поездов брошенных", r.TrainsAbandoned)
+	counter("Итого поездов на сети", r.TrainsActive+r.TrainsAbandoned)
+
+	// ── Подвал: «Итог по грузовым колонкам» — как на экране ─────────────────
+	// Повторение шапки групп и станций перед цифрами: к низу книги шапка уже
+	// уехала при прокрутке, без подписей колонки не прочитать.
+	set(1, row, "Итог по грузовым колонкам", "footLbl")
+	merge(1, row, nFixed, row)
+	styleRange(1, row, nFixed, row, "footLbl")
+	col = nFixed + 1
+	for i := 0; i < len(r.Columns); {
+		j := i
+		for j < len(r.Columns) && r.Columns[j].Group == r.Columns[i].Group {
+			j++
+		}
+		set(col, row, r.Columns[i].Group, "headG")
+		styleRange(col, row, col+j-i-1, row, "headG")
+		if j-i > 1 {
+			merge(col, row, col+j-i-1, row)
+		}
+		col += j - i
+		i = j
+	}
+	if hasOther {
+		set(nFixed+cargoCols, row, "ПРОЧЕЕ", "headOther")
+	}
+	set(lastCol, row, "ИТОГО", "headTotal")
+	row++
+	set(1, row, "Названия колонок", "footLbl")
+	merge(1, row, nFixed, row)
+	styleRange(1, row, nFixed, row, "footLbl")
+	for i, c := range r.Columns {
+		st := "head"
+		if groupStart[i] {
+			st = "headG"
+		}
+		set(nFixed+1+i, row, c.Station, st)
+	}
+	if hasOther {
+		set(nFixed+cargoCols, row, "", "headOther")
+	}
+	set(lastCol, row, "", "headTotal")
+	_ = f.SetRowHeight(sheet, row, stationH)
 	row++
 
-	// ── Подвал: вагоны и тоннаж по колонкам ─────────────────────────────────
 	writeFootRow := func(label string, cellVal func(idx int) any, total any) {
 		set(1, row, label, "footLbl")
 		merge(1, row, nFixed, row)
@@ -365,13 +423,13 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		set(lastCol, row, total, "totalCol")
 		row++
 	}
-	writeFootRow("ВСЕГО вагонов", func(idx int) any {
+	writeFootRow("вагонов (шт.)", func(idx int) any {
 		if r.ColCounts[idx] > 0 {
 			return r.ColCounts[idx]
 		}
 		return ""
 	}, r.TotalVagons)
-	writeFootRow("тоннаж (тыс. т.)", func(idx int) any {
+	writeFootRow("тонн (тыс. т.)", func(idx int) any {
 		if r.ColTons[idx] > 0 {
 			return fmt.Sprintf("%.3f", r.ColTons[idx])
 		}
