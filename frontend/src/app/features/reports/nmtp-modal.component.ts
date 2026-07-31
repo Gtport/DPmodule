@@ -60,7 +60,7 @@ interface RowForm {
     NzTooltipModule,
   ],
   template: `
-    <nz-modal [nzVisible]="true" [nzTitle]="ttl" [nzFooter]="null" nzWidth="1500px"
+    <nz-modal [nzVisible]="true" [nzTitle]="ttl" [nzFooter]="null" nzWidth="1725px"
               [nzMask]="false" (nzOnCancel)="closed.emit()">
       <ng-template #ttl>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
@@ -732,9 +732,9 @@ export class NmtpModalComponent implements OnInit {
     return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(2, 4)}`;
   }
 
-  /** Тоннаж: 3 знака, ноль — пусто. */
+  /** Тоннаж: один знак после запятой (владелец, 31.07.2026), ноль — пусто. */
   fmtTons(v: number): string {
-    return v > 0 ? v.toFixed(3) : '';
+    return v > 0 ? v.toFixed(1) : '';
   }
 
   /**

@@ -475,12 +475,13 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		}
 		return ""
 	}, r.TotalVagons)
+	// Тоннаж — один знак после запятой (решение владельца 31.07.2026).
 	writeFootRow("тонн (тыс. т.)", func(idx int) any {
 		if r.ColTons[idx] > 0 {
-			return fmt.Sprintf("%.3f", r.ColTons[idx])
+			return fmt.Sprintf("%.1f", r.ColTons[idx])
 		}
 		return ""
-	}, fmt.Sprintf("%.3f", r.TotalTons))
+	}, fmt.Sprintf("%.1f", r.TotalTons))
 	row++
 
 	// ── Прогноз, нагрузка, свод по клиентам ─────────────────────────────────
@@ -509,7 +510,7 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		row++
 		for _, ct := range r.ClientTons {
 			set(1, row, ct.Client, "plain")
-			set(2, row, fmt.Sprintf("%.3f", ct.Tons), "plainC")
+			set(2, row, fmt.Sprintf("%.1f", ct.Tons), "plainC")
 			row++
 		}
 	}
