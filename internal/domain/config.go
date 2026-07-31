@@ -51,8 +51,9 @@ type DataSourceConfig struct {
 	PathTemplate        string   `json:"path_template,omitempty"`         // шаблон пути, {client} → код; дефолт "/{client}/dislocation"
 	HistoryPathTemplate string   `json:"history_path_template,omitempty"` // шаблон запроса 601 ({vagon},{client}); дефолт "/wagons/{vagon}/history/{client}"
 	Method              string   `json:"method,omitempty"`                // HTTP-метод, дефолт GET
-	AuthSecretKey       string   `json:"auth_secret_key,omitempty"`       // ключ секрета в SecretSource; пусто — без авторизации
-	AuthHeader          string   `json:"auth_header,omitempty"`           // заголовок для секрета (напр. "X-API-Key"); пусто — "Authorization: Bearer <секрет>"
+	AuthMode            string   `json:"auth_mode,omitempty"`             // "keycloak" (токен сервис-аккаунта) | "apikey" (старый ключ); пусто — keycloak, если сервис-аккаунт настроен, иначе apikey
+	AuthSecretKey       string   `json:"auth_secret_key,omitempty"`       // режим apikey: ключ секрета в SecretSource; пусто — без авторизации
+	AuthHeader          string   `json:"auth_header,omitempty"`           // режим apikey: заголовок для секрета (напр. "X-API-Key"); пусто — "Authorization: Bearer <секрет>"
 	InsecureTLS         bool     `json:"insecure_tls,omitempty"`          // не проверять TLS-сертификат провайдера (самоподписанный серт на IP); по умолчанию проверяем
 	TimeoutSecs         int      `json:"timeout_secs,omitempty"`          // таймаут одного запроса, дефолт 30
 }

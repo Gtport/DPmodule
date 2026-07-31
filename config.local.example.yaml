@@ -24,6 +24,10 @@ http:
 metrics:
   port: 9090
 
+# Секреты: на стендах их объявляют шаблоном Vault ${vault:<движок>/<путь>:<ключ>},
+# который резолвит CI/CD перед стартом (см. config.docker.yaml). На машине
+# разработчика подставлять некому, поэтому здесь работает запасной путь — пустое
+# поле в конфиге и значение в переменной окружения из ./.env.
 postgres:
   enabled: true
   host: localhost
@@ -32,13 +36,16 @@ postgres:
                       # командой pg_lsclusters и поставить сюда порт своего кластера
   dbname: dpport
   user: gtport_app
-  sslmode: disable    # пароль — env PG_PASSWORD из ./.env
+  # password: ...     # пусто → берётся env PG_PASSWORD из ./.env (так и оставляем локально)
+  sslmode: disable
   max_open_conns: 25
   max_idle_conns: 5
   conn_max_lifetime: 5m
 
 keycloak:
   enabled: true
+  # service_account (исходящие походы к провайдеру) локально НЕ заполняем: обе
+  # интеграции выключены ниже, ходить некуда. Пустой блок = режим X-API-Key.
   jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs
   # issuer обязан совпадать с KC_HOSTNAME локального Keycloak + /realms/iqport.
   # Локально точка входа — dev-сервер Angular (он же проксирует /realms на :8180),

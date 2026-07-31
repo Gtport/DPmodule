@@ -42,7 +42,7 @@ func TestPull_APIKeyHeader(t *testing.T) {
 		AuthSecretKey: "ASU_TOKEN",
 		AuthHeader:    "X-API-Key",
 	}
-	cl := NewHTTPClient(cfg, staticSecrets{"ASU_TOKEN": "SEKRET"})
+	cl := NewHTTPClient(cfg, staticSecrets{"ASU_TOKEN": "SEKRET"}, nil)
 
 	if _, err := cl.Pull(context.Background(), "attis"); err != nil {
 		t.Fatalf("Pull attis: %v", err)
@@ -63,7 +63,7 @@ func TestPull_DefaultBearer(t *testing.T) {
 	defer srv.Close()
 
 	cfg := domain.DataSourceConfig{BaseURL: srv.URL, AuthSecretKey: "ASU_TOKEN"} // auth_header пуст
-	cl := NewHTTPClient(cfg, staticSecrets{"ASU_TOKEN": "TOK"})
+	cl := NewHTTPClient(cfg, staticSecrets{"ASU_TOKEN": "TOK"}, nil)
 
 	if _, err := cl.Pull(context.Background(), "nmtp"); err != nil {
 		t.Fatalf("Pull nmtp: %v", err)
@@ -81,13 +81,13 @@ func TestPull_InsecureTLS(t *testing.T) {
 	defer srv.Close()
 
 	// Без insecure_tls → проверка серта проваливается.
-	strict := NewHTTPClient(domain.DataSourceConfig{BaseURL: srv.URL}, staticSecrets{})
+	strict := NewHTTPClient(domain.DataSourceConfig{BaseURL: srv.URL}, staticSecrets{}, nil)
 	if _, err := strict.Pull(context.Background(), "attis"); err == nil {
 		t.Fatal("ждали ошибку TLS-проверки для самоподписанного серта, её нет")
 	}
 
 	// С insecure_tls → проходит (эквивалент curl -k).
-	lax := NewHTTPClient(domain.DataSourceConfig{BaseURL: srv.URL, InsecureTLS: true}, staticSecrets{})
+	lax := NewHTTPClient(domain.DataSourceConfig{BaseURL: srv.URL, InsecureTLS: true}, staticSecrets{}, nil)
 	if _, err := lax.Pull(context.Background(), "attis"); err != nil {
 		t.Fatalf("с insecure_tls запрос должен пройти: %v", err)
 	}

@@ -13,12 +13,18 @@ metrics:
 
 # enabled: false по умолчанию — образ поднимается без внешних сервисов.
 # DevOps включает нужные зависимости на стенде, выставив enabled: true.
+#
+# Секреты объявляются шаблоном Vault ${vault:<движок>/<путь>:<ключ>} и резолвятся
+# CI/CD перед стартом — в самом приложении резолвинга нет, значение читается как есть.
+# Пусто → запасной путь: одноимённая переменная окружения (PG_PASSWORD и т.д.).
+# ⚠️ Пути ниже — по образцу шаблона, конкретные согласовать с DevOps.
 postgres:
   enabled: false
   host: postgres      # имя сервиса в docker-compose
   port: 5432
   dbname: iqport
   user: iqport
+  password: ${vault:kv/databases/postgres/dev:iqport}   # секрет — резолвит CI/CD из Vault
   sslmode: disable
   max_open_conns: 25
   max_idle_conns: 5
@@ -29,6 +35,17 @@ keycloak:
   jwks_url: http://keycloak:8080/realms/iqport/protocol/openid-connect/certs
   issuer: http://keycloak:8080/realms/iqport
   audience: iqport-backend
+  client_secret: ${vault:kv/auth/keycloak/dev:client_secret}   # только для confidential-клиентов; пусто = не требуется
+  # service_account — ИСХОДЯЩИЕ походы к провайдеру (дислокация, запрос 601, памятки):
+  # поток client_credentials, человек в цикле не нужен → работает и в кронах.
+  # ⚠️ Заполненность блока = переключатель режима: пусто → клиенты ходят запасным
+  # X-API-Key, как до перевода провайдера на Keycloak.
+  service_account:
+    token_url: http://keycloak:8080/realms/iqport/protocol/openid-connect/token
+    client_id: dpport-service       # клиент с включённым service account
+    insecure_tls: false             # true для самоподписанного серта Keycloak на стенде
+    timeout_secs: 30
+    client_secret: ${vault:kv/auth/keycloak/dev:sa_client_secret}
 
 log:
   level: info
@@ -40,6 +57,10 @@ log:
 asu:
   enabled: false        # true → фоновый забор дислокации из АСУ по тикеру
   pull_interval: 10m    # период забора (источники — в таблице data_source)
+  # Авторизация у провайдера — Keycloak, сервис-аккаунт (keycloak.service_account).
+  # X-API-Key в конфиге не объявляется: он остался ЗАПАСНЫМ режимом для отката
+  # (data_source.config.auth_mode = "apikey") и берёт ключ из окружения по имени,
+  # которое объявил источник (data_source.auth_secret_key).
 
 reference:              # памятки на подачу/уборку (тот же провайдер, что дислокация)
   enabled: false        # true → фоновый крон-инкремент по тикеру
@@ -50,10 +71,13 @@ reference:              # памятки на подачу/уборку (тот 
   cursor_overlap: 30m   # нахлёст курсора на запоздавшие записи
   stale_after: 6h       # молчание дольше — пустой проход в журнал
   clients: [attis, nmtp] # коды клиентов провайдера: памятки разнесены по клиентам, у каждого свои номера
-  # auth_secret_key по умолчанию ASU_TOKEN (env) — ключ X-API-Key того же провайдера
+  # auth_mode: keycloak | apikey — пусто значит keycloak, если сервис-аккаунт настроен
+  # auth_secret_key — только для запасного режима apikey: ИМЯ ключа (дефолт
+  # ASU_TOKEN), значение читается из одноимённой переменной окружения
 
-max:                    # рассылка форм в мессенджер MAX (токен бота — env MAX_BOT_TOKEN)
+max:                    # рассылка форм в мессенджер MAX
   enabled: false        # включается в конфиге per-deployment; чаты/маршруты — в БД
   base_url: https://platform-api2.max.ru  # Bot API MAX (CA Минцифры вшит в бинарь)
   timeout_secs: 120     # таймаут HTTP (заливка картинок бывает долгой)
   send_delay: 500ms     # пауза между чатами (лимит API 30 rps)
+  bot_token: ${vault:kv/integrations/max/dev:bot_token}   # токен бота

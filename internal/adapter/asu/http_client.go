@@ -23,24 +23,34 @@ const (
 	defaultTimeout             = 30 * time.Second
 )
 
-// HTTPClient реализует port.ASUClient: GET к сервису АСУ, авторизация секретом из
-// SecretSource (ключ — auth_secret_key источника; пусто → без авторизации). Секрет
-// уходит в заголовке auth_header (напр. "X-API-Key"); пустой auth_header → в
-// "Authorization: Bearer <секрет>".
+// HTTPClient реализует port.ASUClient: GET к сервису АСУ.
+//
+// Авторизация — режим auth_mode источника:
+//   - "keycloak" (основной): access-токен сервис-аккаунта из TokenProvider уходит
+//     в "Authorization: Bearer <токен>";
+//   - "apikey" (запасной, до перевода провайдера): секрет из SecretSource по ключу
+//     auth_secret_key в заголовке auth_header (напр. "X-API-Key").
+//
+// Пусто → keycloak, если TokenProvider передан, иначе apikey. Так стенд, где
+// сервис-аккаунт ещё не заведён, продолжает ходить по-старому.
 type HTTPClient struct {
 	baseURL      string
 	pathTemplate string
 	historyPath  string // шаблон пути запроса 601 ({vagon}, {client})
 	method       string
+	authMode     string
 	authKey      string
 	authHeader   string
 	secrets      port.SecretSource
+	tokens       port.TokenProvider
 	hc           *http.Client
 }
 
 // NewHTTPClient собирает клиент из config источника (base_url/path_template/method/
-// timeout_secs/auth_secret_key/auth_header/insecure_tls) и SecretSource для токена к АСУ.
-func NewHTTPClient(cfg domain.DataSourceConfig, secrets port.SecretSource) *HTTPClient {
+// timeout_secs/auth_mode/auth_secret_key/auth_header/insecure_tls), SecretSource
+// (запасной режим apikey) и TokenProvider (основной режим keycloak; nil — сервис-
+// аккаунт не настроен).
+func NewHTTPClient(cfg domain.DataSourceConfig, secrets port.SecretSource, tokens port.TokenProvider) *HTTPClient {
 	pathTemplate := cfg.PathTemplate
 	if pathTemplate == "" {
 		pathTemplate = defaultPathTemplate
@@ -68,10 +78,25 @@ func NewHTTPClient(cfg domain.DataSourceConfig, secrets port.SecretSource) *HTTP
 		pathTemplate: pathTemplate,
 		historyPath:  historyPath,
 		method:       method,
+		authMode:     strings.ToLower(strings.TrimSpace(cfg.AuthMode)),
 		authKey:      cfg.AuthSecretKey,
 		authHeader:   cfg.AuthHeader,
 		secrets:      secrets,
+		tokens:       tokens,
 		hc:           hc,
+	}
+}
+
+// useKeycloak — ходим ли токеном сервис-аккаунта. Явный auth_mode сильнее всего;
+// пусто — решает наличие настроенного сервис-аккаунта.
+func (c *HTTPClient) useKeycloak() bool {
+	switch c.authMode {
+	case "keycloak":
+		return true
+	case "apikey":
+		return false
+	default:
+		return c.tokens != nil
 	}
 }
 
@@ -89,6 +114,36 @@ func (c *HTTPClient) PullWagonHistory(ctx context.Context, client, vagon, from, 
 	return c.get(ctx, c.baseURL+path+"?from="+from+"&to="+to, "601 "+vagon)
 }
 
+// authorize вешает на запрос авторизацию согласно режиму. Молча без авторизации
+// уходим только там, где её и не просили (apikey без auth_secret_key).
+func (c *HTTPClient) authorize(ctx context.Context, req *http.Request, resource string) error {
+	if c.useKeycloak() {
+		if c.tokens == nil {
+			return fmt.Errorf("АСУ %q: режим keycloak, но сервис-аккаунт не настроен (keycloak.service_account)", resource)
+		}
+		token, err := c.tokens.Token(ctx)
+		if err != nil {
+			return fmt.Errorf("АСУ %q: токен сервис-аккаунта: %w", resource, err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}
+
+	if c.authKey == "" {
+		return nil
+	}
+	token, err := c.secrets.Get(ctx, c.authKey)
+	if err != nil {
+		return fmt.Errorf("АСУ %q: секрет %q: %w", resource, c.authKey, err)
+	}
+	if c.authHeader != "" {
+		req.Header.Set(c.authHeader, token) // напр. X-API-Key: <ключ>
+	} else {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	return nil
+}
+
 func (c *HTTPClient) get(ctx context.Context, url, label string) ([]byte, error) {
 	resource := label
 	req, err := http.NewRequestWithContext(ctx, c.method, url, nil)
@@ -96,16 +151,8 @@ func (c *HTTPClient) get(ctx context.Context, url, label string) ([]byte, error)
 		return nil, fmt.Errorf("АСУ %q: сборка запроса: %w", resource, err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if c.authKey != "" {
-		token, err := c.secrets.Get(ctx, c.authKey)
-		if err != nil {
-			return nil, fmt.Errorf("АСУ %q: секрет %q: %w", resource, c.authKey, err)
-		}
-		if c.authHeader != "" {
-			req.Header.Set(c.authHeader, token) // напр. X-API-Key: <ключ>
-		} else {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
+	if err := c.authorize(ctx, req, resource); err != nil {
+		return nil, err
 	}
 
 	resp, err := c.hc.Do(req)

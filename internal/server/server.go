@@ -13,6 +13,7 @@ import (
 
 	"github.com/Gtport/DPmodule/internal/adapter/asu"
 	"github.com/Gtport/DPmodule/internal/adapter/max"
+	"github.com/Gtport/DPmodule/internal/adapter/oauth"
 	"github.com/Gtport/DPmodule/internal/adapter/reference"
 	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/config"
@@ -63,6 +64,32 @@ func Build(
 	var vagonOps *service.VagonOpService
 	// brosJournal отдаём наружу для крона ежедневного bulk-save (nil без БД).
 	var brosJournal *service.BrosJournalService
+
+	// Секреты внешних интеграций: сперва то, что пришло из конфига (шаблон Vault,
+	// подставленный CI/CD), иначе — окружение. Один источник на все адаптеры.
+	//
+	// X-API-Key провайдера в конфиге НЕ объявляется (решение владельца 31.07.2026):
+	// к провайдеру ходим через Keycloak, а apikey остался лишь запасным режимом для
+	// отката — его ключ читается из окружения по имени, которое объявил источник
+	// (data_source.auth_secret_key для АСУ, reference.auth_secret_key для памяток).
+	secrets := secret.NewLayered(map[string]string{
+		"MAX_BOT_TOKEN":                cfg.MAX.BotToken,
+		config.SecretKeyServiceAccount: cfg.Keycloak.ServiceAccount.ClientSecret,
+	}, secret.NewEnvSource())
+
+	// Токен сервис-аккаунта Keycloak для ИСХОДЯЩИХ запросов к провайдеру
+	// (дислокация, запрос 601, памятки — адрес и авторизация у них общие).
+	// Блок не заполнен → tokens=nil, и клиенты ходят запасным режимом X-API-Key:
+	// стенд, где сервис-аккаунт ещё не заведён, не встаёт после обновления кода.
+	var tokens port.TokenProvider
+	if sa := cfg.Keycloak.ServiceAccount; sa.TokenURL != "" && sa.ClientID != "" {
+		tokens = oauth.New(sa.TokenURL, sa.ClientID, config.SecretKeyServiceAccount, sa.Scope,
+			secrets, sa.InsecureTLS, time.Duration(sa.TimeoutSecs)*time.Second)
+		log.Info("исходящая авторизация к провайдеру: Keycloak, сервис-аккаунт",
+			zap.String("client_id", sa.ClientID))
+	} else {
+		log.Warn("сервис-аккаунт Keycloak не настроен — к провайдеру ходим запасным режимом X-API-Key")
+	}
 
 	if cfg.App.Env != "dev" {
 		gin.SetMode(gin.ReleaseMode)
@@ -151,7 +178,8 @@ func Build(
 	// держать позицию) — тогда ручек нет вовсе, как у прочих подсистем на БД.
 	var refSvc *service.ReferenceService
 	if historyRepo != nil && pamCursorRepo != nil {
-		refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS, cfg.Reference.AuthSecretKey, secret.NewEnvSource())
+		refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS,
+			cfg.Reference.AuthMode, cfg.Reference.AuthSecretKey, secrets, tokens)
 		refSvc = service.NewReferenceService(refClient, historyRepo, pamCursorRepo, journalRepo,
 			cfg.Reference.Clients, service.ReferenceTiming{
 				Interval:        cfg.Reference.PullInterval,
@@ -162,12 +190,12 @@ func Build(
 		handler.NewReferenceHandler(refSvc).RegisterRoutes(api)
 	}
 
-	// Исходящая рассылка форм в мессенджер MAX (токен — env MAX_BOT_TOKEN, CA
-	// Минцифры вшит в адаптер). enabled=false → sender=nil, health отвечает
-	// «выключено». Чаты/маршруты и сами рассылки — следующие ветки.
+	// Исходящая рассылка форм в мессенджер MAX (токен — max.bot_token из конфига
+	// либо env MAX_BOT_TOKEN, CA Минцифры вшит в адаптер). enabled=false → sender=nil,
+	// health отвечает «выключено». Чаты/маршруты и сами рассылки — следующие ветки.
 	var maxSender port.MessengerSender
 	if cfg.MAX.Enabled {
-		mc, err := max.NewClient(cfg.MAX.BaseURL, "", time.Duration(cfg.MAX.TimeoutSecs)*time.Second, secret.NewEnvSource())
+		mc, err := max.NewClient(cfg.MAX.BaseURL, "", time.Duration(cfg.MAX.TimeoutSecs)*time.Second, secrets)
 		if err != nil {
 			log.Error("MAX: клиент не собран, канал отключён", zap.Error(err))
 		} else {
@@ -228,9 +256,11 @@ func Build(
 			// Автозагрузка дислокации из АСУ-АСУ (ingest=api_pull): забор всех клиентов,
 			// сверка меток формирования и пересборка снимка тем же конвейером (proc). По
 			// расписанию — внутренний крон-воркер (см. main.go); ручной триггер — ручка
-			// POST /dislocation/asu/pull. Транспорт — HTTP-адаптер, ключ к АСУ из env.
-			secrets := secret.NewEnvSource()
-			asuFactory := func(dc domain.DataSourceConfig) port.ASUClient { return asu.NewHTTPClient(dc, secrets) }
+			// POST /dislocation/asu/pull. Транспорт — HTTP-адаптер, ключ к АСУ —
+			// из конфига (asu.token), запасным путём из env (см. secrets выше).
+			asuFactory := func(dc domain.DataSourceConfig) port.ASUClient {
+				return asu.NewHTTPClient(dc, secrets, tokens)
+			}
 			asuIngest = service.NewASUIngest(cfgCache, asuFactory, proc, log)
 			asuIngest.SetJournal(journal)
 			handler.NewASUPullHandler(asuIngest).RegisterRoutes(api)
@@ -240,7 +270,7 @@ func Build(
 			// Клиент собирается из того же источника data_source id=asu.
 			if vagonOpRepo != nil {
 				if ds, ok := cfgCache.DataSource("asu"); ok && ds.Enabled {
-					histClient := asu.NewHTTPClient(ds.Config, secrets)
+					histClient := asu.NewHTTPClient(ds.Config, secrets, tokens)
 					vagonOps = service.NewVagonOpService(vagonOpRepo, histClient, dirCache, actualCache, log)
 					vagonOps.SetHistory(historyRepo) // «История движения вагона»: рейс из vagon_history
 				if delayRepo != nil {

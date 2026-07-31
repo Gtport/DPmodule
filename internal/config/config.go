@@ -8,6 +8,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SecretKeyServiceAccount — имя ключа секрета сервис-аккаунта Keycloak: под ним
+// значение кладётся в SecretSource и под ним же читается запасной путь из env.
+const SecretKeyServiceAccount = "KEYCLOAK_SA_CLIENT_SECRET"
+
 type Config struct {
 	App       App       `yaml:"app"`
 	HTTP      HTTP      `yaml:"http"`
@@ -32,7 +36,8 @@ type Bros struct {
 }
 
 // MAX — исходящая рассылка форм («План подвода»/оперативка) в мессенджер MAX.
-// Токен бота — только из env MAX_BOT_TOKEN (не в файле). Сами чаты и маршруты
+// Токен бота — bot_token (шаблон Vault, подставляет CI/CD) либо env MAX_BOT_TOKEN
+// запасным путём, см. loadSecrets. Сами чаты и маршруты
 // «терминал → чат» живут в БД (таблица max_chat), здесь — только транспорт.
 // Крон-автоотправки для форм нет: рассылка по кнопке диспетчера (решение владельца).
 type MAX struct {
@@ -40,6 +45,10 @@ type MAX struct {
 	BaseURL     string        `yaml:"base_url"`     // Bot API; дефолт https://platform-api.max.ru
 	TimeoutSecs int           `yaml:"timeout_secs"` // таймаут HTTP; дефолт 120
 	SendDelay   time.Duration `yaml:"send_delay"`   // пауза между чатами (лимит API 30 rps); дефолт 500ms
+
+	// BotToken — секрет: токен бота MAX. Шаблон Vault в файле, значение подставляет
+	// CI/CD; пусто → запасной путь: env MAX_BOT_TOKEN.
+	BotToken string `yaml:"bot_token"`
 }
 
 // Reference — забор памяток на подачу/уборку из внешнего сервиса (тот же провайдер,
@@ -58,7 +67,8 @@ type Reference struct {
 	CursorOverlap   time.Duration `yaml:"cursor_overlap"`   // нахлёст: курсор храним на столько раньше LAST_UPDATE; дефолт 30m
 	StaleAfter      time.Duration `yaml:"stale_after"`      // курсор не двигается дольше — пустой проход идёт в журнал; дефолт 6h
 	Clients         []string      `yaml:"clients"`          // коды клиентов провайдера: ["attis","nmtp"]
-	AuthSecretKey   string        `yaml:"auth_secret_key"`  // env-ключ X-API-Key; дефолт ASU_TOKEN (тот же провайдер)
+	AuthMode        string        `yaml:"auth_mode"`        // "keycloak" | "apikey"; пусто → keycloak, если сервис-аккаунт настроен
+	AuthSecretKey   string        `yaml:"auth_secret_key"`  // режим apikey: имя ключа X-API-Key; дефолт ASU_TOKEN (тот же провайдер)
 }
 
 // ASU — фоновый забор дислокации из АСУ-АСУ (внутренний крон). Сами источники
@@ -119,9 +129,13 @@ type Postgres struct {
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
 
+	// Password — секрет: в файле объявляется шаблоном ${vault:<движок>/<путь>:<ключ>},
+	// значение подставляет CI/CD перед стартом (своего резолвинга в приложении нет —
+	// читаем как есть). Пусто → запасной путь: env PG_PASSWORD.
+	Password string `yaml:"password"`
+
 	// Assembled after load — not in yaml.
-	DSN      string
-	Password string // secret — injected by CI/CD from Vault as PG_PASSWORD
+	DSN string
 }
 
 type Keycloak struct {
@@ -130,7 +144,32 @@ type Keycloak struct {
 	Issuer   string `yaml:"issuer"`
 	Audience string `yaml:"audience"`
 
-	ClientSecret string // secret — injected by CI/CD from Vault as KEYCLOAK_CLIENT_SECRET
+	// ClientSecret — секрет (только для confidential-клиентов; пусто = не требуется).
+	// Шаблон Vault в файле, значение подставляет CI/CD; пусто → env KEYCLOAK_CLIENT_SECRET.
+	ClientSecret string `yaml:"client_secret"`
+
+	// ServiceAccount — ИСХОДЯЩИЕ походы к провайдеру (дислокация, запрос 601,
+	// памятки). Поля выше настраивают обратное — проверку ВХОДЯЩИХ токенов.
+	ServiceAccount ServiceAccount `yaml:"service_account"`
+}
+
+// ServiceAccount — сервис-аккаунт Keycloak для потока client_credentials: сервис
+// сам берёт access-токен и шлёт его провайдеру в "Authorization: Bearer".
+// Человек в цикле не нужен — поэтому работает и в фоновых кронах.
+//
+// ⚠️ Заполненность этого блока И ЕСТЬ переключатель режима авторизации: пока
+// token_url/client_id пусты, клиенты провайдера ходят по-старому (X-API-Key).
+// Так стенд, где Keycloak ещё не заведён, не встаёт после обновления кода.
+type ServiceAccount struct {
+	TokenURL    string `yaml:"token_url"`    // <keycloak>/realms/<realm>/protocol/openid-connect/token
+	ClientID    string `yaml:"client_id"`    // клиент с включённым service account
+	Scope       string `yaml:"scope"`        // необязательно
+	InsecureTLS bool   `yaml:"insecure_tls"` // самоподписанный серт Keycloak на стенде
+	TimeoutSecs int    `yaml:"timeout_secs"` // таймаут запроса токена; дефолт 30
+
+	// ClientSecret — секрет: шаблон Vault в файле, значение подставляет CI/CD;
+	// пусто → запасной путь: env KEYCLOAK_SA_CLIENT_SECRET.
+	ClientSecret string `yaml:"client_secret"`
 }
 
 type Log struct {
@@ -183,18 +222,38 @@ func loadFile(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// loadSecrets reads sensitive values from environment variables.
-// These are never stored in the config file.
+// loadSecrets досыпает секреты из переменных окружения — но только те, что не
+// заданы в файле. Канон: секрет объявляется в конфиге шаблоном
+// ${vault:<движок>/<путь>:<ключ>} и резолвится CI/CD перед стартом; приложение
+// читает уже готовое значение (своего резолвинга Vault здесь нет).
+//
+// env остаётся ЗАПАСНЫМ путём для стендов, где подстановки нет (машина
+// разработчика, systemd с EnvironmentFile). Приоритет: файл → env.
 func loadSecrets(cfg *Config) error {
-	if cfg.Postgres.Enabled {
-		pg, ok := requireEnv("PG_PASSWORD")
-		if !ok {
-			return fmt.Errorf("config: secret PG_PASSWORD is required when postgres.enabled is true")
-		}
-		cfg.Postgres.Password = pg
+	if cfg.Postgres.Password == "" {
+		cfg.Postgres.Password = os.Getenv("PG_PASSWORD")
+	}
+	if cfg.Postgres.Enabled && cfg.Postgres.Password == "" {
+		return fmt.Errorf("config: пароль postgres обязателен при postgres.enabled: true — " +
+			"задать postgres.password в конфиге (шаблон Vault) либо env PG_PASSWORD")
 	}
 
-	cfg.Keycloak.ClientSecret = os.Getenv("KEYCLOAK_CLIENT_SECRET")
+	if cfg.Keycloak.ClientSecret == "" {
+		cfg.Keycloak.ClientSecret = os.Getenv("KEYCLOAK_CLIENT_SECRET")
+	}
+	if cfg.Keycloak.ServiceAccount.ClientSecret == "" {
+		cfg.Keycloak.ServiceAccount.ClientSecret = os.Getenv(SecretKeyServiceAccount)
+	}
+
+	// Токен бота MAX: значение здесь только «взводится», читают его адаптеры
+	// через port.SecretSource (см. secret.LayeredSource).
+	//
+	// X-API-Key провайдера сюда НЕ добавлять: к нему ходим через Keycloak
+	// (keycloak.service_account), а запасной режим apikey берёт ключ прямо из
+	// окружения по имени, которое объявил источник (data_source.auth_secret_key).
+	if cfg.MAX.BotToken == "" {
+		cfg.MAX.BotToken = os.Getenv("MAX_BOT_TOKEN")
+	}
 
 	return nil
 }
@@ -282,9 +341,4 @@ func setDefaults(cfg *Config) {
 	if cfg.Bros.JournalCron == "" {
 		cfg.Bros.JournalCron = "01:00"
 	}
-}
-
-func requireEnv(key string) (string, bool) {
-	v := os.Getenv(key)
-	return v, v != ""
 }

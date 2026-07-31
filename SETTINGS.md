@@ -136,8 +136,26 @@ UPDATE dpport.data_source
 -- выключить забор
 UPDATE dpport.data_source SET enabled=false WHERE id='asu';
 ```
-Секрет ключа `X-API-Key` — **не в БД**, а в env процесса: строка `ASU_TOKEN=<значение>` в
-`/home/alex/projects/DPmodule/.env` (файл в `.gitignore`), подхватывается при рестарте.
+**Авторизация у провайдера — режим `auth_mode` в `config` источника:**
+- `keycloak` (основной) — сервис сам берёт access-токен у Keycloak потоком
+  client_credentials и шлёт `Authorization: Bearer`. Настройки — в конфиге процесса,
+  блок `keycloak.service_account` (`token_url`, `client_id`, `client_secret` шаблоном
+  Vault; запасной путь — env `KEYCLOAK_SA_CLIENT_SECRET`). Человек в цикле не нужен,
+  поэтому режим годится и фоновым кронам.
+- `apikey` (запасной, до перевода маршрута провайдером) — прежний `X-API-Key`. В конфиге
+  этот ключ **не объявляется**: значение читается из переменной окружения по имени, которое
+  задаёт `auth_secret_key` источника (дефолт `ASU_TOKEN`).
+
+Пустой `auth_mode` означает `keycloak`, **если сервис-аккаунт настроен**, иначе `apikey`:
+стенд без заведённого Keycloak продолжает работать по-старому. Явный `auth_mode: apikey`
+сильнее — им откатывают отдельный источник, не трогая остальные.
+```sql
+-- перевести источник на Keycloak / вернуть на старый ключ
+UPDATE dpport.data_source SET config = config || '{"auth_mode":"keycloak"}'::jsonb WHERE id='asu';
+UPDATE dpport.data_source SET config = config || '{"auth_mode":"apikey"}'::jsonb   WHERE id='asu';
+```
+Памятки ГУ-45 идут к тому же провайдеру, но настраиваются не из БД, а конфигом —
+`reference.auth_mode` (те же значения и то же правило по умолчанию).
 
 ### 8. Синонимы станций формирования для с.ф. (`sf`)
 Нормализует варианты написания синонима → каноническая станция + потолок вагонов.

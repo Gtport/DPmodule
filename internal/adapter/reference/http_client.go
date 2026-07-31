@@ -5,8 +5,10 @@
 //	GET <base_url>/<client>/reference?number=<n>&date_create=<d> — памятка по тройке
 //	GET <base_url>/<client>/reference/update?last_update=<t>     — инкремент по клиенту
 //
-// Авторизация — заголовок X-API-Key (ключ из SecretSource). Клиент только достаёт
-// сырые байты; разбор JSON — не здесь (на этом этапе разбор ещё не подключён).
+// Авторизация — та же, что у дислокации (провайдер один): основной режим —
+// access-токен сервис-аккаунта Keycloak в "Authorization: Bearer", запасной —
+// заголовок X-API-Key с ключом из SecretSource. Клиент только достаёт сырые
+// байты; разбор JSON — не здесь (на этом этапе разбор ещё не подключён).
 package reference
 
 import (
@@ -31,23 +33,42 @@ const (
 // HTTPClient реализует port.ReferenceClient.
 type HTTPClient struct {
 	baseURL       string
-	authSecretKey string // ключ секрета в SecretSource; пусто → без авторизации
+	authMode      string // "keycloak" | "apikey"; пусто → keycloak, если есть tokens
+	authSecretKey string // режим apikey: ключ секрета в SecretSource; пусто → без авторизации
 	secrets       port.SecretSource
+	tokens        port.TokenProvider
 	hc            *http.Client
 }
 
 // NewHTTPClient собирает клиент из base_url провайдера, флага insecureTLS
-// (самоподписанный серт), имени ключа секрета и SecretSource.
-func NewHTTPClient(baseURL string, insecureTLS bool, authSecretKey string, secrets port.SecretSource) *HTTPClient {
+// (самоподписанный серт), режима авторизации, имени ключа секрета (запасной режим)
+// и источников секрета/токена. tokens=nil — сервис-аккаунт не настроен, тогда
+// работает X-API-Key, как до перевода провайдера на Keycloak.
+func NewHTTPClient(baseURL string, insecureTLS bool, authMode, authSecretKey string, secrets port.SecretSource, tokens port.TokenProvider) *HTTPClient {
 	hc := &http.Client{Timeout: defaultTimeout}
 	if insecureTLS {
 		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
 	return &HTTPClient{
 		baseURL:       strings.TrimRight(baseURL, "/"),
+		authMode:      strings.ToLower(strings.TrimSpace(authMode)),
 		authSecretKey: authSecretKey,
 		secrets:       secrets,
+		tokens:        tokens,
 		hc:            hc,
+	}
+}
+
+// useKeycloak — см. одноимённое правило у адаптера АСУ: провайдер один, режим
+// выбирается одинаково.
+func (c *HTTPClient) useKeycloak() bool {
+	switch c.authMode {
+	case "keycloak":
+		return true
+	case "apikey":
+		return false
+	default:
+		return c.tokens != nil
 	}
 }
 
@@ -72,18 +93,39 @@ func (c *HTTPClient) Update(ctx context.Context, client, lastUpdate string) ([]b
 	return c.get(ctx, u, "памятки update "+client)
 }
 
+// authorize вешает авторизацию согласно режиму (основной — токен сервис-аккаунта).
+func (c *HTTPClient) authorize(ctx context.Context, req *http.Request, label string) error {
+	if c.useKeycloak() {
+		if c.tokens == nil {
+			return fmt.Errorf("%s: режим keycloak, но сервис-аккаунт не настроен (keycloak.service_account)", label)
+		}
+		token, err := c.tokens.Token(ctx)
+		if err != nil {
+			return fmt.Errorf("%s: токен сервис-аккаунта: %w", label, err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}
+
+	if c.authSecretKey == "" {
+		return nil
+	}
+	token, err := c.secrets.Get(ctx, c.authSecretKey)
+	if err != nil {
+		return fmt.Errorf("%s: секрет %q: %w", label, c.authSecretKey, err)
+	}
+	req.Header.Set(authHeader, token) // X-API-Key: <ключ>
+	return nil
+}
+
 func (c *HTTPClient) get(ctx context.Context, u, label string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: сборка запроса: %w", label, err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if c.authSecretKey != "" {
-		token, err := c.secrets.Get(ctx, c.authSecretKey)
-		if err != nil {
-			return nil, fmt.Errorf("%s: секрет %q: %w", label, c.authSecretKey, err)
-		}
-		req.Header.Set(authHeader, token) // X-API-Key: <ключ>
+	if err := c.authorize(ctx, req, label); err != nil {
+		return nil, err
 	}
 
 	resp, err := c.hc.Do(req)

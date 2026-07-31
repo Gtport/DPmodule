@@ -30,7 +30,7 @@ func TestByNumber(t *testing.T) {
 	srv, got := captureServer(t, false)
 	defer srv.Close()
 
-	cl := NewHTTPClient(srv.URL, false, "ASU_TOKEN", staticSecrets{"ASU_TOKEN": "SEKRET"})
+	cl := NewHTTPClient(srv.URL, false, "", "ASU_TOKEN", staticSecrets{"ASU_TOKEN": "SEKRET"}, nil)
 	if _, err := cl.ByNumber(context.Background(), "attis", "10272", "07-04-2026"); err != nil {
 		t.Fatalf("ByNumber: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestByNumber_EmptyDateCreateStillSent(t *testing.T) {
 	srv, got := captureServer(t, false)
 	defer srv.Close()
 
-	cl := NewHTTPClient(srv.URL, false, "", staticSecrets{})
+	cl := NewHTTPClient(srv.URL, false, "", "", staticSecrets{}, nil)
 	if _, err := cl.ByNumber(context.Background(), "attis", "10272", ""); err != nil {
 		t.Fatalf("ByNumber: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestUpdate(t *testing.T) {
 	srv, got := captureServer(t, false)
 	defer srv.Close()
 
-	cl := NewHTTPClient(srv.URL, false, "ASU_TOKEN", staticSecrets{"ASU_TOKEN": "SEKRET"})
+	cl := NewHTTPClient(srv.URL, false, "", "ASU_TOKEN", staticSecrets{"ASU_TOKEN": "SEKRET"}, nil)
 	if _, err := cl.Update(context.Background(), "attis", "2026-07-08 00:00:00.000"); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -86,12 +86,12 @@ func TestInsecureTLS(t *testing.T) {
 	srv, _ := captureServer(t, true) // самоподписанный серт
 	defer srv.Close()
 
-	strict := NewHTTPClient(srv.URL, false, "", staticSecrets{})
+	strict := NewHTTPClient(srv.URL, false, "", "", staticSecrets{}, nil)
 	if _, err := strict.ByNumber(context.Background(), "attis", "1", "07-04-2026"); err == nil {
 		t.Fatal("ждали ошибку TLS-проверки для самоподписанного серта")
 	}
 
-	lax := NewHTTPClient(srv.URL, true, "", staticSecrets{})
+	lax := NewHTTPClient(srv.URL, true, "", "", staticSecrets{}, nil)
 	if _, err := lax.ByNumber(context.Background(), "attis", "1", "07-04-2026"); err != nil {
 		t.Fatalf("с insecure_tls запрос должен пройти: %v", err)
 	}

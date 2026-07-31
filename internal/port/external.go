@@ -9,6 +9,14 @@ type SecretSource interface {
 	Get(ctx context.Context, key string) (string, error)
 }
 
+// TokenProvider — источник access-токена для ИСХОДЯЩИХ запросов к провайдеру
+// (client_credentials к Keycloak сервис-аккаунтом). Реализация сама держит кэш и
+// обновляет токен по истечении — вызывающий просто просит токен на каждый запрос.
+// Реализация — adapter/oauth.ClientCredentials.
+type TokenProvider interface {
+	Token(ctx context.Context) (string, error)
+}
+
 // ASUClient abstracts integration with external АСУ systems.
 type ASUClient interface {
 	Pull(ctx context.Context, resource string) ([]byte, error)
