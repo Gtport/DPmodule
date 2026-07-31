@@ -105,7 +105,7 @@ interface RowForm {
           <div class="center"><nz-spin nzSimple></nz-spin></div>
         } @else if (report(); as r) {
           <div class="dp-tbl-wrap" style="max-height: 70vh" id="nmtp-tbl">
-            <table class="dp-tbl nmtp">
+            <table class="dp-tbl nmtp" [class.compact]="compact()">
               <thead>
                 <tr>
                   <th rowspan="3" class="c-idx">ПОЕЗД</th>
@@ -396,6 +396,24 @@ interface RowForm {
     /* Ряд станций не должен вырасти выше 64px — иначе отступы разъедутся. */
     .nmtp .st .clip { max-height: 58px; overflow: hidden; }
     .nmtp .mark { background: #e4e4e4; font-size: 11px; }
+    /* Компактный режим (>10 грузовых колонок, УТ-1/ГУТ-2): подписи станций и
+     * марок вертикально снизу вверх, колонки узкие — иначе таблица шире экрана.
+     * Высоты sticky-рядов и их отступы переключаются парой с режимом; порог
+     * продублирован в книге (internal/report/nmtp.go). */
+    .nmtp.compact thead tr:nth-child(1) { height: 48px; }
+    .nmtp.compact thead tr:nth-child(2) { height: 130px; }
+    .nmtp.compact thead tr:nth-child(3) { height: 80px; }
+    .nmtp.compact thead tr:nth-child(2) th { top: 48px; }
+    .nmtp.compact thead tr:nth-child(3) th { top: 178px; }
+    /* Узкая группа из 1–2 колонок: подпись клиента переносится по месту. */
+    .nmtp.compact thead tr:nth-child(1) th { overflow-wrap: anywhere; }
+    .nmtp.compact .st { width: 26px; min-width: 26px; max-width: 26px; padding: 2px; }
+    .nmtp.compact .st .clip { writing-mode: vertical-rl; transform: rotate(180deg);
+      max-height: 122px; margin: 0 auto; }
+    .nmtp.compact .mark { writing-mode: vertical-rl; transform: rotate(180deg);
+      max-width: 26px; padding: 2px; }
+    .nmtp.compact .wrap { writing-mode: vertical-rl; transform: rotate(180deg);
+      max-width: 26px; }
     /* Стыки групп клиентов на экране не выделяем — обычная сетка (замечание
      * владельца 31.07.2026); утолщённые стыки остаются только в книге .xlsx.
      * Класс .grp-l в шаблоне сохранён на случай возврата выделения. */
@@ -485,6 +503,14 @@ export class NmtpModalComponent implements OnInit {
     const r = this.report();
     return r ? r.columns.length + (r.has_other ? 1 : 0) : 0;
   });
+
+  /**
+   * Компактный режим: грузовых колонок больше 10 — подписи станций и марок
+   * вертикально, колонки узкие (правило владельца 31.07.2026: у раскладок
+   * УТ-1/ГУТ-2 колонок 25–30 с короткими подписями, у АЭ — 6 с длинными
+   * списками). Порог продублирован в книге — internal/report/nmtp.go.
+   */
+  readonly compact = computed(() => this.cargoCols() > 10);
 
   /** Группы клиентов первого уровня шапки (merge одинаковых подряд). */
   readonly headGroups = computed<HeadGroup[]>(() => {

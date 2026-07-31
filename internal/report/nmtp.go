@@ -73,6 +73,8 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		{Type: "top", Style: 2, Color: "000000"}, {Type: "bottom", Style: 2, Color: "000000"},
 	}
 	center := &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true}
+	// Вертикальный текст (снизу вверх) — подписи станций/марок компактного режима.
+	centerV := &excelize.Alignment{Horizontal: "center", Vertical: "center", TextRotation: 90}
 	solid := func(color string) excelize.Fill {
 		return excelize.Fill{Type: "pattern", Color: []string{color}, Pattern: 1}
 	}
@@ -89,6 +91,12 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 			Fill: solid(fillGray), Alignment: center}},
 		{"headMarkG", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thinGL,
 			Fill: solid(fillGray), Alignment: center}},
+		{"headV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 10}, Border: thin, Alignment: centerV}},
+		{"headGV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 10}, Border: thinGL, Alignment: centerV}},
+		{"headMarkV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thin,
+			Fill: solid(fillGray), Alignment: centerV}},
+		{"headMarkGV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thinGL,
+			Fill: solid(fillGray), Alignment: centerV}},
 		{"headTotal", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 11}, Border: thinGL,
 			Fill: solid(fillYellow), Alignment: center}},
 		{"headOther", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 10}, Border: thinGL,
@@ -164,9 +172,19 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 			return nil, "", fmt.Errorf("нмтп: ширина: %w", err)
 		}
 	}
-	// Колонки матрицы: в файле порта 7.5, расширены до 10 — длинные списки
-	// станций АЭ иначе заворачивались на десяток строк (владелец, 31.07.2026).
-	const cargoColW = 10.0
+	// Компактный режим (владелец, 31.07.2026): колонок больше 10 — подписи
+	// станций и марок вертикально, колонки узкие. У многоколоночных раскладок
+	// (УТ-1/ГУТ-2: 25–30) подписи короткие и вертикально занимают немного,
+	// у коротких (АЭ: 6) подписи-списки длинные и остаются горизонтальными.
+	// Порог продублирован на экране (nmtp-modal.component.ts, compact).
+	compact := cargoCols > 10
+	// Ширина колонок матрицы: в файле порта 7.5, расширена до 10 — длинные
+	// списки станций АЭ иначе заворачивались на десяток строк; в компактном
+	// режиме 4 — два знака цифр плюс отступы.
+	cargoColW := 10.0
+	if compact {
+		cargoColW = 4
+	}
 	firstCargo, _ := excelize.ColumnNumberToName(nFixed + 1)
 	lastCargo, _ := excelize.ColumnNumberToName(nFixed + cargoCols)
 	if err := f.SetColWidth(sheet, firstCargo, lastCargo, cargoColW); err != nil {
@@ -207,7 +225,9 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		merge(i+1, row, i+1, row+2)
 		styleRange(i+1, row, i+1, row+2, "head")
 	}
-	// Уровень 1: клиенты (merge по одинаковым подписям подряд).
+	// Уровень 1: клиенты (merge по одинаковым подписям подряд). В компактном
+	// режиме узкая группа из 1–2 колонок заворачивает подпись — считаем высоту.
+	groupH := 18.0
 	col := nFixed + 1
 	for i := 0; i < len(r.Columns); {
 		j := i
@@ -216,6 +236,11 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		}
 		set(col, row, r.Columns[i].Group, "headG")
 		styleRange(col, row, col+j-i-1, row, "headG")
+		if compact {
+			if h := float64(wrapLines(r.Columns[i].Group, float64(j-i)*cargoColW))*13 + 4; h > groupH {
+				groupH = h
+			}
+		}
 		// Правая граница блока — утолщённая левая у следующего, тут ничего не надо.
 		if j-i > 1 {
 			merge(col, row, col+j-i-1, row)
@@ -231,27 +256,50 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 	set(lastCol, row, "итого", "headTotal")
 	merge(lastCol, row, lastCol, row+2)
 	styleRange(lastCol, row, lastCol, row+2, "headTotal")
-	// Уровни 2–3: станции и марки.
-	for i, c := range r.Columns {
+	// Уровни 2–3: станции и марки. В компактном режиме — вертикальные стили.
+	stationStyle := func(i int) (string, string) {
 		st, stMark := "head", "headMark"
 		if groupStart[i] {
 			st, stMark = "headG", "headMarkG"
 		}
+		if compact {
+			st, stMark = st+"V", stMark+"V"
+		}
+		return st, stMark
+	}
+	for i, c := range r.Columns {
+		st, stMark := stationStyle(i)
 		set(nFixed+1+i, row+1, c.Station, st)
 		set(nFixed+1+i, row+2, c.Mark, stMark)
 	}
-	_ = f.SetRowHeight(sheet, headTop, 18)
-	// Строка станций: колонки матрицы узкие, и длинный список станций
-	// заворачивается на много строк — высота по самой длинной подписи, иначе
-	// текст обрезается (у АЭ «Терент, Байкаим, …» не влезал в фиксированные 30).
-	stationH := 30.0
-	for _, c := range r.Columns {
-		if h := float64(wrapLines(c.Station, cargoColW))*13 + 4; h > stationH {
-			stationH = h
+	_ = f.SetRowHeight(sheet, headTop, groupH)
+	// Высоты строк станций и марок. Горизонтальный режим: станции заворачиваются
+	// в узкой колонке — высота по числу строк самой длинной подписи (у АЭ
+	// «Терент, Байкаим, …» не влезал в фиксированные 30). Компактный режим:
+	// текст вертикальный — высота по длине подписи (~5.5 пт на символ),
+	// потолок 200, чтобы аномально длинная подпись не разнесла шапку.
+	stationH, markH := 30.0, 26.0
+	if compact {
+		for _, c := range r.Columns {
+			if h := float64(len([]rune(c.Station)))*5.5 + 8; h > stationH {
+				stationH = h
+			}
+			if h := float64(len([]rune(c.Mark)))*5.5 + 8; h > markH {
+				markH = h
+			}
+		}
+		if stationH > 200 {
+			stationH = 200
+		}
+	} else {
+		for _, c := range r.Columns {
+			if h := float64(wrapLines(c.Station, cargoColW))*13 + 4; h > stationH {
+				stationH = h
+			}
 		}
 	}
 	_ = f.SetRowHeight(sheet, headTop+1, stationH)
-	_ = f.SetRowHeight(sheet, headTop+2, 26)
+	_ = f.SetRowHeight(sheet, headTop+2, markH)
 	row += 3
 	// Шапка закреплена, как в файле порта (там FREEZE над первой строкой данных).
 	_ = f.SetPanes(sheet, &excelize.Panes{Freeze: true, YSplit: headTop + 2,
@@ -387,15 +435,13 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		set(nFixed+cargoCols, row, "ПРОЧЕЕ", "headOther")
 	}
 	set(lastCol, row, "ИТОГО", "headTotal")
+	_ = f.SetRowHeight(sheet, row, groupH)
 	row++
 	set(1, row, "Названия колонок", "footLbl")
 	merge(1, row, nFixed, row)
 	styleRange(1, row, nFixed, row, "footLbl")
 	for i, c := range r.Columns {
-		st := "head"
-		if groupStart[i] {
-			st = "headG"
-		}
+		st, _ := stationStyle(i)
 		set(nFixed+1+i, row, c.Station, st)
 	}
 	if hasOther {
