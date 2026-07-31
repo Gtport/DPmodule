@@ -268,6 +268,10 @@ func Build(
 			// (план → прогноз → расчёт), только чтение.
 			handler.NewNearestHandler(service.NewNearestService(actualCache, dirCache)).RegisterRoutes(api)
 
+			// Экран «Поезда в движении» (Инструменты оператора): весь снимок
+			// трёхуровневым деревом, фильтры/поиски на клиенте, только чтение.
+			handler.NewTrainsHandler(service.NewTrainsService(actualCache, dirCache)).RegisterRoutes(api)
+
 			// Отчёт «Подход» страницы «Справки и отчёты»: двухуровневая
 			// группировка из снимка, только чтение. Пресеты (клиентские
 			// варианты карточек) — из report_preset; без БД их просто нет.

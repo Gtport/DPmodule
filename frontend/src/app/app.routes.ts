@@ -6,7 +6,7 @@ import { ADMIN, OPER, DISPATCHER_NAV } from './layout/shell/nav.config';
 
 // Разделы, перенесённые из заглушки на реальный экран — исключаем из
 // автогенерации ниже и подключаем явно (см. routes).
-const IMPLEMENTED_PATHS = new Set(['dislocation', 'missing', 'rearrangement', 'plan', 'reports', 'forecasts', 'admin']);
+const IMPLEMENTED_PATHS = new Set(['dislocation', 'missing', 'rearrangement', 'plan', 'reports', 'forecasts', 'admin', 'operator-tools']);
 
 // Разделы диспетчера — генерируем из реестра навигации: каждый пункт (кроме
 // external, напр. home, и уже перенесённых из IMPLEMENTED_PATHS) → маршрут на
@@ -79,6 +79,15 @@ export const routes: Routes = [
         path: 'forecasts',
         loadComponent: () =>
           import('./features/forecasts/forecast.component').then((m) => m.ForecastComponent),
+        canActivate: [authGuard],
+        data: { roles: OPER },
+      },
+      {
+        // «Инструменты оператора»: экран «Поезда в движении» (перенос gtport
+        // OperatorToolsDislocation); «История» — следующая волна (вкладкой).
+        path: 'operator-tools',
+        loadComponent: () =>
+          import('./features/trains/trains.component').then((m) => m.TrainsComponent),
         canActivate: [authGuard],
         data: { roles: OPER },
       },
