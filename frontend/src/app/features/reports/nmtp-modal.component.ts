@@ -130,7 +130,8 @@ interface RowForm {
                 </tr>
                 <tr>
                   @for (c of r.columns; track $index) {
-                    <th class="mark" [class.grp-l]="groupStart()[$index]">{{ c.mark }}</th>
+                    <th class="mark" [class.grp-l]="groupStart()[$index]"
+                        [class.otd]="c.mark.endsWith('-ОТД')">{{ c.mark }}</th>
                   }
                 </tr>
               </thead>
@@ -396,6 +397,8 @@ interface RowForm {
     /* Ряд станций не должен вырасти выше 64px — иначе отступы разъедутся. */
     .nmtp .st .clip { max-height: 58px; overflow: hidden; }
     .nmtp .mark { background: #e4e4e4; font-size: 11px; }
+    /* Марки «…-ОТД» — мягко-жёлтая заливка, как в книге (владелец, 31.07.2026). */
+    .nmtp .mark.otd { background: #ffffcc; }
     /* Компактный режим (>10 грузовых колонок, УТ-1/ГУТ-2): подписи станций и
      * марок вертикально снизу вверх, колонки узкие — иначе таблица шире экрана.
      * Высоты sticky-рядов и их отступы переключаются парой с режимом; порог

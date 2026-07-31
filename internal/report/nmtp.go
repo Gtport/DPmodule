@@ -24,6 +24,7 @@ package report
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/xuri/excelize/v2"
@@ -91,12 +92,20 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 			Fill: solid(fillGray), Alignment: center}},
 		{"headMarkG", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thinGL,
 			Fill: solid(fillGray), Alignment: center}},
+		{"headMarkY", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thin,
+			Fill: solid(fillYellow), Alignment: center}},
+		{"headMarkGY", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thinGL,
+			Fill: solid(fillYellow), Alignment: center}},
 		{"headV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 10}, Border: thin, Alignment: centerV}},
 		{"headGV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 10}, Border: thinGL, Alignment: centerV}},
 		{"headMarkV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thin,
 			Fill: solid(fillGray), Alignment: centerV}},
 		{"headMarkGV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thinGL,
 			Fill: solid(fillGray), Alignment: centerV}},
+		{"headMarkYV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thin,
+			Fill: solid(fillYellow), Alignment: centerV}},
+		{"headMarkGYV", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 9}, Border: thinGL,
+			Fill: solid(fillYellow), Alignment: centerV}},
 		{"headTotal", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 11}, Border: thinGL,
 			Fill: solid(fillYellow), Alignment: center}},
 		{"headOther", &excelize.Style{Font: &excelize.Font{Bold: true, Size: 10}, Border: thinGL,
@@ -261,6 +270,10 @@ func NmtpXLSX(r domain.NmtpReport) ([]byte, string, error) {
 		st, stMark := "head", "headMark"
 		if groupStart[i] {
 			st, stMark = "headG", "headMarkG"
+		}
+		// Марки «…-ОТД» — мягко-жёлтая заливка подзаголовка (владелец, 31.07.2026).
+		if strings.HasSuffix(r.Columns[i].Mark, "-ОТД") {
+			stMark += "Y"
 		}
 		if compact {
 			st, stMark = st+"V", stMark+"V"
