@@ -1,6 +1,8 @@
 import { Component, OnInit, WritableSignal, computed, inject, signal } from '@angular/core';
+import { DragDropModule } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzTagModule } from 'ng-zorro-antd/tag';
@@ -58,13 +60,15 @@ interface VagonHit {
  * - собственник = owner (в gtport колонку заполнял род вагона), марка груза =
  *   freight_exact_name (просьба владельца), род вагона показан отдельно;
  * - «История движения вагона» по ПКМ — новая возможность (в gtport не было);
- * - панели «Детали поезда» нет: вся информация видна в строках дерева.
+ * - «Детали поезда» — перемещаемая модалка (канон проекта), а не боковая
+ *   панель gtport; открывается иконкой ⓘ на строке и из ПКМ.
  */
 @Component({
   selector: 'app-trains',
   imports: [
-    FormsModule, NzButtonModule, NzIconModule, NzInputModule, NzTagModule,
-    NzTooltipModule, NzDropDownModule, VagonTrailModalComponent,
+    DragDropModule, FormsModule, NzButtonModule, NzIconModule, NzInputModule,
+    NzModalModule, NzTagModule, NzTooltipModule, NzDropDownModule,
+    VagonTrailModalComponent,
   ],
   template: `
     <div class="page">
@@ -232,6 +236,8 @@ interface VagonHit {
                 }
                 <span class="spacer"></span>
                 <span class="mut nowrap">{{ t.vagon_count }} ваг. · {{ t.ves.toFixed(0) }} т</span>
+                <span nz-icon nzType="info-circle" class="info-btn" nz-tooltip="Детали поезда"
+                      (click)="detailTrain.set(t); $event.stopPropagation()"></span>
               </div>
               <div class="compose mut ell">
                 @for (sg of t.sub_groups; track sg.key; let last = $last) {
@@ -290,6 +296,7 @@ interface VagonHit {
       <!-- ── ПКМ по поезду ─────────────────────────────────────────────── -->
       <nz-dropdown-menu #trainMenu="nzDropdownMenu">
         <ul nz-menu>
+          <li nz-menu-item (click)="detailTrain.set(ctxTrain())">Детали поезда…</li>
           <li nz-menu-item (click)="exportTrain(ctxTrain())">Натурный лист (Excel)</li>
         </ul>
       </nz-dropdown-menu>
@@ -298,9 +305,70 @@ interface VagonHit {
       <nz-dropdown-menu #vagonMenu="nzDropdownMenu">
         <ul nz-menu>
           <li nz-menu-item (click)="openTrail()">История движения вагона {{ ctxVagon()?.vagon }}…</li>
+          <li nz-menu-item (click)="detailTrain.set(ctxTrain())">Детали поезда…</li>
           <li nz-menu-item (click)="exportTrain(ctxTrain())">Натурный лист поезда (Excel)</li>
         </ul>
       </nz-dropdown-menu>
+
+      <!-- ── Модалка «Детали поезда» (перенос gtport DetailPanel) ──────── -->
+      <nz-modal [nzVisible]="detailTrain() !== null" [nzTitle]="dtTtl" [nzFooter]="null"
+                nzWidth="480px" (nzOnCancel)="detailTrain.set(null)">
+        <ng-template #dtTtl>
+          <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
+            Детали поезда {{ detailTrain()?.index }}
+            <button nz-button nzSize="small" class="dt-export" nz-tooltip="Натурный лист (Excel)"
+                    (click)="exportTrain(detailTrain())">
+              <span nz-icon nzType="download"></span>
+            </button>
+          </div>
+        </ng-template>
+        <ng-container *nzModalContent>
+          @if (detailTrain(); as dt) {
+            <div class="dt-grid">
+              <div><div class="ftitle">Индекс</div>{{ dt.index || '—' }}</div>
+              <div><div class="ftitle">Станция операции</div>
+                {{ dt.station_oper }}@if (dt.doroga_oper) { <span class="mut">({{ dt.doroga_oper }})</span> }</div>
+              <div><div class="ftitle">Станция назначения</div>{{ dt.stan_nazn || '—' }}</div>
+              <div><div class="ftitle">Расстояние</div>{{ dt.rasst ?? '—' }} км</div>
+              <div><div class="ftitle">Статус</div>
+                <span [style.color]="statusColor(dt.status)">{{ statusLabel(dt.status) }}</span></div>
+              <div><div class="ftitle">Состав</div>{{ dt.vagon_count }} ваг. · {{ dt.ves.toFixed(1) }} т</div>
+              @if (prostText(dt)) {
+                <div><div class="ftitle">Макс. простой</div>
+                  <span class="prost" [class.overdue]="prostHours(dt) > 48">{{ prostText(dt) }}</span></div>
+              }
+            </div>
+
+            @if (dt.time_op || dt.oper_s) {
+              <div class="dt-box">
+                <div class="ftitle">Последняя операция</div>
+                {{ dt.oper_s || '—' }}@if (dt.time_op) { <span class="mut"> · {{ fmtDT(dt.time_op) }}</span> }
+              </div>
+            }
+
+            @if (dt.plan_jd || dt.rasch_jd || dt.prog_jd) {
+              <div class="dt-box">
+                <div class="ftitle">Даты (ЖД)</div>
+                @if (dt.plan_jd) { <div>📅 План подвода: <b>{{ fmtDT(dt.plan_jd) }}</b></div> }
+                @if (dt.prog_jd) { <div>⏱ Прогноз (нитка порта): <b>{{ fmtDT(dt.prog_jd) }}</b></div> }
+                @if (dt.rasch_jd) { <div>🧮 Расчёт по времени хода: <b>{{ fmtDT(dt.rasch_jd) }}</b></div> }
+              </div>
+            }
+
+            <div class="ftitle dt-sub">Состав ({{ dt.vagon_count }} вагонов)</div>
+            @for (sg of dt.sub_groups; track sg.key) {
+              <div class="dt-box">
+                <b>{{ sg.index_main || '—' }}</b> | {{ sg.station_nach }}
+                <div class="mut">{{ sg.gruzpol_s || '—' }} → {{ sg.naznach || '—' }} · {{ sg.vagon_count }} ваг.</div>
+                @if (sg.cargo_s) { <div>Груз: {{ sg.cargo_s }} ({{ sg.ves.toFixed(1) }} т)</div> }
+                @if (sg.gruzotpr) { <div class="mut">Отправитель: {{ sg.gruzotpr }}</div> }
+                @if (sg.client) { <div class="mut">Клиент: {{ sg.client }}</div> }
+                @if (sg.shipments) { <div class="mut">Отгрузки: {{ sg.shipments }}</div> }
+              </div>
+            }
+          }
+        </ng-container>
+      </nz-modal>
 
       @if (trailVagon(); as tv) {
         <app-vagon-trail-modal [vagonId]="tv.id" [vagon]="tv.vagon" (closed)="trailVagon.set(null)" />
@@ -360,6 +428,15 @@ interface VagonHit {
     .hit { border-bottom: 1px solid var(--color-warning-border, #ffe58f);
            background: var(--color-warning-bg, #fffbe6); padding: 4px 0; cursor: context-menu; }
     .hit .row { padding: 2px 10px; }
+    /* Модалка «Детали поезда» */
+    .ttl { cursor: move; user-select: none; }
+    .dt-export { margin-left: 10px; }
+    .info-btn { cursor: pointer; color: var(--color-text-secondary); font-size: 14px; }
+    .info-btn:hover { color: var(--color-primary, #1677ff); }
+    .dt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-bottom: 10px; }
+    .dt-box { background: var(--color-bg-container-secondary, #fafafa); border-radius: 6px;
+              padding: 6px 10px; margin-bottom: 8px; font-size: var(--font-size-sm); }
+    .dt-sub { margin: 6px 0 4px; }
   `],
 })
 export class TrainsComponent implements OnInit {
@@ -393,6 +470,8 @@ export class TrainsComponent implements OnInit {
   readonly ctxTrain = signal<Train | null>(null);
   readonly ctxVagon = signal<TrainVagon | null>(null);
   readonly trailVagon = signal<TrainVagon | null>(null);
+  /** Поезд в модалке «Детали поезда» (перенос gtport DetailPanel). */
+  readonly detailTrain = signal<Train | null>(null);
 
   ngOnInit(): void {
     void this.load();
