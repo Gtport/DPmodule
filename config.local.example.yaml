@@ -67,6 +67,10 @@ asu:
   pull_interval: 10m    # (scripts/dev_db_refresh.sh) либо заливкой файла ЛК руками.
   pull_offset: 5m
 
+lk_robot:
+  enabled: false        # робот ЛК ходит в настоящий кабинет РЖД под живым аккаунтом:
+                        # включать только осознанно, для проверки самого робота
+
 wagonops:
   enabled: false        # запрос 601 к провайдеру: очередь общая с боевой, дублировать незачем
   drain_interval: 15s

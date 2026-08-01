@@ -121,6 +121,7 @@ func run() error {
 		delayRepo        port.VagonDelayRepository
 		cargoWorkRepo    port.CargoWorkRepository
 		maxChatRepo      port.MaxChatRepository
+		lkAccountRepo    port.LKAccountRepository
 		pamCursorRepo    port.PamyatkaCursorRepository
 		reportPresetRepo port.ReportPresetRepository
 		nmtpRepo         port.NmtpRepository
@@ -143,6 +144,7 @@ func run() error {
 		delayRepo = gormrepo.NewVagonDelayRepository(db)
 		cargoWorkRepo = gormrepo.NewCargoWorkRepository(db)
 		maxChatRepo = gormrepo.NewMaxChatRepository(db)
+		lkAccountRepo = gormrepo.NewLKAccountRepository(db)
 		pamCursorRepo = gormrepo.NewPamyatkaCursorRepository(db)
 		reportPresetRepo = gormrepo.NewReportPresetRepository(db)
 		nmtpRepo = gormrepo.NewNmtpRepository(db)
@@ -211,7 +213,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps, brosJournal := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps, brosJournal := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {

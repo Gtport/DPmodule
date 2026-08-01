@@ -21,6 +21,7 @@ type Config struct {
 	Log       Log       `yaml:"log"`
 	Storage   Storage   `yaml:"storage"`
 	ASU       ASU       `yaml:"asu"`
+	LKRobot   LKRobot   `yaml:"lk_robot"`
 	Reference Reference `yaml:"reference"`
 	WagonOps  WagonOps  `yaml:"wagonops"`
 	MAX       MAX       `yaml:"max"`
@@ -58,6 +59,22 @@ type MAX struct {
 // Тайминги окна запроса разведены по разным параметрам (урок боя 30.07.2026):
 // pull_interval — только «как часто спрашивать», глубина окна первого захода —
 // initial_lookback, запас на запоздавшие записи — cursor_overlap.
+// LKRobot — автовыгрузка дислокации из личного кабинета РЖД вместо ручной
+// работы диспетчера. Здесь только адрес кабинета и тайминги; кто выгружает
+// (ОКПО→логин) — в настроечной таблице lk_account, а пароль вводит диспетчер
+// в момент запуска и он нигде не сохраняется.
+//
+// Кабинет отдаёт данные обычным JSON-API, браузер не нужен: вход POST /sign_in,
+// заказ отчёта, ожидание готовности, выгрузка xlsx (см. adapter/lkrobot).
+type LKRobot struct {
+	Enabled     bool          `yaml:"enabled"`      // разрешить ручку запуска
+	BaseURL     string        `yaml:"base_url"`     // адрес кабинета; дефолт https://cargolk.rzd.ru
+	ServiceID   int           `yaml:"service_id"`   // услуга «Дислокация вагонов по списку»; дефолт 226
+	Timeout     time.Duration `yaml:"timeout"`      // таймаут одного HTTP-запроса к кабинету; дефолт 2m
+	PollEvery   time.Duration `yaml:"poll_every"`   // период опроса готовности отчёта; дефолт 5s
+	PollTimeout time.Duration `yaml:"poll_timeout"` // сколько ждём готовности; дефолт 5m
+}
+
 type Reference struct {
 	Enabled         bool          `yaml:"enabled"`          // включить фоновый забор обновлений по тикеру
 	BaseURL         string        `yaml:"base_url"`         // базовый URL провайдера (тот же, что у АСУ)
@@ -301,6 +318,21 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.ASU.PullInterval == 0 {
 		cfg.ASU.PullInterval = 10 * time.Minute
+	}
+	if cfg.LKRobot.BaseURL == "" {
+		cfg.LKRobot.BaseURL = "https://cargolk.rzd.ru"
+	}
+	if cfg.LKRobot.ServiceID == 0 {
+		cfg.LKRobot.ServiceID = 226 // «Дислокация вагонов по списку» (SPV4664)
+	}
+	if cfg.LKRobot.Timeout == 0 {
+		cfg.LKRobot.Timeout = 2 * time.Minute
+	}
+	if cfg.LKRobot.PollEvery == 0 {
+		cfg.LKRobot.PollEvery = 5 * time.Second
+	}
+	if cfg.LKRobot.PollTimeout == 0 {
+		cfg.LKRobot.PollTimeout = 5 * time.Minute
 	}
 	if cfg.Reference.PullInterval == 0 {
 		cfg.Reference.PullInterval = time.Hour

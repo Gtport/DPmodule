@@ -1,6 +1,8 @@
 import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzDescriptionsModule } from 'ng-zorro-antd/descriptions';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzModalModule } from 'ng-zorro-antd/modal';
@@ -9,7 +11,9 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { DislocationApiService, LKIssue, LKProcessResult, LKStatus } from '../dislocation/dislocation-api.service';
+import {
+  DislocationApiService, LKIssue, LKProcessResult, LKRobotAccount, LKStatus,
+} from '../dislocation/dislocation-api.service';
 import { FileDropComponent } from '../../shared/file-drop.component';
 
 /**
@@ -26,8 +30,8 @@ import { FileDropComponent } from '../../shared/file-drop.component';
 @Component({
   selector: 'app-lk-intake-modal',
   imports: [
-    DragDropModule, NzButtonModule, NzDescriptionsModule, NzIconModule,
-    NzModalModule, NzSpinModule, NzTagModule, NzTooltipModule, FileDropComponent,
+    DragDropModule, FormsModule, NzButtonModule, NzDescriptionsModule, NzIconModule,
+    NzInputModule, NzModalModule, NzSpinModule, NzTagModule, NzTooltipModule, FileDropComponent,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="title" [nzFooter]="null" nzWidth="560px"
@@ -46,6 +50,33 @@ import { FileDropComponent } from '../../shared/file-drop.component';
             <span nz-icon nzType="reload"></span>
           </button>
         </div>
+
+        <!-- Автовыгрузка: робот сам заходит в кабинет РЖД. Пароли вводятся здесь
+             и никуда не сохраняются — на каждый поток свой аккаунт ЛК. -->
+        @if (robotAccounts().length) {
+          <div class="robot">
+            <div class="rhead">
+              <b>Забрать из ЛК автоматически</b>
+              <span class="hint">пароли не сохраняются — вводятся на один запуск</span>
+            </div>
+            @for (a of robotAccounts(); track a.okpo) {
+              <div class="rrow">
+                <span class="rname" [title]="'логин ' + a.login">{{ a.name || ('ОКПО ' + a.okpo) }}</span>
+                <input nz-input type="password" autocomplete="off" nzSize="small"
+                       [placeholder]="'пароль ' + a.login"
+                       [ngModel]="robotPwd()[a.okpo] ?? ''"
+                       (ngModelChange)="setPwd(a.okpo, $event)"
+                       (keydown.enter)="runRobot()" />
+              </div>
+            }
+            <div class="rfoot">
+              <button nz-button nzType="primary" nzSize="small"
+                      [disabled]="!hasAnyPwd()" [nzLoading]="busyRobot()" (click)="runRobot()">
+                Забрать из ЛК
+              </button>
+            </div>
+          </div>
+        }
 
         <app-file-drop accept=".xlsx" [multiple]="true" [busy]="busyUpload()"
                        text="Нажмите или перетащите файлы ЛК в эту область"
@@ -150,6 +181,15 @@ import { FileDropComponent } from '../../shared/file-drop.component';
       border-top: 1px solid var(--color-border, #f0f0f0);
     }
     .muted { color: var(--color-text-muted); margin: var(--space-sm) 0 0; }
+    /* Автовыгрузка из ЛК: компактный блок над зоной ручной загрузки. */
+    .robot {
+      margin-bottom: var(--space-md); padding-bottom: var(--space-sm);
+      border-bottom: 1px solid var(--color-border, #f0f0f0);
+    }
+    .rhead { display: flex; align-items: baseline; gap: var(--space-sm); margin-bottom: 6px; }
+    .rrow { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: 4px; }
+    .rname { flex: 0 0 140px; font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rfoot { display: flex; justify-content: flex-end; margin-top: 6px; }
     /* Компактный список файлов ЛК — каждый файл строго в одну строку. */
     .files { margin-top: var(--space-sm); display: flex; flex-direction: column; }
     .frow {
@@ -187,8 +227,55 @@ export class LkIntakeModalComponent implements OnInit {
   /** Загрузки одного «выбора»/drop идут строго по очереди — на этой цепочке. */
   private uploadChain: Promise<void> = Promise.resolve();
 
+  /** Аккаунты ЛК для автовыгрузки; пусто — робот выключен в конфиге или не настроен. */
+  readonly robotAccounts = signal<LKRobotAccount[]>([]);
+  /** Введённые пароли: живут только в этом окне, на сервер уходят и там не сохраняются. */
+  readonly robotPwd = signal<Record<number, string>>({});
+  readonly busyRobot = signal(false);
+  readonly hasAnyPwd = computed(() => Object.values(this.robotPwd()).some((p) => !!p));
+
   ngOnInit(): void {
     void this.loadStatus();
+    void this.loadRobotAccounts();
+  }
+
+  setPwd(okpo: number, value: string): void {
+    this.robotPwd.update((m) => ({ ...m, [okpo]: value }));
+  }
+
+  /** Список потоков для автовыгрузки. Робот выключен — блока просто нет. */
+  private async loadRobotAccounts(): Promise<void> {
+    try {
+      const res = await this.api.robotAccounts();
+      this.robotAccounts.set(res.accounts ?? []);
+    } catch {
+      this.robotAccounts.set([]);
+    }
+  }
+
+  /** Забрать дислокацию из ЛК роботом: результат по каждому потоку отдельно. */
+  async runRobot(): Promise<void> {
+    const accounts = Object.entries(this.robotPwd())
+      .filter(([, pwd]) => !!pwd)
+      .map(([okpo, password]) => ({ okpo: Number(okpo), password }));
+    if (!accounts.length) return;
+
+    this.busyRobot.set(true);
+    try {
+      const res = await this.api.robotRun(accounts);
+      for (const it of res.items) {
+        const who = it.name || `ОКПО ${it.okpo}`;
+        if (it.error) this.msg.error(`${who}: ${it.error}`);
+        else this.msg.success(`${who}: принят ${it.filename} (${it.rows} ваг.)`);
+      }
+      // Пароли не держим дольше запуска.
+      this.robotPwd.set({});
+      await this.loadStatus();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.busyRobot.set(false);
+    }
   }
 
   /** Файл из зоны загрузки (app-file-drop): очередь последовательной отправки. */

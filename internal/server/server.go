@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/Gtport/DPmodule/internal/adapter/asu"
+	"github.com/Gtport/DPmodule/internal/adapter/lkrobot"
 	"github.com/Gtport/DPmodule/internal/adapter/max"
 	"github.com/Gtport/DPmodule/internal/adapter/oauth"
 	"github.com/Gtport/DPmodule/internal/adapter/reference"
@@ -50,6 +51,7 @@ func Build(
 	vagonOpRepo port.VagonOperationRepository,
 	cargoWorkRepo port.CargoWorkRepository,
 	maxChatRepo port.MaxChatRepository,
+	lkAccountRepo port.LKAccountRepository,
 	pamCursorRepo port.PamyatkaCursorRepository,
 	reportPresetRepo port.ReportPresetRepository,
 	nmtpRepo port.NmtpRepository,
@@ -221,6 +223,25 @@ func Build(
 		lkIntake := service.NewLKIntake(cfgCache, dirCache, cfg.Storage.BaseDir)
 		handler.NewLKUploadHandler(lkIntake).RegisterRoutes(api)
 
+		// Робот ЛК: сам ходит в личный кабинет РЖД вместо ручной выгрузки
+		// диспетчером и кладёт файл в тот же приём. Логины — в таблице
+		// lk_account, пароль диспетчер вводит при запуске (нигде не хранится).
+		// Расписания пока нет: запуск кнопкой.
+		if cfg.LKRobot.Enabled && lkAccountRepo != nil {
+			opts := lkrobot.Options{
+				BaseURL:     cfg.LKRobot.BaseURL,
+				ServiceID:   cfg.LKRobot.ServiceID,
+				Timeout:     cfg.LKRobot.Timeout,
+				PollEvery:   cfg.LKRobot.PollEvery,
+				PollTimeout: cfg.LKRobot.PollTimeout,
+			}
+			// Сессия ЛК короткая и не переживает запуск — клиент одноразовый.
+			newFetcher := func() (service.LKFetcher, error) { return lkrobot.New(opts) }
+			handler.NewLKRobotHandler(
+				service.NewLKRobot(lkAccountRepo, lkIntake, newFetcher, log),
+			).RegisterRoutes(api)
+		}
+
 		// Шаг 2 (обработка в снимок) — требует репозиторий дислокации (БД).
 		if dislRepo != nil {
 			// Единый журнал событий (обновления дислокации, загрузки планов).
@@ -273,9 +294,9 @@ func Build(
 					histClient := asu.NewHTTPClient(ds.Config, secrets, tokens)
 					vagonOps = service.NewVagonOpService(vagonOpRepo, histClient, dirCache, actualCache, log)
 					vagonOps.SetHistory(historyRepo) // «История движения вагона»: рейс из vagon_history
-				if delayRepo != nil {
-					vagonOps.SetDelays(delayRepo) // задержки рейса в трейле («ехал N, из них X стоял»)
-				}
+					if delayRepo != nil {
+						vagonOps.SetDelays(delayRepo) // задержки рейса в трейле («ехал N, из них X стоял»)
+					}
 					vagonOps.SetLimits(cfg.WagonOps.Batch, cfg.WagonOps.Pause, cfg.WagonOps.MaxAttempts)
 					proc.SetVagonOps(vagonOps)
 					handler.NewVagonOpsHandler(vagonOps).RegisterRoutes(api)

@@ -101,12 +101,46 @@ export class DislocationApiService {
     );
   }
 
+  /** Аккаунты ЛК для автовыгрузки: по одному на поток (порт). Логины — из таблицы lk_account. */
+  robotAccounts(): Promise<{ accounts: LKRobotAccount[] }> {
+    return firstValueFrom(this.http.get<{ accounts: LKRobotAccount[] }>(`${this.base}/robot/accounts`));
+  }
+
+  /** Запуск робота ЛК: пароли вводит диспетчер, на сервере они не сохраняются. */
+  robotRun(accounts: { okpo: number; password: string }[]): Promise<LKRobotResult> {
+    return firstValueFrom(this.http.post<LKRobotResult>(`${this.base}/robot/run`, { accounts }));
+  }
+
   /** «Обновить справочники»: перезагрузка словарей в RAM + пересчёт снимка (после правки marka/cargo). */
   reloadDirectories(): Promise<DictReloadResult> {
     return firstValueFrom(
       this.http.post<DictReloadResult>(`${environment.apiBaseUrl}/v1/dislocation/directories/reload`, {}),
     );
   }
+}
+
+/** Аккаунт ЛК РЖД: один поток (порт) — один кабинет со своим логином. */
+export interface LKRobotAccount {
+  okpo: number;
+  login: string;
+  name: string;
+}
+
+/** Итог автовыгрузки по одному потоку: либо принятый файл, либо причина отказа. */
+export interface LKRobotItem {
+  okpo: number;
+  name: string;
+  organisation?: string;
+  filename?: string;
+  rows?: number;
+  error?: string;
+}
+
+/** Сводка запуска робота ЛК. */
+export interface LKRobotResult {
+  items: LKRobotItem[];
+  ok: number;
+  failed: number;
 }
 
 /** Отчёт «Обновить справочники»: что пересчитано в снимке после перезагрузки словарей. */
