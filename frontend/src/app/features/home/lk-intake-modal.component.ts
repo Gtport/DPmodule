@@ -1,9 +1,6 @@
 import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
-import { NzInputModule } from 'ng-zorro-antd/input';
-import { NzDescriptionsModule } from 'ng-zorro-antd/descriptions';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
@@ -11,34 +8,37 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
-import {
-  DislocationApiService, LKIssue, LKProcessResult, LKRobotAccount, LKStatus,
-} from '../dislocation/dislocation-api.service';
+import { DislocationApiService, LKProcessResult, LKStatus } from '../dislocation/dislocation-api.service';
 import { FileDropComponent } from '../../shared/file-drop.component';
+import { LkFilesViewComponent } from './lk-files-view.component';
+import { LkProcessResultComponent } from './lk-process-result.component';
 
 /**
- * Перемещаемая модалка «Приём ЛК» (перенос карточки со страницы «Дислокация» на
- * главный экран, решение владельца). Двухшаговость сохранена: шаг 1 — загрузка
- * xlsx по грузополучателям с контролем свежести/полноты, шаг 2 — «Обновить
- * дислокацию» (пересборка снимка). Модалка перемещается за заголовок (cdkDrag),
- * как принято в проекте.
+ * Перемещаемая модалка «ЛК» — РУЧНАЯ загрузка файлов кабинета (перенос карточки
+ * со страницы «Дислокация» на главный экран, решение владельца). Двухшаговость
+ * сохранена: шаг 1 — загрузка xlsx по грузополучателям с контролем свежести/
+ * полноты, шаг 2 — «Обновить дислокацию» (пересборка снимка).
  *
- * Сводка пересборки (вагонов/прогноз/статусы) остаётся ЗДЕСЬ, внизу окна: на
- * главном экране показываем только короткий тост, подробности — тому, кто их
- * действительно смотрит (решение владельца).
+ * Автозабор роботом переехал отсюда в отдельную модалку «АВТО ЛК» (решение
+ * владельца 01.08.2026): там он вместе с обновлением дислокации идёт одним
+ * фоновым запуском, здесь остаётся ручной путь на случай, когда кабинет РЖД
+ * недоступен и файлы приносят руками.
+ *
+ * Сводка пересборки остаётся ЗДЕСЬ, внизу окна: на главном экране показываем
+ * только короткий тост, подробности — тому, кто их действительно смотрит.
  */
 @Component({
   selector: 'app-lk-intake-modal',
   imports: [
-    DragDropModule, FormsModule, NzButtonModule, NzDescriptionsModule, NzIconModule,
-    NzInputModule, NzModalModule, NzSpinModule, NzTagModule, NzTooltipModule, FileDropComponent,
+    DragDropModule, NzButtonModule, NzIconModule, NzModalModule, NzSpinModule, NzTagModule,
+    NzTooltipModule, FileDropComponent, LkFilesViewComponent, LkProcessResultComponent,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="title" [nzFooter]="null" nzWidth="560px"
               [nzMask]="false" (nzOnCancel)="closed.emit()">
       <ng-template #title>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
-          Приём ЛК (ручной)
+          ЛК — ручная загрузка файлов
         </div>
       </ng-template>
       <ng-container *nzModalContent>
@@ -51,64 +51,14 @@ import { FileDropComponent } from '../../shared/file-drop.component';
           </button>
         </div>
 
-        <!-- Автовыгрузка: робот сам заходит в кабинет РЖД. Пароли вводятся здесь
-             и никуда не сохраняются — на каждый поток свой аккаунт ЛК. -->
-        @if (robotAccounts().length) {
-          <div class="robot">
-            <div class="rhead">
-              <b>Забрать из ЛК автоматически</b>
-              <span class="hint">пароли не сохраняются — вводятся на один запуск</span>
-            </div>
-            @for (a of robotAccounts(); track a.okpo) {
-              <div class="rrow">
-                <span class="rname" [title]="'логин ' + a.login">{{ a.name || ('ОКПО ' + a.okpo) }}</span>
-                <input nz-input type="password" autocomplete="off" nzSize="small"
-                       [placeholder]="'пароль ' + a.login"
-                       [ngModel]="robotPwd()[a.okpo] ?? ''"
-                       (ngModelChange)="setPwd(a.okpo, $event)"
-                       (keydown.enter)="runRobot()" />
-              </div>
-            }
-            <div class="rfoot">
-              <button nz-button nzType="primary" nzSize="small"
-                      [disabled]="!hasAnyPwd()" [nzLoading]="busyRobot()" (click)="runRobot()">
-                Забрать из ЛК
-              </button>
-            </div>
-          </div>
-        }
-
         <app-file-drop accept=".xlsx" [multiple]="true" [busy]="busyUpload()"
                        text="Нажмите или перетащите файлы ЛК в эту область"
                        hint="xlsx, по одному файлу на грузополучателя; можно несколько сразу"
                        (file)="onLkFile($event)" />
 
         <nz-spin [nzSpinning]="loadingStatus()">
-          <div class="files">
-            @for (f of status()?.files ?? []; track f.filename) {
-              <!-- Сокращённое имя (краткие имена терминалов); полное наименование и
-                   имя файла — в подсказке. Замечания — только чипами, без заливки строки. -->
-              <div class="frow">
-                <span class="forg" [title]="f.organisation + ' · ' + f.filename">
-                  {{ f.terminals.join(' · ') || ('ОКПО ' + f.okpo) }}
-                </span>
-                <nz-tag class="chip" [nzColor]="ageColor(f.age_minutes)">{{ fmtTs(f.formation_ts) }} · {{ f.age_minutes }}м</nz-tag>
-                @for (iss of issuesFor(f.okpo); track iss.code) {
-                  <nz-tag class="chip" [nzColor]="iss.level === 'block' ? 'error' : 'warning'"
-                          nz-tooltip [nzTooltipTitle]="iss.message">{{ issueLabel(iss.code) }}</nz-tag>
-                }
-              </div>
-            } @empty {
-              <p class="muted">Файлы ЛК не загружены (для ручной загрузки). Основной источник — АСУ.</p>
-            }
-            <!-- Общие замечания (не привязаны к конкретному файлу): нет файла, разрыв срезов. -->
-            @for (iss of orphanIssues(); track $index) {
-              <div class="frow frow-issue">
-                <nz-tag class="chip" [nzColor]="iss.level === 'block' ? 'error' : 'warning'">{{ issueLabel(iss.code) }}</nz-tag>
-                <span class="imsg">{{ iss.message }}</span>
-              </div>
-            }
-          </div>
+          <app-lk-files-view [status]="status()"
+                             emptyText="Файлы ЛК не загружены (для ручной загрузки). Основной источник — АСУ." />
         </nz-spin>
 
         <!-- Шаг 2 — отдельной строкой под файлами (визуально отделён от загрузки). -->
@@ -127,45 +77,7 @@ import { FileDropComponent } from '../../shared/file-drop.component';
           }
         }
 
-        <!-- Сводка пересборки — здесь, а не на главном экране. -->
-        @if (processResult(); as res) {
-          <div class="rsum">
-            <b>Дислокация обновлена:</b>
-            <span>вагонов <b>{{ res.count }}</b> (было {{ res.prev_snapshot }})</span>
-            <span>· прогноз {{ res.prog_computed }}</span>
-            <span>· расч. ход {{ res.forecast_computed }}</span>
-            <span>· пропали {{ res.status8_missing }}</span>
-            <span>· история +{{ res.history_inserted }}/~{{ res.history_updated }}</span>
-            <button nz-button nzType="link" nzSize="small" (click)="showDetails.set(!showDetails())">
-              {{ showDetails() ? 'скрыть' : 'подробнее' }}
-            </button>
-          </div>
-
-          @if (showDetails()) {
-            <nz-descriptions class="details" [nzColumn]="2" nzBordered nzSize="small">
-              <nz-descriptions-item nzTitle="Файлов">{{ res.files }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Назначение обогащено">{{ res.nazn_enriched }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Порт не резолвится">{{ res.port_unresolved }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Статус 9 (новых)">{{ res.status9_inserted }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Статус 9 (снято)">{{ res.status9_removed }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Статус 8 (пропавших)">{{ res.status8_missing }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Carry-over (совпало)">{{ res.carry_matched }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Carry-over (новых)">{{ res.carry_new }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Статус удержан 4/5">{{ res.carry_sticky }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Доноры (статус 6)">{{ res.status6_donors }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Донорство добрано">{{ res.status6_matched }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Marka заполнено">{{ res.marka_filled }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Marka не нашла">{{ res.marka_missed }}</nz-descriptions-item>
-              <nz-descriptions-item nzTitle="Назначение переставлено">{{ res.naznach_override }}</nz-descriptions-item>
-            </nz-descriptions>
-            @if (res.stations_not_found.length) {
-              <p class="warn-line">Станции вне справочника: {{ res.stations_not_found.join(', ') }}</p>
-            }
-            @if (res.ops_not_found.length) {
-              <p class="warn-line">Операции вне справочника: {{ res.ops_not_found.join(', ') }}</p>
-            }
-          }
-        }
+        <app-lk-process-result [res]="processResult()" />
       </ng-container>
     </nz-modal>
   `,
@@ -180,32 +92,6 @@ import { FileDropComponent } from '../../shared/file-drop.component';
       margin-top: var(--space-md); padding-top: var(--space-md);
       border-top: 1px solid var(--color-border, #f0f0f0);
     }
-    .muted { color: var(--color-text-muted); margin: var(--space-sm) 0 0; }
-    /* Автовыгрузка из ЛК: компактный блок над зоной ручной загрузки. */
-    .robot {
-      margin-bottom: var(--space-md); padding-bottom: var(--space-sm);
-      border-bottom: 1px solid var(--color-border, #f0f0f0);
-    }
-    .rhead { display: flex; align-items: baseline; gap: var(--space-sm); margin-bottom: 6px; }
-    .rrow { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: 4px; }
-    .rname { flex: 0 0 140px; font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .rfoot { display: flex; justify-content: flex-end; margin-top: 6px; }
-    /* Компактный список файлов ЛК — каждый файл строго в одну строку. */
-    .files { margin-top: var(--space-sm); display: flex; flex-direction: column; }
-    .frow {
-      display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-sm);
-      padding: 4px 2px; border-bottom: 1px solid var(--color-border, #f0f0f0); font-size: var(--font-size-sm);
-    }
-    .frow:last-child { border-bottom: none; }
-    .frow-issue { color: var(--color-text-secondary); }
-    .forg { flex: 1 1 auto; min-width: 60px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .imsg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .chip { margin: 0; white-space: nowrap; }
-    /* Сводка результата */
-    .rsum { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap;
-            font-size: var(--font-size-sm); margin-top: var(--space-md); }
-    .details { margin-top: var(--space-md); }
-    .warn-line { margin: var(--space-sm) 0 0; color: var(--color-warning-text); font-size: var(--font-size-sm); }
   `],
 })
 export class LkIntakeModalComponent implements OnInit {
@@ -222,60 +108,12 @@ export class LkIntakeModalComponent implements OnInit {
   readonly busyUpload = computed(() => this.pendingUploads() > 0);
   readonly busyProcess = signal(false);
   readonly processResult = signal<LKProcessResult | null>(null);
-  readonly showDetails = signal(false);
 
   /** Загрузки одного «выбора»/drop идут строго по очереди — на этой цепочке. */
   private uploadChain: Promise<void> = Promise.resolve();
 
-  /** Аккаунты ЛК для автовыгрузки; пусто — робот выключен в конфиге или не настроен. */
-  readonly robotAccounts = signal<LKRobotAccount[]>([]);
-  /** Введённые пароли: живут только в этом окне, на сервер уходят и там не сохраняются. */
-  readonly robotPwd = signal<Record<number, string>>({});
-  readonly busyRobot = signal(false);
-  readonly hasAnyPwd = computed(() => Object.values(this.robotPwd()).some((p) => !!p));
-
   ngOnInit(): void {
     void this.loadStatus();
-    void this.loadRobotAccounts();
-  }
-
-  setPwd(okpo: number, value: string): void {
-    this.robotPwd.update((m) => ({ ...m, [okpo]: value }));
-  }
-
-  /** Список потоков для автовыгрузки. Робот выключен — блока просто нет. */
-  private async loadRobotAccounts(): Promise<void> {
-    try {
-      const res = await this.api.robotAccounts();
-      this.robotAccounts.set(res.accounts ?? []);
-    } catch {
-      this.robotAccounts.set([]);
-    }
-  }
-
-  /** Забрать дислокацию из ЛК роботом: результат по каждому потоку отдельно. */
-  async runRobot(): Promise<void> {
-    const accounts = Object.entries(this.robotPwd())
-      .filter(([, pwd]) => !!pwd)
-      .map(([okpo, password]) => ({ okpo: Number(okpo), password }));
-    if (!accounts.length) return;
-
-    this.busyRobot.set(true);
-    try {
-      const res = await this.api.robotRun(accounts);
-      for (const it of res.items) {
-        const who = it.name || `ОКПО ${it.okpo}`;
-        if (it.error) this.msg.error(`${who}: ${it.error}`);
-        else this.msg.success(`${who}: принят ${it.filename} (${it.rows} ваг.)`);
-      }
-      // Пароли не держим дольше запуска.
-      this.robotPwd.set({});
-      await this.loadStatus();
-    } catch (err) {
-      this.msg.error(apiErrorMessage(err));
-    } finally {
-      this.busyRobot.set(false);
-    }
   }
 
   /** Файл из зоны загрузки (app-file-drop): очередь последовательной отправки. */
@@ -293,12 +131,14 @@ export class LkIntakeModalComponent implements OnInit {
       const res = await this.api.process();
       this.processResult.set(res);
       this.msg.success(`Дислокация обновлена из ЛК: ${res.count} ваг. (было ${res.prev_snapshot})`);
-      await this.loadStatus();
       this.updated.emit();
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     } finally {
       this.busyProcess.set(false);
+      // Список файлов освежаем в любом исходе: отказ обработки тоже меняет
+      // картину приёма (устарели, разъехались срезы), и увидеть её надо сразу.
+      await this.loadStatus();
     }
   }
 
@@ -308,9 +148,10 @@ export class LkIntakeModalComponent implements OnInit {
       this.msg.success(
         `${res.filename}: ${res.organisation || res.okpo}${res.replaced ? ' (заменён более старый файл)' : ''}`,
       );
-      await this.loadStatus();
     } catch (err) {
       this.msg.error(`${file.name}: ${apiErrorMessage(err)}`);
+    } finally {
+      await this.loadStatus();
     }
   }
 
@@ -325,17 +166,6 @@ export class LkIntakeModalComponent implements OnInit {
     }
   }
 
-  /** Замечания, привязанные к файлу с этим ОКПО (устаревание, неизвестный ОКПО). */
-  issuesFor(okpo: string): LKIssue[] {
-    return (this.status()?.issues ?? []).filter((i) => i.okpo === okpo);
-  }
-
-  /** Общие замечания без своей строки-файла: нет файла (missing) и разрыв срезов (gap). */
-  orphanIssues(): LKIssue[] {
-    const present = new Set((this.status()?.files ?? []).map((f) => f.okpo));
-    return (this.status()?.issues ?? []).filter((i) => !i.okpo || !present.has(i.okpo));
-  }
-
   /** Честный статус «почему не готово» по блокирующим замечаниям. */
   notReadyReason(st: LKStatus): string {
     const blocks = st.issues.filter((i) => i.level === 'block').map((i) => i.code);
@@ -343,29 +173,5 @@ export class LkIntakeModalComponent implements OnInit {
     if (blocks.includes('missing')) return 'не хватает файлов грузополучателей';
     if (blocks.includes('gap')) return 'файлы из разных срезов';
     return 'есть замечания — обработка невозможна';
-  }
-
-  /** Короткая подпись тега по коду замечания (полный текст — в тултипе/строке). */
-  issueLabel(code: string): string {
-    switch (code) {
-      case 'stale': return 'устарел';
-      case 'unknown': return 'нет в справочнике';
-      case 'missing': return 'нет файла';
-      case 'gap': return 'разрыв срезов';
-      default: return code;
-    }
-  }
-
-  /** Цвет чипа по возрасту метки формирования (мин): ≤60 синий, ≤180 оранжевый, иначе красный. */
-  ageColor(age: number): string {
-    if (age <= 60) return 'blue';
-    if (age <= 180) return 'orange';
-    return 'red';
-  }
-
-  /** «2026-07-14T03:42:33» → «14.07 03:42». */
-  fmtTs(ts: string | null): string {
-    if (!ts || ts.length < 16) return '—';
-    return `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}`;
   }
 }

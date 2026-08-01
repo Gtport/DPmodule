@@ -8,6 +8,7 @@ import { AuthService } from '../../core/auth/auth.service';
 import { DislTermStatus, PlanApiService, PlanStatus, SystemStatus } from '../plan/plan-api.service';
 import { DislocationApiService } from '../dislocation/dislocation-api.service';
 import { LkIntakeModalComponent } from './lk-intake-modal.component';
+import { LkRobotModalComponent } from './lk-robot-modal.component';
 import {
   DISL_AGE, PLAN_AGE, ageColor, fmtStamp, nowJd, nowMsk, planLabel, sourceLabel,
 } from '../../shared/status-format';
@@ -21,15 +22,17 @@ import {
  * оригиналу — две строки часов: МСК и ЖД-сутки (метка слева, в чипе только
  * дата/время). Автообновление раз в минуту, часы — раз в 10 секунд без сети.
  *
- * Внизу карточки — два действия в одну строку (только для роли диспетчера/
- * администратора): «Обновить АСУ» (один клик, сразу пересобирает снимок) и
- * «Обновить ЛК» (перемещаемая модалка с двухшаговым приёмом файлов).
+ * Внизу карточки — три действия в одну строку (только для роли диспетчера/
+ * администратора): «АСУ» (один клик, сразу пересобирает снимок), «ЛК»
+ * (перемещаемая модалка с двухшаговым приёмом файлов вручную) и «АВТО ЛК»
+ * (робот сам ходит в кабинет РЖД и обновляет дислокацию). Подписи сокращены,
+ * чтобы три кнопки встали в ряд — решение владельца 01.08.2026.
  */
 @Component({
   selector: 'app-system-status-card',
-  imports: [NzButtonModule, NzTagModule, NzTooltipModule, LkIntakeModalComponent],
+  imports: [NzButtonModule, NzTagModule, NzTooltipModule, LkIntakeModalComponent, LkRobotModalComponent],
   host: {
-    // Хоткеи действий диспетчера: Alt+A — «Обновить АСУ», Alt+L — «Приём ЛК».
+    // Хоткеи действий диспетчера: Alt+A — АСУ, Alt+L — ЛК вручную, Alt+R — АВТО ЛК.
     // По ev.code (физическая клавиша) — работают и в русской раскладке.
     '(document:keydown)': 'onDocKeydown($event)',
   },
@@ -105,22 +108,30 @@ import {
         }
       </div>
 
-      <!-- Действия диспетчера — внизу карточки, в одну строку (решение владельца). -->
+      <!-- Действия диспетчера — внизу карточки, в одну строку (решение владельца).
+           Подписи короткие (АСУ / ЛК / АВТО ЛК), чтобы три кнопки встали в ряд
+           в половинной колонке; что делает каждая — в подсказке. -->
       @if (canUpdate()) {
         <div class="acts">
           <button nz-button nzSize="small" class="act" [nzLoading]="busyAsu()"
-                  nz-tooltip nzTooltipTitle="Обновить из АСУ: заберёт данные и сразу пересоберёт дислокацию (Alt+A)"
-                  (click)="asuPull()">Обновить АСУ</button>
+                  nz-tooltip nzTooltipTitle="Забрать из АСУ: заберёт данные и сразу пересоберёт дислокацию (Alt+A)"
+                  (click)="asuPull()">АСУ</button>
           <button nz-button nzSize="small" class="act"
-                  nz-tooltip nzTooltipTitle="Обновить из ЛК: загрузка файлов грузополучателей вручную (Alt+L)"
-                  (click)="lkOpen.set(true)">Обновить ЛК</button>
+                  nz-tooltip nzTooltipTitle="ЛК вручную: загрузка файлов кабинета по грузополучателям (Alt+L)"
+                  (click)="lkOpen.set(true)">ЛК</button>
+          <button nz-button nzSize="small" class="act"
+                  nz-tooltip nzTooltipTitle="АВТО ЛК: робот сам зайдёт в кабинет РЖД, заберёт дислокацию и обновит её (Alt+R)"
+                  (click)="robotOpen.set(true)">АВТО ЛК</button>
         </div>
       }
     </div>
 
-    <!-- Приём ЛК — перемещаемая модалка (решение владельца) -->
+    <!-- Обе модалки приёма — перемещаемые (решение владельца) -->
     @if (lkOpen()) {
       <app-lk-intake-modal (closed)="lkOpen.set(false)" (updated)="onUpdated()" />
+    }
+    @if (robotOpen()) {
+      <app-lk-robot-modal (closed)="robotOpen.set(false)" (updated)="onUpdated()" />
     }
   `,
   styles: [`
@@ -128,7 +139,7 @@ import {
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-sm); }
     /* Шапка — как у карточек «Прибывшие»/«Ближайшие поезда»: один размер на странице. */
     .head { display: flex; align-items: center; gap: 4px; margin-bottom: var(--space-xs); }
-    /* Две кнопки в одну строку, равной ширины; кегль — как у текста карточек. */
+    /* Три кнопки в одну строку, равной ширины; кегль — как у текста карточек. */
     .acts { display: flex; gap: var(--space-sm); margin-top: var(--space-sm); }
     .act { flex: 1 1 0; min-width: 0; font-size: var(--font-size-sm); }
     .rows { display: flex; flex-direction: column; gap: 3px; }
@@ -162,6 +173,7 @@ export class SystemStatusCardComponent implements OnInit, OnDestroy {
   readonly now = signal(new Date());
   readonly busyAsu = signal(false);
   readonly lkOpen = signal(false);
+  readonly robotOpen = signal(false);
   /** Подряд неудачных фоновых обновлений; с 2-го (≈2 мин) считаем связь потерянной. */
   private readonly failedTicks = signal(0);
   /** Момент последнего УДАЧНОГО ответа сервера (null — не было ни одного). */
@@ -202,7 +214,7 @@ export class SystemStatusCardComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Alt+A / Alt+L — быстрый доступ к действиям диспетчера (только с правами). */
+  /** Alt+A / Alt+L / Alt+R — быстрый доступ к действиям диспетчера (только с правами). */
   onDocKeydown(ev: KeyboardEvent): void {
     if (!ev.altKey || ev.ctrlKey || ev.metaKey || !this.canUpdate()) return;
     if (ev.code === 'KeyA') {
@@ -211,6 +223,9 @@ export class SystemStatusCardComponent implements OnInit, OnDestroy {
     } else if (ev.code === 'KeyL') {
       ev.preventDefault();
       this.lkOpen.set(true);
+    } else if (ev.code === 'KeyR') {
+      ev.preventDefault();
+      this.robotOpen.set(true);
     }
   }
 

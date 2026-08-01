@@ -224,9 +224,11 @@ func Build(
 		handler.NewLKUploadHandler(lkIntake).RegisterRoutes(api)
 
 		// Робот ЛК: сам ходит в личный кабинет РЖД вместо ручной выгрузки
-		// диспетчером и кладёт файл в тот же приём. Логины — в таблице
-		// lk_account, пароль диспетчер вводит при запуске (нигде не хранится).
-		// Расписания пока нет: запуск кнопкой.
+		// диспетчером, кладёт файл в тот же приём и следом обновляет дислокацию.
+		// Логины — в таблице lk_account, пароль диспетчер вводит при запуске
+		// (нигде не хранится). Расписания пока нет: запуск кнопкой.
+		// Запуск фоновый — ручка отвечает сразу (см. service.LKRobot).
+		var lkRobot *service.LKRobot
 		if cfg.LKRobot.Enabled && lkAccountRepo != nil {
 			opts := lkrobot.Options{
 				BaseURL:     cfg.LKRobot.BaseURL,
@@ -237,9 +239,8 @@ func Build(
 			}
 			// Сессия ЛК короткая и не переживает запуск — клиент одноразовый.
 			newFetcher := func() (service.LKFetcher, error) { return lkrobot.New(opts) }
-			handler.NewLKRobotHandler(
-				service.NewLKRobot(lkAccountRepo, lkIntake, newFetcher, log),
-			).RegisterRoutes(api)
+			lkRobot = service.NewLKRobot(lkAccountRepo, lkIntake, newFetcher, cfg.LKRobot.RunTimeout, log)
+			handler.NewLKRobotHandler(lkRobot).RegisterRoutes(api)
 		}
 
 		// Шаг 2 (обработка в снимок) — требует репозиторий дислокации (БД).
@@ -262,6 +263,13 @@ func Build(
 				proc.SetDelays(delayRepo)
 			}
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
+
+			// Робот ЛК обновляет дислокацию сам, сразу за забором: диспетчеру
+			// остаётся один клик вместо двух. Процессор собран ниже по коду, чем
+			// сам робот, поэтому подключается отдельно (как SetJournal и прочие).
+			if lkRobot != nil {
+				lkRobot.SetProcessor(proc)
+			}
 
 			// «Обновить справочники»: горячая перезагрузка словарей + гибридный
 			// пересчёт снимка (правки cargo/marka доезжают до вагонов) + Stage 3–4.

@@ -106,9 +106,18 @@ export class DislocationApiService {
     return firstValueFrom(this.http.get<{ accounts: LKRobotAccount[] }>(`${this.base}/robot/accounts`));
   }
 
-  /** Запуск робота ЛК: пароли вводит диспетчер, на сервере они не сохраняются. */
-  robotRun(accounts: { okpo: number; password: string }[]): Promise<LKRobotResult> {
-    return firstValueFrom(this.http.post<LKRobotResult>(`${this.base}/robot/run`, { accounts }));
+  /**
+   * Запуск робота ЛК: пароли вводит диспетчер, на сервере они не сохраняются.
+   * Ответ приходит СРАЗУ (202) — забор идёт в фоне, ход смотрим через robotState().
+   * Поэтому запуск не зависит от таймаутов nginx/ingress перед бэкендом.
+   */
+  robotRun(accounts: { okpo: number; password: string }[]): Promise<LKRobotState> {
+    return firstValueFrom(this.http.post<LKRobotState>(`${this.base}/robot/run`, { accounts }));
+  }
+
+  /** Состояние забора: прогресс по потокам, приём и итог обновления одним ответом. */
+  robotState(): Promise<LKRobotState> {
+    return firstValueFrom(this.http.get<LKRobotState>(`${this.base}/robot/state`));
   }
 
   /** «Обновить справочники»: перезагрузка словарей в RAM + пересчёт снимка (после правки marka/cargo). */
@@ -126,21 +135,40 @@ export interface LKRobotAccount {
   name: string;
 }
 
-/** Итог автовыгрузки по одному потоку: либо принятый файл, либо причина отказа. */
+/**
+ * Один поток в ходе запуска: state — где он сейчас (wait ждёт очереди, run идёт,
+ * ok файл принят, fail отвалился с причиной в error).
+ */
 export interface LKRobotItem {
   okpo: number;
   name: string;
+  state: 'wait' | 'run' | 'ok' | 'fail';
   organisation?: string;
   filename?: string;
   rows?: number;
   error?: string;
 }
 
-/** Сводка запуска робота ЛК. */
-export interface LKRobotResult {
+/**
+ * Состояние забора из ЛК целиком. Запуск фоновый: ручка `run` отвечает сразу,
+ * а модалка опрашивает это состояние — прогресс живёт на сервере и переживает
+ * закрытие окна. stage: idle (запусков не было) → fetch → process → done.
+ */
+export interface LKRobotState {
+  running: boolean;
+  stage: 'idle' | 'fetch' | 'process' | 'done';
+  started_at?: string;
+  finished_at?: string;
+  actor?: string;
   items: LKRobotItem[];
   ok: number;
   failed: number;
+  /** Итог обновления дислокации: сводка, либо причина, почему его не было. */
+  processed?: LKProcessResult;
+  process_skip?: string;
+  process_error?: string;
+  /** Приём как он есть сейчас — тот же список файлов и замечаний, что у ручной загрузки. */
+  files: LKStatus;
 }
 
 /** Отчёт «Обновить справочники»: что пересчитано в снимке после перезагрузки словарей. */

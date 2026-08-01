@@ -11,11 +11,17 @@ import (
 )
 
 // lkRobotHandler — автовыгрузка дислокации из личного кабинета РЖД: то же, что
-// диспетчер делал руками (зайти в ЛК, заказать отчёт, скачать xlsx, загрузить).
+// диспетчер делал руками (зайти в ЛК, заказать отчёт, скачать xlsx, загрузить,
+// обновить дислокацию).
 //
 // Пароль приходит в теле запроса и живёт только на время запуска: в БД, конфиге
 // и логах его нет. Логины — в настроечной таблице lk_account (админ-редактор).
 // Расписания пока нет: запуск кнопкой диспетчера.
+//
+// ⚠️ Запуск НЕ ЖДЁТ результата: `run` отвечает 202 через миллисекунды, работа
+// идёт в фоне, состояние забирают через `state`. Так запуск не зависит от
+// таймаутов обратного прокси (nginx, ingress) — держать соединение минутами
+// незачем, и рвать его больше некому.
 type lkRobotHandler struct {
 	robot *service.LKRobot
 }
@@ -26,7 +32,18 @@ func NewLKRobotHandler(robot *service.LKRobot) *lkRobotHandler {
 
 func (h *lkRobotHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/lk/robot/accounts", h.accounts)
+	g.GET("/dislocation/lk/robot/state", h.state)
 	g.POST("/dislocation/lk/robot/run", h.run)
+}
+
+// state godoc
+// @Summary  Состояние забора из ЛК: прогресс по потокам, приём, итог обновления
+// @Tags     dislocation
+// @Security BearerAuth
+// @Success  200 {object} object
+// @Router   /api/v1/dislocation/lk/robot/state [get]
+func (h *lkRobotHandler) state(c *gin.Context) {
+	c.JSON(http.StatusOK, h.robot.State())
 }
 
 // accounts godoc
@@ -54,12 +71,13 @@ type lkRobotRunRequest struct {
 }
 
 // run godoc
-// @Summary  Запуск автовыгрузки из ЛК РЖД (пароли вводит диспетчер, не хранятся)
+// @Summary  Запуск автовыгрузки из ЛК РЖД (фоновый; пароли вводит диспетчер, не хранятся)
 // @Tags     dislocation
 // @Security BearerAuth
 // @Param    body body lkRobotRunRequest true "пароли по ОКПО"
-// @Success  200 {object} object
+// @Success  202 {object} object "принято в работу, состояние — в /state"
 // @Failure  400 {object} object "не передан ни один пароль"
+// @Failure  409 {object} object "забор уже идёт"
 // @Failure  503 {object} object "аккаунты не заведены"
 // @Router   /api/v1/dislocation/lk/robot/run [post]
 func (h *lkRobotHandler) run(c *gin.Context) {
@@ -79,21 +97,23 @@ func (h *lkRobotHandler) run(c *gin.Context) {
 		return
 	}
 
-	res, err := h.robot.Run(c.Request.Context(), passwords)
+	st, err := h.robot.Start(c.Request.Context(), passwords)
 	if err != nil {
 		c.JSON(statusForLKRobotError(err), gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, res)
+	c.JSON(http.StatusAccepted, st)
 }
 
 // statusForLKRobotError — доменные ошибки робота в HTTP-статусы. Отказы по
-// отдельным потокам сюда не попадают: они едут в теле ответа (один порт может
-// не пустить, второй при этом обновится).
+// отдельным потокам сюда не попадают: они едут в состоянии запуска (один порт
+// может не пустить, второй при этом обновится).
 func statusForLKRobotError(err error) int {
 	switch {
 	case errors.Is(err, service.ErrNoLKAccounts):
 		return http.StatusServiceUnavailable
+	case errors.Is(err, service.ErrRobotBusy):
+		return http.StatusConflict
 	case errors.Is(err, lkrobot.ErrAuth):
 		return http.StatusUnauthorized
 	default:

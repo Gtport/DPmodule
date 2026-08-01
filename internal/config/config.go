@@ -73,6 +73,7 @@ type LKRobot struct {
 	Timeout     time.Duration `yaml:"timeout"`      // таймаут одного HTTP-запроса к кабинету; дефолт 2m
 	PollEvery   time.Duration `yaml:"poll_every"`   // период опроса готовности отчёта; дефолт 5s
 	PollTimeout time.Duration `yaml:"poll_timeout"` // сколько ждём готовности; дефолт 5m
+	RunTimeout  time.Duration `yaml:"run_timeout"`  // потолок фонового запуска целиком (все потоки + обновление); дефолт 30m
 }
 
 type Reference struct {
@@ -333,6 +334,12 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.LKRobot.PollTimeout == 0 {
 		cfg.LKRobot.PollTimeout = 5 * time.Minute
+	}
+	// Потолок фонового запуска: потоки идут по очереди, каждый в худшем случае
+	// ждёт отчёт poll_timeout. Дефолт с запасом на несколько кабинетов, чтобы
+	// живой забор не рубился на середине.
+	if cfg.LKRobot.RunTimeout == 0 {
+		cfg.LKRobot.RunTimeout = 30 * time.Minute
 	}
 	if cfg.Reference.PullInterval == 0 {
 		cfg.Reference.PullInterval = time.Hour
