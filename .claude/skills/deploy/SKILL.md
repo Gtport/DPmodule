@@ -81,7 +81,18 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/v1/<ручк�
 1. посмотреть текущую версию: `SELECT version, dirty FROM dpport.schema_migrations`;
 2. прогнать SQL миграции в транзакции с `ROLLBACK`, проверить результат;
 3. применить в реальной транзакции и сдвинуть маркер версии;
-4. показать владельцу счётчики до/после.
+4. **если миграция создаёт таблицу — сразу передать её роли приложения**
+   (`psql -d dpport` работает под `alex`, и созданное принадлежит `alex`, а не
+   `gtport_app` → приложение получит permission denied, ручка ответит 502):
+   ```sql
+   ALTER TABLE dpport.<таблица> OWNER TO gtport_app;
+   ALTER SEQUENCE dpport.<таблица>_id_seq OWNER TO gtport_app;  -- если есть bigserial
+   ```
+   Проверить: `SELECT tableowner FROM pg_tables WHERE tablename='<таблица>'`
+   — должно быть `gtport_app`, как у остальных настроечных таблиц. (Локально
+   этой ловушки нет: `make migrate-up-local` ходит уже под `gtport_app`.)
+   Наступили на это 01.08.2026 на `lk_account` (робот ЛК).
+5. показать владельцу счётчики до/после.
 
 Любые изменения боевых данных — только после прогона на `ROLLBACK` и с явного
 подтверждения владельца.
