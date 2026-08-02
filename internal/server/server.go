@@ -223,6 +223,9 @@ func Build(
 		lkIntake := service.NewLKIntake(cfgCache, dirCache, cfg.Storage.BaseDir)
 		handler.NewLKUploadHandler(lkIntake).RegisterRoutes(api)
 
+		// Клиентские настройки интерфейса (шкала ввода времени и т.п.).
+		handler.NewSettingsHandler(cfgCache).RegisterRoutes(api)
+
 		// Робот ЛК: сам ходит в личный кабинет РЖД вместо ручной выгрузки
 		// диспетчером, кладёт файл в тот же приём и следом обновляет дислокацию.
 		// Логины — в таблице lk_account, пароль диспетчер вводит при запуске

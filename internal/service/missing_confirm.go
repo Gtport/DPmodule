@@ -17,6 +17,8 @@ type ConfirmMissingRequest struct {
 	DatePrib  *domain.LocalTime `json:"date_prib"`            // факт прибытия, обязательно
 	DateVigr  *domain.LocalTime `json:"date_vigr,omitempty"`  // факт выгрузки (пусто — не выгружен)
 	PlaceVigr string            `json:"place_vigr,omitempty"` // терминал выгрузки (пусто — naznach записи)
+	Index     string            `json:"index,omitempty"`      // правка индекса поезда (пусто — индекс записи-8)
+	TimeBase  string            `json:"time_base,omitempty"`  // шкала введённых времён: "jd"|"msk" (пусто — как ЖД)
 }
 
 // ConfirmMissing — «Подтвердить прибытие» пропавшего: веха в vagon_history
@@ -37,18 +39,29 @@ func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissing
 	if req.DatePrib == nil || req.DatePrib.IsZero() {
 		return ArrivalsUpdateResult{}, fmt.Errorf("не указано время прибытия")
 	}
+	if err := checkTimeBase(req.TimeBase); err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	// Две проекции введённых времён: хранение (прибытие — ЖД-штамп, выгрузка —
+	// МСК) и МСК-эквиваленты для сравнений с time_op/«сейчас» — они в МСК.
+	pribJd := arrivalToJd(req.DatePrib, req.TimeBase)
+	pribMsk := req.DatePrib
+	if req.TimeBase != domain.TimeBaseMSK {
+		pribMsk = planMskFromJd(pribJd) // введено ЖД («час ≥ 18» — предыдущие сутки МСК)
+	}
+	vigrMsk := unloadToMsk(req.DateVigr, req.TimeBase)
 	now := clock.Now()
-	if req.DatePrib.Time().After(now.Time()) {
+	if pribMsk.Time().After(now.Time()) {
 		return ArrivalsUpdateResult{}, fmt.Errorf("время прибытия в будущем")
 	}
 	if req.DateVigr != nil {
 		if req.DateVigr.IsZero() {
 			return ArrivalsUpdateResult{}, fmt.Errorf("не указано время выгрузки")
 		}
-		if req.DateVigr.Time().Before(req.DatePrib.Time()) {
+		if vigrMsk.Time().Before(pribMsk.Time()) {
 			return ArrivalsUpdateResult{}, fmt.Errorf("выгрузка раньше прибытия")
 		}
-		if req.DateVigr.Time().After(now.Time()) {
+		if vigrMsk.Time().After(now.Time()) {
 			return ArrivalsUpdateResult{}, fmt.Errorf("время выгрузки в будущем")
 		}
 	} else if req.PlaceVigr != "" {
@@ -85,7 +98,7 @@ func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissing
 			return ArrivalsUpdateResult{}, fmt.Errorf(
 				"вагон уже не в пропавших (id %s) — обновите список", id)
 		}
-		if r.TimeOp != nil && req.DatePrib.Time().Before(r.TimeOp.Time()) {
+		if r.TimeOp != nil && pribMsk.Time().Before(r.TimeOp.Time()) {
 			return ArrivalsUpdateResult{}, fmt.Errorf(
 				"прибытие раньше последней операции: вагон %s видели %s",
 				r.Vagon, r.TimeOp.String())
@@ -123,21 +136,24 @@ func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissing
 		r := &recs[i]
 		fields := map[string]any{
 			"status":      status,
-			"date_prib":   req.DatePrib,
-			"date_prib_d": dateOnly(req.DatePrib),
-			"delay":       calculateHistoryDelay(dateOnly(req.DatePrib), r.DateDostav),
-			"otkl":        calculateOtkl(req.DatePrib, r.PlanMsk),
+			"date_prib":   pribJd, // хранение — ЖД-штамп, как у автоматики (date_kon)
+			"date_prib_d": dateOnly(pribJd),
+			"delay":       calculateHistoryDelay(dateOnly(pribJd), r.DateDostav),
+			"otkl":        calculateOtkl(pribJd, r.PlanMsk),
 			"plan_msk":    r.PlanMsk,
 			"plan_jd":     r.PlanJd,
 			"naznach":     r.Naznach, // операторские перестановки пережили пропажу в записи-8
 			"updated_at":  &now,
 		}
-		if r.Index != "" {
+		// Индекс поезда прибытия: правка оператора сильнее индекса записи-8.
+		if req.Index != "" {
+			fields["index_pp"] = req.Index
+		} else if r.Index != "" {
 			fields["index_pp"] = r.Index // фактический поезд последней дислокации
 		}
 		if req.DateVigr != nil {
-			fields["date_vigr"] = req.DateVigr
-			fields["date_vigr_d"] = dateOnly(jdFromFact(req.DateVigr))
+			fields["date_vigr"] = vigrMsk // хранение — МСК-факт, как у автоматики (time_op)
+			fields["date_vigr_d"] = dateOnly(jdFromFact(vigrMsk))
 			place := req.PlaceVigr
 			if place == "" {
 				place = r.Naznach
@@ -182,13 +198,19 @@ func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissing
 		extra := map[string]any{
 			"selected":      len(req.VagonIDs),
 			"trains":        trains,
-			"new_date_prib": req.DatePrib.String(),
+			"new_date_prib": pribJd.String(), // в журнале — значения хранения
 		}
 		if req.DateVigr != nil {
-			extra["new_date_vigr"] = req.DateVigr.String()
+			extra["new_date_vigr"] = vigrMsk.String()
 			if req.PlaceVigr != "" {
 				extra["new_place_vigr"] = req.PlaceVigr
 			}
+		}
+		if req.Index != "" {
+			extra["new_index"] = req.Index
+		}
+		if req.TimeBase != "" {
+			extra["time_base"] = req.TimeBase
 		}
 		s.proc.journal.RecordArrivalsEdit(ctx, "confirm_missing", len(updates), extra)
 	}

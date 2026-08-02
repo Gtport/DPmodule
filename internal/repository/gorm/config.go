@@ -104,6 +104,7 @@ func (r *ConfigRepository) LoadClientSettings(ctx context.Context) (domain.Clien
 	var extra struct {
 		Status domain.StatusPolicy `json:"status"`
 		Stage4 domain.Stage4Policy `json:"stage4"`
+		UI     domain.UIPolicy     `json:"ui"`
 	}
 	if m.Extra != "" {
 		if err := json.Unmarshal([]byte(m.Extra), &extra); err != nil {
@@ -112,6 +113,7 @@ func (r *ConfigRepository) LoadClientSettings(ctx context.Context) (domain.Clien
 	}
 	return domain.ClientSettings{
 		ClientName: m.ClientName, IngestPolicy: pol, Status: extra.Status, Stage4: extra.Stage4,
+		UI: extra.UI,
 	}, nil
 }
 

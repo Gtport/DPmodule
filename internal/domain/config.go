@@ -69,6 +69,31 @@ type ClientSettings struct {
 	IngestPolicy IngestPolicy
 	Status       StatusPolicy // пороги расчёта статусов (из client_settings.extra.status)
 	Stage4       Stage4Policy // пороги прогноза прибытия (из client_settings.extra.stage4)
+	UI           UIPolicy     // настройки интерфейса (из client_settings.extra.ui)
+}
+
+// Шкалы ручного ввода времени (UIPolicy.TimeBase и time_base в запросах правок).
+const (
+	TimeBaseJD  = "jd"  // операционные ЖД-сутки: час ≥ 18 относится к следующим суткам
+	TimeBaseMSK = "msk" // фактическое московское время
+)
+
+// UIPolicy — клиентские настройки интерфейса (client_settings.extra.ui).
+type UIPolicy struct {
+	// Шкала, в которой диспетчер вводит времена прибытия/выгрузки в диалогах
+	// (решение владельца 03.08.2026): "jd" | "msk". Хранение в vagon_history
+	// неизменно (date_prib — ЖД-штамп, date_vigr — МСК-факт) — пересчёт
+	// «час ≥ 18 → ±сутки» делает сервер по этой шкале. Пусто → "jd".
+	// В диалоге диспетчер может переключить шкалу на время сессии.
+	TimeBase string `json:"time_base"`
+}
+
+// TimeBaseOrDefault — шкала ввода с дефолтом "jd" (наш клиент, решение владельца).
+func (p UIPolicy) TimeBaseOrDefault() string {
+	if p.TimeBase == TimeBaseMSK {
+		return TimeBaseMSK
+	}
+	return TimeBaseJD
 }
 
 // StatusPolicy — общепрограмные пороги расчёта статусов дислокации (§3.12/§3.13).

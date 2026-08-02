@@ -99,15 +99,19 @@ export class MissingApiService {
 
   /**
    * «Подтвердить прибытие» пропавшего: веха в историю (с выгрузкой — статус 12)
-   * и снятие из списка. Времена — строкой МСК без TZ (yyyy-MM-ddTHH:mm:00);
-   * место пустое — терминал назначения записи.
+   * и снятие из списка. Времена — строки без TZ (yyyy-MM-ddTHH:mm:00) в шкале
+   * timeBase ('jd'|'msk' — пересчёт к шкалам хранения делает сервер);
+   * место пустое — терминал назначения записи; index — правка индекса поезда.
    */
-  confirmMissing(vagonIds: string[], datePrib: string, dateVigr = '', placeVigr = ''): Promise<MissingConfirmResult> {
+  confirmMissing(vagonIds: string[], datePrib: string, dateVigr = '', placeVigr = '',
+                 index = '', timeBase = ''): Promise<MissingConfirmResult> {
     return firstValueFrom(this.http.post<MissingConfirmResult>(`${this.base}/missing/confirm`, {
       vagon_ids: vagonIds,
       date_prib: datePrib,
       date_vigr: dateVigr || undefined,
       place_vigr: placeVigr || undefined,
+      index: index || undefined,
+      time_base: timeBase || undefined,
     }));
   }
 

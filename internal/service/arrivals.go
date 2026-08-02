@@ -112,6 +112,9 @@ var ErrArrivalsAccess = fmt.Errorf("правка запрещена")
 // «Отменить прибытие» — отдельная операция CancelArrival (снимок + история).
 type ArrivalsUpdateRequest struct {
 	VagonIDs []string `json:"vagon_ids"`
+	// Шкала введённых времён DatePrib/DateVigr: "jd" | "msk" (пусто — прежнее
+	// смешанное поведение). План PlanJd шкале не подчиняется — он всегда ЖД.
+	TimeBase string `json:"time_base,omitempty"`
 	// «Изменить прибытие»: индекс поезда, план (ЖД) и факт; otkl/plan_msk/
 	// date_prib_d пересчитываются на сервере.
 	IndexPp  string            `json:"index_pp,omitempty"`
@@ -149,6 +152,12 @@ func (s *ArrivalsService) UpdateVagons(ctx context.Context, req ArrivalsUpdateRe
 			return ArrivalsUpdateResult{}, fmt.Errorf("неизвестный терминал %q", req.Naznach)
 		}
 	}
+	if err := checkTimeBase(req.TimeBase); err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	// Нормализация к шкалам хранения — дальше всё как раньше.
+	req.DatePrib = arrivalToJd(req.DatePrib, req.TimeBase)
+	req.DateVigr = unloadToMsk(req.DateVigr, req.TimeBase)
 	rows, err := s.repo.RowsByIDs(ctx, req.VagonIDs)
 	if err != nil {
 		return ArrivalsUpdateResult{}, err
@@ -209,6 +218,9 @@ func (s *ArrivalsService) journalEdit(ctx context.Context, req ArrivalsUpdateReq
 	extra := map[string]any{
 		"selected": len(req.VagonIDs),
 		"trains":   trainIndexes(rows),
+	}
+	if req.TimeBase != "" {
+		extra["time_base"] = req.TimeBase // времена в detail — уже в шкалах хранения
 	}
 	if req.IndexPp != "" || req.PlanJd != nil || req.DatePrib != nil {
 		actions = append(actions, "edit_arrival")
@@ -374,6 +386,39 @@ func jdFromFact(fact *domain.LocalTime) *domain.LocalTime {
 	return domain.NewLocalTime(t)
 }
 
+// ── Шкала ручного ввода времени (решение владельца 03.08.2026) ──────────────
+// Диспетчер вводит ВСЕ времена диалога в одной шкале — ЖД или МСК (переключатель,
+// дефолт из client_settings.extra.ui.time_base). Хранение неизменно: date_prib —
+// ЖД-штамп, date_vigr — МСК-факт; недостающий сдвиг «час ≥ 18 → ±сутки» делает
+// сервер здесь. Пустая шкала = прежнее смешанное поведение (прибытие как ЖД,
+// выгрузка как МСК) — совместимость со старыми клиентами API.
+
+// checkTimeBase — валидация шкалы из запроса.
+func checkTimeBase(base string) error {
+	if base != "" && base != domain.TimeBaseJD && base != domain.TimeBaseMSK {
+		return fmt.Errorf("неизвестная шкала времени %q (ожидается jd или msk)", base)
+	}
+	return nil
+}
+
+// arrivalToJd — введённое время прибытия → ЖД-штамп хранения:
+// в шкале МСК добавляются сутки при часе ≥ 18, в ЖД (и пустой) — как есть.
+func arrivalToJd(t *domain.LocalTime, base string) *domain.LocalTime {
+	if t == nil || base != domain.TimeBaseMSK {
+		return t
+	}
+	return jdFromFact(t)
+}
+
+// unloadToMsk — введённое время выгрузки → МСК-факт хранения:
+// в шкале ЖД вычитаются сутки при часе ≥ 18, в МСК (и пустой) — как есть.
+func unloadToMsk(t *domain.LocalTime, base string) *domain.LocalTime {
+	if t == nil || base != domain.TimeBaseJD {
+		return t
+	}
+	return planMskFromJd(t)
+}
+
 // ── Кандидаты в прибывшие (статус 9 — ручное подтверждение оператором) ──────
 
 // CandidateGroupDTO — поезд-кандидат: вагоны статуса 9 одного индекса.
@@ -465,11 +510,13 @@ func (s *ArrivalsService) Candidates(ctx context.Context, naznach []string) ([]C
 
 // ConfirmArrivalRequest — подтверждение прибытия кандидатов: выбранные вагоны +
 // фактическое время (дефолт на фронте — время операции поезда). Index — правка
-// индекса поезда оператором (пусто — оставить индекс из снимка).
+// индекса поезда оператором (пусто — оставить индекс из снимка). TimeBase —
+// шкала введённого времени ("jd"|"msk"; пусто — как ЖД, прежнее поведение).
 type ConfirmArrivalRequest struct {
 	VagonIDs []string          `json:"vagon_ids"`
 	DatePrib *domain.LocalTime `json:"date_prib"`
 	Index    string            `json:"index,omitempty"`
+	TimeBase string            `json:"time_base,omitempty"`
 }
 
 // ConfirmArrival — подтверждение прибытия: в СНИМОК проставляются date_prib,
@@ -484,6 +531,12 @@ func (s *ArrivalsService) ConfirmArrival(ctx context.Context, req ConfirmArrival
 	if req.DatePrib == nil || req.DatePrib.IsZero() {
 		return ArrivalsUpdateResult{}, fmt.Errorf("не указано время прибытия")
 	}
+	if err := checkTimeBase(req.TimeBase); err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	// К шкале хранения (ЖД-штамп) — и в снимок, и в веху идёт одно значение,
+	// как раньше при вводе в ЖД.
+	req.DatePrib = arrivalToJd(req.DatePrib, req.TimeBase)
 	ids := map[string]struct{}{}
 	for _, id := range req.VagonIDs {
 		ids[id] = struct{}{}
@@ -493,6 +546,9 @@ func (s *ArrivalsService) ConfirmArrival(ctx context.Context, req ConfirmArrival
 	detail := map[string]any{"selected": len(req.VagonIDs), "new_date_prib": req.DatePrib.String()}
 	if req.Index != "" {
 		detail["new_index"] = req.Index
+	}
+	if req.TimeBase != "" {
+		detail["time_base"] = req.TimeBase
 	}
 	var confirmed []domain.Dislocation
 	n, _, _, err := s.proc.MutateSnapshot(ctx, "arrival_confirm",

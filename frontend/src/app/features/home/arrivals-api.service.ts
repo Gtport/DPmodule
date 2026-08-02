@@ -86,10 +86,12 @@ export class ArrivalsApiService {
   }
 
   /** Подтверждение прибытия: снимок получает статус 10 + date_prib, веха — в историю.
-   *  index — правка индекса поезда оператором (пусто — оставить как в снимке). */
-  confirmArrival(vagonIds: string[], datePrib: string, index = ''): Promise<ArrivalsUpdateResult> {
+   *  index — правка индекса поезда оператором (пусто — оставить как в снимке);
+   *  timeBase — шкала введённого времени ('jd'|'msk'), пересчёт делает сервер. */
+  confirmArrival(vagonIds: string[], datePrib: string, index = '', timeBase = ''): Promise<ArrivalsUpdateResult> {
     return firstValueFrom(this.http.post<ArrivalsUpdateResult>(`${this.base}/arrivals/confirm`, {
       vagon_ids: vagonIds, date_prib: datePrib, index: index || undefined,
+      time_base: timeBase || undefined,
     }));
   }
 
@@ -119,9 +121,11 @@ export interface CandidateGroup {
   sub_groups: ArrivalSubgroup[];
 }
 
-/** Тело правки: vagon_ids + только применяемые поля (времена — МСК без TZ). */
+/** Тело правки: vagon_ids + только применяемые поля (времена — строки без TZ). */
 export interface ArrivalsUpdate {
   vagon_ids: string[];
+  /** Шкала date_prib/date_vigr: 'jd' | 'msk' (план plan_jd — всегда ЖД). */
+  time_base?: string;
   index_pp?: string;
   plan_jd?: string;
   date_prib?: string;

@@ -6,6 +6,7 @@ import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzModalModule } from 'ng-zorro-antd/modal';
+import { NzRadioModule } from 'ng-zorro-antd/radio';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 'ng-zorro-antd/dropdown';
@@ -13,6 +14,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { AuthService } from '../../core/auth/auth.service';
 import { todayMsk } from '../../shared/msk-date';
+import { TimeBase, TimeBaseService, mskDateInBase, shiftDateIfEvening } from '../../shared/time-base.service';
 import { ArrivalsApiService } from '../home/arrivals-api.service';
 import { VagonTrailModalComponent } from '../home/vagon-trail-modal.component';
 import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from './missing-api.service';
@@ -34,8 +36,8 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
   selector: 'app-missing-modal',
   imports: [
     FormsModule, DragDropModule, NzButtonModule, NzCheckboxModule, NzIconModule,
-    NzInputModule, NzModalModule, NzSpinModule, NzTooltipModule, NzDropDownModule,
-    VagonTrailModalComponent,
+    NzInputModule, NzModalModule, NzRadioModule, NzSpinModule, NzTooltipModule,
+    NzDropDownModule, VagonTrailModalComponent,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="ttl" [nzFooter]="null" nzWidth="1150px"
@@ -168,6 +170,19 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
       </ng-template>
       <ng-container *nzModalContent>
         <div class="frm">
+          <label>Шкала времени
+            <span class="dt">
+              <nz-radio-group nzSize="small" nzButtonStyle="solid"
+                              [ngModel]="tb.base()" (ngModelChange)="onBaseChange($event)">
+                <label nz-radio-button nzValue="jd">ЖД</label>
+                <label nz-radio-button nzValue="msk">МСК</label>
+              </nz-radio-group>
+              <span class="mut">{{ tb.base() === 'jd' ? 'час ≥ 18 — следующие сутки' : 'реальное московское' }}</span>
+            </span>
+          </label>
+          <label>Индекс поезда
+            <input nz-input [ngModel]="cfIndex()" (ngModelChange)="cfIndex.set($event)" placeholder="ХХХХ-ХХХ-ХХХХ" />
+          </label>
           <label>Фактическое прибытие
             <span class="dt">
               <input class="date" type="date" [ngModel]="cfD()" (ngModelChange)="cfD.set($event)" />
@@ -192,8 +207,9 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
               </datalist>
             </label>
           }
-          <p class="mut">Вагонов: {{ selectedVagons().length }}. Вагоны уйдут из пропавших и появятся в
-            «Истории прибывших» за указанную дату{{ cfUnload() ? ' как выгруженные' : '' }}.
+          <p class="mut">Вагонов: {{ selectedVagons().length }}. Времена — в шкале
+            {{ tb.base() === 'jd' ? 'ЖД' : 'МСК' }} (пересчёт сделает сервер). Вагоны уйдут из
+            пропавших и появятся в «Истории прибывших» за указанную дату{{ cfUnload() ? ' как выгруженные' : '' }}.
             Если вагон вернётся в дислокацию, свежие данные АСУ будут вернее ручных.</p>
           <div class="sel-chips">
             @for (v of selectedVagons(); track v) { <span class="chip">{{ v }}</span> }
@@ -250,6 +266,8 @@ export class MissingModalComponent implements OnInit {
   private readonly ctxMenu = inject(NzContextMenuService);
   /** Подтверждение — порог operator; клиенту только просмотр и история движения. */
   readonly canEdit = inject(AuthService).canEdit;
+  /** Шкала ввода времени (ЖД/МСК) — общая для всех диалогов правок. */
+  readonly tb = inject(TimeBaseService);
 
   readonly closed = output<void>();
   /** Списки изменились (подтверждение) — карточке «Информация» пора обновить счётчики. */
@@ -271,6 +289,7 @@ export class MissingModalComponent implements OnInit {
 
   // Диалог «Подтвердить прибытие».
   readonly confirmOpen = signal(false);
+  readonly cfIndex = signal('');
   readonly cfD = signal('');
   readonly cfT = signal('');
   readonly cfUnload = signal(false);
@@ -293,6 +312,7 @@ export class MissingModalComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
+    void this.tb.init();
     void this.arrivalsApi.getTerminals()
       .then((ts) => this.terminalNames.set((ts ?? []).map((t) => t.name)))
       .catch(() => undefined); // подсказки не критичны — поле останется свободным вводом
@@ -420,13 +440,26 @@ export class MissingModalComponent implements OnInit {
       return;
     }
     const g = this.ctxGroup();
-    this.cfD.set(this.datePart(g?.time_op) || todayMsk());
-    this.cfT.set(this.timePart(g?.time_op) || '00:00');
+    this.cfIndex.set(g?.index ?? '');
+    // Дефолт — время последней операции (МСК-штамп): показываем в текущей шкале.
+    const d = this.datePart(g?.time_op) || todayMsk();
+    const t = this.timePart(g?.time_op) || '00:00';
+    this.cfD.set(mskDateInBase(d, t, this.tb.base()));
+    this.cfT.set(t);
     this.cfUnload.set(false);
     this.unD.set('');
     this.unT.set('');
     this.unPlace.set('');
     this.confirmOpen.set(true);
+  }
+
+  /** Переключение шкалы: значения открытого диалога пересчитываются на месте. */
+  onBaseChange(nb: TimeBase): void {
+    if (nb === this.tb.base()) return;
+    const delta = nb === 'jd' ? 1 : -1; // msk→jd: вечер +сутки; jd→msk: −сутки
+    if (this.cfD() && this.cfT()) this.cfD.set(shiftDateIfEvening(this.cfD(), this.cfT(), delta));
+    if (this.unD() && this.unT()) this.unD.set(shiftDateIfEvening(this.unD(), this.unT(), delta));
+    this.tb.set(nb);
   }
 
   async saveConfirm(): Promise<void> {
@@ -437,7 +470,8 @@ export class MissingModalComponent implements OnInit {
     try {
       const res = await this.api.confirmMissing(
         [...this.selected()], `${this.cfD()}T${this.cfT()}:00`,
-        dateVigr, this.cfUnload() ? this.unPlace().trim() : '');
+        dateVigr, this.cfUnload() ? this.unPlace().trim() : '',
+        this.cfIndex().trim(), this.tb.base());
       this.msg.success(`Прибытие подтверждено: ${res.updated} ваг. — смотрите «Историю прибывших».`);
       this.confirmOpen.set(false);
       await this.load();

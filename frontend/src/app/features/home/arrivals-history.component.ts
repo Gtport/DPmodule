@@ -5,6 +5,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzModalModule, NzModalService } from 'ng-zorro-antd/modal';
+import { NzRadioModule } from 'ng-zorro-antd/radio';
 import { NzSliderModule } from 'ng-zorro-antd/slider';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
@@ -13,6 +14,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { AuthService } from '../../core/auth/auth.service';
 import { todayMsk } from '../../shared/msk-date';
+import { TimeBase, TimeBaseService, jdDateInBase, mskDateInBase, shiftDateIfEvening } from '../../shared/time-base.service';
 import {
   ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, ArrivalVagon, CandidateGroup, TerminalTarget,
 } from './arrivals-api.service';
@@ -36,8 +38,8 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
   selector: 'app-arrivals-history',
   imports: [
     FormsModule, DragDropModule, NzButtonModule, NzIconModule, NzInputModule,
-    NzModalModule, NzSliderModule, NzSpinModule, NzTooltipModule, NzDropDownModule,
-    VagonTrailModalComponent,
+    NzModalModule, NzRadioModule, NzSliderModule, NzSpinModule, NzTooltipModule,
+    NzDropDownModule, VagonTrailModalComponent,
   ],
   host: {
     // «/» — фокус в поиск вагона (когда фокус не в поле ввода).
@@ -212,6 +214,16 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
       </ng-template>
       <ng-container *nzModalContent>
         <div class="frm">
+          <label>Шкала времени (факт; план — всегда ЖД)
+            <span class="dt">
+              <nz-radio-group nzSize="small" nzButtonStyle="solid"
+                              [ngModel]="tb.base()" (ngModelChange)="onBaseChange($event)">
+                <label nz-radio-button nzValue="jd">ЖД</label>
+                <label nz-radio-button nzValue="msk">МСК</label>
+              </nz-radio-group>
+              <span class="mut">{{ tb.base() === 'jd' ? 'час ≥ 18 — следующие сутки' : 'реальное московское' }}</span>
+            </span>
+          </label>
           <label>Индекс поезда
             <input nz-input [ngModel]="edIndex()" (ngModelChange)="edIndex.set($event)" placeholder="ХХХХ-ХХХ-ХХХХ" />
           </label>
@@ -247,6 +259,16 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
       <ng-container *nzModalContent>
         <div class="frm">
           <p>{{ cfGroup()?.station_nach }} · вагонов: {{ cfGroup()?.vagon_count }}</p>
+          <label>Шкала времени
+            <span class="dt">
+              <nz-radio-group nzSize="small" nzButtonStyle="solid"
+                              [ngModel]="tb.base()" (ngModelChange)="onBaseChange($event)">
+                <label nz-radio-button nzValue="jd">ЖД</label>
+                <label nz-radio-button nzValue="msk">МСК</label>
+              </nz-radio-group>
+              <span class="mut">{{ tb.base() === 'jd' ? 'час ≥ 18 — следующие сутки' : 'реальное московское' }}</span>
+            </span>
+          </label>
           <label>Индекс поезда
             <input nz-input [ngModel]="cfIndex()" (ngModelChange)="cfIndex.set($event)" placeholder="ХХХХ-ХХХ-ХХХХ" />
           </label>
@@ -270,6 +292,16 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
       </ng-template>
       <ng-container *nzModalContent>
         <div class="frm">
+          <label>Шкала времени
+            <span class="dt">
+              <nz-radio-group nzSize="small" nzButtonStyle="solid"
+                              [ngModel]="tb.base()" (ngModelChange)="onBaseChange($event)">
+                <label nz-radio-button nzValue="jd">ЖД</label>
+                <label nz-radio-button nzValue="msk">МСК</label>
+              </nz-radio-group>
+              <span class="mut">{{ tb.base() === 'jd' ? 'час ≥ 18 — следующие сутки' : 'реальное московское' }}</span>
+            </span>
+          </label>
           <label>Дата и время выгрузки
             <span class="dt">
               <input class="date" type="date" [ngModel]="unD()" (ngModelChange)="unD.set($event)" />
@@ -348,6 +380,8 @@ export class ArrivalsHistoryComponent implements OnInit {
    *  (клик по чипу вагона для клиента открывает историю движения — ПКМ на
    *  таче нет, а выделение без прав на правки бессмысленно). */
   readonly canEdit = inject(AuthService).canEdit;
+  /** Шкала ввода времени (ЖД/МСК) — общая для всех диалогов правок. */
+  readonly tb = inject(TimeBaseService);
   private readonly searchBox = viewChild<ElementRef<HTMLInputElement>>('searchBox');
 
   /** Станция (заголовок окна) и её терминалы (колонки/фильтр naznach). */
@@ -410,6 +444,18 @@ export class ArrivalsHistoryComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
+    void this.tb.init();
+  }
+
+  /** Переключение шкалы: времена факта в открытом диалоге пересчитываются на
+   *  месте (план ЖД не трогается); выбор действует на сессию во всех диалогах. */
+  onBaseChange(nb: TimeBase): void {
+    if (nb === this.tb.base()) return;
+    const delta = nb === 'jd' ? 1 : -1; // msk→jd: вечер +сутки; jd→msk: −сутки
+    if (this.edFactD() && this.edFactT()) this.edFactD.set(shiftDateIfEvening(this.edFactD(), this.edFactT(), delta));
+    if (this.cfD() && this.cfT()) this.cfD.set(shiftDateIfEvening(this.cfD(), this.cfT(), delta));
+    if (this.unD() && this.unT()) this.unD.set(shiftDateIfEvening(this.unD(), this.unT(), delta));
+    this.tb.set(nb);
   }
 
   async load(): Promise<void> {
@@ -551,13 +597,17 @@ export class ArrivalsHistoryComponent implements OnInit {
     this.edIndex.set(g?.index_pp ?? '');
     this.edPlanD.set(this.datePart(g?.plan_jd) || this.todayStr());
     this.edPlanT.set(this.timePart(g?.plan_jd) || '00:00');
-    this.edFactD.set(this.datePart(g?.date_prib) || this.todayStr());
-    this.edFactT.set(this.timePart(g?.date_prib) || '00:00');
+    // Хранимый факт — ЖД-штамп: показываем в текущей шкале.
+    const fd = this.datePart(g?.date_prib) || this.todayStr();
+    const ft = this.timePart(g?.date_prib) || '00:00';
+    this.edFactD.set(jdDateInBase(fd, ft, this.tb.base()));
+    this.edFactT.set(ft);
     this.editOpen.set(true);
   }
 
   saveEdit(): void {
     void this.applyUpdate({
+      time_base: this.tb.base(),
       index_pp: this.edIndex().trim(),
       plan_jd: `${this.edPlanD()}T${this.edPlanT()}:00`,
       date_prib: `${this.edFactD()}T${this.edFactT()}:00`,
@@ -567,8 +617,10 @@ export class ArrivalsHistoryComponent implements OnInit {
   openUnload(): void {
     if (!this.requireSelection()) return;
     const now = new Date();
-    this.unD.set(this.todayStr());
-    this.unT.set(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+    const t = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    // «Сейчас» — МСК-штамп: показываем в текущей шкале.
+    this.unD.set(mskDateInBase(this.todayStr(), t, this.tb.base()));
+    this.unT.set(t);
     this.unPlace.set(this.ctxGroup()?.sub_groups[0]?.naznach ?? '');
     this.unFrost.set(0);
     this.unloadOpen.set(true);
@@ -576,6 +628,7 @@ export class ArrivalsHistoryComponent implements OnInit {
 
   saveUnload(): void {
     void this.applyUpdate({
+      time_base: this.tb.base(),
       date_vigr: `${this.unD()}T${this.unT()}:00`,
       place_vigr: this.unPlace().trim(),
       frost: this.unFrost(),
@@ -645,8 +698,11 @@ export class ArrivalsHistoryComponent implements OnInit {
   openConfirm(c: CandidateGroup): void {
     this.cfGroup.set(c);
     this.cfIndex.set(c.index);
-    this.cfD.set(this.datePart(c.time_op) || this.todayStr());
-    this.cfT.set(this.timePart(c.time_op) || '00:00');
+    // Дефолт — время последней операции (МСК-штамп): показываем в текущей шкале.
+    const d = this.datePart(c.time_op) || this.todayStr();
+    const t = this.timePart(c.time_op) || '00:00';
+    this.cfD.set(mskDateInBase(d, t, this.tb.base()));
+    this.cfT.set(t);
     this.confirmOpen.set(true);
   }
 
@@ -656,7 +712,7 @@ export class ArrivalsHistoryComponent implements OnInit {
     this.applying.set(true);
     try {
       const res = await this.api.confirmArrival(
-        this.candVagonIds(c), `${this.cfD()}T${this.cfT()}:00`, this.cfIndex().trim());
+        this.candVagonIds(c), `${this.cfD()}T${this.cfT()}:00`, this.cfIndex().trim(), this.tb.base());
       this.msg.success(`Прибытие подтверждено: ${res.updated} ваг. Поезд ушёл в прибывшие.`);
       this.confirmOpen.set(false);
       await this.load();
