@@ -4,6 +4,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { MissingApiService, MissingVagon, Status6Vagon } from '../missing/missing-api.service';
+import { MissingModalComponent } from '../missing/missing-modal.component';
 import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.component';
 import { CargoWorkModalComponent } from './cargo-work-modal.component';
 import { BrosModalComponent } from './bros-modal.component';
@@ -19,7 +20,7 @@ import { DelaysModalComponent } from './delays-modal.component';
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent],
+  imports: [NzIconModule, NzTooltipModule, MissingModalComponent, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Информация</b></div>
@@ -59,9 +60,7 @@ import { DelaysModalComponent } from './delays-modal.component';
     </div>
 
     @if (showMissing()) {
-      <app-vagon-list-modal title="Пропавшие вагоны" sinceLabel="Пропал"
-                            hint="Исчезли из выгрузки до завершения рейса; показана последняя известная позиция."
-                            [rows]="missingRows()" (reload)="load()" (closed)="showMissing.set(false)" />
+      <app-missing-modal (changed)="load()" (closed)="showMissing.set(false); load()" />
     }
     @if (showCargoWork()) {
       <app-cargo-work-modal (closed)="showCargoWork.set(false)" />
@@ -141,17 +140,8 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   openBros(): void { this.showBros.set(true); }
   openDelays(): void { this.showDelays.set(true); }
 
-  /** Пропавшие → общая форма строки таблицы. */
-  missingRows(): VagonListRow[] {
-    return this.missing().map((r) => ({
-      id: r.id, vagon: r.vagon, index: r.index,
-      station_oper: r.station_oper, doroga_oper: r.doroga_oper, oper_s: r.oper_s,
-      time_op: r.time_op, naznach: r.naznach, cargo_s: r.cargo_s, ves: r.ves,
-      since: r.missing_since, days: r.days_missing,
-    }));
-  }
-
-  /** Доноры перегруза → та же форма (различие только в подписи давности). */
+  /** Доноры перегруза → общая форма строки таблицы (пропавшие ушли в свою
+   *  агрегированную модалку с «Подтвердить прибытие»). */
   donorRows(): VagonListRow[] {
     return this.donors().map((r) => ({
       id: r.id, vagon: r.vagon, index: r.index,

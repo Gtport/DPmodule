@@ -36,6 +36,7 @@ func (f *fakeDislRepo) ReplaceActual(_ context.Context, items []domain.Dislocati
 // fakeStatus9Repo — in-memory port.Status9Repository (vagon → статус).
 type fakeStatus9Repo struct {
 	vagons   map[string]int
+	missing  []domain.Dislocation // полные записи-8 для LoadMissing (экран/подтверждение)
 	inserted []domain.Dislocation
 	deleted  []string
 }
@@ -92,7 +93,13 @@ func (f *fakeStatus9Repo) MissingOlderThan(context.Context, domain.LocalTime) ([
 }
 
 func (f *fakeStatus9Repo) LoadMissing(context.Context) ([]domain.Dislocation, error) {
-	return nil, nil // полные строки в этих тестах не участвуют
+	out := make([]domain.Dislocation, 0, len(f.missing))
+	for _, r := range f.missing {
+		if _, ok := f.vagons[r.Vagon]; ok { // удалённые DeleteByVagons не отдаём
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 // fakeStatus6Repo — in-memory port.Status6Repository.

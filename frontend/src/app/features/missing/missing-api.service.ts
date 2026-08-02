@@ -26,6 +26,41 @@ export interface MissingVagon {
   days_missing: number;
 }
 
+/** Подгруппа пропавшего поезда (одно назначение/получатель), раскрывается до вагонов. */
+export interface MissingSubgroup {
+  key: string;
+  index_main: string;
+  station_nach: string;
+  naznach: string;
+  gruzpol_s: string;
+  vagon_count: number;
+  /** Готовая строка состава «(N)-783-Челутай АЭ» — формат подгрупп прибывших. */
+  display: string;
+  vagons: MissingVagon[];
+}
+
+/** Пропавший поезд (группа index|stan_nazn — как у кандидатов прибытия). */
+export interface MissingGroup {
+  key: string;
+  index: string;
+  stan_nazn: string;
+  station_oper: string;
+  doroga_oper: string;
+  oper_s: string;
+  /** Самая свежая операция группы — где состав видели в последний раз. */
+  time_op: string | null;
+  missing_since: string;
+  days_missing: number;
+  vagon_count: number;
+  sub_groups: MissingSubgroup[];
+}
+
+/** Итог подтверждения: сколько строк реально обновлено из выбранных. */
+export interface MissingConfirmResult {
+  updated: number;
+  selected: number;
+}
+
 /**
  * Донор перегруза (статус 6): у него приёмники забирают груз/назначение.
  * Поля те же, что у пропавшего, кроме давности: «донором с».
@@ -55,6 +90,25 @@ export class MissingApiService {
 
   getMissing(): Promise<MissingVagon[]> {
     return firstValueFrom(this.http.get<MissingVagon[]>(`${this.base}/missing`));
+  }
+
+  /** Пропавшие агрегированно: поезд → подгруппа → вагоны (модалка с действиями). */
+  getMissingGroups(): Promise<MissingGroup[]> {
+    return firstValueFrom(this.http.get<MissingGroup[]>(`${this.base}/missing/groups`));
+  }
+
+  /**
+   * «Подтвердить прибытие» пропавшего: веха в историю (с выгрузкой — статус 12)
+   * и снятие из списка. Времена — строкой МСК без TZ (yyyy-MM-ddTHH:mm:00);
+   * место пустое — терминал назначения записи.
+   */
+  confirmMissing(vagonIds: string[], datePrib: string, dateVigr = '', placeVigr = ''): Promise<MissingConfirmResult> {
+    return firstValueFrom(this.http.post<MissingConfirmResult>(`${this.base}/missing/confirm`, {
+      vagon_ids: vagonIds,
+      date_prib: datePrib,
+      date_vigr: dateVigr || undefined,
+      place_vigr: placeVigr || undefined,
+    }));
   }
 
   /** Доноры перегруза (статус 6) — из RAM-кэша снимка. */

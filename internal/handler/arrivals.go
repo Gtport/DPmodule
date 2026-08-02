@@ -26,6 +26,7 @@ func (h *arrivalsHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.PUT("/dislocation/arrivals/vagons", h.updateVagons)
 	g.GET("/dislocation/arrivals/candidates", h.candidates)
 	g.POST("/dislocation/arrivals/confirm", h.confirm)
+	g.POST("/dislocation/missing/confirm", h.confirmMissing)
 	g.POST("/dislocation/arrivals/dismiss", h.dismiss)
 	g.POST("/dislocation/arrivals/cancel", h.cancel)
 }
@@ -104,6 +105,27 @@ func (h *arrivalsHandler) confirm(c *gin.Context) {
 		return
 	}
 	res, err := h.svc.ConfirmArrival(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// confirmMissing godoc
+// @Summary  Подтверждение прибытия ПРОПАВШЕГО (веха в историю + снятие записи-8; выгрузка опционально)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    body body service.ConfirmMissingRequest true "vagon_ids + факт прибытия (+ выгрузка)"
+// @Success  200 {object} service.ArrivalsUpdateResult
+// @Router   /api/v1/dislocation/missing/confirm [post]
+func (h *arrivalsHandler) confirmMissing(c *gin.Context) {
+	var req service.ConfirmMissingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса: " + err.Error()})
+		return
+	}
+	res, err := h.svc.ConfirmMissing(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

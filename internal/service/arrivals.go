@@ -782,18 +782,24 @@ func groupArrivals(rows []domain.VagonHistory) []ArrivalGroupDTO {
 // «(59)-783-Челутай АЭ»; переставленный чужой груз — «(8)-782-Челутай ГУТ-2 → АЭ»
 // (грузополучатель → фактическое назначение).
 func arrivalDisplay(sg *ArrivalSubgroupDTO) string {
-	dest := sg.Naznach
-	if sg.GruzpolS != "" && sg.Naznach != "" && sg.GruzpolS != sg.Naznach {
-		dest = sg.GruzpolS + " → " + sg.Naznach
+	return displayLine(sg.VagonCount, sg.IndexMain, sg.StationNach, sg.Naznach, sg.GruzpolS)
+}
+
+// displayLine — общий формат строки состава «(N)-<номер поезда>-<станция> <куда>»
+// (используют подгруппы прибывших и пропавших).
+func displayLine(count int, indexMain, stationNach, naznach, gruzpol string) string {
+	dest := naznach
+	if gruzpol != "" && naznach != "" && gruzpol != naznach {
+		dest = gruzpol + " → " + naznach
 	} else if dest == "" {
-		dest = sg.GruzpolS
+		dest = gruzpol
 	}
-	parts := []string{fmt.Sprintf("(%d)", sg.VagonCount)}
-	if mid := indexMiddle(sg.IndexMain); mid != "" {
+	parts := []string{fmt.Sprintf("(%d)", count)}
+	if mid := indexMiddle(indexMain); mid != "" {
 		parts = append(parts, mid)
 	}
-	if sg.StationNach != "" {
-		parts = append(parts, sg.StationNach)
+	if stationNach != "" {
+		parts = append(parts, stationNach)
 	}
 	res := strings.Join(parts, "-")
 	if dest != "" {

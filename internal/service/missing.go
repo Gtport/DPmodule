@@ -73,6 +73,124 @@ func (s *MissingService) List(ctx context.Context) ([]MissingVagonDTO, error) {
 	return out, nil
 }
 
+// MissingSubgroupDTO — подгруппа пропавшего поезда (одно назначение/получатель),
+// раскрывается до вагонов. Display — тот же формат, что у подгрупп прибывших.
+type MissingSubgroupDTO struct {
+	Key         string            `json:"key"` // index_main|naznach|gruzpol_s
+	IndexMain   string            `json:"index_main"`
+	StationNach string            `json:"station_nach"`
+	Naznach     string            `json:"naznach"`
+	GruzpolS    string            `json:"gruzpol_s"`
+	VagonCount  int               `json:"vagon_count"`
+	Display     string            `json:"display"` // «(N)-783-Челутай АЭ»
+	Vagons      []MissingVagonDTO `json:"vagons"`
+}
+
+// MissingGroupDTO — пропавший поезд: вагоны одного индекса и станции назначения
+// (ключ — как у кандидатов прибытия). Позиция группы — самая свежая операция
+// среди её вагонов (где состав видели в последний раз).
+type MissingGroupDTO struct {
+	Key          string               `json:"key"` // index|stan_nazn
+	Index        string               `json:"index"`
+	StanNazn     string               `json:"stan_nazn"`
+	StationOper  string               `json:"station_oper"`
+	DorogaOper   string               `json:"doroga_oper"`
+	OperS        string               `json:"oper_s"`
+	TimeOp       *domain.LocalTime    `json:"time_op"`       // самая свежая операция группы
+	MissingSince domain.LocalTime     `json:"missing_since"` // самая свежая фиксация пропажи
+	DaysMissing  int                  `json:"days_missing"`  // от самой свежей фиксации
+	VagonCount   int                  `json:"vagon_count"`
+	SubGroups    []MissingSubgroupDTO `json:"sub_groups"`
+}
+
+// Groups — пропавшие агрегированно: поезд → подгруппа → вагоны (модалка
+// «Пропавшие вагоны» с действием «Подтвердить прибытие»).
+func (s *MissingService) Groups(ctx context.Context) ([]MissingGroupDTO, error) {
+	rows, err := s.status9.MissingRows(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return groupMissing(rows, time.Time(clock.Now())), nil
+}
+
+// groupMissing — группировка записей-8 (образец — Candidates): группа =
+// index|stan_nazn, подгруппа = index_main|naznach|gruzpol_s. Строки приходят
+// свежепропавшими первыми (updated_at DESC) — insertion-order сохраняет это
+// и для групп.
+func groupMissing(rows []domain.Dislocation, now time.Time) []MissingGroupDTO {
+	type subKey struct{ im, nzn, gp string }
+	var order []string
+	groups := map[string]*MissingGroupDTO{}
+	subs := map[string]map[subKey]*MissingSubgroupDTO{}
+	subOrder := map[string][]subKey{}
+
+	for i := range rows {
+		r := &rows[i]
+		gk := r.Index + "|" + r.StanNazn
+		g, ok := groups[gk]
+		if !ok {
+			g = &MissingGroupDTO{
+				Key: gk, Index: r.Index, StanNazn: r.StanNazn,
+				StationOper: r.StationOper, DorogaOper: r.DorogaOper, OperS: r.OperS,
+				TimeOp: r.TimeOp, MissingSince: r.UpdatedAt,
+			}
+			groups[gk] = g
+			subs[gk] = map[subKey]*MissingSubgroupDTO{}
+			order = append(order, gk)
+		}
+		g.VagonCount++
+		// Позиция группы — по вагону с самой свежей операцией.
+		if r.TimeOp != nil && (g.TimeOp == nil || g.TimeOp.Time().Before(r.TimeOp.Time())) {
+			g.TimeOp = r.TimeOp
+			g.StationOper, g.DorogaOper, g.OperS = r.StationOper, r.DorogaOper, r.OperS
+		}
+		if g.MissingSince.Time().Before(r.UpdatedAt.Time()) {
+			g.MissingSince = r.UpdatedAt
+		}
+
+		sk := subKey{r.IndexMain, r.Naznach, r.GruzpolS}
+		sg, ok := subs[gk][sk]
+		if !ok {
+			sg = &MissingSubgroupDTO{
+				Key:       r.IndexMain + "|" + r.Naznach + "|" + r.GruzpolS,
+				IndexMain: r.IndexMain, StationNach: r.StationNach,
+				Naznach: r.Naznach, GruzpolS: r.GruzpolS,
+			}
+			subs[gk][sk] = sg
+			subOrder[gk] = append(subOrder[gk], sk)
+		}
+		sg.VagonCount++
+		v := MissingVagonDTO{
+			ID: r.ID, Vagon: r.Vagon, Index: r.Index,
+			StationOper: r.StationOper, DorogaOper: r.DorogaOper,
+			OperS: r.OperS, TimeOp: r.TimeOp,
+			Naznach: r.Naznach, GruzpolS: r.GruzpolS, StanNazn: r.StanNazn,
+			CargoS: r.CargoS, Ves: r.Ves, DateDostav: r.DateDostav,
+			MissingSince: r.UpdatedAt,
+		}
+		if !r.UpdatedAt.IsZero() {
+			v.DaysMissing = int(now.Sub(time.Time(r.UpdatedAt)).Hours() / 24)
+		}
+		sg.Vagons = append(sg.Vagons, v)
+	}
+
+	out := make([]MissingGroupDTO, 0, len(order))
+	for _, gk := range order {
+		g := groups[gk]
+		for _, sk := range subOrder[gk] {
+			sg := subs[gk][sk]
+			sg.Display = displayLine(sg.VagonCount, sg.IndexMain, sg.StationNach, sg.Naznach, sg.GruzpolS)
+			g.SubGroups = append(g.SubGroups, *sg)
+		}
+		sort.SliceStable(g.SubGroups, func(i, j int) bool { return g.SubGroups[i].Key < g.SubGroups[j].Key })
+		if !g.MissingSince.IsZero() {
+			g.DaysMissing = int(now.Sub(time.Time(g.MissingSince)).Hours() / 24)
+		}
+		out = append(out, *g)
+	}
+	return out
+}
+
 // Status6VagonDTO — строка списка доноров перегруза (статус 6): последняя
 // известная позиция и груз, который у донора могут забрать приёмники.
 type Status6VagonDTO struct {

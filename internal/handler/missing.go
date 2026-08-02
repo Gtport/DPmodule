@@ -19,6 +19,7 @@ func NewMissingHandler(svc *service.MissingService) *missingHandler {
 
 func (h *missingHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/missing", h.list)
+	g.GET("/dislocation/missing/groups", h.groups)
 	g.GET("/dislocation/status6", h.donors)
 }
 
@@ -30,6 +31,21 @@ func (h *missingHandler) RegisterRoutes(g *gin.RouterGroup) {
 // @Router   /api/v1/dislocation/missing [get]
 func (h *missingHandler) list(c *gin.Context) {
 	rows, err := h.svc.List(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rows)
+}
+
+// groups godoc
+// @Summary  Пропавшие вагоны агрегированно: поезд → подгруппа → вагоны (модалка с действиями)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Success  200 {array} service.MissingGroupDTO
+// @Router   /api/v1/dislocation/missing/groups [get]
+func (h *missingHandler) groups(c *gin.Context) {
+	rows, err := h.svc.Groups(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

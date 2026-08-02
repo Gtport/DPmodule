@@ -1,0 +1,196 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/Gtport/DPmodule/internal/clock"
+	"github.com/Gtport/DPmodule/internal/domain"
+)
+
+// ConfirmMissingRequest — ручная фиксация прибытия ПРОПАВШЕГО вагона (запись-8).
+// Из-за дискретности выгрузок дислокации вагон мог прибыть, выгрузиться и выпасть
+// из потока, не получив статусов 9/10/12 — диспетчер восстанавливает факты руками:
+// время прибытия обязательно, выгрузка (время + место) — опционально в той же форме.
+type ConfirmMissingRequest struct {
+	VagonIDs  []string          `json:"vagon_ids"`            // id рейсов (записи-8 в status9)
+	DatePrib  *domain.LocalTime `json:"date_prib"`            // факт прибытия, обязательно
+	DateVigr  *domain.LocalTime `json:"date_vigr,omitempty"`  // факт выгрузки (пусто — не выгружен)
+	PlaceVigr string            `json:"place_vigr,omitempty"` // терминал выгрузки (пусто — naznach записи)
+}
+
+// ConfirmMissing — «Подтвердить прибытие» пропавшего: веха в vagon_history
+// (статус 10, с выгрузкой — 12; поля — как у ConfirmArrival/«Выгрузить») и снятие
+// записи-8. СНИМОК НЕ ТРОГАЕМ — вагона в нём нет (он выпал из дислокации), и
+// синтетическую запись поток всё равно вычеркнул бы первым же батчем; вернётся в
+// дислокацию — пойдёт обычным конвейером (реальный переход →10/→12 от АСУ ручную
+// веху перепишет — с потоком не спорим). Порядок «история → удаление записи-8»
+// осознанный: при сбое вехи вагон остаётся в пропавших и операцию можно повторить.
+//
+// Права: operator+ (общий гейт группы), правило «сегодня/вчера» не применяется —
+// смысл функции в старых датах. Здравый смысл проверяется по данным:
+// time_op последней операции ≤ date_prib ≤ date_vigr ≤ сейчас.
+func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissingRequest) (ArrivalsUpdateResult, error) {
+	if len(req.VagonIDs) == 0 {
+		return ArrivalsUpdateResult{}, fmt.Errorf("не выбраны вагоны")
+	}
+	if req.DatePrib == nil || req.DatePrib.IsZero() {
+		return ArrivalsUpdateResult{}, fmt.Errorf("не указано время прибытия")
+	}
+	now := clock.Now()
+	if req.DatePrib.Time().After(now.Time()) {
+		return ArrivalsUpdateResult{}, fmt.Errorf("время прибытия в будущем")
+	}
+	if req.DateVigr != nil {
+		if req.DateVigr.IsZero() {
+			return ArrivalsUpdateResult{}, fmt.Errorf("не указано время выгрузки")
+		}
+		if req.DateVigr.Time().Before(req.DatePrib.Time()) {
+			return ArrivalsUpdateResult{}, fmt.Errorf("выгрузка раньше прибытия")
+		}
+		if req.DateVigr.Time().After(now.Time()) {
+			return ArrivalsUpdateResult{}, fmt.Errorf("время выгрузки в будущем")
+		}
+	} else if req.PlaceVigr != "" {
+		return ArrivalsUpdateResult{}, fmt.Errorf("место выгрузки указано без времени выгрузки")
+	}
+	if req.PlaceVigr != "" && s.dir != nil {
+		if _, ok := s.dir.PortByNameS(req.PlaceVigr); !ok {
+			return ArrivalsUpdateResult{}, fmt.Errorf("неизвестный терминал %q", req.PlaceVigr)
+		}
+	}
+
+	// Записи-8 по id рейса. Незнакомый id — вагон уже ушёл из пропавших (вернулся
+	// в поток, снят TTL или подтверждён параллельно) — честная ошибка вместо
+	// тихого пропуска: диспетчер должен увидеть, что картина устарела.
+	missing, err := s.proc.status9.MissingRows(ctx)
+	if err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	byID := map[string]*domain.Dislocation{}
+	for i := range missing {
+		if missing[i].Status != nil && *missing[i].Status == 8 {
+			byID[missing[i].ID] = &missing[i]
+		}
+	}
+	recs := make([]domain.Dislocation, 0, len(req.VagonIDs))
+	seen := map[string]struct{}{}
+	for _, id := range req.VagonIDs {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		r, ok := byID[id]
+		if !ok {
+			return ArrivalsUpdateResult{}, fmt.Errorf(
+				"вагон уже не в пропавших (id %s) — обновите список", id)
+		}
+		if r.TimeOp != nil && req.DatePrib.Time().Before(r.TimeOp.Time()) {
+			return ArrivalsUpdateResult{}, fmt.Errorf(
+				"прибытие раньше последней операции: вагон %s видели %s",
+				r.Vagon, r.TimeOp.String())
+		}
+		recs = append(recs, *r)
+	}
+
+	// Строка рейса в истории обычно уже есть (создавалась при первом появлении в
+	// снимке); отсутствующим — полная строка из записи-8, затем веха поверх.
+	ids := make([]string, 0, len(recs))
+	for i := range recs {
+		ids = append(ids, recs[i].ID)
+	}
+	existing, err := s.repo.ExistingIDs(ctx, ids)
+	if err != nil {
+		return ArrivalsUpdateResult{}, err
+	}
+	var toInsert []domain.VagonHistory
+	for i := range recs {
+		if _, ok := existing[recs[i].ID]; !ok {
+			toInsert = append(toInsert, buildHistoryRow(&recs[i], now))
+		}
+	}
+	if err := s.repo.Insert(ctx, toInsert); err != nil {
+		return ArrivalsUpdateResult{}, fmt.Errorf("строка рейса в истории: %w", err)
+	}
+
+	// Веха — те же поля, что ConfirmArrival (переход →10) и «Выгрузить» (→12).
+	status := 10
+	if req.DateVigr != nil {
+		status = 12
+	}
+	updates := make(map[string]map[string]any, len(recs))
+	for i := range recs {
+		r := &recs[i]
+		fields := map[string]any{
+			"status":      status,
+			"date_prib":   req.DatePrib,
+			"date_prib_d": dateOnly(req.DatePrib),
+			"delay":       calculateHistoryDelay(dateOnly(req.DatePrib), r.DateDostav),
+			"otkl":        calculateOtkl(req.DatePrib, r.PlanMsk),
+			"plan_msk":    r.PlanMsk,
+			"plan_jd":     r.PlanJd,
+			"naznach":     r.Naznach, // операторские перестановки пережили пропажу в записи-8
+			"updated_at":  &now,
+		}
+		if r.Index != "" {
+			fields["index_pp"] = r.Index // фактический поезд последней дислокации
+		}
+		if req.DateVigr != nil {
+			fields["date_vigr"] = req.DateVigr
+			fields["date_vigr_d"] = dateOnly(jdFromFact(req.DateVigr))
+			place := req.PlaceVigr
+			if place == "" {
+				place = r.Naznach
+			}
+			fields["place_vigr"] = place
+		}
+		updates[r.ID] = fields
+	}
+	if err := s.repo.UpdateFieldsBatch(ctx, updates); err != nil {
+		return ArrivalsUpdateResult{}, fmt.Errorf("веха прибытия в историю: %w", err)
+	}
+
+	// Снятие из пропавших (БД и RAM одним путём). Веха уже записана: при сбое
+	// здесь повторное подтверждение перезапишет её и повторит удаление.
+	vagons := make([]string, 0, len(recs))
+	for i := range recs {
+		if recs[i].Vagon != "" {
+			vagons = append(vagons, recs[i].Vagon)
+		}
+	}
+	if _, err := s.proc.status9.DeleteByVagons(ctx, vagons); err != nil {
+		return ArrivalsUpdateResult{}, fmt.Errorf("снятие из пропавших: %w", err)
+	}
+
+	if s.proc.journal != nil {
+		var trains []string
+		trainSeen := map[string]struct{}{}
+		for i := range recs {
+			idx := recs[i].Index
+			if idx == "" {
+				idx = recs[i].IndexMain
+			}
+			if idx == "" {
+				continue
+			}
+			if _, dup := trainSeen[idx]; dup {
+				continue
+			}
+			trainSeen[idx] = struct{}{}
+			trains = append(trains, idx)
+		}
+		extra := map[string]any{
+			"selected":      len(req.VagonIDs),
+			"trains":        trains,
+			"new_date_prib": req.DatePrib.String(),
+		}
+		if req.DateVigr != nil {
+			extra["new_date_vigr"] = req.DateVigr.String()
+			if req.PlaceVigr != "" {
+				extra["new_place_vigr"] = req.PlaceVigr
+			}
+		}
+		s.proc.journal.RecordArrivalsEdit(ctx, "confirm_missing", len(updates), extra)
+	}
+	return ArrivalsUpdateResult{Updated: len(updates), Selected: len(req.VagonIDs)}, nil
+}
