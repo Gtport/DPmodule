@@ -29,6 +29,8 @@ import (
 	"net/http/cookiejar"
 	"regexp"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Шаблон колонок отчёта: тот же набор из 67 колонок, что диспетчер получал
@@ -56,6 +58,11 @@ type Options struct {
 	Timeout     time.Duration
 	PollEvery   time.Duration
 	PollTimeout time.Duration
+	// Log — журнал адаптера. Нужен, чтобы записать состав таблицы, которой
+	// кабинет отвечает на опрос готовности (см. waitCars): из него мы берём
+	// только номера вагонов, а знать, что там ещё лежит, полезно — вдруг
+	// файла можно не качать. Может быть nil (тесты).
+	Log *zap.Logger
 }
 
 // Client — одна сессия кабинета. Не переиспользуется между запусками: сессия
@@ -248,6 +255,7 @@ func (c *Client) waitCars(ctx context.Context, id int64) ([]string, error) {
 				return nil, fmt.Errorf("ЛК РЖД: опрос отчёта: разбор ответа: %w", err)
 			}
 			if out.Data.Status == "done" {
+				c.logColumns(id, out.Data.Data.Head, len(out.Data.Data.Body))
 				return carNumbers(out.Data.Data.Head, out.Data.Data.Body)
 			}
 			if out.Data.Status == "error" || out.Data.Status == "failed" {
@@ -258,6 +266,21 @@ func (c *Client) waitCars(ctx context.Context, id int64) ([]string, error) {
 			return nil, ErrNotReady
 		}
 	}
+}
+
+// logColumns записывает состав готовой таблицы: имена колонок (коды АСОУП,
+// вроде NOM_VAG/DATE_OP) и число строк. Данные вагонов не пишем — только
+// заголовки, чтобы видеть, чем кабинет отвечает на `minimal=true`, и замечать,
+// если состав однажды поменяется. Строка одна на кабинет за запуск.
+func (c *Client) logColumns(id int64, head []string, rows int) {
+	if c.opt.Log == nil {
+		return
+	}
+	c.opt.Log.Info("ЛК РЖД: состав таблицы отчёта",
+		zap.Int64("report_id", id),
+		zap.Int("columns", len(head)),
+		zap.Strings("head", head),
+		zap.Int("rows", rows))
 }
 
 // carNumbers достаёт колонку NOM_VAG. Значения приходят строками, но кабинет

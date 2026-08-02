@@ -239,6 +239,7 @@ func Build(
 				Timeout:     cfg.LKRobot.Timeout,
 				PollEvery:   cfg.LKRobot.PollEvery,
 				PollTimeout: cfg.LKRobot.PollTimeout,
+				Log:         log,
 			}
 			// Сессия ЛК короткая и не переживает запуск — клиент одноразовый.
 			newFetcher := func() (service.LKFetcher, error) { return lkrobot.New(opts) }
