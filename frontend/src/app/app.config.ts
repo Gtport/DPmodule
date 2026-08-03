@@ -1,9 +1,7 @@
 import {
   ApplicationConfig,
   LOCALE_ID,
-  provideAppInitializer,
   provideZoneChangeDetection,
-  inject,
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors, withFetch } from '@angular/common/http';
@@ -14,7 +12,7 @@ import localeRu from '@angular/common/locales/ru';
 import { provideNzI18n, ru_RU } from 'ng-zorro-antd/i18n';
 import { provideNzIcons } from 'ng-zorro-antd/icon';
 import {
-  MenuOutline, UserOutline, LockOutline, LogoutOutline, SettingOutline, AppstoreOutline,
+  MenuOutline, UserOutline, LogoutOutline, SettingOutline, AppstoreOutline,
   DashboardOutline, CalendarOutline, ScheduleOutline, DeploymentUnitOutline,
   FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
   SwapOutline, GlobalOutline, BarChartOutline, LineChartOutline, UploadOutline, InboxOutline,
@@ -35,17 +33,24 @@ import {
   SettingFill, // сайдбар: «Админ»
 } from '@ant-design/icons-angular/icons';
 
+import {
+  provideKeycloak,
+  createInterceptorCondition,
+  INCLUDE_BEARER_TOKEN_INTERCEPTOR_CONFIG,
+  includeBearerTokenInterceptor,
+  type IncludeBearerTokenCondition,
+} from 'keycloak-angular';
+
 import { routes } from './app.routes';
+import { environment } from '../environments/environment';
 import { CUSTOM_ICONS } from './core/config/custom-icons';
-import { authInterceptor } from './core/auth/auth.interceptor';
-import { AuthService } from './core/auth/auth.service';
 
 registerLocaleData(localeRu);
 
 // Иконки ng-zorro регистрируем явно (tree-shake). Добавляешь иконку в UI —
 // добавь её Outline-определение сюда.
 const icons = [
-  MenuOutline, UserOutline, LockOutline, LogoutOutline, SettingOutline, AppstoreOutline,
+  MenuOutline, UserOutline, LogoutOutline, SettingOutline, AppstoreOutline,
   DashboardOutline, CalendarOutline, ScheduleOutline, DeploymentUnitOutline,
   FileDoneOutline, EnvironmentOutline, DatabaseOutline, ContainerOutline, MailOutline,
   SwapOutline, GlobalOutline, BarChartOutline, LineChartOutline, UploadOutline, InboxOutline,
@@ -59,17 +64,41 @@ const icons = [
   ...CUSTOM_ICONS,
 ];
 
+// Bearer вешаем ТОЛЬКО на бэкенд модуля (/api) — чтобы токен не утекал в чужие
+// сервисы. Интерсептор keycloak-angular сам тихо обновляет токен перед запросом.
+// Матчим и относительный '/api/...', и абсолютный 'http://host:8080/api/...'.
+const apiBearerCondition = createInterceptorCondition<IncludeBearerTokenCondition>({
+  urlPattern: /^(https?:\/\/[^/]+)?\/api(\/|$)/i,
+  bearerPrefix: 'Bearer',
+});
+
 export const appConfig: ApplicationConfig = {
   providers: [
     { provide: LOCALE_ID, useValue: 'ru' },
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
-    provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
+    // Auth Code + PKCE (S256), hosted-вход Keycloak. login-required → неавторизованных
+    // сразу уводит на страницу входа Keycloak (весь модуль за авторизацией).
+    // Пустой keycloak.url (окружение разработчика) даёт относительный /realms/... —
+    // Keycloak выведен тем же прокси, что и приложение, запросы same-origin.
+    provideKeycloak({
+      config: {
+        url: environment.keycloak.url,
+        realm: environment.keycloak.realm,
+        clientId: environment.keycloak.clientId,
+      },
+      initOptions: {
+        onLoad: 'login-required',
+        pkceMethod: 'S256',
+        checkLoginIframe: false,
+      },
+      providers: [
+        { provide: INCLUDE_BEARER_TOKEN_INTERCEPTOR_CONFIG, useValue: [apiBearerCondition] },
+      ],
+    }),
+    provideHttpClient(withFetch(), withInterceptors([includeBearerTokenInterceptor])),
     provideAnimationsAsync(),
     provideNzI18n(ru_RU),
     provideNzIcons(icons),
-    // До старта приложения молча восстанавливаем сессию из сохранённого refresh-токена
-    // (если был) — чтобы не логиниться заново после перезагрузки страницы.
-    provideAppInitializer(() => inject(AuthService).restoreSession()),
   ],
 };

@@ -364,6 +364,29 @@ nginx сам путь не подставляет.
 `stub_status` отдаются, путь `/api/v1/...` доходит целиком и по IP, и по имени
 сервиса, при упавшем бэкенде фронт остаётся healthy и отдаёт 502 за 0,2 с.
 
+Вход переведён на **платформенный флоу** (решение владельца 03.08.2026, после
+сверки с шаблоном `iqport-frontend-template`): Authorization Code + PKCE на
+hosted-странице Keycloak через `keycloak-js` + `keycloak-angular`
+(`provideKeycloak` в `app.config.ts`, `onLoad: login-required`). Своя форма
+входа и `grant_type=password` (ROPC) упразднены вместе с маршрутом `/login`,
+компонентом страницы и своим `auth.interceptor.ts` — Bearer вешает
+`includeBearerTokenInterceptor` по условию «URL начинается на /api», токен он
+же тихо обновляет. Почему: пароль проходил через наш код, refresh-токен лежал в
+localStorage, SSO между модулями не было, а на клиенте требовался включённый
+Direct access grants, которого в платформенной модели нет. `AuthService` стал
+фасадом — публичный API (`authenticated`/`username`/`roles`/`canEdit`/
+`hasAnyRole`/`logout`/`accountManagement`) сохранён, поэтому shell, guard и
+экраны не менялись; нормализация легаси-имён ролей осталась (локальный realm и
+VPS ещё на старых именах). Проверено браузером на локальном Keycloak: открытие
+приложения уводит на страницу входа Keycloak, после входа возвращает на
+`/home`, все 12 запросов в `/api` идут с Bearer, в localStorage после входа
+пусто (на время редиректа keycloak-js держит там временный `kc-callback-*` с
+PKCE-верификатором), выход уводит обратно на страницу входа. ⚠️ На стенде у
+клиента `iqport-dpport` должны быть прописаны **Valid redirect URIs** и **Web
+origins** его домена — иначе Keycloak ответит 400 `Invalid parameter:
+redirect_uri` (у нашего VPS это уже починил тимлид, `docs/KEYCLOAK_HANDOVER.md`
+§1).
+
 ⚠️ **Стенда два, и Keycloak у них разные.** Контейнеры выше настроены на
 корпоративный контур (`config.docker.yaml`: база 176.53.160.9, Keycloak
 `uport1.ru`). Наш VPS `95850.koara.live` — отдельный стенд со СВОИМ Keycloak,

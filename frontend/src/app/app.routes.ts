@@ -21,12 +21,11 @@ const dispatcherRoutes: Routes = DISPATCHER_NAV
     data: { title: i.label, icon: i.icon, roles: i.roles },
   }));
 
+// Маршрута /login нет намеренно: вход — hosted-страница Keycloak
+// (Auth Code + PKCE, см. core/auth/auth.service.ts). Своя форма входа была бы
+// вторым способом собирать пароль и на стенде не заработала бы — Direct access
+// grants в платформенной модели выключен.
 export const routes: Routes = [
-  {
-    path: 'login',
-    loadComponent: () =>
-      import('./pages/login/login.component').then((m) => m.LoginComponent),
-  },
   {
     path: '',
     component: ShellComponent,

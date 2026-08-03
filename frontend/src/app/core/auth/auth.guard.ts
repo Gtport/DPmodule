@@ -3,8 +3,8 @@ import { CanActivateFn, Router } from '@angular/router';
 import { AuthService } from './auth.service';
 
 /**
- * Не залогинен → уводим на свою форму /login (с returnUrl, чтобы вернуть после входа).
- * Залогинен → проверяем RBAC: роль из route.data.roles.
+ * Не залогинен → редирект на hosted-вход Keycloak (обычно не срабатывает: init
+ * login-required уже требует вход при загрузке). Залогинен → RBAC по route.data.roles.
  * Использование: { path: 'admin', canActivate: [authGuard], data: { roles: ['admin'] } }
  */
 export const authGuard: CanActivateFn = (route, state) => {
@@ -12,7 +12,8 @@ export const authGuard: CanActivateFn = (route, state) => {
   const router = inject(Router);
 
   if (!auth.authenticated()) {
-    return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+    void auth.login(window.location.origin + state.url);
+    return false;
   }
 
   const roles = (route.data?.['roles'] as string[] | undefined) ?? [];
