@@ -137,15 +137,18 @@ export interface LKRobotAccount {
 
 /**
  * Один поток в ходе запуска: state — где он сейчас (wait ждёт очереди, run идёт,
- * ok файл принят, fail отвалился с причиной в error).
+ * ok данные получены, fail отвалился с причиной в error). Файла у потока нет —
+ * робот читает дислокацию прямо из ответа кабинета; вместо него метка среза
+ * (formation_ts) и число разобранных вагонов (rows).
  */
 export interface LKRobotItem {
   okpo: number;
   name: string;
   state: 'wait' | 'run' | 'ok' | 'fail';
   organisation?: string;
-  filename?: string;
+  terminals?: string[];
   rows?: number;
+  formation_ts?: string;
   error?: string;
 }
 
@@ -167,8 +170,6 @@ export interface LKRobotState {
   processed?: LKProcessResult;
   process_skip?: string;
   process_error?: string;
-  /** Приём как он есть сейчас — тот же список файлов и замечаний, что у ручной загрузки. */
-  files: LKStatus;
 }
 
 /** Отчёт «Обновить справочники»: что пересчитано в снимке после перезагрузки словарей. */

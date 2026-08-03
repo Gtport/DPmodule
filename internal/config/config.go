@@ -74,6 +74,7 @@ type LKRobot struct {
 	PollEvery   time.Duration `yaml:"poll_every"`   // период опроса готовности отчёта; дефолт 5s
 	PollTimeout time.Duration `yaml:"poll_timeout"` // сколько ждём готовности; дефолт 5m
 	RunTimeout  time.Duration `yaml:"run_timeout"`  // потолок фонового запуска целиком (все потоки + обновление); дефолт 30m
+	DumpDir     string        `yaml:"dump_dir"`     // куда класть сырой ответ отчёта (разбор контракта, golden-тесты); пусто — не сохранять
 }
 
 type Reference struct {

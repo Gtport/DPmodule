@@ -3,41 +3,36 @@
 //
 // Кабинет — обычное Rails-приложение с JSON-API, браузер не нужен. Порядок тот
 // же, что проходит человек по экранам (Информация → Дислокация → новый запрос →
-// роль «грузополучатель» → запросить → отметить все → скачать Excel):
+// роль «грузополучатель» → запросить), но без последнего шага «скачать Excel»:
 //
-//	GET  /sign_in                                → cookie + csrf-токен из <meta>
-//	POST /sign_in                                → вход {user:{query,password}}
-//	POST /api/v1/services/asoup/reports          → заказ отчёта по ОКПО
-//	GET  /api/v1/services/asoup/reports/{id}     → этим кабинет рисует таблицу:
-//	                                               здесь уже все строки (head/body)
-//	PUT  /api/v1/services/asoup/reports/{id}.xlsx → файл по отмеченным вагонам
+//	GET  /sign_in                            → cookie + csrf-токен из <meta>
+//	POST /sign_in                            → вход {user:{query,password}}
+//	POST /api/v1/services/asoup/reports      → заказ отчёта по ОКПО
+//	GET  /api/v1/services/asoup/reports/{id} → готовая таблица: head + body + created_at
 //
-// Строки из шага 4 нужны и сами по себе (номера вагонов = «отметить все»), и как
-// признак готовности отчёта. Состав колонок файла — встроенный шаблон
-// report_columns.json, снятый с живого кабинета.
+// Файл не качаем (решение владельца 03.08.2026): ответ последнего шага — тот, чем
+// кабинет рисует таблицу на экране, — уже несёт все строки и 136 полей АСОУП, из
+// которых дислокации нужно ~30. Сверка с xlsx того же среза: 28 из 32 полей 1:1,
+// оставшиеся расходятся в пользу JSON (секунды в датах, станция отправления там,
+// где Excel отдавал пустую ячейку). Ручной приём xlsx работает как прежде.
 package lkrobot
 
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"os"
+	"path/filepath"
 	"regexp"
 	"time"
 
 	"go.uber.org/zap"
 )
-
-// Шаблон колонок отчёта: тот же набор из 67 колонок, что диспетчер получал
-// руками (кабинет отдаёт файл ровно по этому описанию).
-//
-//go:embed report_columns.json
-var reportColumnsJSON []byte
 
 var (
 	// ErrAuth — кабинет не принял логин/пароль. Отделён от прочих: диспетчеру
@@ -45,7 +40,7 @@ var (
 	ErrAuth = errors.New("ЛК РЖД: вход не выполнен (логин или пароль)")
 	// ErrNotReady — отчёт не подготовился за отведённое время.
 	ErrNotReady = errors.New("ЛК РЖД: отчёт не подготовился за отведённое время")
-	// ErrEmpty — кабинет вернул отчёт без строк (нечего отдавать в приём).
+	// ErrEmpty — кабинет вернул отчёт без строк (обновлять снимок нечем).
 	ErrEmpty = errors.New("ЛК РЖД: отчёт пуст")
 )
 
@@ -58,11 +53,15 @@ type Options struct {
 	Timeout     time.Duration
 	PollEvery   time.Duration
 	PollTimeout time.Duration
-	// Log — журнал адаптера. Нужен, чтобы записать состав таблицы, которой
-	// кабинет отвечает на опрос готовности (см. waitCars): из него мы берём
-	// только номера вагонов, а знать, что там ещё лежит, полезно — вдруг
-	// файла можно не качать. Может быть nil (тесты).
+	// Log — журнал адаптера: пишет состав таблицы (имена полей и число строк)
+	// при каждом заборе, чтобы смена контракта кабинета была заметна сразу, а не
+	// по кривым данным в снимке. Может быть nil (тесты).
 	Log *zap.Logger
+	// DumpDir — папка для сырого ответа отчёта. Пусто — не сохранять. Нужна,
+	// чтобы разбирать контракт кабинета на настоящих данных (форматы значений
+	// видны только глазами) и снимать с них golden-тесты. Дамп перезаписывается
+	// по ОКПО: интересен последний, а не история.
+	DumpDir string
 }
 
 // Client — одна сессия кабинета. Не переиспользуется между запусками: сессия
@@ -166,30 +165,37 @@ type orderResponse struct {
 type reportResponse struct {
 	Data struct {
 		Status string `json:"status"`
-		Data   struct {
+		// CreatedAt — метка формирования среза («03.08.2026 02:21», МСК). Это то же
+		// значение, что приём вычитывал из шапки xlsx (сверено 03.08.2026), и на нём
+		// стоят гарды свежести и doc_ts журнала.
+		CreatedAt string `json:"created_at"`
+		Data      struct {
 			Head []string            `json:"head"`
 			Body [][]json.RawMessage `json:"body"`
 		} `json:"data"`
 	} `json:"data"`
 }
 
-// Fetch — полный цикл по одному ОКПО: заказ отчёта, ожидание готовности,
-// выгрузка xlsx. Возвращает содержимое файла — ровно то, что диспетчер скачивал
-// руками, и его же принимает LKIntake.
-func (c *Client) Fetch(ctx context.Context, okpo string) ([]byte, int, error) {
+// Table — готовый отчёт кабинета: имена полей АСОУП, строки значений и метка
+// формирования среза (created_at, московское время как отдал кабинет). Ровно те
+// же данные, что попадали в xlsx, только без промежуточного файла.
+type Table struct {
+	Head      []string
+	Body      [][]json.RawMessage
+	CreatedAt string
+}
+
+// FetchTable — полный цикл по одному ОКПО: заказ отчёта, ожидание готовности,
+// разбор таблицы. Файл НЕ скачивается: ответ опроса уже несёт все строки и все
+// поля, нужные дислокации (проверено сверкой с xlsx того же среза 03.08.2026 —
+// 28 из 32 полей 1:1, остальные расходятся в пользу JSON). Ручной приём файлов
+// это не отменяет — там xlsx приносит человек.
+func (c *Client) FetchTable(ctx context.Context, okpo string) (Table, error) {
 	id, err := c.order(ctx, okpo)
 	if err != nil {
-		return nil, 0, err
+		return Table{}, err
 	}
-	cars, err := c.waitCars(ctx, id)
-	if err != nil {
-		return nil, 0, err
-	}
-	file, err := c.download(ctx, id, cars)
-	if err != nil {
-		return nil, 0, err
-	}
-	return file, len(cars), nil
+	return c.waitTable(ctx, id, okpo)
 }
 
 func (c *Client) order(ctx context.Context, okpo string) (int64, error) {
@@ -231,39 +237,47 @@ func (c *Client) order(ctx context.Context, okpo string) (int64, error) {
 	return id, nil
 }
 
-// waitCars ждёт готовности отчёта и возвращает номера вагонов из таблицы —
-// это же список для выгрузки (эквивалент галочки «выбрать все» на экране).
-func (c *Client) waitCars(ctx context.Context, id int64) ([]string, error) {
+// waitTable ждёт готовности отчёта и возвращает таблицу целиком. Тем же запросом
+// кабинет рисует таблицу на экране, поэтому в ответе уже все строки и все поля.
+func (c *Client) waitTable(ctx context.Context, id int64, okpo string) (Table, error) {
 	deadline := time.Now().Add(c.opt.PollTimeout)
 	path := fmt.Sprintf("/api/v1/services/asoup/reports/%d?id=%d&minimal=true", id, id)
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return Table{}, ctx.Err()
 		case <-time.After(c.opt.PollEvery):
 		}
 
 		resp, err := c.do(ctx, http.MethodGet, path, nil, true)
 		if err != nil {
-			return nil, fmt.Errorf("ЛК РЖД: опрос отчёта: %w", err)
+			return Table{}, fmt.Errorf("ЛК РЖД: опрос отчёта: %w", err)
 		}
 		raw, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			var out reportResponse
 			if err := json.Unmarshal(raw, &out); err != nil {
-				return nil, fmt.Errorf("ЛК РЖД: опрос отчёта: разбор ответа: %w", err)
+				return Table{}, fmt.Errorf("ЛК РЖД: опрос отчёта: разбор ответа: %w", err)
 			}
 			if out.Data.Status == "done" {
 				c.logColumns(id, out.Data.Data.Head, len(out.Data.Data.Body))
-				return carNumbers(out.Data.Data.Head, out.Data.Data.Body)
+				c.dump(okpo, raw)
+				if len(out.Data.Data.Body) == 0 {
+					return Table{}, ErrEmpty
+				}
+				return Table{
+					Head:      out.Data.Data.Head,
+					Body:      out.Data.Data.Body,
+					CreatedAt: out.Data.CreatedAt,
+				}, nil
 			}
 			if out.Data.Status == "error" || out.Data.Status == "failed" {
-				return nil, fmt.Errorf("ЛК РЖД: кабинет вернул ошибку по отчёту (%s)", out.Data.Status)
+				return Table{}, fmt.Errorf("ЛК РЖД: кабинет вернул ошибку по отчёту (%s)", out.Data.Status)
 			}
 		}
 		if time.Now().After(deadline) {
-			return nil, ErrNotReady
+			return Table{}, ErrNotReady
 		}
 	}
 }
@@ -283,66 +297,19 @@ func (c *Client) logColumns(id int64, head []string, rows int) {
 		zap.Int("rows", rows))
 }
 
-// carNumbers достаёт колонку NOM_VAG. Значения приходят строками, но кабинет
-// иногда отдаёт число — поэтому разбираем сырой JSON.
-func carNumbers(head []string, body [][]json.RawMessage) ([]string, error) {
-	idx := -1
-	for i, h := range head {
-		if h == "NOM_VAG" {
-			idx = i
-			break
+// dump сохраняет сырой ответ отчёта в DumpDir (файл на ОКПО, перезаписывается).
+// Ошибка записи забор не валит — это диагностика, а не часть работы.
+func (c *Client) dump(okpo string, raw []byte) {
+	if c.opt.DumpDir == "" {
+		return
+	}
+	if err := os.MkdirAll(c.opt.DumpDir, 0o755); err == nil {
+		err = os.WriteFile(filepath.Join(c.opt.DumpDir, "report_"+okpo+".json"), raw, 0o644)
+		if err == nil {
+			return
 		}
 	}
-	if idx < 0 {
-		return nil, errors.New("ЛК РЖД: в ответе нет колонки NOM_VAG")
+	if c.opt.Log != nil {
+		c.opt.Log.Warn("ЛК РЖД: сырой ответ не сохранён", zap.String("okpo", okpo), zap.String("dir", c.opt.DumpDir))
 	}
-	cars := make([]string, 0, len(body))
-	for _, row := range body {
-		if idx >= len(row) {
-			continue
-		}
-		var s string
-		if err := json.Unmarshal(row[idx], &s); err != nil {
-			var n json.Number
-			if err2 := json.Unmarshal(row[idx], &n); err2 != nil {
-				continue
-			}
-			s = n.String()
-		}
-		if s != "" {
-			cars = append(cars, s)
-		}
-	}
-	if len(cars) == 0 {
-		return nil, ErrEmpty
-	}
-	return cars, nil
-}
-
-func (c *Client) download(ctx context.Context, id int64, cars []string) ([]byte, error) {
-	var tpl struct {
-		CustomFields json.RawMessage `json:"custom_fields"`
-	}
-	if err := json.Unmarshal(reportColumnsJSON, &tpl); err != nil {
-		return nil, fmt.Errorf("ЛК РЖД: шаблон колонок: %w", err)
-	}
-	body, _ := json.Marshal(map[string]any{"custom_fields": tpl.CustomFields, "objects": cars})
-
-	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/api/v1/services/asoup/reports/%d.xlsx", id), body, true)
-	if err != nil {
-		return nil, fmt.Errorf("ЛК РЖД: выгрузка файла: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ЛК РЖД: выгрузка файла: ответ %d", resp.StatusCode)
-	}
-	file, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("ЛК РЖД: выгрузка файла: %w", err)
-	}
-	// xlsx — zip; проверяем сигнатуру, чтобы не отдать в приём html-страницу ошибки.
-	if len(file) < 2 || file[0] != 'P' || file[1] != 'K' {
-		return nil, fmt.Errorf("ЛК РЖД: выгрузка файла: пришёл не xlsx (%d байт)", len(file))
-	}
-	return file, nil
 }

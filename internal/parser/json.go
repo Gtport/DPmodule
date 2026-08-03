@@ -227,6 +227,16 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
+// trimOkpoZeros убирает ведущие нули ОКПО («01126022» → «1126022»). Строка целиком
+// из нулей превращается в «0», а не в пустоту: «нет ОКПО» и «ОКПО ноль» — разное.
+func trimOkpoZeros(s string) string {
+	t := strings.TrimLeft(s, "0")
+	if t == "" && s != "" {
+		return "0"
+	}
+	return t
+}
+
 // cleanNone обрезает пробелы и трактует строковый null-сентинел "None"/"null"
 // (встречается в новом формате) как пустую строку.
 func cleanNone(s string) string {
@@ -253,9 +263,13 @@ func (p *JSONParser) convert(v jsonVagon) domain.Dislocation {
 	r.DorogaNazn = cleanNone(v.DOR_NAZN)
 	r.StrNazn = cleanNone(v.STR_NAZN)
 
-	// ОКПО (имена проставит обогащение)
-	r.GruzotprOkpo = cleanNone(v.GRUZOTPR_OKPO)
-	r.GruzpolOkpo = cleanNone(v.GRUZPOL_OKPO)
+	// ОКПО (имена проставит обогащение). Ведущие нули срезаем: ОКПО — число,
+	// в справочнике ports и в снимке оно живёт без них (1126022, не 01126022).
+	// Личный кабинет РЖД возвращает его дополненным до восьми знаков — ровно
+	// так, как мы сами передаём в фильтре запроса, — и без нормализации один и
+	// тот же грузополучатель писался бы в снимке двумя разными строками.
+	r.GruzotprOkpo = trimOkpoZeros(cleanNone(v.GRUZOTPR_OKPO))
+	r.GruzpolOkpo = trimOkpoZeros(cleanNone(v.GRUZPOL_OKPO))
 
 	// Груз
 	r.CodeCargo = cleanNone(v.KOD_GRZ_UCH)

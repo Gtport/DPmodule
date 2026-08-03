@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
+	"github.com/Gtport/DPmodule/internal/parser"
 	"github.com/Gtport/DPmodule/internal/port"
 )
 
@@ -20,21 +23,29 @@ import (
 var ErrNoLKAccounts = errors.New("не заведены аккаунты ЛК РЖД")
 
 // ErrRobotBusy — забор уже идёт. Второй запуск отклоняем: кабинет РЖД не любит
-// параллельных заказов одного отчёта, да и два потока писали бы в одну папку.
+// параллельных заказов одного отчёта, а два батча пересобирали бы снимок наперегонки.
 var ErrRobotBusy = errors.New("забор из ЛК уже идёт")
+
+// LKTable — готовый отчёт кабинета: имена полей АСОУП (head), строки значений
+// (body) и метка формирования среза как её отдал кабинет («03.08.2026 02:21»).
+type LKTable struct {
+	Head      []string
+	Body      [][]json.RawMessage
+	CreatedAt string
+}
 
 // LKFetcher — забор дислокации из личного кабинета РЖД по одному аккаунту.
 // Реализация — adapter/lkrobot; сервис про HTTP ничего не знает.
 type LKFetcher interface {
 	Login(ctx context.Context, login, password string) error
-	Fetch(ctx context.Context, okpo string) ([]byte, int, error)
+	FetchTable(ctx context.Context, okpo string) (LKTable, error)
 }
 
 // Состояния одного потока в ходе запуска (для живого прогресса в модалке).
 const (
 	LKRobotWait = "wait" // пароль введён, очередь ещё не дошла
 	LKRobotRun  = "run"  // сейчас работаем с этим кабинетом
-	LKRobotOK   = "ok"   // файл принят
+	LKRobotOK   = "ok"   // данные получены и разобраны
 	LKRobotFail = "fail" // поток отвалился (см. Error)
 )
 
@@ -42,16 +53,17 @@ const (
 const (
 	LKRobotStageIdle    = "idle"    // запусков не было (или сервер перезапущен)
 	LKRobotStageFetch   = "fetch"   // ходим по кабинетам
-	LKRobotStageProcess = "process" // файлы приняты, пересобираем дислокацию
+	LKRobotStageProcess = "process" // данные собраны, пересобираем дислокацию
 	LKRobotStageDone    = "done"    // всё закончилось (успехом или нет)
 )
 
 // LKRobot — автовыгрузка дислокации из ЛК вместо ручной работы диспетчера.
 //
 // Логины берём из настроечной таблицы (lk_account), пароль приходит в запросе
-// от диспетчера и нигде не сохраняется. Полученный файл идёт в тот же приём,
-// что и ручная загрузка (LKIntake), а следом — то же обновление дислокации,
-// что диспетчер жал руками вторым шагом.
+// от диспетчера и нигде не сохраняется. Дислокацию читаем прямо из ответа
+// кабинета (решение владельца 03.08.2026): xlsx не качаем и в приём ничего не
+// кладём, записи идут в общий конвейер одним батчем. Ручная загрузка файлов
+// работает как прежде — это отдельный путь для человека.
 //
 // ⚠️ Запуск ФОНОВЫЙ (решение владельца 01.08.2026). Забор по двум кабинетам
 // занимает около минуты, а по медленному — до нескольких: держать всё это время
@@ -85,7 +97,7 @@ func (s *LKRobot) SetProcessor(p *LKProcessor) { s.proc = p }
 
 // lkRobotJob — состояние текущего (или последнего) запуска. Живёт в памяти:
 // перезапуск сервера состояние теряет, и это честно — сам забор он тоже
-// прерывает. Файлы при этом остаются в приёме, их видно обычным списком.
+// прерывает (и снимок в этом случае просто остаётся прежним).
 type lkRobotJob struct {
 	running     bool
 	stage       string
@@ -115,18 +127,20 @@ type LKRobotAccount struct {
 // LKRobotItem — результат по одному потоку. Ошибка одного порта не отменяет
 // остальные, поэтому она едет в состоянии строкой, а не рушит весь запуск.
 type LKRobotItem struct {
-	OKPO         int64  `json:"okpo"`
-	Name         string `json:"name"`
-	State        string `json:"state"`
-	Organisation string `json:"organisation,omitempty"`
-	Filename     string `json:"filename,omitempty"`
-	Rows         int    `json:"rows,omitempty"`
-	Error        string `json:"error,omitempty"`
+	OKPO         int64             `json:"okpo"`
+	Name         string            `json:"name"`
+	State        string            `json:"state"`
+	Organisation string            `json:"organisation,omitempty"`
+	Terminals    []string          `json:"terminals,omitempty"`
+	Rows         int               `json:"rows,omitempty"`
+	FormationTS  *domain.LocalTime `json:"formation_ts,omitempty"` // метка среза кабинета
+	Error        string            `json:"error,omitempty"`
 }
 
 // LKRobotState — полный снимок для модалки: чем занят робот, что вышло по
-// каждому потоку, что лежит в приёме и чем кончилось обновление дислокации.
-// Одним ответом, чтобы опрос был одним запросом.
+// каждому потоку и чем кончилось обновление дислокации. Одним ответом, чтобы
+// опрос был одним запросом. Файлов здесь нет — робот их не создаёт (данные
+// берутся из ответа кабинета), а файлы ручного приёма показывает своя модалка.
 type LKRobotState struct {
 	Running    bool              `json:"running"`
 	Stage      string            `json:"stage"`
@@ -140,8 +154,6 @@ type LKRobotState struct {
 	Processed    *LKProcessResult `json:"processed,omitempty"`
 	ProcessSkip  string           `json:"process_skip,omitempty"`
 	ProcessError string           `json:"process_error,omitempty"`
-	// Приём как он есть сейчас (файлы + контроль) — тот же, что у ручной загрузки.
-	Files LKStatus `json:"files"`
 }
 
 // Accounts — включённые аккаунты (для модалки ввода паролей).
@@ -239,34 +251,38 @@ func (s *LKRobot) State() LKRobotState {
 			st.Failed++
 		}
 	}
-	// Приём читаем вне мьютекса: это папка на диске, к состоянию запуска отношения
-	// не имеет и нужна модалке всегда — в том числе когда запусков не было.
-	if files, err := s.intake.Status(); err == nil {
-		st.Files = files
-	}
 	return st
 }
 
 // run — весь запуск целиком в фоне: потоки по очереди, затем обновление снимка.
+// Записи всех кабинетов копятся в памяти и идут в конвейер ОДНИМ батчем: снимок
+// дислокации полный, а не собирается по кускам.
 func (s *LKRobot) run(ctx context.Context, tasks []lkRobotTask) {
-	okCount := 0
+	all := make([]domain.Dislocation, 0, 8192)
+	files := make([]LKFileInfo, 0, len(tasks))
+	perStream := make(map[string]int, len(tasks))
+
 	for i, t := range tasks {
 		s.update(func(j *lkRobotJob) { j.items[i].State = LKRobotRun })
 
-		item := s.runOne(ctx, t.acc, t.pwd)
+		item, recs := s.runOne(ctx, t.acc, t.pwd)
 		if item.Error == "" {
 			item.State = LKRobotOK
-			okCount++
+			all = append(all, recs...)
+			files = append(files, lkFileInfoFromItem(item))
+			perStream[item.Organisation] = len(recs)
 		} else {
 			item.State = LKRobotFail
 		}
 		s.update(func(j *lkRobotJob) { j.items[i] = item })
 	}
 
-	if okCount > 0 {
-		s.processSnapshot(ctx)
+	if len(files) > 0 {
+		s.processSnapshot(ctx, all, files, perStream)
 	} else {
-		s.update(func(j *lkRobotJob) { j.processSkip = "ни один файл не получен — обновлять нечем" })
+		s.update(func(j *lkRobotJob) {
+			j.processSkip = "ни один кабинет не отдал данные — обновлять нечем"
+		})
 	}
 
 	s.update(func(j *lkRobotJob) {
@@ -277,27 +293,33 @@ func (s *LKRobot) run(ctx context.Context, tasks []lkRobotTask) {
 	})
 }
 
-// processSnapshot — шаг 2 сразу за забором: та же обработка, что по кнопке
-// «Обновить дислокацию» в ручном приёме. Контроль приёма (свежесть, полнота,
-// разрыв срезов) проверяем ДО запуска: не готово — говорим об этом словами,
-// а не ошибкой обработки.
-func (s *LKRobot) processSnapshot(ctx context.Context) {
+// lkFileInfoFromItem — описание потока для гардов и журнала. Файла на диске нет,
+// поэтому Filename пустой: ключ потока — ОКПО.
+func lkFileInfoFromItem(it LKRobotItem) LKFileInfo {
+	fi := LKFileInfo{
+		Okpo:         strconv.FormatInt(it.OKPO, 10),
+		Organisation: it.Organisation,
+		Terminals:    it.Terminals,
+	}
+	if it.FormationTS != nil {
+		fi.FormationTS = *it.FormationTS
+		fi.AgeMinutes = int(clock.Now().Time().Sub(it.FormationTS.Time()).Minutes())
+	}
+	return fi
+}
+
+// processSnapshot — шаг 2 сразу за забором: тот же конвейер, что по кнопке
+// «Обновить дислокацию» в ручном приёме, но над записями из памяти. Контроль
+// комплекта и гарды свежести — внутри ProcessBatch: не прошло — причина едет
+// в состояние словами, снимок не трогается.
+func (s *LKRobot) processSnapshot(ctx context.Context, all []domain.Dislocation, files []LKFileInfo, perStream map[string]int) {
 	if s.proc == nil {
 		s.update(func(j *lkRobotJob) { j.processSkip = "обновление дислокации недоступно" })
 		return
 	}
-	st, err := s.intake.Status()
-	if err != nil {
-		s.update(func(j *lkRobotJob) { j.processErr = err.Error() })
-		return
-	}
-	if !st.Ready {
-		s.update(func(j *lkRobotJob) { j.processSkip = "приём не прошёл контроль — дислокация не обновлена" })
-		return
-	}
 
 	s.update(func(j *lkRobotJob) { j.stage = LKRobotStageProcess })
-	res, err := s.proc.Process(ctx)
+	res, err := s.proc.ProcessBatch(ctx, "lk_robot", all, files, perStream)
 	if err != nil {
 		s.update(func(j *lkRobotJob) { j.processErr = err.Error() })
 		if s.log != nil {
@@ -317,44 +339,68 @@ func (s *LKRobot) update(fn func(j *lkRobotJob)) {
 	}
 }
 
-// runOne — один поток целиком: вход в кабинет, выгрузка, приём файла.
-func (s *LKRobot) runOne(ctx context.Context, acc domain.LKAccount, password string) LKRobotItem {
+// runOne — один поток целиком: вход в кабинет, забор таблицы, разбор в записи
+// дислокации. Файл не качаем и в приём ничего не кладём (решение владельца
+// 03.08.2026): ответ кабинета уже несёт все строки и все нужные поля. Ручная
+// загрузка xlsx живёт своей жизнью и этим путём не затрагивается.
+func (s *LKRobot) runOne(ctx context.Context, acc domain.LKAccount, password string) (LKRobotItem, []domain.Dislocation) {
 	item := LKRobotItem{OKPO: acc.OKPO, Name: acc.Name}
 
 	fetcher, err := s.newFetch()
 	if err != nil {
 		item.Error = err.Error()
-		return item
+		return item, nil
 	}
 	if err := fetcher.Login(ctx, acc.Login, password); err != nil {
 		item.Error = err.Error()
 		s.logf("вход в ЛК не выполнен", acc, err)
-		return item
+		return item, nil
 	}
 	// ОКПО юрлица — восьмизначный, и кабинет требует его именно так: у НМТП
 	// (01126022) без ведущего нуля заказ отчёта отвергается с 422. В базе ОКПО
 	// хранится числом (связь с ports.okpo), поэтому дополняем нулём здесь.
 	// Десятизначные ОКПО (ИП) длиннее восьми — их дополнение не трогает.
 	okpo := fmt.Sprintf("%08d", acc.OKPO)
-	file, rows, err := fetcher.Fetch(ctx, okpo)
+	table, err := fetcher.FetchTable(ctx, okpo)
 	if err != nil {
 		item.Error = err.Error()
 		s.logf("выгрузка из ЛК не удалась", acc, err)
-		return item
+		return item, nil
 	}
-	item.Rows = rows
 
-	// Имя роли не играет: приём определяет ОКПО и метку формирования из самого
-	// файла. Расширение обязано быть разрешённым (allowed_ext источника 'lk').
-	stored, err := s.intake.Store(okpo+".xlsx", file)
+	recs, err := parser.NewJSONParser().ParseRows(table.Head, table.Body)
 	if err != nil {
 		item.Error = err.Error()
-		s.logf("приём файла из ЛК отклонён", acc, err)
-		return item
+		s.logf("разбор ответа ЛК не удался", acc, err)
+		return item, nil
 	}
-	item.Filename = stored.Filename
-	item.Organisation = stored.Organisation
-	return item
+	if len(recs) == 0 {
+		item.Error = "кабинет вернул отчёт без вагонов"
+		return item, nil
+	}
+	item.Rows = len(recs)
+
+	// Метка формирования среза — та же, что приём вычитывал из шапки xlsx.
+	// Без неё гарды свежести работать не смогут, поэтому её отсутствие — отказ
+	// потока, а не молчаливый ноль.
+	ts, ok := parseFormationTS(table.CreatedAt)
+	if !ok {
+		item.Error = fmt.Sprintf("кабинет не вернул метку формирования (%q)", table.CreatedAt)
+		return item, nil
+	}
+	item.FormationTS = &ts
+
+	// «Чей поток»: ОКПО должен быть в справочнике ports (как при приёме файла).
+	terminals, ok := s.intake.dir.PortsByOkpo(acc.OKPO)
+	if !ok || len(terminals) == 0 {
+		item.Error = fmt.Sprintf("%v: %d", ErrUnknownOkpo, acc.OKPO)
+		return item, nil
+	}
+	item.Organisation = terminals[0].Organisation
+	for _, t := range terminals {
+		item.Terminals = append(item.Terminals, t.NameS)
+	}
+	return item, recs
 }
 
 func (s *LKRobot) logf(msg string, acc domain.LKAccount, err error) {

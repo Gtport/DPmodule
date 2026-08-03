@@ -201,6 +201,50 @@ func (p *LKProcessor) Process(ctx context.Context) (LKProcessResult, error) {
 	return res, nil
 }
 
+// ProcessBatch — обработка батча, который пришёл НЕ файлами: робот ЛК читает
+// дислокацию из ответа кабинета и в приём её не складывает. Порядок тот же, что
+// у файлового Process: контроль комплекта (полнота/разрыв/устаревание) → гарды
+// свежести → общий конвейер → журнал. files описывают потоки (ОКПО, организация,
+// метка формирования) и нужны гардам и журналу; на диске их нет.
+//
+// Любой отказ фиксируется событием disl_rejected с кодом гарда — снимок при этом
+// не трогается, а диспетчер видит в журнале, почему обновления не случилось.
+func (p *LKProcessor) ProcessBatch(ctx context.Context, source string, all []domain.Dislocation, files []LKFileInfo, perFile map[string]int) (LKProcessResult, error) {
+	reject := func(guard string, err error) (LKProcessResult, error) {
+		p.journal.RecordDislRejected(ctx, source, domain.TriggerManual, files, guard, err.Error())
+		return LKProcessResult{}, err
+	}
+
+	if issues := p.intake.checkBatch(files, "поток"); hasBlockingIssue(issues) {
+		return reject("not_ready", fmt.Errorf("%w: %s", ErrNotReady, firstBlocking(issues)))
+	}
+	if err := p.guardFreshness(ctx, files); err != nil {
+		guard := "stale"
+		if errors.Is(err, ErrDislOlderThanCurrent) {
+			guard = "older"
+		}
+		return reject(guard, err)
+	}
+
+	res, err := p.ProcessRecords(ctx, all, len(files), perFile)
+	if err != nil {
+		return reject("process", err) // в т.ч. порог потери данных (max_data_loss_pct)
+	}
+	p.journal.RecordDislUpdate(ctx, source, domain.TriggerManual, files, res.Count)
+	return res, nil
+}
+
+// firstBlocking — текст первого блокирующего замечания (для сообщения диспетчеру:
+// «почему не обновилось» важнее, чем их количество).
+func firstBlocking(issues []LKIssue) string {
+	for _, i := range issues {
+		if i.Level == LKIssueBlock {
+			return i.Message
+		}
+	}
+	return ""
+}
+
 // MutateSnapshot — общий каркас операторской записи в снимок (перестановки,
 // переадресация, подтверждение прибытия): одна операция = мьютекс конвейера →
 // правка копии RAM-снимка → ОДИН пересчёт Stage 3–4 → атомарная подмена →

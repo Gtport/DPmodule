@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 )
@@ -19,7 +18,6 @@ type fakeLK struct {
 	orders    int
 	pollsLeft int    // сколько раз ответить «ещё не готово»
 	gotOKPO   string // ОКПО из заказа — проверяем формат
-	gotCars   []string
 }
 
 func (f *fakeLK) handler() http.Handler {
@@ -74,24 +72,11 @@ func (f *fakeLK) handler() http.Handler {
 			return
 		}
 		// Номер вагона строкой, второй — числом: кабинет отдаёт и так, и так.
-		io.WriteString(w, `{"data":{"status":"done","data":{
+		io.WriteString(w, `{"data":{"status":"done","created_at":"03.08.2026 02:21","data":{
 			"head":["NOM_NAK","NOM_VAG"],
 			"body":[["ЭЧ1","60411014"],["ЭЧ2",68123462]]}}}`)
 	})
 
-	mux.HandleFunc("/api/v1/services/asoup/reports/777.xlsx", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Objects      []string        `json:"objects"`
-			CustomFields json.RawMessage `json:"custom_fields"`
-		}
-		json.NewDecoder(r.Body).Decode(&body)
-		f.gotCars = body.Objects
-		if len(body.CustomFields) == 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		w.Write([]byte("PK\x03\x04содержимое"))
-	})
 	return mux
 }
 
@@ -110,8 +95,9 @@ func newTestClient(t *testing.T, srv *httptest.Server) *Client {
 	return c
 }
 
-// Полный цикл: вход, заказ, ожидание готовности, выгрузка.
-func TestFetchFullCycle(t *testing.T) {
+// Полный цикл: вход, заказ, ожидание готовности, таблица. Файл не качается —
+// данные берутся из ответа опроса.
+func TestFetchTableFullCycle(t *testing.T) {
 	fake := &fakeLK{password: "secret", pollsLeft: 2}
 	srv := httptest.NewServer(fake.handler())
 	defer srv.Close()
@@ -120,23 +106,23 @@ func TestFetchFullCycle(t *testing.T) {
 	if err := c.Login(context.Background(), "login", "secret"); err != nil {
 		t.Fatalf("вход не прошёл: %v", err)
 	}
-	file, rows, err := c.Fetch(context.Background(), "01126022")
+	table, err := c.FetchTable(context.Background(), "01126022")
 	if err != nil {
-		t.Fatalf("выгрузка не прошла: %v", err)
+		t.Fatalf("забор не прошёл: %v", err)
 	}
-	if rows != 2 {
-		t.Errorf("вагонов: получили %d, ждали 2", rows)
+	if len(table.Body) != 2 {
+		t.Errorf("строк: получили %d, ждали 2", len(table.Body))
 	}
-	if !strings.HasPrefix(string(file), "PK") {
-		t.Errorf("файл не похож на xlsx: %q", string(file[:2]))
+	if len(table.Head) != 2 || table.Head[1] != "NOM_VAG" {
+		t.Errorf("заголовок: %v", table.Head)
+	}
+	// Метка формирования среза — на ней стоят гарды свежести.
+	if table.CreatedAt != "03.08.2026 02:21" {
+		t.Errorf("метка формирования: %q", table.CreatedAt)
 	}
 	// ОКПО уходит дословно, ведущий ноль не теряется (боевой кабинет отвергает 422).
 	if fake.gotOKPO != "01126022" {
 		t.Errorf("ОКПО в заказе: %q, ждали 01126022", fake.gotOKPO)
-	}
-	// «Отметить все»: в выгрузку уходят все вагоны таблицы, число тоже строкой.
-	if len(fake.gotCars) != 2 || fake.gotCars[0] != "60411014" || fake.gotCars[1] != "68123462" {
-		t.Errorf("вагоны в выгрузке: %v", fake.gotCars)
 	}
 }
 
@@ -163,7 +149,7 @@ func TestFetchNotReady(t *testing.T) {
 	if err := c.Login(context.Background(), "login", "secret"); err != nil {
 		t.Fatalf("вход не прошёл: %v", err)
 	}
-	if _, _, err := c.Fetch(context.Background(), "10230304"); !errors.Is(err, ErrNotReady) {
+	if _, err := c.FetchTable(context.Background(), "10230304"); !errors.Is(err, ErrNotReady) {
 		t.Fatalf("ждали ErrNotReady, получили %v", err)
 	}
 }

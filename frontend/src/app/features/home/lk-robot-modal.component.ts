@@ -11,16 +11,19 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import {
-  DislocationApiService, LKRobotAccount, LKRobotItem, LKRobotState, LKStatus,
+  DislocationApiService, LKRobotAccount, LKRobotItem, LKRobotState,
 } from '../dislocation/dislocation-api.service';
-import { LkFilesViewComponent } from './lk-files-view.component';
 import { LkProcessResultComponent } from './lk-process-result.component';
 
 /**
  * Перемещаемая модалка «АВТО ЛК» — робот сам заходит в кабинет РЖД, забирает
- * дислокацию по каждому потоку и СРАЗУ обновляет дислокацию, если приём прошёл
- * контроль (решение владельца 01.08.2026: диспетчеру — один клик вместо трёх).
- * Ручная загрузка файлов осталась в соседней модалке «ЛК».
+ * дислокацию по каждому потоку и СРАЗУ обновляет дислокацию, если комплект
+ * прошёл контроль (решение владельца 01.08.2026: диспетчеру — один клик вместо
+ * трёх). Ручная загрузка файлов осталась в соседней модалке «ЛК».
+ *
+ * Файлов здесь нет вовсе (решение владельца 03.08.2026): робот читает дислокацию
+ * прямо из ответа кабинета, xlsx не качает и в приём ничего не кладёт. Поэтому
+ * окно показывает срез и число вагонов по каждому кабинету, а не список файлов.
  *
  * Пароли вводятся здесь и никуда не сохраняются — на каждый поток свой аккаунт.
  *
@@ -33,7 +36,7 @@ import { LkProcessResultComponent } from './lk-process-result.component';
   selector: 'app-lk-robot-modal',
   imports: [
     DragDropModule, FormsModule, NzAlertModule, NzButtonModule, NzIconModule, NzInputModule,
-    NzModalModule, NzTagModule, NzTooltipModule, LkFilesViewComponent, LkProcessResultComponent,
+    NzModalModule, NzTagModule, NzTooltipModule, LkProcessResultComponent,
   ],
   template: `
     <nz-modal [nzVisible]="true" [nzTitle]="title" [nzFooter]="null" nzWidth="560px"
@@ -62,11 +65,12 @@ import { LkProcessResultComponent } from './lk-process-result.component';
           @for (a of accounts(); track a.okpo) {
             <div class="rrow">
               <span class="rname" [title]="'логин ' + a.login">{{ a.name || ('ОКПО ' + a.okpo) }}</span>
-              @if (running()) {
+              @if (running() || itemFor(a.okpo)) {
                 <span class="rstate">{{ stateLabel(itemFor(a.okpo)) }}</span>
                 @if (itemFor(a.okpo); as it) {
                   @if (it.state === 'ok') {
-                    <nz-tag class="chip" nzColor="success">{{ it.rows }} ваг.</nz-tag>
+                    <nz-tag class="chip" nzColor="success"
+                            nz-tooltip [nzTooltipTitle]="'срез ' + formation(it)">{{ it.rows }} ваг.</nz-tag>
                   } @else if (it.state === 'fail') {
                     <nz-tag class="chip" nzColor="error" nz-tooltip [nzTooltipTitle]="it.error">отказ</nz-tag>
                   }
@@ -85,7 +89,7 @@ import { LkProcessResultComponent } from './lk-process-result.component';
             @if (running()) {
               <span class="hint">{{ stageLabel() }} — окно можно закрыть, работа не прервётся</span>
             } @else if (lastItems().length) {
-              <span class="hint">принято потоков: {{ state()?.ok }} из {{ lastItems().length }}</span>
+              <span class="hint">получено потоков: {{ state()?.ok }} из {{ lastItems().length }}</span>
             }
             <span class="spacer"></span>
             <button nz-button nzType="primary" nzSize="small"
@@ -95,17 +99,12 @@ import { LkProcessResultComponent } from './lk-process-result.component';
           </div>
         }
 
-        <!-- Что лежит в приёме и что с ним не так — тот же вид, что в модалке «ЛК». -->
-        <app-lk-files-view [status]="files()"
-                           emptyText="Файлы ЛК не приняты." />
-
         <!-- Итог обновления дислокации: сводка либо честная причина, почему его нет. -->
         @if (state(); as st) {
           @if (st.process_error) {
             <nz-alert class="note" nzType="error" [nzMessage]="st.process_error" />
           } @else if (st.process_skip && !st.running) {
-            <nz-alert class="note" nzType="warning"
-                      [nzMessage]="st.process_skip + (notReadyReason() ? ': ' + notReadyReason() : '')" />
+            <nz-alert class="note" nzType="warning" [nzMessage]="st.process_skip" />
           }
           <app-lk-process-result [res]="st.processed ?? null" />
         }
@@ -142,7 +141,6 @@ export class LkRobotModalComponent implements OnInit, OnDestroy {
 
   readonly running = computed(() => this.state()?.running ?? false);
   readonly lastItems = computed(() => this.state()?.items ?? []);
-  readonly files = computed<LKStatus | null>(() => this.state()?.files ?? null);
   readonly hasAnyPwd = computed(() => Object.values(this.pwd()).some((p) => !!p));
 
   /** Опрос состояния — только пока работа идёт. */
@@ -261,18 +259,18 @@ export class LkRobotModalComponent implements OnInit, OnDestroy {
     switch (it?.state) {
       case 'wait': return 'ждёт очереди';
       case 'run': return 'заходим в кабинет…';
-      case 'ok': return 'файл принят';
+      case 'ok': return 'данные получены';
       case 'fail': return 'не получилось';
       default: return '';
     }
   }
 
-  /** Почему приём не годится к обработке — по блокирующим замечаниям контроля. */
-  notReadyReason(): string {
-    const blocks = (this.files()?.issues ?? []).filter((i) => i.level === 'block').map((i) => i.code);
-    if (blocks.includes('stale')) return 'файлы устарели';
-    if (blocks.includes('missing')) return 'не хватает файлов грузополучателей';
-    if (blocks.includes('gap')) return 'файлы из разных срезов';
-    return '';
+  /** Метка среза кабинета «ДД.ММ ЧЧ:ММ» — по ней видно, насколько свежи данные. */
+  formation(it: LKRobotItem): string {
+    const ts = it.formation_ts;
+    if (!ts) return 'неизвестен';
+    const [date, time] = ts.split('T');
+    const [, m, d] = date.split('-');
+    return `${d}.${m} ${(time ?? '').slice(0, 5)}`;
   }
 }

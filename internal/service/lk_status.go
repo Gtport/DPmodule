@@ -96,27 +96,44 @@ func (s *LKIntake) Status() (LKStatus, error) {
 	}
 	sort.Slice(st.Files, func(i, j int) bool { return okpoLess(st.Files[i].Okpo, st.Files[j].Okpo) })
 
+	st.Issues = append(st.Issues, s.checkBatch(st.Files, "файл")...)
+	st.Ready = len(st.Files) > 0 && !hasBlockingIssue(st.Issues)
+	return st, nil
+}
+
+// checkBatch — контроль комплекта источников дислокации по ingest_policy:
+// устаревание, разрыв меток формирования, полнота набора грузополучателей.
+// Работает с описаниями потоков, а не с папкой, поэтому применим и к файловому
+// приёму, и к роботу ЛК, который данные в файлы не складывает. noun — как
+// называть поток в тексте замечания («файл» / «поток»).
+func (s *LKIntake) checkBatch(files []LKFileInfo, noun string) []LKIssue {
+	issues := make([]LKIssue, 0, 4)
 	pol := s.cfg.Settings().IngestPolicy.Dislocation
 
-	// 1. Устаревание — на каждый файл. БЛОК (не warning): гард обработки
-	// (checkFreshness) отклоняет устаревшие файлы безусловно (без роль-исключения),
+	present := make(map[string]bool, len(files))
+	for _, f := range files {
+		present[f.Okpo] = true
+	}
+
+	// 1. Устаревание — на каждый поток. БЛОК (не warning): гард обработки
+	// (checkFreshness) отклоняет устаревшие данные безусловно (без роль-исключения),
 	// поэтому Ready обязан это отражать — иначе статус зелёный «готово», а обработка
-	// падает 409. «Любой файл устарел» ⟺ «самый старый устарел» ⟺ гард отклонит.
+	// падает 409. «Любой устарел» ⟺ «самый старый устарел» ⟺ гард отклонит.
 	if pol.MaxStalenessMinutes > 0 {
-		for _, f := range st.Files {
+		for _, f := range files {
 			if f.AgeMinutes > pol.MaxStalenessMinutes {
-				st.Issues = append(st.Issues, LKIssue{
+				issues = append(issues, LKIssue{
 					Level: LKIssueBlock, Code: LKCodeStale, Okpo: f.Okpo,
-					Message: fmt.Sprintf("файл устарел: возраст %d мин при допустимых %d — не годится для обновления дислокации", f.AgeMinutes, pol.MaxStalenessMinutes),
+					Message: fmt.Sprintf("%s устарел: возраст %d мин при допустимых %d — не годится для обновления дислокации", noun, f.AgeMinutes, pol.MaxStalenessMinutes),
 				})
 			}
 		}
 	}
 
-	// 2. Разрыв меток формирования между файлами (парадокс совместного среза).
-	if pol.MaxGapMinutes > 0 && len(st.Files) > 1 {
-		lo, hi := time.Time(st.Files[0].FormationTS), time.Time(st.Files[0].FormationTS)
-		for _, f := range st.Files[1:] {
+	// 2. Разрыв меток формирования между потоками (парадокс совместного среза).
+	if pol.MaxGapMinutes > 0 && len(files) > 1 {
+		lo, hi := time.Time(files[0].FormationTS), time.Time(files[0].FormationTS)
+		for _, f := range files[1:] {
 			t := time.Time(f.FormationTS)
 			if t.Before(lo) {
 				lo = t
@@ -126,14 +143,15 @@ func (s *LKIntake) Status() (LKStatus, error) {
 			}
 		}
 		if gap := int(hi.Sub(lo).Minutes()); gap > pol.MaxGapMinutes {
-			st.Issues = append(st.Issues, LKIssue{
+			issues = append(issues, LKIssue{
 				Level: LKIssueBlock, Code: LKCodeGap,
-				Message: fmt.Sprintf("разрыв меток формирования %d мин > %d — файлы из разных срезов", gap, pol.MaxGapMinutes),
+				Message: fmt.Sprintf("разрыв меток формирования %d мин > %d — данные из разных срезов", gap, pol.MaxGapMinutes),
 			})
 		}
 	}
 
-	// 3. Полнота: у каждого ожидаемого грузополучателя (активный порт) — свой файл.
+	// 3. Полнота: каждый ожидаемый грузополучатель (активный порт) должен быть в
+	// комплекте. Неполный комплект — это половина снимка, а не «частичное обновление».
 	for _, okpo := range s.dir.EnabledOkpos() {
 		okpoStr := strconv.FormatInt(okpo, 10)
 		if present[okpoStr] {
@@ -143,14 +161,12 @@ func (s *LKIntake) Status() (LKStatus, error) {
 		if ports, ok := s.dir.PortsByOkpo(okpo); ok && len(ports) > 0 {
 			org = ports[0].Organisation
 		}
-		st.Issues = append(st.Issues, LKIssue{
+		issues = append(issues, LKIssue{
 			Level: LKIssueBlock, Code: LKCodeMissing, Okpo: okpoStr,
-			Message: fmt.Sprintf("нет файла ожидаемого грузополучателя %s (%s)", okpoStr, org),
+			Message: fmt.Sprintf("нет данных ожидаемого грузополучателя %s (%s)", okpoStr, org),
 		})
 	}
-
-	st.Ready = len(st.Files) > 0 && !hasBlockingIssue(st.Issues)
-	return st, nil
+	return issues
 }
 
 // okpoLess упорядочивает ОКПО по числовому значению (строки разной длины иначе

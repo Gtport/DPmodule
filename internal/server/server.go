@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -240,9 +241,16 @@ func Build(
 				PollEvery:   cfg.LKRobot.PollEvery,
 				PollTimeout: cfg.LKRobot.PollTimeout,
 				Log:         log,
+				DumpDir:     cfg.LKRobot.DumpDir,
 			}
 			// Сессия ЛК короткая и не переживает запуск — клиент одноразовый.
-			newFetcher := func() (service.LKFetcher, error) { return lkrobot.New(opts) }
+			newFetcher := func() (service.LKFetcher, error) {
+				cl, err := lkrobot.New(opts)
+				if err != nil {
+					return nil, err
+				}
+				return lkFetcher{cl}, nil
+			}
 			lkRobot = service.NewLKRobot(lkAccountRepo, lkIntake, newFetcher, cfg.LKRobot.RunTimeout, log)
 			handler.NewLKRobotHandler(lkRobot).RegisterRoutes(api)
 		}
@@ -392,6 +400,19 @@ func Build(
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 	}, asuIngest, refSvc, vagonOps, brosJournal
+}
+
+// lkFetcher — переходник адаптер → сервис: таблицу кабинета сервис знает своим
+// типом (service.LKTable) и про HTTP-клиент не догадывается. Login берётся у
+// встроенного клиента как есть.
+type lkFetcher struct{ *lkrobot.Client }
+
+func (f lkFetcher) FetchTable(ctx context.Context, okpo string) (service.LKTable, error) {
+	t, err := f.Client.FetchTable(ctx, okpo)
+	if err != nil {
+		return service.LKTable{}, err
+	}
+	return service.LKTable{Head: t.Head, Body: t.Body, CreatedAt: t.CreatedAt}, nil
 }
 
 // NewMetricsServer returns a minimal http.Server that serves /metrics only,
