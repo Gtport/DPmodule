@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Gtport/DPmodule/internal/clock"
@@ -17,30 +19,51 @@ type HistoryStats struct {
 }
 
 // applyHistory — Stage 2 (S2-6, §3.19): запись вех рейса в vagon_history. INSERT для
-// новых id (нет в истории), точечный UPDATE по переходам статуса/накладной для
-// существующих (сравнение с actual = пред. снимок). Трейл vagon_operation — отдельно.
+// новых рейсов, точечный UPDATE по переходам статуса/накладной для существующих
+// (сравнение с actual = пред. снимок). Трейл vagon_operation — отдельно.
 // Идёт ПОСЛЕ forecast и ДО подмены снимка (actual ещё прежний). Без заморозки на 10.
+//
+// ⚠️ Рейс опознаётся по trip_key (вагон + дата начала рейса) — тем же ключом, что
+// стоит уникальным индексом в БД, а НЕ по id строки: в id входит ещё и станция
+// отправления. Наступили на это 03.08.2026: у 15 вагонов станция отправления
+// появилась (перестали терять её код), id сменился, рейсы показались новыми — и
+// вставка упала на uq_vagon_history_trip_key, оборвав всю пересборку снимка.
+// Строку с уже существующим рейсом обновляем по её настоящему id, каким бы он ни был.
 func applyHistory(ctx context.Context, kept []domain.Dislocation, actual *ActualCache, repo port.HistoryRepository) (HistoryStats, error) {
 	var st HistoryStats
-	ids := make([]string, 0, len(kept))
+	keys := make([]int64, 0, len(kept))
 	for i := range kept {
-		if kept[i].Vagon != "" && kept[i].ID != "" {
-			ids = append(ids, kept[i].ID)
+		if key, ok := historyTripKey(&kept[i]); ok {
+			keys = append(keys, key)
 		}
 	}
-	existing, err := repo.ExistingIDs(ctx, ids)
+	existing, err := repo.ExistingTrips(ctx, keys)
 	if err != nil {
-		return HistoryStats{}, fmt.Errorf("existing ids: %w", err)
+		return HistoryStats{}, fmt.Errorf("existing trips: %w", err)
 	}
 
 	now := clock.Now()
 	var toInsert []domain.VagonHistory
+	seen := make(map[int64]struct{}, len(kept))
 	for i := range kept {
 		r := &kept[i]
 		if r.Vagon == "" || r.ID == "" {
 			continue
 		}
-		if _, ok := existing[r.ID]; !ok {
+		key, hasKey := historyTripKey(r)
+		rowID, exists := "", false
+		if hasKey {
+			rowID, exists = existing[key]
+		}
+		if !exists {
+			// Один рейс — одна строка: два вагона с одним trip_key в батче
+			// невозможны, но подстраховка дешевле повторного падения вставки.
+			if hasKey {
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
+			}
 			toInsert = append(toInsert, buildHistoryRow(r, now))
 			continue
 		}
@@ -53,8 +76,8 @@ func applyHistory(ctx context.Context, kept []domain.Dislocation, actual *Actual
 			continue
 		}
 		fields["updated_at"] = now
-		if err := repo.UpdateFields(ctx, r.ID, fields); err != nil {
-			return HistoryStats{}, fmt.Errorf("update %s: %w", r.ID, err)
+		if err := repo.UpdateFields(ctx, rowID, fields); err != nil {
+			return HistoryStats{}, fmt.Errorf("update %s: %w", rowID, err)
 		}
 		st.Updated++
 	}
@@ -253,4 +276,22 @@ func dateOnly(t *domain.LocalTime) *domain.LocalTime {
 	tt := time.Time(*t)
 	d := domain.LocalTime(time.Date(tt.Year(), tt.Month(), tt.Day(), 0, 0, 0, 0, time.UTC))
 	return &d
+}
+
+// historyTripKey — ключ рейса в том же виде, в каком его считает БД
+// (vagon::bigint * 100000 + дни от 1970-01-01 по date_nach_d). Считаем на нашей
+// стороне, чтобы искать существующие рейсы одним запросом по списку ключей.
+// false — рейс без номера вагона или без даты начала: такой ключ база не построит.
+func historyTripKey(r *domain.Dislocation) (int64, bool) {
+	if r.Vagon == "" || r.DateNach == nil || r.DateNach.IsZero() {
+		return 0, false
+	}
+	v, err := strconv.ParseInt(strings.TrimSpace(r.Vagon), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	d := r.DateNach.Time()
+	day := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+	days := int64(day.Sub(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).Hours() / 24)
+	return v*100000 + days, true
 }

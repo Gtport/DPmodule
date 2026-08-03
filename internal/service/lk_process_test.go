@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,6 +162,22 @@ func (f *fakeHistoryRepo) ExistingIDs(_ context.Context, ids []string) (map[stri
 	}
 	return out, nil
 }
+func (f *fakeHistoryRepo) ExistingTrips(_ context.Context, keys []int64) (map[int64]string, error) {
+	byKey := map[int64]string{}
+	for id := range f.existing {
+		if k, ok := tripKeyFromExtID(id); ok {
+			byKey[k] = id
+		}
+	}
+	out := map[int64]string{}
+	for _, k := range keys {
+		if id, ok := byKey[k]; ok {
+			out[k] = id
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeHistoryRepo) Insert(_ context.Context, rows []domain.VagonHistory) error {
 	f.inserted = append(f.inserted, rows...)
 	for _, r := range rows {
@@ -400,4 +417,24 @@ func (f *fakeHistoryRepo) LoadingDaily(_ context.Context, _, _ domain.LocalTime)
 
 func (f *fakeHistoryRepo) PerestanovkaRows(_ context.Context, _, _ domain.LocalTime, _ bool) ([]domain.VagonHistory, error) {
 	return nil, nil
+}
+
+// tripKeyFromExtID — ключ рейса из id вида «вагон/станция/ДД.ММ.ГГГГ», той же
+// формулой, что генерируемая колонка trip_key в БД (пакет service_test не видит
+// одноимённый хелпер внутренних тестов).
+func tripKeyFromExtID(id string) (int64, bool) {
+	parts := strings.Split(id, "/")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	v, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	d, err := time.Parse("02.01.2006", parts[2])
+	if err != nil {
+		return 0, false
+	}
+	days := int64(d.Sub(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).Hours() / 24)
+	return v*100000 + days, true
 }

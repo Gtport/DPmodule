@@ -119,6 +119,29 @@ func (r *HistoryRepository) ExistingIDs(ctx context.Context, ids []string) (map[
 	return out, nil
 }
 
+// ExistingTrips — уже записанные рейсы по trip_key (генерируемая колонка, она же
+// уникальный индекс): trip_key → id строки. По id рейс искать нельзя — в него
+// входит станция отправления, которая у вагона может появиться позже (см.
+// комментарий в port.HistoryRepository).
+func (r *HistoryRepository) ExistingTrips(ctx context.Context, tripKeys []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(tripKeys) == 0 {
+		return out, nil
+	}
+	var found []struct {
+		TripKey int64  `gorm:"column:trip_key"`
+		ID      string `gorm:"column:id"`
+	}
+	if err := r.db.WithContext(ctx).Model(&vagonHistoryModel{}).
+		Select("trip_key, id").Where("trip_key IN ?", tripKeys).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	for _, f := range found {
+		out[f.TripKey] = f.ID
+	}
+	return out, nil
+}
+
 func (r *HistoryRepository) Insert(ctx context.Context, rows []domain.VagonHistory) error {
 	if len(rows) == 0 {
 		return nil

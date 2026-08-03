@@ -12,6 +12,16 @@ import (
 type HistoryRepository interface {
 	// ExistingIDs возвращает множество id из переданных, которые уже есть в vagon_history.
 	ExistingIDs(ctx context.Context, ids []string) (map[string]struct{}, error)
+	// ExistingTrips возвращает уже записанные рейсы по НАСТОЯЩЕМУ ключу рейса
+	// (trip_key = вагон + дата начала рейса, уникальный индекс таблицы) в виде
+	// trip_key → id строки.
+	//
+	// Зачем отдельно от ExistingIDs: id строки истории включает ещё и станцию
+	// отправления, а trip_key — нет. Если у вагона станция отправления поменялась
+	// (например, раньше её не удавалось прочитать), id получается новый, рейс
+	// выглядит несуществующим — и вставка падает на уникальном trip_key. Искать
+	// рейс нужно тем ключом, которым его опознаёт база.
+	ExistingTrips(ctx context.Context, tripKeys []int64) (map[int64]string, error)
 	// Insert вставляет новые строки истории (полные вехи рейса).
 	Insert(ctx context.Context, rows []domain.VagonHistory) error
 	// UpdateFields точечно обновляет колонки строки по id (ключи — имена колонок).

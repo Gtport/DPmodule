@@ -66,6 +66,10 @@ func (s *refHistStub) UpdateFieldsBatch(_ context.Context, updates map[string]ma
 	return nil
 }
 
+func (s *refHistStub) ExistingTrips(context.Context, []int64) (map[int64]string, error) {
+	return nil, nil
+}
+
 func (s *refHistStub) ExistingIDs(context.Context, []string) (map[string]struct{}, error) {
 	return nil, nil
 }

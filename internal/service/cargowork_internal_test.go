@@ -116,6 +116,7 @@ type cwHist struct {
 }
 
 func (cwHist) ExistingIDs(context.Context, []string) (map[string]struct{}, error) { return nil, nil }
+func (cwHist) ExistingTrips(context.Context, []int64) (map[int64]string, error)   { return nil, nil }
 func (cwHist) Insert(context.Context, []domain.VagonHistory) error                { return nil }
 func (cwHist) UpdateFields(context.Context, string, map[string]any) error         { return nil }
 func (cwHist) PerestanovkaRows(context.Context, domain.LocalTime, domain.LocalTime, bool) ([]domain.VagonHistory, error) {

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 
 type histStubRepo struct {
 	existing map[string]struct{}
+	trips    map[int64]string // trip_key → id строки (как уникальный индекс в БД)
 	inserted []domain.VagonHistory
 	updates  map[string]map[string]any
 	rows     map[string]domain.VagonHistory // для RowsByIDs
@@ -25,7 +28,7 @@ func newHistStub(existing ...string) *histStubRepo {
 	for _, id := range existing {
 		e[id] = struct{}{}
 	}
-	return &histStubRepo{existing: e, updates: map[string]map[string]any{}}
+	return &histStubRepo{existing: e, updates: map[string]map[string]any{}, trips: map[int64]string{}}
 }
 func (r *histStubRepo) ExistingIDs(_ context.Context, ids []string) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
@@ -36,6 +39,29 @@ func (r *histStubRepo) ExistingIDs(_ context.Context, ids []string) (map[string]
 	}
 	return out, nil
 }
+
+// ExistingTrips — как в бою: рейс опознаётся по trip_key (вагон + дата начала),
+// а не по id строки. Ключи берутся из колонок строки, поэтому в заглушке они
+// живут отдельной картой: id может быть каким угодно, в том числе временным.
+func (r *histStubRepo) ExistingTrips(_ context.Context, keys []int64) (map[int64]string, error) {
+	byKey := map[int64]string{}
+	for id := range r.existing {
+		if k, ok := tripKeyFromTestID(id); ok {
+			byKey[k] = id
+		}
+	}
+	for k, id := range r.trips {
+		byKey[k] = id
+	}
+	out := map[int64]string{}
+	for _, k := range keys {
+		if id, ok := byKey[k]; ok {
+			out[k] = id
+		}
+	}
+	return out, nil
+}
+
 func (r *histStubRepo) Insert(_ context.Context, rows []domain.VagonHistory) error {
 	r.inserted = append(r.inserted, rows...)
 	return nil
@@ -145,11 +171,12 @@ func TestApplyHistory(t *testing.T) {
 	ctx := context.Background()
 	actual := NewActualCache(s9StubDisl{items: []domain.Dislocation{{Vagon: "1", Status: ip(2)}}})
 	require.NoError(t, actual.Load(ctx))
-	repo := newHistStub("A") // рейс A уже в истории, B — новый
+	const idA = "1/985702/01.07.2026"
+	repo := newHistStub(idA) // рейс A уже в истории, B — новый
 
 	kept := []domain.Dislocation{
-		{ID: "A", Vagon: "1", Status: ip(5), Invoice: "x"}, // переход 2→5
-		{ID: "B", Vagon: "2", Status: ip(2)},               // новый рейс
+		{ID: idA, Vagon: "1", DateNach: ld(2026, 7, 1), Status: ip(5), Invoice: "x"},     // переход 2→5
+		{ID: "2/985702/01.07.2026", Vagon: "2", DateNach: ld(2026, 7, 1), Status: ip(2)}, // новый рейс
 	}
 	st, err := applyHistory(ctx, kept, actual, repo)
 	require.NoError(t, err)
@@ -157,8 +184,37 @@ func TestApplyHistory(t *testing.T) {
 	assert.Equal(t, 1, st.Inserted)
 	assert.Equal(t, 1, st.Updated)
 	require.Len(t, repo.inserted, 1)
-	assert.Equal(t, "B", repo.inserted[0].ID)
-	assert.Equal(t, 5, repo.updates["A"]["status"])
+	assert.Equal(t, "2/985702/01.07.2026", repo.inserted[0].ID)
+	assert.Equal(t, 5, repo.updates[idA]["status"])
+}
+
+// Регрессия 03.08.2026: у вагона появилась станция отправления (раньше её код
+// терялся), из-за чего id рейса стал другим — а trip_key (вагон + дата начала)
+// остался прежним. Рейс обязан опознаться как существующий и обновиться по
+// СТАРОМУ id: иначе вставка падает на uq_vagon_history_trip_key и обрывает всю
+// пересборку снимка.
+func TestApplyHistory_TripFoundWhenIDChanged(t *testing.T) {
+	ctx := context.Background()
+	actual := NewActualCache(s9StubDisl{items: []domain.Dislocation{{Vagon: "44463065", Status: ip(2)}}})
+	require.NoError(t, actual.Load(ctx))
+
+	repo := newHistStub()
+	// В истории рейс лежит под временным id — станции отправления тогда не знали.
+	key, ok := historyTripKey(&domain.Dislocation{Vagon: "44463065", DateNach: ld(2026, 7, 28)})
+	require.True(t, ok)
+	repo.trips[key] = "temp_1785714108003612443"
+
+	kept := []domain.Dislocation{{
+		ID: "44463065/033004/28.07.2026", Vagon: "44463065",
+		DateNach: ld(2026, 7, 28), Status: ip(5), Invoice: "x",
+	}}
+	st, err := applyHistory(ctx, kept, actual, repo)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, st.Inserted, "рейс уже есть — вставлять нельзя")
+	assert.Equal(t, 1, st.Updated)
+	assert.Equal(t, 5, repo.updates["temp_1785714108003612443"]["status"], "обновлять надо строку с её настоящим id")
+	assert.Empty(t, repo.inserted)
 }
 
 func (r *histStubRepo) RowsByIDs(_ context.Context, ids []string) ([]domain.VagonHistory, error) {
@@ -240,4 +296,23 @@ func TestApplyUnloadOnLeave(t *testing.T) {
 	assert.False(t, hasB, "оставшийся в батче не трогается")
 	assert.False(t, hasC, "исчезнувший в пути — путь записи-8, не выгрузка")
 	assert.False(t, hasD, "ручная выгрузка не перетирается")
+}
+
+// tripKeyFromTestID собирает trip_key из id вида «вагон/станция/ДД.ММ.ГГГГ» —
+// той же формулой, что генерируемая колонка в БД.
+func tripKeyFromTestID(id string) (int64, bool) {
+	parts := strings.Split(id, "/")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	v, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	d, err := time.Parse("02.01.2006", parts[2])
+	if err != nil {
+		return 0, false
+	}
+	days := int64(d.Sub(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).Hours() / 24)
+	return v*100000 + days, true
 }
