@@ -31,19 +31,22 @@ services:
     restart: on-failure
 
   # Фронтенд (Angular + nginx) — ОТДЕЛЬНЫЙ контейнер: собранная статика плюс
-  # прокси /api на бэкенд. Наружу стенда его публикует ingress; порт ниже —
-  # чтобы можно было проверить связку локально (docker compose up).
+  # прокси /api на бэкенд.
+  #
+  # ⚠️ НА СТЕНДЕ фронт и бэк поднимаются РАЗНЫМИ compose-проектами, общей сети
+  # между ними нет — там фронт ходит на адрес хоста (дефолт API_BACKEND в его
+  # Dockerfile). Этот файл сводит их в одну сеть для ЛОКАЛЬНОЙ проверки пары
+  # одной командой, поэтому здесь адрес — имя сервиса.
   frontend:
     build:
       context: ../frontend
       dockerfile: Dockerfile
     ports:
-      - "${FRONTEND_PORT:-8480}:80"
+      - "${FRONTEND_PORT:-8581}:8581"
     environment:
-      # Куда фронт шлёт /api. Имя = имя сервиса бэкенда в этой же сети compose
-      # (app), порт = http.port из config.docker.yaml. Если на стенде фронт и
-      # бэк поднимаются РАЗНЫМИ стеками, здесь указывается адрес, видимый из
-      # сети фронта, а сервисы сводятся в общую external-сеть.
+      # Имя сервиса бэкенда в этой же сети compose (app), порт = http.port из
+      # config.docker.yaml. Пересборка образа для этого не нужна — адрес
+      # подставляется на старте контейнера (см. frontend/nginx.conf).
       API_BACKEND: app:8580
     # Только порядок запуска. Ждать здоровья бэкенда НЕ нужно: адрес резолвится
     # лениво (см. nginx.conf), поэтому фронт поднимается и отдаёт страницу даже
@@ -51,10 +54,10 @@ services:
     depends_on:
       - app
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8581/"]
       interval: 30s
       timeout: 5s
-      start_period: 5s
+      start_period: 10s
       retries: 3
     restart: on-failure
 

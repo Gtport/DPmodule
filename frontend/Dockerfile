@@ -29,11 +29,12 @@ FROM nginx:alpine
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist/app/browser /usr/share/nginx/html
 
-# API_BACKEND — «хост:порт» Go-бэкенда, куда уходит /api. Порт должен совпадать
-# с http.port бэкенда (config.docker.yaml стенда: 8580). Имя по умолчанию —
-# api-backend; в нашем deployments/docker-compose.yml сервис называется app,
-# поэтому там переменная переопределяется.
-ENV API_BACKEND=api-backend:8580
+# API_BACKEND — «хост:порт» Go-бэкенда, куда уходит /api. Порт совпадает с
+# http.port бэкенда (config.docker.yaml стенда: 8580).
+# Дефолт — АДРЕС ХОСТА стенда: там фронт и бэк подняты разными compose-проектами,
+# общей сети между ними нет. Внутри одной сети (локальная проверка через
+# deployments/docker-compose.yml) переменная переопределяется именем сервиса.
+ENV API_BACKEND=176.53.160.9:8580
 
 # Подстановку ограничиваем ДВУМЯ именами: в конфиге полно собственных
 # переменных nginx ($uri, $status, $request_id…), и envsubst без фильтра
@@ -45,9 +46,14 @@ ENV NGINX_ENVSUBST_FILTER="^(API_BACKEND|NGINX_LOCAL_RESOLVERS)$"
 # роняет nginx. Нужна для ленивого резолва адреса бэкенда (см. nginx.conf).
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 
-EXPOSE 80
+# Порты должны совпадать с listen в nginx.conf: 8581 — SPA, 9581 — метрики.
+# Раскладка модуля на стенде: бэкенд 8580 / его метрики 9580, фронт 8581 / 9581.
+# Наружу через ingress торчит только 8581.
+EXPOSE 8581 9581
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1
+# Healthcheck: nginx отдаёт SPA — проверяем, что index.html доступен.
+# wget есть в nginx:alpine (busybox), curl ставить не нужно.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:8581/ >/dev/null 2>&1 || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

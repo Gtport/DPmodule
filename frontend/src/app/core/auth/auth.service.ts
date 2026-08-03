@@ -56,7 +56,8 @@ export class AuthService {
   readonly roles = computed(() =>
     (this.payload()?.realm_access?.roles ?? []).map(normalizeRole),
   );
-  /** Порог правок (набор OPER). Клиентские роли видят экраны без действий. */
+  /** Порог правок: набор OPER (operator_dpport или admin_dpport — иерархии нет).
+   *  Клиентские роли видят экраны без кнопок действий. */
   readonly canEdit = computed(() => this.hasAnyRole(OPER));
 
   /**
@@ -99,11 +100,15 @@ export class AuthService {
     return this.accessToken;
   }
 
+  /**
+   * Есть ли хотя бы одна из требуемых ролей. Нормализуются ОБЕ стороны (как
+   * auth.Claims.HasRole на бэкенде): тогда старое имя, оставшееся в route data
+   * или в конфиге (modules.config.ts), продолжает совпадать с нынешней ролью
+   * из токена. Пустой список требуемых ролей = «доступно любому залогиненному».
+   */
   hasAnyRole(roles: string[]): boolean {
     if (!roles.length) return true;
     const mine = this.roles();
-    // Требуемая сторона тоже нормализуется: в конфигах (modules.config.ts)
-    // наборы могут быть записаны прежними именами ('operator', 'admin').
     return roles.some((r) => mine.includes(normalizeRole(r)));
   }
 
