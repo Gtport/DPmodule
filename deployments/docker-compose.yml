@@ -30,5 +30,33 @@ services:
       retries: 3
     restart: on-failure
 
+  # Фронтенд (Angular + nginx) — ОТДЕЛЬНЫЙ контейнер: собранная статика плюс
+  # прокси /api на бэкенд. Наружу стенда его публикует ingress; порт ниже —
+  # чтобы можно было проверить связку локально (docker compose up).
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-8480}:80"
+    environment:
+      # Куда фронт шлёт /api. Имя = имя сервиса бэкенда в этой же сети compose
+      # (app), порт = http.port из config.docker.yaml. Если на стенде фронт и
+      # бэк поднимаются РАЗНЫМИ стеками, здесь указывается адрес, видимый из
+      # сети фронта, а сервисы сводятся в общую external-сеть.
+      API_BACKEND: app:8580
+    # Только порядок запуска. Ждать здоровья бэкенда НЕ нужно: адрес резолвится
+    # лениво (см. nginx.conf), поэтому фронт поднимается и отдаёт страницу даже
+    # при лежачем бэкенде — /api в это время отвечает 502.
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    restart: on-failure
+
 volumes:
   app_logs:

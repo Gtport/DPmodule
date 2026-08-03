@@ -337,9 +337,41 @@ discovery 03.08 — доменный, НЕ IP), audience `iqport-dpport`,
 не нужен (выключены). Фронт-контейнер: `frontend/Dockerfile` (production env →
 uport1.ru), `frontend/nginx.conf` проксирует `/api` на `api-backend:8580`.
 Тест `internal/config/examples_test.go` сторожит парсируемость примеров
-конфигов. Открытое: compose стенда описывает только бэкенд — фронт-контейнер и
-ingress за DevOps; redirect URIs/времена жизни токенов — TODO в
-`docs/KEYCLOAK.md` §7.
+конфигов.
+
+Фронт-контейнер доведён до раскатываемого состояния (03.08.2026, проверено
+сборкой и запуском). ⚠️ Он **не поднимался вовсе**: `proxy_pass` с литеральным
+именем nginx резолвит на СТАРТЕ и падает с «host not found in upstream», если
+бэкенда ещё нет в DNS, — фронт уходил в crash-loop и не отдавал даже страницу
+логина (плюс имя `api-backend` не совпадало с именем сервиса `app`). Теперь
+адрес идёт переменной `${API_BACKEND}` (envsubst шаблона на старте) с
+`resolver`/`resolver_timeout 5s` — резолв ленивый, поэтому фронт живёт
+независимо от бэкенда, а `/api` отвечает 502, пока тот не встанет. `$request_uri`
+обязателен: с переменной nginx сам путь не подставляет. Сервис `frontend` добавлен
+в `deployments/docker-compose.yml` (`API_BACKEND: app:8580`, `depends_on` только
+про порядок), появился `frontend/.dockerignore` (без него 450+ МБ `node_modules`
+с машины разработчика ложились поверх `npm ci`), образ сборки — `node:24-alpine`
+как в dev и на VPS. Проверено: страница и SPA-fallback 200, путь `/api/v1/...`
+доходит до бэкенда целиком, при лежачем бэкенде фронт остаётся healthy.
+
+⚠️ **Стенда два, и Keycloak у них разные.** Контейнеры выше настроены на
+корпоративный контур (`config.docker.yaml`: база 176.53.160.9, Keycloak
+`uport1.ru`). Наш VPS `95850.koara.live` — отдельный стенд со СВОИМ Keycloak,
+который отдаётся тем же nginx (same-origin). Адрес Keycloak зашивается в бандл
+ПРИ СБОРКЕ фронта, поэтому production-сборка на VPS ломает вход — уводит логин
+на чужой сервер (мина описана в `docs/KEYCLOAK_HANDOVER.md` §5.2, решение за
+владельцем, файлы `environments/*` самовольно не трогать). Выбор сделан явным:
+`docker build --build-arg NG_CONFIG=...`, дефолт `production` = корпоративный
+контур.
+
+Открытое: ingress стенда и внешний порт фронта за DevOps; у клиента
+`iqport-dpport` корпоративного realm'а нужны **Web Origins** (домен стенда) и
+**Direct access grants** — вход идёт формой (`grant_type=password`) прямо в
+Keycloak, без них браузер зарубит запрос по CORS; redirect URIs и времена жизни
+токенов — TODO в `docs/KEYCLOAK.md` §7. На нашем VPS redirect URI уже починен
+тимлидом, там же роли розданы через группы (`docs/KEYCLOAK_HANDOVER.md`). ⚠️ Если CI/CD не подставит `PG_PASSWORD`/Vault-секрет,
+бэкенд-контейнер уходит в crash-loop (падать громко — так и задумано): в логе
+`password authentication failed for user "gtport_app"`.
 
 Ролевая модель (решение владельца 31.07.2026, справка — `docs/ROLES.md`; общий
 realm стенда описан в `docs/KEYCLOAK.md`): realm-роли Keycloak с суффиксом

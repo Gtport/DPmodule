@@ -1,0 +1,24 @@
+# Что НЕ уезжает в контекст сборки образа.
+#
+# Главное здесь — node_modules: без этой строки 450+ МБ зависимостей с машины
+# разработчика копируются в образ поверх результата `npm ci` и подменяют его.
+# Внутри лежат ПЛАТФОРМОЗАВИСИМЫЕ бинарники (esbuild и прочие), собранные под
+# ту машину, где делали npm install; в образе (alpine/musl, своя версия Node)
+# они в общем случае не работают. Сборка контейнера обязана начинаться с чистого
+# `npm ci` по package-lock.json — тогда результат одинаков у всех и в CI/CD.
+node_modules
+.angular
+dist
+
+.git
+.gitignore
+.gitlab-ci.yml
+.editorconfig
+.stylelintrc.json
+.impeccable
+README.md
+
+# Dev-обвязка: в образ не нужна (прокси dev-сервера, свой Dockerfile).
+proxy.conf.json
+Dockerfile
+.dockerignore
