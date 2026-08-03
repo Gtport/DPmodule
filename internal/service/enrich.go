@@ -44,10 +44,10 @@ type Stage1Stats struct {
 }
 
 // Stage1 — вся построчная обработка нового батча, по порядку:
-//  1. станции (коды → имена; отсутствие станции ОТПРАВЛЕНИЯ прерывает обогащение
-//     записи — квирк gtlogic для паритета);
-//  2. идентификация порта (ОКПО+StanNazn → GruzpolS) и ФИЛЬТР: остаются только
-//     вагоны включённых портов;
+//  1. станции (коды → имена; неизвестный справочнику код гасит только свои поля,
+//     разбор остальных станций записи не прерывает);
+//  2. идентификация порта (ОКПО+StanNazn → GruzpolS): нерезолвнутый порт запись
+//     НЕ выбрасывает (как в gtlogic), отбрасывается только ВЫКЛЮЧЕННЫЙ порт;
 //  3. груз из словаря cargo (CodeCargo → CargoGroup/CargoS/CargoSms) — каждому
 //     оставшемуся вагону, независимо от отправителя (marka в Stage 2 добирает
 //     только бизнес-атрибуцию: отправитель/клиент/sms);
@@ -145,23 +145,30 @@ func (e *Enricher) enrichCargo(r *domain.Dislocation, notFound map[int]struct{})
 }
 
 // identifyPort идентифицирует порт по составному ключу (ОКПО грузополучателя +
-// StanNazn) и фильтрует: true, если резолвится во ВКЛЮЧЁННЫЙ порт (заполняет
-// Gruzpol/GruzpolS); false → запись отбрасывается (учтено в статистике). Требует
-// заполненного StanNazn (шаг 1).
+// StanNazn) и заполняет Gruzpol/GruzpolS. Возвращает false ТОЛЬКО когда порт
+// найден, но выключен — такую запись Stage 1 отбрасывает (выключенный терминал
+// не показываем осознанно).
+//
+// Не резолвится вовсе (нет ОКПО, нет StanNazn, пары нет в ports) — запись
+// ОСТАЁТСЯ в снимке с пустым терминалом, как в gtlogic (enrichFromPorts там
+// просто выходит, ничего не заполнив). Решение владельца 03.08.2026: вагон
+// нельзя терять из-за справочника — пропажа в дислокации означает, что он
+// физически выпал из выгрузки, а не что мы не смогли его разложить. Счётчик
+// PortUnresolved остаётся: это диагностика неполноты справочников.
 func (e *Enricher) identifyPort(r *domain.Dislocation, st *Stage1Stats) bool {
 	if r.GruzpolOkpo == "" || r.StanNazn == "" {
 		st.PortUnresolved++
-		return false
+		return true
 	}
 	okpo, err := strconv.ParseInt(r.GruzpolOkpo, 10, 64)
 	if err != nil {
 		st.PortUnresolved++
-		return false
+		return true
 	}
 	ports, ok := e.dir.GetPortByCompositeKey(okpo, r.StanNazn)
 	if !ok || len(ports) == 0 {
 		st.PortUnresolved++
-		return false
+		return true
 	}
 	p := ports[0]
 	if !p.Enabled {
@@ -173,55 +180,64 @@ func (e *Enricher) identifyPort(r *domain.Dislocation, st *Stage1Stats) bool {
 	return true
 }
 
-// enrichStations заполняет станции отправления/назначения/операции. Ранний выход
-// при ненайденной/безымянной станции — дословно как в gtlogic (см. заголовок Stage1).
+// enrichStations заполняет станции отправления/назначения/операции. Каждая
+// станция обрабатывается НЕЗАВИСИМО: неизвестный справочнику код заполняет только
+// свои поля пустотой и попадает в notFound, но разбор остальных станций не
+// прерывает (решение владельца 03.08.2026).
+//
+// ⚠️ Раньше здесь стоял ранний выход «как в gtlogic», и он вместе с фильтром
+// порта выбрасывал вагоны из снимка целиком. В gtlogic такого следствия не было:
+// там enrichFromPorts просто ничего не заполнял, а запись оставалась в дислокации
+// (см. enrich_stage2.go: enrichFromPorts). Наступили на это 03.08.2026: 15 вагонов
+// НМТП со станцией отправления ШУШАРЫ (033004 — Октябрьская дорога, в справочнике
+// её нет) числились пропавшими, хотя приходили в каждой выгрузке. На xlsx-пути
+// дефект маскировался: кабинет печатает код в скобках без ведущего нуля
+// («ШУШАРЫ (33004)»), парсер ждёт ровно шесть цифр и оставлял поле пустым — а
+// пустое поле обрыва не вызывало.
 func (e *Enricher) enrichStations(r *domain.Dislocation, notFound map[int]struct{}) {
 	// Станция отправления → StationNach, DorogaNach.
 	if r.CodeStationNach != "" {
 		if kod, err := strconv.Atoi(r.CodeStationNach); err == nil {
-			station, ok := e.dir.GetStationByKod(kod)
-			if !ok || station.Name == "" {
+			if station, ok := e.dir.GetStationByKod(kod); ok && station.Name != "" {
+				r.StationNach = station.Name
+				r.DorogaNach = station.Road
+			} else {
 				notFound[kod] = struct{}{}
-				return
 			}
-			r.StationNach = station.Name
-			r.DorogaNach = station.Road
 		}
 	}
 
 	// Станция назначения → StanNazn, Code4StanNazn (только имя и 4-значный код).
 	if r.CodeStanNazn != "" {
 		if kod, err := strconv.Atoi(r.CodeStanNazn); err == nil {
-			station, ok := e.dir.GetStationByKod(kod)
-			if !ok || station.Name == "" {
+			if station, ok := e.dir.GetStationByKod(kod); ok && station.Name != "" {
+				r.StanNazn = station.Name
+				r.Code4StanNazn = strconv.Itoa(station.Kod4)
+			} else {
 				notFound[kod] = struct{}{}
-				return
 			}
-			r.StanNazn = station.Name
-			r.Code4StanNazn = strconv.Itoa(station.Kod4)
 		}
 	}
 
 	// Станция операции → StationOper, DorogaOper, Latitude, Longitude.
 	if r.CodeStationOper != "" {
 		if kod, err := strconv.Atoi(r.CodeStationOper); err == nil {
-			station, ok := e.dir.GetStationByKod(kod)
-			if !ok || station.Name == "" {
+			if station, ok := e.dir.GetStationByKod(kod); ok && station.Name != "" {
+				r.StationOper = station.Name
+				r.DorogaOper = station.Road
+				if station.Latitude != nil {
+					r.Latitude = fmt.Sprintf("%f", *station.Latitude)
+				}
+				if station.Longitude != nil {
+					r.Longitude = fmt.Sprintf("%f", *station.Longitude)
+				}
+				// Маркер альтернативного пути (БАМ) — из станции операции (где вагон
+				// сейчас). Persistent (alternative_move); читается прогнозом (§3.18).
+				if station.IsBam {
+					r.AlternativeMove = 1
+				}
+			} else {
 				notFound[kod] = struct{}{}
-				return
-			}
-			r.StationOper = station.Name
-			r.DorogaOper = station.Road
-			if station.Latitude != nil {
-				r.Latitude = fmt.Sprintf("%f", *station.Latitude)
-			}
-			if station.Longitude != nil {
-				r.Longitude = fmt.Sprintf("%f", *station.Longitude)
-			}
-			// Маркер альтернативного пути (БАМ) — из станции операции (где вагон
-			// сейчас). Persistent (alternative_move); читается прогнозом (§3.18).
-			if station.IsBam {
-				r.AlternativeMove = 1
 			}
 		}
 	}

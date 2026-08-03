@@ -85,37 +85,46 @@ func TestStage1_Coords(t *testing.T) {
 	assert.Empty(t, kept2[0].Latitude)
 }
 
-// Квирк паритета: ненайденная станция ОТПРАВЛЕНИЯ прерывает обогащение → StanNazn
-// пусто → запись не резолвится и ОТБРАСЫВАЕТСЯ фильтром.
-func TestStage1_MissingNachAborts(t *testing.T) {
+// Неизвестная станция ОТПРАВЛЕНИЯ не мешает разобрать остальные станции и НЕ
+// выбрасывает вагон (решение владельца 03.08.2026). Боевой случай: 15 вагонов
+// НМТП со станцией ШУШАРЫ (033004, Октябрьская дорога — её нет в справочнике)
+// числились пропавшими, хотя приходили в каждой выгрузке.
+func TestStage1_UnknownNachKeepsRecord(t *testing.T) {
 	kept, st := fullEnricher(t).Stage1([]domain.Dislocation{
 		{GruzpolOkpo: "1126022", CodeStationNach: "111111", CodeStanNazn: "985702"},
 	}, stage1Cfg)
 
-	assert.Empty(t, kept)
+	require.Len(t, kept, 1)
 	assert.Equal(t, []int{111111}, st.StationsNotFound)
-	assert.Equal(t, 1, st.PortUnresolved)
-	assert.Equal(t, 0, st.Kept)
+	assert.Empty(t, kept[0].StationNach, "неизвестная станция отправления остаётся пустой")
+	// А назначение и порт разобраны как обычно — обрыва больше нет.
+	assert.Equal(t, "МЫС АСТАФЬЕВА", kept[0].StanNazn)
+	assert.Equal(t, "ГУТ-2", kept[0].GruzpolS)
+	assert.Equal(t, 0, st.PortUnresolved)
+	assert.Equal(t, 1, st.Kept)
 }
 
-// Фильтр по включённым портам: один ОКПО разведён по терминалам; не резолвится и
-// выключенный порт — выброшены.
-func TestStage1_FilterByPort(t *testing.T) {
+// Порт: один ОКПО разведён по терминалам. Нерезолвнутая пара вагон НЕ выбрасывает
+// (остаётся с пустым терминалом, как в gtlogic) — выбрасывается только ВЫКЛЮЧЕННЫЙ
+// порт: его скрывают осознанно.
+func TestStage1_PortResolution(t *testing.T) {
 	recs := []domain.Dislocation{
 		{Vagon: "A", GruzpolOkpo: "1126022", CodeStanNazn: "985702"}, // → ГУТ-2 (вкл)
 		{Vagon: "B", GruzpolOkpo: "1126022", CodeStanNazn: "984700"}, // → УТ-1 (вкл)
-		{Vagon: "C", GruzpolOkpo: "1126022", CodeStanNazn: "770005"}, // УЛАК: порта (1126022,УЛАК) нет → выброс
+		{Vagon: "C", GruzpolOkpo: "1126022", CodeStanNazn: "770005"}, // УЛАК: пары нет → остаётся без терминала
 		{Vagon: "D", GruzpolOkpo: "777", CodeStanNazn: "985100"},     // РЫБНИКИ: порт выключен → выброс
 	}
 
 	kept, st := fullEnricher(t).Stage1(recs, stage1Cfg)
 
-	require.Len(t, kept, 2)
-	assert.Equal(t, 2, st.Kept)
-	assert.Equal(t, 1, st.PortUnresolved) // C
-	assert.Equal(t, 1, st.PortDisabled)   // D
+	require.Len(t, kept, 3)
+	assert.Equal(t, 3, st.Kept)
+	assert.Equal(t, 1, st.PortUnresolved) // C — счётчик остаётся: это диагностика справочников
+	assert.Equal(t, 1, st.PortDisabled)   // D — единственная выброшенная
 	assert.Equal(t, "ГУТ-2", kept[0].GruzpolS)
 	assert.Equal(t, "УТ-1", kept[1].GruzpolS)
+	assert.Equal(t, "C", kept[2].Vagon)
+	assert.Empty(t, kept[2].GruzpolS, "терминал не определён, но вагон в снимке")
 }
 
 // Обогащение из словаря cargo: код → группа/краткое имя/метка; каждому вагону
