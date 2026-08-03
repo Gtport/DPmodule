@@ -73,10 +73,11 @@ func (r *AdminTablesRepository) Columns(ctx context.Context, table string) ([]do
 		Label    string `gorm:"column:label"`
 		DataType string `gorm:"column:data_type"`
 		Nullable string `gorm:"column:is_nullable"`
+		Identity string `gorm:"column:is_identity"`
 		Default  *string
 	}
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT c.column_name, c.data_type, c.is_nullable, c.column_default AS default,
+		SELECT c.column_name, c.data_type, c.is_nullable, c.is_identity, c.column_default AS default,
 		       COALESCE(col_description(
 		           (quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))::regclass,
 		           c.ordinal_position), '') AS label
@@ -98,11 +99,15 @@ func (r *AdminTablesRepository) Columns(ctx context.Context, table string) ([]do
 		case "boolean":
 			kind = "boolean"
 		}
+		// Значение генерирует база (serial/bigserial → DEFAULT nextval, либо
+		// GENERATED ... AS IDENTITY) — такое поле в форме не показывается.
+		auto := c.Identity == "YES" || (c.Default != nil && strings.HasPrefix(*c.Default, "nextval("))
 		out[i] = domain.AdminColumn{
 			Name:     c.Name,
 			Label:    c.Label,
 			Kind:     kind,
 			Required: c.Nullable == "NO" && c.Default == nil,
+			Auto:     auto,
 			Hidden:   c.Name == "created_at" || c.Name == "updated_at",
 		}
 	}

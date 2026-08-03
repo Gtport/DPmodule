@@ -112,8 +112,12 @@ func (s *AdminTables) resolve(ctx context.Context, table string) (domain.AdminTa
 
 // coerceValues отбрасывает неизвестные поля и приводит JSON-значения к типам
 // колонок (number: целые float64 → int64 — драйвер не кладёт float в bigint).
-// skipPK: при создании ключ-serial не задаётся руками.
-func coerceValues(cols []domain.AdminColumn, values domain.AdminRow, pk string, skipPK bool) (domain.AdminRow, error) {
+//
+// create: при СОЗДАНИИ ключ принимается, если база его не генерирует, — у
+// справочников вроде stations ключ это осмысленный код (6-значный код станции),
+// и без него строку не завести. Автоключ (serial/identity) по-прежнему не
+// задаётся руками. При ПРАВКЕ ключ не меняется никогда.
+func coerceValues(cols []domain.AdminColumn, values domain.AdminRow, pk string, create bool) (domain.AdminRow, error) {
 	byName := map[string]domain.AdminColumn{}
 	for _, c := range cols {
 		byName[c.Name] = c
@@ -124,7 +128,7 @@ func coerceValues(cols []domain.AdminColumn, values domain.AdminRow, pk string, 
 		if !ok {
 			continue // неизвестное поле — игнорируем (фронт мог прислать служебные)
 		}
-		if skipPK && c.Name == pk {
+		if c.Name == pk && (!create || c.Auto) {
 			continue
 		}
 		cv, err := coerceValue(c, v)
@@ -134,6 +138,13 @@ func coerceValues(cols []domain.AdminColumn, values domain.AdminRow, pk string, 
 		out[name] = cv
 	}
 	for _, c := range cols {
+		// Ключ, который задаёт человек, обязателен так же, как остальные поля.
+		if c.PK && create && !c.Auto {
+			if _, ok := out[c.Name]; !ok {
+				return nil, fmt.Errorf("поле %s обязательно", c.Name)
+			}
+			continue
+		}
 		if c.Required && !c.PK && !c.Hidden {
 			if _, ok := out[c.Name]; !ok {
 				return nil, fmt.Errorf("поле %s обязательно", c.Name)

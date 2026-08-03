@@ -16,6 +16,7 @@ type AdminColumn struct {
 	Kind     string `json:"kind"`     // number | text | boolean (из типа Postgres)
 	Required bool   `json:"required"` // NOT NULL без DEFAULT — поле обязательно в форме
 	PK       bool   `json:"pk"`       // колонка-идентификатор (в форме не правится)
+	Auto     bool   `json:"auto"`     // значение генерирует база (serial/identity) — руками не задаётся
 	Hidden   bool   `json:"hidden"`   // служебная (created_at/updated_at) — в редакторе не показывается
 }
 

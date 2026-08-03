@@ -17,6 +17,7 @@ export interface AdminColumn {
   kind: 'number' | 'text' | 'boolean';
   required: boolean;
   pk: boolean;
+  auto: boolean;   // значение генерирует база (serial/identity) — руками не задаётся
   hidden: boolean; // служебная колонка (created_at/updated_at) — не показывается
 }
 

@@ -168,8 +168,19 @@ export class AdminComponent implements OnInit {
   /** Видимые колонки грида (служебные штампы скрыты). */
   readonly visibleColumns = computed(() => this.columns().filter((c) => !c.hidden));
 
-  /** Колонки формы: ключ-serial и служебные не правятся руками. */
-  readonly formColumns = computed(() => this.columns().filter((c) => !c.pk && !c.hidden));
+  /**
+   * Колонки формы: служебные скрыты всегда; ключ — только когда его генерирует
+   * база (serial/identity). У справочников вроде «Станции» ключ это осмысленный
+   * код (6-значный код станции), его вводит человек — иначе строку не завести.
+   * При ПРАВКЕ ключ не показываем: сменить его нельзя (сервер его игнорирует).
+   */
+  readonly formColumns = computed(() =>
+    this.columns().filter((c) => {
+      if (c.hidden) return false;
+      if (!c.pk) return true;
+      return !c.auto && this.editingId() === null;
+    }),
+  );
 
   readonly filteredRows = computed(() => {
     const q = this.search().trim().toLowerCase();
@@ -230,7 +241,10 @@ export class AdminComponent implements OnInit {
     this.editingId.set(null);
     this.copying.set(true);
     const draft: AdminRow = {};
-    for (const c of this.formColumns()) draft[c.name] = row[c.name];
+    for (const c of this.formColumns()) {
+      if (c.pk) continue; // ключ у копии свой — иначе дубль
+      draft[c.name] = row[c.name];
+    }
     this.draft.set(draft);
     this.modalOpen.set(true);
   }
