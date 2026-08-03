@@ -171,13 +171,13 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
       <ng-container *nzModalContent>
         <div class="frm">
           <label>Шкала времени
-            <span class="dt">
+            <span class="dt tbx">
               <nz-radio-group nzSize="small" nzButtonStyle="solid"
                               [ngModel]="tb.base()" (ngModelChange)="onBaseChange($event)">
                 <label nz-radio-button nzValue="jd">ЖД</label>
                 <label nz-radio-button nzValue="msk">МСК</label>
               </nz-radio-group>
-              <span class="mut">{{ tb.base() === 'jd' ? 'час ≥ 18 — следующие сутки' : 'реальное московское' }}</span>
+              @if (tb.base() === 'msk') { <span class="mut">реальное московское время</span> }
             </span>
           </label>
           <label>Индекс поезда
@@ -248,10 +248,18 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
     .frm { display: flex; flex-direction: column; gap: var(--space-sm); }
-    .frm label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-sm);
-                 color: var(--color-text-secondary); }
-    .frm label[nz-checkbox] { flex-direction: row; align-items: center; }
+    /* Только строки формы (> label): внутренние label кнопок nz-radio-button
+       колонкой раскладывать нельзя — ломается ряд, скругление и цвет. */
+    .frm > label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-sm);
+                   color: var(--color-text-secondary); }
+    .frm > label[nz-checkbox] { flex-direction: row; align-items: center; }
     .dt { display: flex; gap: var(--space-sm); }
+    /* Переключатель ЖД/МСК: активная кнопка — белый текст, у группы скруглены
+       только внешние углы. */
+    .tbx { align-items: center; }
+    .tbx .ant-radio-button-wrapper:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+    .tbx .ant-radio-button-wrapper:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+    .tbx .ant-radio-button-wrapper-checked { color: var(--color-bg-surface); }
     .date { height: 26px; padding: 0 6px; border: 1px solid var(--color-border, #d9d9d9);
             border-radius: var(--radius-sm); font-size: var(--font-size-sm); color: inherit; background: transparent; }
     /* Предпросмотр затронутых вагонов (защита от батча «не тем вагонам»). */

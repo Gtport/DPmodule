@@ -215,13 +215,13 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
       <ng-container *nzModalContent>
         <div class="frm">
           <label>Шкала времени (факт; план — всегда ЖД)
-            <span class="dt">
+            <span class="dt tbx">
               <nz-radio-group nzSize="small" nzButtonStyle="solid"
                               [ngModel]="tb.base()" (ngModelChange)="onBaseChange($event)">
                 <label nz-radio-button nzValue="jd">ЖД</label>
                 <label nz-radio-button nzValue="msk">МСК</label>
               </nz-radio-group>
-              <span class="mut">{{ tb.base() === 'jd' ? 'час ≥ 18 — следующие сутки' : 'реальное московское' }}</span>
+              @if (tb.base() === 'msk') { <span class="mut">реальное московское время</span> }
             </span>
           </label>
           <label>Индекс поезда
@@ -260,13 +260,13 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
         <div class="frm">
           <p>{{ cfGroup()?.station_nach }} · вагонов: {{ cfGroup()?.vagon_count }}</p>
           <label>Шкала времени
-            <span class="dt">
+            <span class="dt tbx">
               <nz-radio-group nzSize="small" nzButtonStyle="solid"
                               [ngModel]="tb.base()" (ngModelChange)="onBaseChange($event)">
                 <label nz-radio-button nzValue="jd">ЖД</label>
                 <label nz-radio-button nzValue="msk">МСК</label>
               </nz-radio-group>
-              <span class="mut">{{ tb.base() === 'jd' ? 'час ≥ 18 — следующие сутки' : 'реальное московское' }}</span>
+              @if (tb.base() === 'msk') { <span class="mut">реальное московское время</span> }
             </span>
           </label>
           <label>Индекс поезда
@@ -293,13 +293,13 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
       <ng-container *nzModalContent>
         <div class="frm">
           <label>Шкала времени
-            <span class="dt">
+            <span class="dt tbx">
               <nz-radio-group nzSize="small" nzButtonStyle="solid"
                               [ngModel]="tb.base()" (ngModelChange)="onBaseChange($event)">
                 <label nz-radio-button nzValue="jd">ЖД</label>
                 <label nz-radio-button nzValue="msk">МСК</label>
               </nz-radio-group>
-              <span class="mut">{{ tb.base() === 'jd' ? 'час ≥ 18 — следующие сутки' : 'реальное московское' }}</span>
+              @if (tb.base() === 'msk') { <span class="mut">реальное московское время</span> }
             </span>
           </label>
           <label>Дата и время выгрузки
@@ -362,9 +362,17 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .nowrap { white-space: nowrap; }
     .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .frm { display: flex; flex-direction: column; gap: var(--space-sm); }
-    .frm label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-sm);
-                 color: var(--color-text-secondary); }
+    /* Только строки формы (> label): внутренние label кнопок nz-radio-button
+       колонкой раскладывать нельзя — ломается ряд, скругление и цвет. */
+    .frm > label { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-sm);
+                   color: var(--color-text-secondary); }
     .dt { display: flex; gap: var(--space-sm); }
+    /* Переключатель ЖД/МСК: активная кнопка — белый текст, у группы скруглены
+       только внешние углы. */
+    .tbx { align-items: center; }
+    .tbx .ant-radio-button-wrapper:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+    .tbx .ant-radio-button-wrapper:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+    .tbx .ant-radio-button-wrapper-checked { color: var(--color-bg-surface); }
     /* Предпросмотр затронутых вагонов в диалогах операций (защита от батча
        «не тем вагонам»): те же чипы, что в таблице, со скроллом при массе. */
     .sel-chips { display: flex; flex-wrap: wrap; gap: 3px; max-height: 96px; overflow: auto;
