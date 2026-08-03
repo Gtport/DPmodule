@@ -3,49 +3,63 @@ app:
   env: dev
 
 http:
-  port: 8080
+  port: 8580
   read_timeout: 10s
   write_timeout: 30s
   shutdown_timeout: 15s
 
 metrics:
-  port: 9090   # отдельный порт для /metrics; задать = http.port, чтобы отдавать на основном
+  port: 9580   # отдельный порт для /metrics; задать = http.port, чтобы отдавать на основном
 
-# enabled: false по умолчанию — образ поднимается без внешних сервисов.
-# DevOps включает нужные зависимости на стенде, выставив enabled: true.
+# Конфиг ДЕВ-СТЕНДА. Включены база и Keycloak; исходящие интеграции (АСУ,
+# памятки, MAX, крон «Брошенные») намеренно выключены — второй инстанс не должен
+# слать формы в живые чаты и дублировать забор данных у провайдера.
 #
 # Секреты объявляются шаблоном Vault ${vault:<движок>/<путь>:<ключ>} и резолвятся
 # CI/CD перед стартом — в самом приложении резолвинга нет, значение читается как есть.
 # Пусто → запасной путь: одноимённая переменная окружения (PG_PASSWORD и т.д.).
 # ⚠️ Пути ниже — по образцу шаблона, конкретные согласовать с DevOps.
 postgres:
-  enabled: false
-  host: postgres      # имя сервиса в docker-compose
+  enabled: true
+  host: 176.53.160.9  # база стенда; НЕ localhost — из контейнера это он сам
   port: 5432
-  dbname: iqport
-  user: iqport
-  password: ${vault:kv/databases/postgres/dev:iqport}   # секрет — резолвит CI/CD из Vault
+  dbname: kgdm        # база общая с соседями, наши таблицы — в схеме dpport
+  user: gtport_app
+  # Ключ секрета = имя роли БД (конвенция хранилища: один секрет на путь,
+  # ключи — по пользователям: dbadmin, kgdm, teh_user…).
+  password: ${vault:kv/databases/postgres/dev:gtport_app}
   sslmode: disable
   max_open_conns: 25
   max_idle_conns: 5
   conn_max_lifetime: 5m
 
 keycloak:
-  enabled: false
-  jwks_url: http://keycloak:8080/realms/iqport/protocol/openid-connect/certs
-  issuer: http://keycloak:8080/realms/iqport
-  audience: iqport-backend
-  client_secret: ${vault:kv/auth/keycloak/dev:client_secret}   # только для confidential-клиентов; пусто = не требуется
+  enabled: true
+  # Значения сверены с живым токеном (Client scopes → Evaluate, клиент iqport-dpport):
+  # issuer сравнивается ДОСЛОВНО со строкой из токена — подставлять IP нельзя,
+  # Keycloak выдаёт токены с внешним именем (KC_HOSTNAME), хотя отвечает и по адресу.
+  jwks_url: https://uport1.ru/realms/iqport/protocol/openid-connect/certs
+  issuer: https://uport1.ru/realms/iqport
+  # aud токена = ["iqport-dpport", "account"]; проверка включена и закрывает
+  # «токен другого модуля того же realm'а проходит на наш API» (в realm живут
+  # и соседи — в токене видны их роли view_sspr / view_rtport).
+  audience: iqport-dpport
+  # Общий realm: в нём живут легаси-роли всего контура (admin/operator/dispatcher)
+  # и роли соседей — из токена принимаются только точные имена *_dpport.
+  strict_roles: true
+  # client_secret приложению НЕ нужен: входящие токены проверяются публичными
+  # ключами из JWKS. Поле осталось от шаблона, кодом не используется.
   # service_account — ИСХОДЯЩИЕ походы к провайдеру (дислокация, запрос 601, памятки):
   # поток client_credentials, человек в цикле не нужен → работает и в кронах.
-  # ⚠️ Заполненность блока = переключатель режима: пусто → клиенты ходят запасным
-  # X-API-Key, как до перевода провайдера на Keycloak.
+  # ⚠️ Заполненность блока = переключатель режима: пока token_url/client_id пусты,
+  # клиенты ходят запасным X-API-Key. Заполнять, КОГДА клиент с включённым
+  # Service accounts roles реально заведён, иначе интеграции встанут на авторизации.
   service_account:
-    token_url: http://keycloak:8080/realms/iqport/protocol/openid-connect/token
-    client_id: dpport-service       # клиент с включённым service account
+    token_url: https://uport1.ru/realms/iqport/protocol/openid-connect/token
+    client_id: iqport_dpport_service   # клиент с включённым Service accounts roles
     insecure_tls: false             # true для самоподписанного серта Keycloak на стенде
     timeout_secs: 30
-    client_secret: ${vault:kv/auth/keycloak/dev:sa_client_secret}
+    client_secret: ${vault:kv/authorization/keycloak/dev:dpport_service}
 
 log:
   level: info

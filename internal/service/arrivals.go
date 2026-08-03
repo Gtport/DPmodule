@@ -296,7 +296,7 @@ func trainIndexes(rows []domain.VagonHistory) []string {
 // прибытия сегодня/вчера (или без неё). Без claims (auth выключен) — разрешаем.
 func checkArrivalsEditAccess(ctx context.Context, rows []domain.VagonHistory) error {
 	cl := auth.ClaimsFromContext(ctx)
-	if cl == nil || cl.HasMinRole(auth.RoleAdmin) {
+	if cl == nil || cl.HasRole(auth.RoleAdmin) {
 		return nil
 	}
 	today := clock.Now().Time().Truncate(24 * time.Hour)

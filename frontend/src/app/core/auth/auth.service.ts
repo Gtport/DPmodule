@@ -52,11 +52,11 @@ export class AuthService {
     const p = this.payload();
     return p?.name || p?.preferred_username || 'user';
   });
-  /** Роли из токена, нормализованные к каноническим именам (см. roles.ts). */
+  /** Роли из токена, нормализованные к нынешним именам *_dpport (см. roles.ts). */
   readonly roles = computed(() =>
     (this.payload()?.realm_access?.roles ?? []).map(normalizeRole),
   );
-  /** Порог правок: operator и выше. Клиентские роли видят экраны без действий. */
+  /** Порог правок (набор OPER). Клиентские роли видят экраны без действий. */
   readonly canEdit = computed(() => this.hasAnyRole(OPER));
 
   /**
@@ -102,7 +102,9 @@ export class AuthService {
   hasAnyRole(roles: string[]): boolean {
     if (!roles.length) return true;
     const mine = this.roles();
-    return roles.some((r) => mine.includes(r));
+    // Требуемая сторона тоже нормализуется: в конфигах (modules.config.ts)
+    // наборы могут быть записаны прежними именами ('operator', 'admin').
+    return roles.some((r) => mine.includes(normalizeRole(r)));
   }
 
   /** Отзывает сессию в Keycloak, чистит локально и уводит на /login. */

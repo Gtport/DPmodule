@@ -28,9 +28,8 @@ func New(cfg Config) (*zap.Logger, error) {
 		level = zapcore.InfoLevel
 	}
 
-	encoder := buildEncoder(cfg.Env)
 	cores := []zapcore.Core{
-		zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), level),
+		zapcore.NewCore(buildEncoder(cfg.Env), zapcore.AddSync(os.Stdout), level),
 	}
 
 	if cfg.File != "" {
@@ -41,7 +40,12 @@ func New(cfg Config) (*zap.Logger, error) {
 			MaxAge:     maxOrDefault(cfg.MaxAgeDays, 30),
 			Compress:   true,
 		}
-		cores = append(cores, zapcore.NewCore(encoder, zapcore.AddSync(fileWriter), level))
+		// В ФАЙЛ всегда JSON, независимо от env. Консольный энкодер (env=dev)
+		// красит уровни ANSI-кодами: на экране это удобно, а в файле мусор —
+		// «\x1b[34mINFO\x1b[0m» ломает grep и разбор сборщиками логов.
+		cores = append(cores, zapcore.NewCore(
+			zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+			zapcore.AddSync(fileWriter), level))
 	}
 
 	core := zapcore.NewTee(cores...)

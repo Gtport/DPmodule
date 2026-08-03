@@ -322,15 +322,47 @@ sms/цвет carry-over'ом; правки словарей применяютс
 реестру `list_tables` (marka, stations, sf, naznach_station, cargo) — копия строки,
 русские подписи из `COMMENT ON COLUMN`; новый справочник = INSERT-строка в реестр.
 
-Ролевая модель (перенос gtport, решение владельца 28.07.2026, справка —
-`docs/ROLES.md`): иерархия admin(100) > operator(80) > client_dispatcher(70) >
-client(60), роль manager упразднена. Чтение — любому залогиненному, любая
-мутация — от operator (`RequireMinRoleForWrites` на всей группе `/api/v1`),
-`/admin/tables*` — только admin. Legacy-имена (administrator/dispatcher)
-нормализуются на входе — боевые токены работают до перевода Keycloak на новые
-роли (шаги миграции боевого realm — в ROLES.md). Фронт: `core/auth/roles.ts`
-(OPER/ADMIN), `AuthService.canEdit()` скрывает кнопки действий на главной для
-клиентских ролей; рабочие разделы меню — OPER, «Главная» — всем (просмотр).
+Дев-стенд в контейнерах (перенос работы тимлида из архива backend-master,
+03.08.2026): фронт и бэк — раздельные docker-контейнеры. Бэкенд: порты
+**8580/9580** (`Dockerfile`, `deployments/docker-compose.yml`,
+`config.docker.yaml`), healthcheck по `/ready` (пингует базу: unhealthy =
+«трафик рано», не «процесс мёртв»), лог-файл в volume `app_logs`, в файл всегда
+JSON. `config.docker.yaml` — конфиг ИМЕННО стенда: Postgres `176.53.160.9`,
+база `kgdm` (общая с соседями, наши таблицы в схеме `dpport`), роль
+`gtport_app`; Keycloak `https://uport1.ru/realms/iqport` (issuer проверен по
+discovery 03.08 — доменный, НЕ IP), audience `iqport-dpport`,
+`strict_roles: true`; исходящие интеграции выключены. Секреты — шаблоны
+`${vault:...}`, резолвит CI/CD; запасной путь — env. Сервис-аккаунт
+`iqport_dpport_service` в realm'е ещё не заведён — блок пуст, интеграциям он и
+не нужен (выключены). Фронт-контейнер: `frontend/Dockerfile` (production env →
+uport1.ru), `frontend/nginx.conf` проксирует `/api` на `api-backend:8580`.
+Тест `internal/config/examples_test.go` сторожит парсируемость примеров
+конфигов. Открытое: compose стенда описывает только бэкенд — фронт-контейнер и
+ingress за DevOps; redirect URIs/времена жизни токенов — TODO в
+`docs/KEYCLOAK.md` §7.
+
+Ролевая модель (решение владельца 31.07.2026, справка — `docs/ROLES.md`; общий
+realm стенда описан в `docs/KEYCLOAK.md`): realm-роли Keycloak с суффиксом
+модуля — `admin_dpport`, `operator_dpport`, `client_dispatcher_dpport`,
+`client_dpport` (суффикс разводит наш модуль от соседних в общем realm'е).
+⚠️ **Роли НЕЗАВИСИМЫ**: иерархии с весами больше нет, старшая не включает права
+младших — доступ есть членство в НАБОРЕ (`auth.Writers` = operator+admin,
+`auth.Admins` = admin; наборы в `internal/auth/claims.go` — единственное место,
+где записано «кому что можно»). Чтение — любому залогиненному, любая мутация —
+`RequireRolesForWrites(Writers)` на всей группе `/api/v1`, `/admin/tables*` —
+`RequireAnyRole(Admins)`. Прежние имена (admin/operator/administrator/
+dispatcher/client…) нормализует `auth.TokenRoles` при разборе токена — боевые
+токены работают до перевода realm'а (шаги миграции — в ROLES.md); значение
+`reject_older_role_exempt` из БД матчит админа через want-нормализацию в
+`HasRole`. ⚠️ **`keycloak.strict_roles: true` (стендовый `config.docker.yaml`)
+выключает легаси-нормализацию токена**: в ОБЩЕМ realm'е голые admin/operator/
+dispatcher — легаси-роли контура и могут принадлежать пользователям чужих
+приложений (см. KEYCLOAK.md §3.4), превращать их в наши — дыра; принимаются
+только точные `*_dpport`. Фронт: `core/auth/roles.ts` (OPER/ADMIN — имена
+`*_dpport` + нормализация прежних, UI-уровень), `AuthService.canEdit()`
+скрывает кнопки действий на главной для клиентских ролей; рабочие разделы
+меню — OPER, «Главная» — всем (просмотр). Фронт правится вместе с бэком:
+после перевода Keycloak сервер пустит, а интерфейс спрячет кнопки.
 
 Жизненный цикл статусов (PR #88, отход от gtport по решению владельца): заморозки
 на 10 нет — прибывший обновляется и переходит 10→12 (веха выгрузки в историю);

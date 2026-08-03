@@ -6,14 +6,28 @@ services:
       context: ..
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
-      - "9090:9090"   # /metrics
+      - "8580:8580"
+      - "9580:9580"   # /metrics
     volumes:
       - ../config.docker.yaml:/etc/app/config.yaml:ro
+      # Лог-файл переживает пересборку контейнера. Приложение пишет и в stdout
+      # (его забирает docker logs), и в файл — ротацию делает само.
       - app_logs:/var/log/iqport
+    # Секреты приходят из конфига: в нём стоят шаблоны ${vault:...}, которые
+    # резолвит CI/CD перед стартом. Переменные окружения — ЗАПАСНОЙ путь для
+    # стендов без подстановки; значения сюда не вписывать, передавать снаружи
+    # (docker compose подхватит одноимённые из окружения или .env рядом).
     environment:
-      PG_PASSWORD: iqport
-      KEYCLOAK_CLIENT_SECRET: ""
+      PG_PASSWORD: ${PG_PASSWORD:-}
+      KEYCLOAK_SA_CLIENT_SECRET: ${KEYCLOAK_SA_CLIENT_SECRET:-}
+    # Дублирует HEALTHCHECK из Dockerfile — здесь его видно в docker compose ps
+    # и можно переопределить под стенд, не пересобирая образ.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8580/ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     restart: on-failure
 
 volumes:

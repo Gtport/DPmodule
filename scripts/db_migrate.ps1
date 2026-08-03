@@ -97,10 +97,12 @@ $hasTable = Invoke-Sql "SELECT count(*) FROM information_schema.tables WHERE tab
 if ($hasTable -eq '0') {
     Write-Host "schema_migrations нет — это первый накат" -ForegroundColor Yellow
 } else {
-    $state = Invoke-Sql "SELECT coalesce(version::text,'-') || '|' || coalesce(dirty::text,'-') FROM $Schema.schema_migrations LIMIT 1"
-    $s = $state -split '\|'
-    Write-Host "текущая версия: $($s[0]), dirty: $($s[1])"
-    if ($s[1] -eq 't') {
+    # Запросы по одному значению: конкатенация || в SQL внутри двойных кавычек
+    # PowerShell разбирается как его собственный оператор «или» — не собирать.
+    $version = Invoke-Sql "SELECT version FROM $Schema.schema_migrations LIMIT 1"
+    $dirty = Invoke-Sql "SELECT dirty FROM $Schema.schema_migrations LIMIT 1"
+    Write-Host "текущая версия: $version, dirty: $dirty"
+    if ($dirty -eq 't') {
         throw @"
 Версия помечена dirty — предыдущий накат оборвался. Накат ОСТАНОВЛЕН.
 Сам DDL откатывается транзакцией, поэтому обычно достаточно очистить учёт:
@@ -115,7 +117,7 @@ if ($hasTable -eq '0') {
 }
 
 if ($StatusOnly) {
-    Write-Host "`n-v StatusOnly: накат не выполнялся" -ForegroundColor Yellow
+    Write-Host "`n-StatusOnly: накат не выполнялся" -ForegroundColor Yellow
     return
 }
 
@@ -135,16 +137,16 @@ if ($LASTEXITCODE -ne 0) {
 # ---- 4. проверка результата ------------------------------------------------
 Write-Host "`n--- проверка" -ForegroundColor Cyan
 $where = Invoke-Sql "SELECT string_agg(table_schema, ',') FROM information_schema.tables WHERE table_name='schema_migrations'"
-$state = Invoke-Sql "SELECT version::text || '|' || dirty::text FROM $Schema.schema_migrations LIMIT 1"
+$version = Invoke-Sql "SELECT version FROM $Schema.schema_migrations LIMIT 1"
+$dirty = Invoke-Sql "SELECT dirty FROM $Schema.schema_migrations LIMIT 1"
 $count = Invoke-Sql "SELECT count(*) FROM information_schema.tables WHERE table_schema='$Schema'"
-$s = $state -split '\|'
 
 Write-Host "schema_migrations в схеме: $where"
-Write-Host "версия: $($s[0]), dirty: $($s[1])"
+Write-Host "версия: $version, dirty: $dirty"
 Write-Host "таблиц в схеме ${Schema}: $count"
 
 if ($where -ne $Schema) {
     Write-Warning "schema_migrations оказалась не в '$Schema' — накат шёл с чужим search_path, состояние надо разбирать вручную."
-} elseif ($s[1] -eq 'f') {
+} elseif ($dirty -eq 'f') {
     Write-Host "`n=== готово. Дальше — сев справочников (_reference/seed + scripts/seed_directories.sql)" -ForegroundColor Green
 }

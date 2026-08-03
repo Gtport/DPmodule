@@ -65,36 +65,37 @@ func (k *KeycloakJWT) Middleware() gin.HandlerFunc {
 	}
 }
 
-// RequireMinRole — доступ от роли min и выше по иерархии (модель gtport:
-// старшая роль включает права младших). 401 без claims, 403 при нехватке роли.
-func (k *KeycloakJWT) RequireMinRole(min auth.Role) gin.HandlerFunc {
+// RequireAnyRole — доступ тем, у кого есть ХОТЯ БЫ ОДНА из перечисленных ролей.
+// Иерархии нет (роли независимы), поэтому набор перечисляется целиком.
+// 401 без claims, 403 при отсутствии роли.
+func (k *KeycloakJWT) RequireAnyRole(roles ...auth.Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		abortUnlessMinRole(c, min)
+		abortUnlessRole(c, roles)
 	}
 }
 
-// RequireMinRoleForWrites — гейт «порог правок»: чтение (GET/HEAD/OPTIONS)
+// RequireRolesForWrites — гейт «порог правок»: чтение (GET/HEAD/OPTIONS)
 // пропускается как есть (аутентификацию уже проверил Middleware), любая
-// мутация (POST/PUT/PATCH/DELETE) требует роль min и выше. Вешается на всю
+// мутация (POST/PUT/PATCH/DELETE) требует роль из набора. Вешается на всю
 // группу /api/v1: новые мутирующие ручки закрыты автоматически.
-func (k *KeycloakJWT) RequireMinRoleForWrites(min auth.Role) gin.HandlerFunc {
+func (k *KeycloakJWT) RequireRolesForWrites(roles ...auth.Role) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch c.Request.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 			c.Next()
 			return
 		}
-		abortUnlessMinRole(c, min)
+		abortUnlessRole(c, roles)
 	}
 }
 
-func abortUnlessMinRole(c *gin.Context, min auth.Role) {
+func abortUnlessRole(c *gin.Context, roles []auth.Role) {
 	cl := auth.ClaimsFromContext(c.Request.Context())
 	if cl == nil {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	if !cl.HasMinRole(min) {
+	if !cl.HasRole(roles...) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
@@ -139,7 +140,7 @@ func (k *KeycloakJWT) validate(ctx context.Context, raw string) (*auth.Claims, e
 		return nil, errors.New("invalid claims")
 	}
 
-	return extractClaims(mapClaims)
+	return extractClaims(mapClaims, k.cfg.StrictRoles)
 }
 
 func (k *KeycloakJWT) keyFunc(ctx context.Context) jwt.Keyfunc {
@@ -244,23 +245,24 @@ func jwkToRSA(j jwk) (*rsa.PublicKey, error) {
 	return &rsa.PublicKey{N: new(big.Int).SetBytes(nb), E: e}, nil
 }
 
-func extractClaims(m jwt.MapClaims) (*auth.Claims, error) {
+func extractClaims(m jwt.MapClaims, strict bool) (*auth.Claims, error) {
 	sub, _ := m["sub"].(string)
 	email, _ := m["email"].(string)
 	username, _ := m["preferred_username"].(string)
 
-	// Роли нормализуются сразу при разборе токена: дальше по коду ходят только
-	// канонические имена (administrator→admin, dispatcher→operator).
+	// Роли приводятся к внутреннему виду сразу при разборе токена (auth.TokenRoles):
+	// в strict-режиме (общий realm) — дословно, иначе легаси-имена нормализуются.
 	var roles []auth.Role
 	if ra, ok := m["realm_access"].(map[string]any); ok {
 		if rawRoles, ok := ra["roles"].([]any); ok {
 			for _, r := range rawRoles {
 				if s, ok := r.(string); ok {
-					roles = append(roles, auth.NormalizeRole(auth.Role(s)))
+					roles = append(roles, auth.Role(s))
 				}
 			}
 		}
 	}
+	roles = auth.TokenRoles(roles, strict)
 
 	return &auth.Claims{
 		Subject:  sub,

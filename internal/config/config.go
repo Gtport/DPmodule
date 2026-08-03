@@ -163,6 +163,13 @@ type Keycloak struct {
 	Issuer   string `yaml:"issuer"`
 	Audience string `yaml:"audience"`
 
+	// StrictRoles — режим ОБЩЕГО realm'а (стенд iqport): роли из токена берутся
+	// дословно, легаси-имена (admin/operator/dispatcher…) НЕ превращаются в наши
+	// *_dpport — в общем realm'е они могут принадлежать пользователям чужих
+	// приложений. false (дефолт) — свой realm переходного периода (боевой VPS,
+	// локальный Keycloak): старые токены нормализуются и продолжают работать.
+	StrictRoles bool `yaml:"strict_roles"`
+
 	// ClientSecret — секрет (только для confidential-клиентов; пусто = не требуется).
 	// Шаблон Vault в файле, значение подставляет CI/CD; пусто → env KEYCLOAK_CLIENT_SECRET.
 	ClientSecret string `yaml:"client_secret"`

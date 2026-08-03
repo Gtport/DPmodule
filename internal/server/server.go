@@ -123,12 +123,12 @@ func Build(
 	api := router.Group("/api/v1")
 	if jwtMW != nil {
 		api.Use(jwtMW.Middleware())
-		// Ролевая модель (перенос gtport, решение владельца 28.07.2026):
-		// иерархия admin(100) > operator(80) > client_dispatcher(70) > client(60).
+		// Ролевая модель (решение владельца 31.07.2026): роли Keycloak НЕЗАВИСИМЫ,
+		// иерархии с весами нет — доступ есть членство в наборе (auth.Writers).
 		// Чтение — любому залогиненному, ЛЮБАЯ мутация (POST/PUT/PATCH/DELETE) —
-		// от operator и выше. Гейт висит на всей группе: новая мутирующая ручка
-		// закрыта автоматически, без отдельной раскладки по роутам.
-		api.Use(jwtMW.RequireMinRoleForWrites(auth.RoleOperator))
+		// operator_dpport или admin_dpport. Гейт висит на всей группе: новая
+		// мутирующая ручка закрыта автоматически, без раскладки по роутам.
+		api.Use(jwtMW.RequireRolesForWrites(auth.Writers...))
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
 
@@ -138,7 +138,7 @@ func Build(
 	if adminRepo != nil {
 		adminGrp := api.Group("")
 		if jwtMW != nil {
-			adminGrp.Use(jwtMW.RequireMinRole(auth.RoleAdmin))
+			adminGrp.Use(jwtMW.RequireAnyRole(auth.Admins...))
 		}
 		handler.NewAdminTablesHandler(service.NewAdminTables(adminRepo)).RegisterRoutes(adminGrp)
 	}
