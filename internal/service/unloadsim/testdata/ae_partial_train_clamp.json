@@ -1,0 +1,281 @@
+{
+  "comment": "АЭ 3 дня: поезд 71 ваг → отцепка до 63; поздний поезд выгружается частично и переносится; следующий не начинает выгрузку",
+  "input": {
+    "port": "АЭ",
+    "start_date": "2026-08-04",
+    "days": 3,
+    "speeds": {
+      "АЭ_ОБЩИЙ": {
+        "default": 130
+      }
+    },
+    "norms": {
+      "АЭ_ОБЩИЙ": 144
+    },
+    "initial_remainders": {},
+    "trains": [
+      {
+        "index": "8650-121-9840",
+        "status": "2",
+        "prog_jd": "2026-08-04T00:10:00",
+        "sub_groups": [
+          {
+            "key": "c1",
+            "naznach": "АЭ",
+            "cargo_group": "УГОЛЬ",
+            "vagon_count": 71,
+            "color": "#FF5722",
+            "station_nach": "ЕРУНАКОВО",
+            "index_main": "8650-123-9840",
+            "gruzpol_s": "АЭ"
+          }
+        ]
+      },
+      {
+        "index": "8650-122-9840",
+        "status": "2",
+        "prog_jd": "2026-08-04T14:00:00",
+        "sub_groups": [
+          {
+            "key": "c2",
+            "naznach": "АЭ",
+            "cargo_group": "УГОЛЬ",
+            "vagon_count": 55,
+            "color": "#7030A0",
+            "station_nach": "ЕРУНАКОВО",
+            "index_main": "8650-123-9840",
+            "gruzpol_s": "АЭ"
+          }
+        ]
+      },
+      {
+        "index": "8650-123-9840",
+        "status": "2",
+        "prog_jd": "2026-08-04T17:00:00",
+        "sub_groups": [
+          {
+            "key": "c3",
+            "naznach": "АЭ",
+            "cargo_group": "УГОЛЬ",
+            "vagon_count": 40,
+            "color": "#0070C0",
+            "station_nach": "ЕРУНАКОВО",
+            "index_main": "8650-123-9840",
+            "gruzpol_s": "АЭ"
+          }
+        ]
+      }
+    ]
+  },
+  "expected_days": [
+    {
+      "date": "2026-08-04",
+      "cargo_type": "ОБЩИЙ",
+      "speed": 130,
+      "norm_speed": 144,
+      "incoming_total": 0,
+      "arrival": 158,
+      "total_formation": 158,
+      "useful_formation": 87,
+      "unloaded": 85,
+      "remaining": 73,
+      "total_wait_min": 502.15385,
+      "remainder_out": 0,
+      "remainder_out_index": "Остаток",
+      "carried_over": [
+        {
+          "index": "8650-122-9840",
+          "wagons": 33,
+          "subgroup_key": "c2"
+        },
+        {
+          "index": "8650-123-9840",
+          "wagons": 40,
+          "subgroup_key": "c3"
+        }
+      ],
+      "operations": [
+        {
+          "train_index": "8650-121-9840",
+          "train_name": "Простой",
+          "station_nach": "ЕРУНАКОВО",
+          "index_main": "",
+          "start_calc": "2026-08-04T00:00:00.000",
+          "end_calc": "2026-08-04T06:10:00.000",
+          "start_jd": "2026-08-04T18:00:00.000",
+          "end_jd": "2026-08-04T00:10:00.000",
+          "wagons": 0,
+          "total_wagons": 0,
+          "color": "#E0E0E0",
+          "is_remainder": false,
+          "is_carried_over": false,
+          "is_partial": false,
+          "wait_min": 370,
+          "original_arrival_jd": "2026-08-04T00:10:00.000"
+        },
+        {
+          "train_index": "8650-121-9840",
+          "train_name": "8650-121-9840 (63 в)",
+          "station_nach": "ЕРУНАКОВО",
+          "index_main": "8650-123-9840",
+          "start_calc": "2026-08-04T06:10:00.000",
+          "end_calc": "2026-08-04T17:47:50.769",
+          "start_jd": "2026-08-04T00:10:00.000",
+          "end_jd": "2026-08-04T11:47:50.000",
+          "wagons": 63,
+          "total_wagons": 63,
+          "color": "#FF5722",
+          "is_remainder": false,
+          "is_carried_over": false,
+          "is_partial": false,
+          "wait_min": 0,
+          "original_arrival_jd": "2026-08-04T00:10:00.000"
+        },
+        {
+          "train_index": "8650-122-9840",
+          "train_name": "Простой",
+          "station_nach": "ЕРУНАКОВО",
+          "index_main": "",
+          "start_calc": "2026-08-04T17:47:50.769",
+          "end_calc": "2026-08-04T20:00:00.000",
+          "start_jd": "2026-08-04T11:47:50.000",
+          "end_jd": "2026-08-04T14:00:00.000",
+          "wagons": 0,
+          "total_wagons": 0,
+          "color": "#E0E0E0",
+          "is_remainder": false,
+          "is_carried_over": false,
+          "is_partial": false,
+          "wait_min": 132.15385,
+          "original_arrival_jd": "2026-08-04T14:00:00.000"
+        },
+        {
+          "train_index": "8650-122-9840",
+          "train_name": "8650-122-9840 (частично)",
+          "station_nach": "ЕРУНАКОВО",
+          "index_main": "8650-123-9840",
+          "start_calc": "2026-08-04T20:00:00.000",
+          "end_calc": "2026-08-04T23:59:59.999",
+          "start_jd": "2026-08-04T14:00:00.000",
+          "end_jd": "2026-08-04T17:59:59.000",
+          "wagons": 22,
+          "total_wagons": 55,
+          "color": "#7030A0",
+          "is_remainder": false,
+          "is_carried_over": false,
+          "is_partial": true,
+          "wait_min": 0,
+          "original_arrival_jd": "2026-08-04T14:00:00.000"
+        }
+      ]
+    },
+    {
+      "date": "2026-08-05",
+      "cargo_type": "ОБЩИЙ",
+      "speed": 130,
+      "norm_speed": 144,
+      "incoming_total": 73,
+      "arrival": 0,
+      "total_formation": 73,
+      "useful_formation": 73,
+      "unloaded": 73,
+      "remaining": 0,
+      "total_wait_min": 631.384617,
+      "remainder_out": 0,
+      "remainder_out_index": "Остаток",
+      "carried_over": [],
+      "operations": [
+        {
+          "train_index": "8650-122-9840",
+          "train_name": "8650-122-9840 (33 в)",
+          "station_nach": "ЕРУНАКОВО",
+          "index_main": "8650-123-9840",
+          "start_calc": "2026-08-05T00:00:00.000",
+          "end_calc": "2026-08-05T06:05:32.307",
+          "start_jd": "2026-08-05T18:00:00.000",
+          "end_jd": "2026-08-05T00:05:32.000",
+          "wagons": 33,
+          "total_wagons": 33,
+          "color": "#7030A0",
+          "is_remainder": false,
+          "is_carried_over": true,
+          "is_partial": false,
+          "wait_min": 0,
+          "original_arrival_jd": "2026-08-04T14:00:00.000"
+        },
+        {
+          "train_index": "8650-123-9840",
+          "train_name": "8650-123-9840 (40 в)",
+          "station_nach": "ЕРУНАКОВО",
+          "index_main": "8650-123-9840",
+          "start_calc": "2026-08-05T06:05:32.307",
+          "end_calc": "2026-08-05T13:28:36.922",
+          "start_jd": "2026-08-05T00:05:32.000",
+          "end_jd": "2026-08-05T07:28:36.000",
+          "wagons": 40,
+          "total_wagons": 40,
+          "color": "#0070C0",
+          "is_remainder": false,
+          "is_carried_over": true,
+          "is_partial": false,
+          "wait_min": 0,
+          "original_arrival_jd": "2026-08-04T17:00:00.000"
+        },
+        {
+          "train_index": "",
+          "train_name": "Простой",
+          "station_nach": "",
+          "index_main": "",
+          "start_calc": "2026-08-05T13:28:36.922",
+          "end_calc": "2026-08-05T23:59:59.999",
+          "start_jd": "2026-08-05T07:28:36.000",
+          "end_jd": "2026-08-05T17:59:59.000",
+          "wagons": 0,
+          "total_wagons": 0,
+          "color": "#E0E0E0",
+          "is_remainder": false,
+          "is_carried_over": false,
+          "is_partial": false,
+          "wait_min": 631.384617,
+          "original_arrival_jd": ""
+        }
+      ]
+    },
+    {
+      "date": "2026-08-06",
+      "cargo_type": "ОБЩИЙ",
+      "speed": 130,
+      "norm_speed": 144,
+      "incoming_total": 0,
+      "arrival": 0,
+      "total_formation": 0,
+      "useful_formation": 0,
+      "unloaded": 0,
+      "remaining": 0,
+      "total_wait_min": 1439.999983,
+      "remainder_out": 0,
+      "remainder_out_index": "Остаток",
+      "carried_over": [],
+      "operations": [
+        {
+          "train_index": "",
+          "train_name": "Простой",
+          "station_nach": "",
+          "index_main": "",
+          "start_calc": "2026-08-06T00:00:00.000",
+          "end_calc": "2026-08-06T23:59:59.999",
+          "start_jd": "2026-08-06T18:00:00.000",
+          "end_jd": "2026-08-06T17:59:59.000",
+          "wagons": 0,
+          "total_wagons": 0,
+          "color": "#E0E0E0",
+          "is_remainder": false,
+          "is_carried_over": false,
+          "is_partial": false,
+          "wait_min": 1439.999983,
+          "original_arrival_jd": ""
+        }
+      ]
+    }
+  ]
+}

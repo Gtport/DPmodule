@@ -20,6 +20,7 @@ type portCargoLineModel struct {
 	SortOrder int    `gorm:"column:sort_order"`
 	Enabled   bool   `gorm:"column:enabled"`
 	PlanLabel string `gorm:"column:plan_label"`
+	PlanSpeed *int   `gorm:"column:plan_speed"`
 }
 
 func (portCargoLineModel) TableName() string { return "port_cargo_line" }
@@ -94,7 +95,7 @@ func (r *CargoWorkRepository) Lines(ctx context.Context) ([]domain.PortCargoLine
 		out = append(out, domain.PortCargoLine{
 			ID: m.ID, Terminal: m.Terminal, Kind: m.Kind, CargoKey: m.CargoKey,
 			Label: m.Label, Pc: m.Pc, SortOrder: m.SortOrder, Enabled: m.Enabled,
-			PlanLabel: m.PlanLabel,
+			PlanLabel: m.PlanLabel, PlanSpeed: m.PlanSpeed,
 		})
 	}
 	return out, nil

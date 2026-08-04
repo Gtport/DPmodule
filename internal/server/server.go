@@ -395,6 +395,12 @@ func Build(
 				// выгрузки (норма и вчерашний остаток из грузовой работы).
 				handler.NewForecastHandler(service.NewForecastBoard(
 					actualCache, dirCache, historyRepo, cwSvc)).RegisterRoutes(api)
+
+				// Вкладка «Прогноз прибытия/выгрузки» (перенос страницы GT
+				// gtport): очередь поездов причальной станции + серверная
+				// симуляция выгрузки (пакет unloadsim, golden-тесты).
+				handler.NewGtForecastHandler(service.NewGtForecastService(
+					actualCache, dirCache, historyRepo, cwSvc, cfgCache)).RegisterRoutes(api)
 			}
 		}
 	}

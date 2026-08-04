@@ -75,9 +75,11 @@ export const routes: Routes = [
       // Старый адрес страницы «Справки» — влита в «Справки и отчёты».
       { path: 'reference', redirectTo: 'reports' },
       {
+        // «Прогнозы»: вкладки «Новый прогноз» (gtport PrognozNew) и
+        // «Прогноз прибытия/выгрузки» (gtport страница GT).
         path: 'forecasts',
         loadComponent: () =>
-          import('./features/forecasts/forecast.component').then((m) => m.ForecastComponent),
+          import('./features/forecasts/forecasts-page.component').then((m) => m.ForecastsPageComponent),
         canActivate: [authGuard],
         data: { roles: OPER },
       },

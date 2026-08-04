@@ -1,0 +1,142 @@
+{
+  "comment": "Полезное образование: остаток не успевает даже по норме — ранний выход simulateNormUnloading",
+  "input": {
+    "port": "АЭ",
+    "start_date": "2026-08-04",
+    "days": 2,
+    "speeds": {
+      "АЭ_ОБЩИЙ": {
+        "default": 50
+      }
+    },
+    "norms": {
+      "АЭ_ОБЩИЙ": 60
+    },
+    "initial_remainders": {
+      "АЭ_ОБЩИЙ": 90
+    },
+    "trains": [
+      {
+        "index": "8650-141-9840",
+        "status": "2",
+        "prog_jd": "2026-08-04T05:00:00",
+        "sub_groups": [
+          {
+            "key": "g1",
+            "naznach": "АЭ",
+            "cargo_group": "УГОЛЬ",
+            "vagon_count": 30,
+            "color": "#0070C0",
+            "station_nach": "ЕРУНАКОВО",
+            "index_main": "8650-123-9840",
+            "gruzpol_s": "АЭ"
+          }
+        ]
+      }
+    ]
+  },
+  "expected_days": [
+    {
+      "date": "2026-08-04",
+      "cargo_type": "ОБЩИЙ",
+      "speed": 50,
+      "norm_speed": 60,
+      "incoming_total": 90,
+      "arrival": 30,
+      "total_formation": 120,
+      "useful_formation": 60,
+      "unloaded": 50,
+      "remaining": 70,
+      "total_wait_min": 0,
+      "remainder_out": 40,
+      "remainder_out_index": "Остаток",
+      "carried_over": [
+        {
+          "index": "8650-141-9840",
+          "wagons": 30,
+          "subgroup_key": "g1"
+        }
+      ],
+      "operations": [
+        {
+          "train_index": "Остаток",
+          "train_name": "Остаток  (частично)",
+          "station_nach": "",
+          "index_main": "",
+          "start_calc": "2026-08-04T00:00:00.000",
+          "end_calc": "2026-08-04T23:59:59.999",
+          "start_jd": "2026-08-04T18:00:00.000",
+          "end_jd": "2026-08-04T17:59:59.000",
+          "wagons": 50,
+          "total_wagons": 90,
+          "color": "#9E9E9E",
+          "is_remainder": true,
+          "is_carried_over": false,
+          "is_partial": true,
+          "wait_min": 0,
+          "original_arrival_jd": ""
+        }
+      ]
+    },
+    {
+      "date": "2026-08-05",
+      "cargo_type": "ОБЩИЙ",
+      "speed": 50,
+      "norm_speed": 60,
+      "incoming_total": 70,
+      "arrival": 0,
+      "total_formation": 70,
+      "useful_formation": 60,
+      "unloaded": 50,
+      "remaining": 20,
+      "total_wait_min": 0,
+      "remainder_out": 0,
+      "remainder_out_index": "Остаток",
+      "carried_over": [
+        {
+          "index": "8650-141-9840",
+          "wagons": 20,
+          "subgroup_key": "g1"
+        }
+      ],
+      "operations": [
+        {
+          "train_index": "Остаток",
+          "train_name": "Остаток ",
+          "station_nach": "",
+          "index_main": "",
+          "start_calc": "2026-08-05T00:00:00.000",
+          "end_calc": "2026-08-05T19:12:00.000",
+          "start_jd": "2026-08-05T18:00:00.000",
+          "end_jd": "2026-08-05T13:12:00.000",
+          "wagons": 40,
+          "total_wagons": 40,
+          "color": "#9E9E9E",
+          "is_remainder": true,
+          "is_carried_over": false,
+          "is_partial": false,
+          "wait_min": 0,
+          "original_arrival_jd": ""
+        },
+        {
+          "train_index": "8650-141-9840",
+          "train_name": "8650-141-9840 (частично)",
+          "station_nach": "ЕРУНАКОВО",
+          "index_main": "8650-123-9840",
+          "start_calc": "2026-08-05T19:12:00.000",
+          "end_calc": "2026-08-05T23:59:59.999",
+          "start_jd": "2026-08-05T13:12:00.000",
+          "end_jd": "2026-08-05T17:59:59.000",
+          "wagons": 10,
+          "total_wagons": 30,
+          "color": "#0070C0",
+          "is_remainder": false,
+          "is_carried_over": true,
+          "is_partial": true,
+          "wait_min": 0,
+          "original_arrival_jd": "2026-08-04T05:00:00.000"
+        }
+      ]
+    }
+  ]
+}
