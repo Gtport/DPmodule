@@ -113,8 +113,10 @@ interface VagonHit {
         <div class="fblock">
           <div class="ftitle">Грузополучатель</div>
           @for (t of targets(); track t.name) {
+            <!-- Именно background-color: nz-tag сам биндит это свойство на хосте
+                 и при первой отрисовке затирал бы шорткат background. -->
             <nz-tag [class.on]="selGruzpol().has(t.name)"
-                    [style.background]="selGruzpol().has(t.name) ? (t.color || undefined) : undefined"
+                    [style.background-color]="selGruzpol().has(t.name) ? (t.color || undefined) : undefined"
                     (click)="toggle(selGruzpol, t.name)">{{ t.name }}</nz-tag>
           }
         </div>
@@ -122,7 +124,7 @@ interface VagonHit {
           <div class="ftitle">Назначение</div>
           @for (t of targets(); track t.name) {
             <nz-tag [class.on]="selNaznach().has(t.name)"
-                    [style.background]="selNaznach().has(t.name) ? (t.color || undefined) : undefined"
+                    [style.background-color]="selNaznach().has(t.name) ? (t.color || undefined) : undefined"
                     (click)="toggle(selNaznach, t.name)">{{ t.name }}</nz-tag>
           }
         </div>
@@ -135,8 +137,8 @@ interface VagonHit {
 
       <!-- ── Поиск ─────────────────────────────────────────────────────── -->
       <div class="bar search-bar">
-        <input nz-input nzSize="small" class="w-idx" placeholder="индекс (3 цифры)"
-               maxlength="3" [ngModel]="indexSearch()" (ngModelChange)="setIndexSearch($event)" />
+        <input nz-input nzSize="small" class="w-idx" placeholder="индекс: 786 или 9379-786-9857"
+               maxlength="13" [ngModel]="indexSearch()" (ngModelChange)="setIndexSearch($event)" />
         <input nz-input nzSize="small" class="w-st" placeholder="станция погрузки"
                [ngModel]="stationSearch()" (ngModelChange)="stationSearch.set($event)" />
         <input nz-input nzSize="small" class="w-st" placeholder="груз / группа груза"
@@ -398,7 +400,7 @@ interface VagonHit {
     .search-bar { padding: var(--space-xs) var(--space-md); background: var(--color-bg-surface);
                   border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
     .grp { display: inline-flex; gap: 4px; }
-    .w-idx { width: 130px; } .w-st { width: 180px; } .w-list { width: 230px; }
+    .w-idx { width: 190px; } .w-st { width: 180px; } .w-list { width: 230px; }
     /* Дерево */
     .tree-wrap { max-height: 74vh; overflow: auto; background: var(--color-bg-surface);
                  border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
@@ -496,11 +498,17 @@ export class TrainsComponent implements OnInit {
 
   // ── Цепочка фильтров (порядок gtport) ────────────────────────────────────
   readonly shownTrains = computed(() => {
-    // (1) Точечный поиск по 3 цифрам номера поезда — приоритетный, по всем.
-    const idx = this.indexSearch();
+    // (1) Точечный поиск по индексу — приоритетный, по всему снимку:
+    // 3 цифры = номер поезда (середина индекса), 11 цифр = полный индекс 4-3-4
+    // (дефисы при вводе не обязательны).
+    const idx = this.indexSearch().replace(/\D/g, '');
     if (idx.length === 3) {
       return this.trains().filter((t) =>
         this.midDigits(t.index) === idx || t.sub_groups.some((sg) => this.midDigits(sg.index_main) === idx));
+    }
+    if (idx.length === 11) {
+      return this.trains().filter((t) =>
+        this.allDigits(t.index) === idx || t.sub_groups.some((sg) => this.allDigits(sg.index_main) === idx));
     }
 
     let list = this.trains();
@@ -566,7 +574,8 @@ export class TrainsComponent implements OnInit {
 
   // ── Обработчики ──────────────────────────────────────────────────────────
   setIndexSearch(v: string): void {
-    this.indexSearch.set(v.replace(/\D/g, '').slice(0, 3));
+    // Цифры и дефисы: «786» либо полный «9379-786-9857» (можно без дефисов).
+    this.indexSearch.set(v.replace(/[^\d-]/g, '').slice(0, 13));
   }
 
   runVagonSearch(): void {
@@ -680,6 +689,11 @@ export class TrainsComponent implements OnInit {
   private midDigits(index: string): string {
     const digits = index.replace(/\D/g, '');
     return digits.length >= 7 ? digits.slice(4, 7) : '';
+  }
+
+  /** Все цифры индекса: «9379-786-9857» → «93797869857» (для полного поиска). */
+  private allDigits(index: string): string {
+    return index.replace(/\D/g, '');
   }
 
   // ── Excel ────────────────────────────────────────────────────────────────
