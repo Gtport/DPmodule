@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -402,6 +402,9 @@ export class BrosReportModalComponent implements OnInit {
 
   readonly closed = output<void>();
 
+  /** Предвыбранный терминал с карточки «Отчёты по брошенным»; '' — все. */
+  readonly initialTerminal = input('');
+
   readonly start = signal(addDaysIso(todayMsk(), -30));
   readonly end = signal(todayMsk());
   readonly terminal = signal('');
@@ -482,6 +485,7 @@ export class BrosReportModalComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.terminal.set(this.initialTerminal());
     void this.loadRefs();
     void this.load();
   }

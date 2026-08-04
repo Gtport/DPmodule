@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -162,6 +162,9 @@ export class VygruzkaModalComponent implements OnInit {
 
   readonly closed = output<void>();
 
+  /** Предвыбранный терминал с карточки «Отчёты по выгрузке»; отчёт всегда по одному терминалу. */
+  readonly initialTerminal = input('');
+
   readonly loading = signal(false);
   readonly terminals = signal<TerminalTarget[]>([]);
   readonly terminal = signal('');
@@ -184,7 +187,9 @@ export class VygruzkaModalComponent implements OnInit {
     try {
       const ts = await this.arrivals.getTerminals();
       this.terminals.set(ts);
-      if (ts.length && !this.terminal()) this.terminal.set(ts[0].name);
+      const want = this.initialTerminal();
+      if (want && ts.some((t) => t.name === want)) this.terminal.set(want);
+      else if (ts.length && !this.terminal()) this.terminal.set(ts[0].name);
     } catch { /* реестр не критичен */ }
     await this.load();
   }

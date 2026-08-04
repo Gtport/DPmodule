@@ -111,9 +111,13 @@ func brosDomainSlice(ms []brosModel) []domain.Bros {
 }
 
 func (r *BrosRepository) Active(ctx context.Context) ([]domain.Bros, error) {
+	// Порядок справки задаётся здесь, фронт не пересортировывает:
+	// терминалы по алфавиту (без терминала — в конец), внутри терминала
+	// свежие броски сверху (решение владельца 04.08.2026).
 	var ms []brosModel
 	if err := r.db.WithContext(ctx).Where("status_br = true").
-		Order("created_at DESC").Find(&ms).Error; err != nil {
+		Order("(gruzpol_s = '') ASC, gruzpol_s ASC, date_br DESC NULLS LAST, created_at DESC").
+		Find(&ms).Error; err != nil {
 		return nil, err
 	}
 	return brosDomainSlice(ms), nil

@@ -91,6 +91,7 @@ interface TerminalSummary {
           } @else {
             <nz-select class="term" nzSize="small" nzPlaceHolder="Терминал"
                        [ngModel]="terminal()" (ngModelChange)="pickTerminal($event)">
+              <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
               @for (t of terminals(); track t.name) { <nz-option [nzValue]="t.name" [nzLabel]="t.name"></nz-option> }
             </nz-select>
             <label class="fl">С <input type="date" class="date" [ngModel]="from()" (ngModelChange)="from.set($event)" /></label>
@@ -224,6 +225,9 @@ export class LoadingModalComponent implements OnInit {
   /** Стартовый вид: «Сводка» — из верхнего ряда «Справок», «По дням» — из отчётов. */
   readonly initialView = input<'summary' | 'daily'>('summary');
 
+  /** Предвыбранный терминал вида «По дням» с карточки отчётов; '' — все. */
+  readonly initialTerminal = input('');
+
   readonly view = signal<'summary' | 'daily'>('summary');
   readonly loading = signal(false);
   readonly sending = signal(false);
@@ -234,7 +238,7 @@ export class LoadingModalComponent implements OnInit {
   readonly mode = signal<'day' | 'month'>('day');
   readonly monthRows = signal<LoadingDailyRow[]>([]);
 
-  // «По дням»: терминал + произвольный период.
+  // «По дням»: терминал ('' — все терминалы) + произвольный период.
   readonly terminal = signal('');
   readonly from = signal(todayMsk().slice(0, 8) + '01');
   readonly to = signal(yesterdayMsk());
@@ -275,24 +279,40 @@ export class LoadingModalComponent implements OnInit {
     });
   });
 
-  /** Пивот «дата × отправитель» для вида «По дням» (только выбранный терминал). */
+  /**
+   * Пивот вида «По дням»: терминал выбран — «дата × отправитель»,
+   * «Все терминалы» ('') — «дата × терминал» (сводные суммы).
+   */
   readonly pivot = computed(() => {
-    const rows = this.dailyRows().filter((r) => r.gruzpol_s === this.terminal());
-    const groups = [...new Set(rows.map((r) => r.cargo_group))];
-    const multi = groups.length > 1;
-    const groupOrder = (g: string) => (g === 'УГОЛЬ' ? '0' : '1') + g;
-    groups.sort((a, b) => groupOrder(a).localeCompare(groupOrder(b), 'ru'));
-
+    const all = !this.terminal();
+    const rows = all ? this.dailyRows() : this.dailyRows().filter((r) => r.gruzpol_s === this.terminal());
     const cols: { key: string; title: string; totalOf?: string }[] = [];
-    for (const g of groups) {
-      const senders = [...new Set(rows.filter((r) => r.cargo_group === g).map((r) => r.sms_1))]
-        .sort((a, b) => a.localeCompare(b, 'ru'));
-      for (const s of senders) {
-        cols.push({ key: s + '|' + g, title: multi ? `${s || '—'} (${(g || 'прочее').toLowerCase()})` : (s || '—') });
+    let keysOf: (r: LoadingDailyRow) => string[];
+
+    if (all) {
+      // Колонка на терминал: реестровые в порядке реестра, прочие
+      // (переименованные в ports, но живущие в истории) — следом по алфавиту.
+      const inData = new Set(rows.map((r) => r.gruzpol_s));
+      const names = this.terminals().map((t) => t.name).filter((n) => inData.has(n));
+      const extra = [...inData].filter((n) => !names.includes(n)).sort((a, b) => a.localeCompare(b, 'ru'));
+      for (const n of [...names, ...extra]) cols.push({ key: n, title: n });
+      keysOf = (r) => [r.gruzpol_s];
+    } else {
+      const groups = [...new Set(rows.map((r) => r.cargo_group))];
+      const multi = groups.length > 1;
+      const groupOrder = (g: string) => (g === 'УГОЛЬ' ? '0' : '1') + g;
+      groups.sort((a, b) => groupOrder(a).localeCompare(groupOrder(b), 'ru'));
+      for (const g of groups) {
+        const senders = [...new Set(rows.filter((r) => r.cargo_group === g).map((r) => r.sms_1))]
+          .sort((a, b) => a.localeCompare(b, 'ru'));
+        for (const s of senders) {
+          cols.push({ key: s + '|' + g, title: multi ? `${s || '—'} (${(g || 'прочее').toLowerCase()})` : (s || '—') });
+        }
+        if (multi) {
+          cols.push({ key: '#' + g, title: `Всего ${(g || 'прочее').toLowerCase()}`, totalOf: g });
+        }
       }
-      if (multi) {
-        cols.push({ key: '#' + g, title: `Всего ${(g || 'прочее').toLowerCase()}`, totalOf: g });
-      }
+      keysOf = (r) => [r.sms_1 + '|' + r.cargo_group, ...(multi ? ['#' + r.cargo_group] : [])];
     }
 
     const cell: Record<string, number> = {};
@@ -303,8 +323,7 @@ export class LoadingModalComponent implements OnInit {
     for (const r of rows) {
       const d = r.day.slice(0, 10);
       dateSet.add(d);
-      const keys = [r.sms_1 + '|' + r.cargo_group, ...(multi ? ['#' + r.cargo_group] : [])];
-      for (const k of keys) {
+      for (const k of keysOf(r)) {
         cell[d + '|' + k] = (cell[d + '|' + k] || 0) + r.vagon_count;
         colTotal[k] = (colTotal[k] || 0) + r.vagon_count;
       }
@@ -325,7 +344,9 @@ export class LoadingModalComponent implements OnInit {
     try {
       const ts = await this.arrivals.getTerminals();
       this.terminals.set(ts);
-      if (ts.length && !this.terminal()) this.terminal.set(ts[0].name);
+      const want = this.initialTerminal();
+      if (want && ts.some((t) => t.name === want)) this.terminal.set(want);
+      // want пуст либо вне реестра → остаётся '' («Все терминалы»).
     } catch { /* без реестра сводка будет пустой — тост даст загрузка */ }
     await this.loadSummary();
     if (this.initialView() === 'daily') this.switchView('daily');
@@ -499,7 +520,7 @@ export class LoadingModalComponent implements OnInit {
       ws['!cols'] = [14, ...p.cols.map(() => 18), 14].map((wch) => ({ wch }));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Погрузка');
-      XLSX.writeFile(wb, `погрузка_${this.terminal()}_${this.fmtDate(this.from())}-${this.fmtDate(this.to())}.xlsx`);
+      XLSX.writeFile(wb, `погрузка_${this.terminal() || 'все_терминалы'}_${this.fmtDate(this.from())}-${this.fmtDate(this.to())}.xlsx`);
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     }

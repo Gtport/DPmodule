@@ -41,9 +41,11 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
  * - «Перестановки»: «Перестановка на {терминал}» (.xlsx текущих перестановок,
  *   собирает сервер; в gtport направления были зашиты — здесь реестр) и
  *   «Факт. перестановки» (модалка за период из истории);
- * - «Отчёты за период»: «Погрузка по дням» (та же модалка погрузки, вид «По
- *   дням»), «Выгрузка за период», «Отчёт по брошенным» (модалка отчёта
- *   напрямую, терминал и период выбираются внутри).
+ * - «Отчёты по брошенным» / «Отчёты по погрузке» / «Отчёты по выгрузке»
+ *   (решение владельца 04.08.2026, вид карточек gtport Tools): кнопка на
+ *   каждый терминал из реестра — модалка открывается сразу по нему; у
+ *   брошенных и погрузки первая кнопка «Все терминалы» (у выгрузки «все»
+ *   нет — отчёт всегда по одному терминалу, `GET /reports/vygruzka`).
  * Оставшийся блок оригинала (Отчёты НМТП) добавится по мере переноса —
  * пустых кнопок не заводим.
  */
@@ -110,7 +112,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
             <div class="card">
               <div class="head">Погрузка/Выгрузка</div>
               <div class="body">
-                <button nz-button nzBlock (click)="loadingView.set('summary')">Погрузка в адрес портов</button>
+                <button nz-button nzBlock (click)="loading.set({ view: 'summary', terminal: '' })">Погрузка в адрес портов</button>
                 <button nz-button nzBlock (click)="vygruzkaDayOpen.set(true)">Выгрузка за день</button>
               </div>
             </div>
@@ -146,13 +148,41 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
                 <button nz-button nzBlock (click)="factOpen.set(true)">Факт. перестановки</button>
               </div>
             </div>
+          }
 
+          <div class="card">
+            <div class="head">Отчёты по брошенным</div>
+            <div class="body">
+              <button nz-button nzBlock (click)="brosReport.set('')">Все терминалы</button>
+              @for (t of terminals(); track t.name) {
+                <button nz-button nzBlock (click)="brosReport.set(t.name)">
+                  <span class="dot" [style.background]="t.color"></span>{{ t.name }}
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="head">Отчёты по погрузке</div>
+            <div class="body">
+              <button nz-button nzBlock (click)="loading.set({ view: 'daily', terminal: '' })">Все терминалы</button>
+              @for (t of terminals(); track t.name) {
+                <button nz-button nzBlock (click)="loading.set({ view: 'daily', terminal: t.name })">
+                  <span class="dot" [style.background]="t.color"></span>{{ t.name }}
+                </button>
+              }
+            </div>
+          </div>
+
+          @if (terminals().length) {
             <div class="card">
-              <div class="head">Отчёты за период</div>
+              <div class="head">Отчёты по выгрузке</div>
               <div class="body">
-                <button nz-button nzBlock (click)="loadingView.set('daily')">Погрузка по дням</button>
-                <button nz-button nzBlock (click)="vygruzkaOpen.set(true)">Выгрузка за период</button>
-                <button nz-button nzBlock (click)="brosReportOpen.set(true)">Отчёт по брошенным</button>
+                @for (t of terminals(); track t.name) {
+                  <button nz-button nzBlock (click)="vygruzka.set(t.name)">
+                    <span class="dot" [style.background]="t.color"></span>{{ t.name }}
+                  </button>
+                }
               </div>
             </div>
           }
@@ -163,14 +193,15 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
     @if (planOpen()) { <app-sms-plan-modal (closed)="planOpen.set(false)" /> }
     @if (operOpen()) { <app-sms-oper-modal (closed)="operOpen.set(false)" /> }
     @if (brosOpen()) { <app-bros-modal (closed)="brosOpen.set(false)" /> }
-    @if (brosReportOpen()) { <app-bros-report-modal (closed)="brosReportOpen.set(false)" /> }
+    <!-- brosReport: '' — «Все терминалы», поэтому явное сравнение с null (as-синтаксис счёл бы '' закрытой). -->
+    @if (brosReport() !== null) { <app-bros-report-modal [initialTerminal]="brosReport()!" (closed)="brosReport.set(null)" /> }
     @if (podhod(); as p) {
       <app-podhod-modal [terminal]="p.terminal" [clients]="p.clients" [presetName]="p.preset"
                         (closed)="podhod.set(null)" />
     }
     @if (nmtpOpen(); as t) { <app-nmtp-modal [terminal]="t" (closed)="nmtpOpen.set(null)" /> }
-    @if (loadingView(); as v) { <app-loading-modal [initialView]="v" (closed)="loadingView.set(null)" /> }
-    @if (vygruzkaOpen()) { <app-vygruzka-modal (closed)="vygruzkaOpen.set(false)" /> }
+    @if (loading(); as l) { <app-loading-modal [initialView]="l.view" [initialTerminal]="l.terminal" (closed)="loading.set(null)" /> }
+    @if (vygruzka(); as t) { <app-vygruzka-modal [initialTerminal]="t" (closed)="vygruzka.set(null)" /> }
     @if (vygruzkaDayOpen()) { <app-vygruzka-day-modal (closed)="vygruzkaDayOpen.set(false)" /> }
     @if (factOpen()) { <app-perestanovka-fact-modal (closed)="factOpen.set(false)" /> }
   `,
@@ -203,13 +234,16 @@ export class ReportsComponent implements OnInit {
   readonly perestanovkaBusy = signal<string | null>(null);
   readonly nmtpTerminals = signal<string[]>([]);
   readonly nmtpOpen = signal<string | null>(null);
-  readonly loadingView = signal<'summary' | 'daily' | null>(null);
-  readonly vygruzkaOpen = signal(false);
+  /** Модалка погрузки: вид + предвыбранный терминал ('' — все); null — закрыта. */
+  readonly loading = signal<{ view: 'summary' | 'daily'; terminal: string } | null>(null);
+  /** Модалка выгрузки: имя терминала; null — закрыта. */
+  readonly vygruzka = signal<string | null>(null);
   readonly vygruzkaDayOpen = signal(false);
   readonly planOpen = signal(false);
   readonly operOpen = signal(false);
   readonly brosOpen = signal(false);
-  readonly brosReportOpen = signal(false);
+  /** Модалка отчёта по брошенным: терминал ('' — все); null — закрыта. */
+  readonly brosReport = signal<string | null>(null);
   readonly factOpen = signal(false);
   readonly podhod = signal<{ terminal: string; clients: string; preset: string } | null>(null);
 
