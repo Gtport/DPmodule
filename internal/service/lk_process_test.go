@@ -415,6 +415,16 @@ func (f *fakeHistoryRepo) LoadingDaily(_ context.Context, _, _ domain.LocalTime)
 	return nil, nil
 }
 
+func (f *fakeHistoryRepo) SearchRows(_ context.Context, _ domain.HistorySearchFilter, _ string, _ bool, _, _ int) ([]domain.VagonHistory, int, error) {
+	return nil, 0, nil
+}
+
+func (f *fakeHistoryRepo) IterateSearch(_ context.Context, _ domain.HistorySearchFilter, _ string, _ bool, _ func(domain.VagonHistory) error) error {
+	return nil
+}
+
+func (f *fakeHistoryRepo) DistinctStationsNach(_ context.Context) ([]string, error) { return nil, nil }
+
 func (f *fakeHistoryRepo) PerestanovkaRows(_ context.Context, _, _ domain.LocalTime, _ bool) ([]domain.VagonHistory, error) {
 	return nil, nil
 }

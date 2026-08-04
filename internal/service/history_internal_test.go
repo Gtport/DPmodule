@@ -257,6 +257,16 @@ func (r *histStubRepo) LoadingDaily(_ context.Context, _, _ domain.LocalTime) ([
 	return nil, nil
 }
 
+func (r *histStubRepo) SearchRows(_ context.Context, _ domain.HistorySearchFilter, _ string, _ bool, _, _ int) ([]domain.VagonHistory, int, error) {
+	return nil, 0, nil
+}
+
+func (r *histStubRepo) IterateSearch(_ context.Context, _ domain.HistorySearchFilter, _ string, _ bool, _ func(domain.VagonHistory) error) error {
+	return nil
+}
+
+func (r *histStubRepo) DistinctStationsNach(_ context.Context) ([]string, error) { return nil, nil }
+
 // TestApplyUnloadOnLeave — авто-веха выгрузки при выбытии статуса-10 из батча
 // (случай АЭ 143/144: выгружен и уехал между снимками, перехода 10→12 не было).
 func TestApplyUnloadOnLeave(t *testing.T) {

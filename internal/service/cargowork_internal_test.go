@@ -142,6 +142,16 @@ func (h cwHist) LoadingDaily(context.Context, domain.LocalTime, domain.LocalTime
 	return nil, nil
 }
 
+func (h cwHist) SearchRows(context.Context, domain.HistorySearchFilter, string, bool, int, int) ([]domain.VagonHistory, int, error) {
+	return nil, 0, nil
+}
+
+func (h cwHist) IterateSearch(context.Context, domain.HistorySearchFilter, string, bool, func(domain.VagonHistory) error) error {
+	return nil
+}
+
+func (h cwHist) DistinctStationsNach(context.Context) ([]string, error) { return nil, nil }
+
 // cwPlans — стаб плана подвода без загрузок (остаток на станции = 0).
 type cwPlans struct{}
 

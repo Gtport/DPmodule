@@ -59,4 +59,18 @@ type HistoryRepository interface {
 	// исключены — это не фактическая погрузка (TARGET.md §3.17; в gtport
 	// фильтра не было — осознанный отход).
 	LoadingDaily(ctx context.Context, from, to domain.LocalTime) ([]domain.LoadingDailyRow, error)
+	// SearchRows — страница экрана «Работа с историческими данными»: строки по
+	// фильтру + общее число подходящих (для пагинации). orderCol — имя колонки
+	// СТРОГО из белого списка сервиса (в SQL попадает как есть); сортировка
+	// дополняется NULLS LAST и стабилизирующим хвостом vagon, id — иначе при
+	// равных значениях страницы «плавают».
+	SearchRows(ctx context.Context, f domain.HistorySearchFilter, orderCol string, desc bool, limit, offset int) (rows []domain.VagonHistory, total int, err error)
+	// IterateSearch — курсорный обход ВСЕГО отфильтрованного набора в порядке
+	// сортировки (экспорт Excel): строки читаются по одной, 100 тыс. доменных
+	// структур в память не материализуются. Ошибка fn прерывает обход.
+	IterateSearch(ctx context.Context, f domain.HistorySearchFilter, orderCol string, desc bool, fn func(domain.VagonHistory) error) error
+	// DistinctStationsNach — уникальные станции погрузки истории (словарь
+	// фильтра «Станция погрузки»; в gtport словарь брали из marka — DISTINCT
+	// честнее: покрывает и станции, которых в marka нет).
+	DistinctStationsNach(ctx context.Context) ([]string, error)
 }

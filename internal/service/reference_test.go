@@ -96,6 +96,16 @@ func (s *refHistStub) LoadingDaily(context.Context, domain.LocalTime, domain.Loc
 	return nil, nil
 }
 
+func (s *refHistStub) SearchRows(context.Context, domain.HistorySearchFilter, string, bool, int, int) ([]domain.VagonHistory, int, error) {
+	return nil, 0, nil
+}
+
+func (s *refHistStub) IterateSearch(context.Context, domain.HistorySearchFilter, string, bool, func(domain.VagonHistory) error) error {
+	return nil
+}
+
+func (s *refHistStub) DistinctStationsNach(context.Context) ([]string, error) { return nil, nil }
+
 // refCursorStub — курсор в памяти.
 type refCursorStub struct {
 	saved map[string]string

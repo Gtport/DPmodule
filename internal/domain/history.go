@@ -118,6 +118,29 @@ type LoadingDailyRow struct {
 	TotalWeight float64   `json:"total_weight"`
 }
 
+// HistorySearchFilter — фильтр экрана «Работа с историческими данными»
+// (перенос gtport OperatorToolsHistory, POST /history/universal). Все поля
+// опциональны: nil-дата / пустой срез = фильтр выключен. Даты сравниваются с
+// колонками *_d (только дата, полночь), поэтому границы включительные без
+// добивки до 23:59:59. NotUnloaded — «не выгруж.»: место выгрузки пусто
+// (в схеме DPmodule place_vigr NOT NULL DEFAULT '', NULL из gtport-дефекта
+// невозможен; COALESCE в запросе — страховка).
+type HistorySearchFilter struct {
+	DateNachDFrom *LocalTime
+	DateNachDTo   *LocalTime
+	DatePribDFrom *LocalTime
+	DatePribDTo   *LocalTime
+	DateVigrDFrom *LocalTime // по date_vigr_d (ЖД-сутки), не по timestamp date_vigr —
+	DateVigrDTo   *LocalTime // иначе последний день диапазона терял записи после 00:00 (дефект gtport)
+	GruzpolS      []string
+	Naznach       []string
+	PlaceVigr     []string
+	NotUnloaded   bool
+	Vagons        []string
+	Invoices      []string
+	StationNach   []string
+}
+
 // TripKeyOf — детерминированный ключ рейса: vagon*100000 + дней_от_эпохи(date_nach_d).
 // ОБЯЗАН совпадать с GENERATED-колонкой vagon_history.trip_key
 // (vagon::bigint*100000 + (date_nach_d::date - DATE '1970-01-01')).

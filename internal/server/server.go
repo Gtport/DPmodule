@@ -343,6 +343,11 @@ func Build(
 			// трёхуровневым деревом, фильтры/поиски на клиенте, только чтение.
 			handler.NewTrainsHandler(service.NewTrainsService(actualCache, dirCache)).RegisterRoutes(api)
 
+			// Экран «Работа с историческими данными» (Инструменты оператора):
+			// поиск по vagon_history с серверными пагинацией/сортировкой и
+			// Excel по всему фильтру, только чтение.
+			handler.NewHistorySearchHandler(service.NewHistorySearchService(historyRepo, dirCache)).RegisterRoutes(api)
+
 			// Отчёт «Подход» страницы «Справки и отчёты»: двухуровневая
 			// группировка из снимка, только чтение. Пресеты (клиентские
 			// варианты карточек) — из report_preset; без БД их просто нет.

@@ -82,11 +82,12 @@ export const routes: Routes = [
         data: { roles: OPER },
       },
       {
-        // «Инструменты оператора»: экран «Поезда в движении» (перенос gtport
-        // OperatorToolsDislocation); «История» — следующая волна (вкладкой).
+        // «Инструменты оператора»: вкладки «Поезда в движении» (gtport
+        // OperatorToolsDislocation) и «Работа с историческими данными»
+        // (gtport OperatorToolsHistory).
         path: 'operator-tools',
         loadComponent: () =>
-          import('./features/trains/trains.component').then((m) => m.TrainsComponent),
+          import('./features/operator-tools/operator-tools.component').then((m) => m.OperatorToolsComponent),
         canActivate: [authGuard],
         data: { roles: OPER },
       },
