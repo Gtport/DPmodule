@@ -63,6 +63,7 @@ func TestTrackUnplannedMoves(t *testing.T) {
 		{Vagon: "B", CodeStationOper: "111111", Status: &st2},
 		{Vagon: "C", CodeStationOper: "111111", Status: &st2},
 		{Vagon: "D", CodeStationOper: "111111", Status: &st2},
+		{Vagon: "F", CodeStationOper: "111111", Status: &st2},
 	}
 	actual := NewActualCache(s9StubDisl{items: prev})
 	if err := actual.Load(ctx); err != nil {
@@ -78,6 +79,9 @@ func TestTrackUnplannedMoves(t *testing.T) {
 		{Vagon: "C", CodeStationOper: "222222", Status: &st2, Naznach: "БП", RasstStanNazn: km(300)},
 		// D: станция та же → нет.
 		{Vagon: "D", CodeStationOper: "111111", Status: &st2, Naznach: "АЭ", RasstStanNazn: km(400)},
+		// F: порожний под погрузку (признак + вес пуст) — план подвода не про
+		// него, сигнала нет (решение владельца 04.08.2026).
+		{Vagon: "F", CodeStationOper: "222222", Status: &st2, Naznach: "АЭ", RasstStanNazn: km(500), PorozhPriznak: "1"},
 	}
 	repo := newUnplStub()
 	added, _, err := trackUnplannedMoves(ctx, kept, actual, repo, dir, 0) // 0 → дефолт 1000
@@ -124,6 +128,9 @@ func (s *unplDirStub) LoadCargoOperations(context.Context) ([]domain.CargoOperat
 	return nil, nil
 }
 func (s *unplDirStub) LoadCargo(context.Context) ([]domain.Cargo, error) { return nil, nil }
+func (s *unplDirStub) LoadPorozhCargo(context.Context) ([]domain.PorozhCargo, error) {
+	return nil, nil
+}
 func (s *unplDirStub) LoadMarka(context.Context) ([]domain.Marka, error) { return nil, nil }
 func (s *unplDirStub) LoadPorts(context.Context) ([]domain.Ports, error) { return s.ports, nil }
 func (s *unplDirStub) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {

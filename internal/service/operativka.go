@@ -74,10 +74,11 @@ func (s *OperativkaService) Snapshot(ctx context.Context) (OperativkaDTO, error)
 		return OperativkaDTO{}, err
 	}
 
-	// «Не выгружено» — статус 10 по терминалам из RAM-снимка.
+	// «Не выгружено» — статус 10 по терминалам из RAM-снимка. Порожние под
+	// погрузку не считаются: они прибыли ЗА грузом, выгрузки у них не будет.
 	notUnloaded := map[string]int{}
 	for _, r := range s.actual.All() {
-		if r.Status != nil && *r.Status == 10 && r.Naznach != "" {
+		if r.Status != nil && *r.Status == 10 && r.Naznach != "" && !s.dir.PorozhInbound(&r) {
 			notUnloaded[r.Naznach]++
 		}
 	}

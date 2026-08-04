@@ -278,7 +278,7 @@ func TestApplyUnloadOnLeave(t *testing.T) {
 	}
 
 	kept := []domain.Dislocation{{ID: "B2", Vagon: "222", Status: &st10}}
-	n, err := applyUnloadOnLeave(context.Background(), kept, actual, repo)
+	n, err := applyUnloadOnLeave(context.Background(), kept, actual, repo, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n, "веха только для выбывшего без выгрузки")
 
@@ -296,6 +296,36 @@ func TestApplyUnloadOnLeave(t *testing.T) {
 	assert.False(t, hasB, "оставшийся в батче не трогается")
 	assert.False(t, hasC, "исчезнувший в пути — путь записи-8, не выгрузка")
 	assert.False(t, hasD, "ручная выгрузка не перетирается")
+}
+
+// Выбытие порожнего под погрузку (статус 10) — погрузка и отъезд, а не выгрузка:
+// ложная авто-веха выгрузки не пишется (решение владельца 04.08.2026).
+func TestApplyUnloadOnLeave_PorozhInboundSkipped(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 7, 21, 19, 30, 0, 0, time.UTC))
+	defer restore()
+
+	st10 := 10
+	actual := &ActualCache{byVagon: map[string]domain.Dislocation{
+		"111": {ID: "A", Vagon: "111", Status: &st10, Naznach: "АЭ", PorozhPriznak: "1"},               // порожний под погрузку → без вехи
+		"222": {ID: "B", Vagon: "222", Status: &st10, Naznach: "АЭ", PorozhPriznak: "1", Ves: fp(70)}, // опустевший (вес есть) → веха
+	}}
+	repo := newHistStub()
+	repo.rows = map[string]domain.VagonHistory{
+		"A": {ID: "A", Vagon: "111"},
+		"B": {ID: "B", Vagon: "222"},
+	}
+
+	porozhInbound := func(r *domain.Dislocation) bool {
+		return r.PorozhPriznak == "1" && (r.Ves == nil || *r.Ves == 0)
+	}
+	n, err := applyUnloadOnLeave(context.Background(), nil, actual, repo, porozhInbound)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	_, hasA := repo.batch["A"]
+	assert.False(t, hasA, "порожний под погрузку вехи выгрузки не получает")
+	require.NotNil(t, repo.batch["B"], "опустевший с весом получает веху как раньше")
+	assert.Equal(t, 12, repo.batch["B"]["status"])
 }
 
 // tripKeyFromTestID собирает trip_key из id вида «вагон/станция/ДД.ММ.ГГГГ» —

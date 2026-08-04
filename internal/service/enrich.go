@@ -99,7 +99,7 @@ func (e *Enricher) Stage1(records []domain.Dislocation, cfg Stage1Config) ([]dom
 
 		// 5. Статусы и производные.
 		deriveDates(&r, cfg.CutoffHour)
-		status := computeStatus(&r, cfg.ProstDnMin, cfg.ProstChMin)
+		status := computeStatus(&r, cfg.ProstDnMin, cfg.ProstChMin, e.dir.PorozhInbound(&r))
 		r.Status = &status
 		st.StatusDist[status]++
 		switch status {
@@ -281,11 +281,15 @@ func deriveDates(r *domain.Dislocation, cutoff int) {
 }
 
 // computeStatus — дерево статусов (§3.13). Порожний признак проверяется первым.
-func computeStatus(r *domain.Dislocation, prostDnMin, prostChMin int) int {
+// porozhInbound («порожний под погрузку», DirectoryCache.PorozhInbound) гасит
+// порожнюю ветку: изначально пустой вагон, едущий к нам ЗА грузом, живёт обычным
+// деревом статусов движения (0/1/2/4/5/9/10) — иначе весь его подвод слипался бы
+// в неподвижный статус 6 (решение владельца 04.08.2026, отход от gtport).
+func computeStatus(r *domain.Dislocation, prostDnMin, prostChMin int, porozhInbound bool) int {
 	atDest := r.StationOper != "" && r.StanNazn != "" && r.StationOper == r.StanNazn
 
-	// Порожний — раньше всего.
-	if r.PorozhPriznak == "1" {
+	// Порожний — раньше всего (но не «под погрузку»: тот идёт дальше как гружёный).
+	if r.PorozhPriznak == "1" && !porozhInbound {
 		if atDest {
 			return 12 // порожний в порту
 		}

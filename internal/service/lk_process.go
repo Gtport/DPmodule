@@ -374,7 +374,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	// авто-веха выгрузки в историю моментом выбытия. ДО подмены снимка.
 	var unloadLeft int
 	if p.actual != nil && p.history != nil {
-		if unloadLeft, err = applyUnloadOnLeave(ctx, all, p.actual, p.history); err != nil {
+		if unloadLeft, err = applyUnloadOnLeave(ctx, all, p.actual, p.history, p.intake.dir.PorozhInbound); err != nil {
 			return LKProcessResult{}, fmt.Errorf("выбытие-10 без выгрузки: %w", err)
 		}
 	}

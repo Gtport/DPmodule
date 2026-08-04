@@ -46,6 +46,14 @@ type cargoModel struct {
 
 func (cargoModel) TableName() string { return "cargo" }
 
+type porozhCargoModel struct {
+	Kod     int64  `gorm:"column:cargo_kod;primaryKey"`
+	Name    string `gorm:"column:name"`
+	Enabled bool   `gorm:"column:enabled"`
+}
+
+func (porozhCargoModel) TableName() string { return "porozh_cargo" }
+
 type markaModel struct {
 	Okpo       int64  `gorm:"column:okpo;primaryKey"`
 	StationKod int64  `gorm:"column:station_kod;primaryKey"`
@@ -159,6 +167,18 @@ func (r *DirectoryRepository) LoadCargo(ctx context.Context) ([]domain.Cargo, er
 			Kod: m.Kod, Name: m.Name,
 			CargoGroup: m.CargoGroup, CargoS: m.CargoS, CargoSms: m.CargoSms,
 		}
+	}
+	return out, nil
+}
+
+func (r *DirectoryRepository) LoadPorozhCargo(ctx context.Context) ([]domain.PorozhCargo, error) {
+	var ms []porozhCargoModel
+	if err := r.db.WithContext(ctx).Find(&ms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.PorozhCargo, len(ms))
+	for i, m := range ms {
+		out[i] = domain.PorozhCargo{Kod: m.Kod, Name: m.Name, Enabled: m.Enabled}
 	}
 	return out, nil
 }

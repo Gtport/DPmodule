@@ -48,7 +48,9 @@ func trackUnplannedMoves(
 		inTransit := st == 0 || st == 1 || st == 2 || st == 4 || st == 5
 
 		// Автоснятие: план появился либо вагон больше не «гружёный в пути».
-		if r.PlanMsk != nil || !inTransit {
+		// Порожний под погрузку — не сигнал: план подвода — про груз, порожняк
+		// в нём не ходит, иначе весь порожний подвод шумел бы «бесплановыми».
+		if r.PlanMsk != nil || !inTransit || dir.PorozhInbound(&r) {
 			toClear = append(toClear, r.Vagon)
 			continue
 		}

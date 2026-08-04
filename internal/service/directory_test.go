@@ -13,13 +13,14 @@ import (
 
 // stubDirRepo — in-memory реализация port.DirectoryRepository для тестов.
 type stubDirRepo struct {
-	stations   []domain.Station
-	ops        []domain.CargoOperation
-	cargo      []domain.Cargo
-	marka      []domain.Marka
-	ports      []domain.Ports
-	routeSpeed []domain.RouteSpeed
-	naznach    []domain.NaznachStation
+	stations    []domain.Station
+	ops         []domain.CargoOperation
+	cargo       []domain.Cargo
+	porozhCargo []domain.PorozhCargo
+	marka       []domain.Marka
+	ports       []domain.Ports
+	routeSpeed  []domain.RouteSpeed
+	naznach     []domain.NaznachStation
 }
 
 func (s *stubDirRepo) LoadStations(context.Context) ([]domain.Station, error) {
@@ -29,6 +30,9 @@ func (s *stubDirRepo) LoadCargoOperations(context.Context) ([]domain.CargoOperat
 	return s.ops, nil
 }
 func (s *stubDirRepo) LoadCargo(context.Context) ([]domain.Cargo, error) { return s.cargo, nil }
+func (s *stubDirRepo) LoadPorozhCargo(context.Context) ([]domain.PorozhCargo, error) {
+	return s.porozhCargo, nil
+}
 func (s *stubDirRepo) LoadMarka(context.Context) ([]domain.Marka, error) { return s.marka, nil }
 func (s *stubDirRepo) LoadPorts(context.Context) ([]domain.Ports, error) { return s.ports, nil }
 func (s *stubDirRepo) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {

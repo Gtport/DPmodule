@@ -13,6 +13,7 @@ type DirectoryRepository interface {
 	LoadStations(ctx context.Context) ([]domain.Station, error)
 	LoadCargoOperations(ctx context.Context) ([]domain.CargoOperation, error)
 	LoadCargo(ctx context.Context) ([]domain.Cargo, error)
+	LoadPorozhCargo(ctx context.Context) ([]domain.PorozhCargo, error)
 	LoadMarka(ctx context.Context) ([]domain.Marka, error)
 	LoadPorts(ctx context.Context) ([]domain.Ports, error)
 	LoadRouteSpeed(ctx context.Context) ([]domain.RouteSpeed, error)

@@ -97,7 +97,13 @@ func applyHistory(ctx context.Context, kept []domain.Dislocation, actual *Actual
 // правится оператором в «Истории прибывших». Строки, где выгрузка уже внесена
 // вручную (date_vigr заполнен — снимок держал 10 по sticky), НЕ трогаем: ручная
 // веха вернее автоматической. Вызывается ДО подмены снимка (actual — прежний).
-func applyUnloadOnLeave(ctx context.Context, kept []domain.Dislocation, actual *ActualCache, repo port.HistoryRepository) (int, error) {
+//
+// porozhInbound (nil = никто) — предикат «порожний под погрузку»: такой вагон
+// прибыл ЗА грузом, его выбытие — погрузка и отъезд, а не выгрузка; ложную веху
+// выгрузки не пишем — иначе порожняк попадал бы в П/В, «Грузовую работу» и
+// отчёты выгрузки (решение владельца 04.08.2026). Рейс в истории остаётся с
+// прибытием без выгрузки — честное отражение порожнякового захода.
+func applyUnloadOnLeave(ctx context.Context, kept []domain.Dislocation, actual *ActualCache, repo port.HistoryRepository, porozhInbound func(*domain.Dislocation) bool) (int, error) {
 	seen := make(map[string]struct{}, len(kept))
 	for i := range kept {
 		if kept[i].Vagon != "" {
@@ -112,6 +118,9 @@ func applyUnloadOnLeave(ctx context.Context, kept []domain.Dislocation, actual *
 		}
 		if _, present := seen[v.Vagon]; present {
 			continue
+		}
+		if porozhInbound != nil && porozhInbound(&v) {
+			continue // порожний под погрузку: выбытие — погрузка, вехи выгрузки нет
 		}
 		naznachByID[v.ID] = v.Naznach
 		ids = append(ids, v.ID)

@@ -27,6 +27,7 @@ type DirectoryCache struct {
 	stationsByKod4  map[int]domain.Station
 	cargoOperations map[int]domain.CargoOperation
 	cargo           map[int64]domain.Cargo           // код груза ЕТСНГ → группа/имя/метка (Stage 1)
+	porozhCargo     map[int64]struct{}               // коды порожняковых рейсов (только enabled) — критерий «под погрузку»
 	marka           map[string]domain.Marka          // ключ MarkaKey (уникален с 000028); матч СТРОГО по ключу
 	ports           map[string][]domain.Ports        // ключ PortKey (неуникален → срез)
 	portsByOkpo     map[int64][]domain.Ports         // ОКПО → терминалы (для приёма ЛК: «чей файл»)
@@ -43,6 +44,7 @@ func NewDirectoryCache(repo port.DirectoryRepository) *DirectoryCache {
 		stationsByKod4:  map[int]domain.Station{},
 		cargoOperations: map[int]domain.CargoOperation{},
 		cargo:           map[int64]domain.Cargo{},
+		porozhCargo:     map[int64]struct{}{},
 		marka:           map[string]domain.Marka{},
 		ports:           map[string][]domain.Ports{},
 		portsByOkpo:     map[int64][]domain.Ports{},
@@ -88,6 +90,10 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load cargo: %w", err)
 	}
+	porozhCargo, err := c.repo.LoadPorozhCargo(ctx)
+	if err != nil {
+		return fmt.Errorf("load porozh_cargo: %w", err)
+	}
 	marka, err := c.repo.LoadMarka(ctx)
 	if err != nil {
 		return fmt.Errorf("load marka: %w", err)
@@ -122,6 +128,13 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	mk := make(map[string]domain.Marka, len(marka))
 	for _, m := range marka {
 		mk[MarkaKey(m.Okpo, m.StationKod, m.CargoGroup)] = m
+	}
+	// Коды порожняковых рейсов: в кэш только включённые (галка enabled в Админе).
+	pc := make(map[int64]struct{}, len(porozhCargo))
+	for _, p := range porozhCargo {
+		if p.Enabled {
+			pc[p.Kod] = struct{}{}
+		}
 	}
 	// Перестановки назначения: в кэш только включённые с непустым naznach — иначе
 	// поиск возвращает «не найдено», и enrichFromNaznachStation откатывается к GruzpolS.
@@ -173,6 +186,7 @@ func (c *DirectoryCache) Load(ctx context.Context) error {
 	c.stationsByKod4 = st4
 	c.cargoOperations = co
 	c.cargo = cg
+	c.porozhCargo = pc
 	c.marka = mk
 	c.ports = pr
 	c.portsByOkpo = pbo
@@ -300,6 +314,31 @@ func (c *DirectoryCache) GetCargoByKod(kod int64) (domain.Cargo, bool) {
 	defer c.mu.RUnlock()
 	g, ok := c.cargo[kod]
 	return g, ok
+}
+
+// PorozhInbound — «порожний под погрузку» (решение владельца 04.08.2026): вагон
+// с признаком порожнего, который изначально пуст и едет к нам ЗА грузом, а не
+// опустел по дороге. Критерий: вес 0/пуст ЛИБО код груза порожнякового рейса
+// (справочник porozh_cargo, семейство ЕТСНГ 421). У опустевших (перегруз) и
+// выгрузившихся в порту вес и код прежнего груза сохраняются в ленте — сверено
+// с боевой базой 04.08.2026 (все 388 вагонов с признаком несли уголь ~70 т).
+// Код в критерии страхует вес: если лента даст порожняку вес тары, а не 0,
+// вагон всё равно опознается по накладной порожнякового рейса.
+func (c *DirectoryCache) PorozhInbound(r *domain.Dislocation) bool {
+	if r.PorozhPriznak != "1" {
+		return false
+	}
+	if r.Ves == nil || *r.Ves == 0 {
+		return true
+	}
+	kod, err := strconv.ParseInt(strings.TrimSpace(r.CodeCargo), 10, 64)
+	if err != nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.porozhCargo[kod]
+	return ok
 }
 
 func (c *DirectoryCache) GetMarkaByCompositeKey(okpo, stationKod int64, cargoGroup string) (domain.Marka, bool) {

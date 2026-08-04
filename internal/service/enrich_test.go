@@ -39,6 +39,10 @@ func fullEnricher(t *testing.T) *service.Enricher {
 		cargo: []domain.Cargo{
 			{Kod: 161113, Name: "УГОЛЬ КАМЕННЫЙ МАРКИ Г-ГАЗОВЫЙ", CargoGroup: "УГОЛЬ", CargoS: "УГОЛЬ Г", CargoSms: "Г"},
 		},
+		porozhCargo: []domain.PorozhCargo{
+			{Kod: 421034, Name: "ВАГОНЫ ЖЕЛЕЗНОДОРОЖНЫЕ, НЕ ПОИМЕНОВАННЫЕ В АЛФАВИТЕ", Enabled: true},
+			{Kod: 693157, Name: "ВАГОНЫ С ЛЮДЬМИ", Enabled: false}, // выключен галкой — в критерии не участвует
+		},
 	})
 	require.NoError(t, dc.Load(context.Background()))
 	return service.NewEnricher(dc)
@@ -168,9 +172,19 @@ func TestStage1_StatusTree(t *testing.T) {
 		rec  domain.Dislocation
 		want int
 	}{
-		{"12 порожний в порту", domain.Dislocation{PorozhPriznak: "1", StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА"}, 12},
-		{"6 порожний в пути", domain.Dislocation{PorozhPriznak: "1", StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА"}, 6},
-		{"6 порожний раньше 0/1", domain.Dislocation{PorozhPriznak: "1", CodeStationNach: "111", CodeStationOper: "111", StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА", Index: "Б/И"}, 6},
+		// Опустевшие/выгрузившиеся: признак порожнего при весе прежнего груза
+		// (как в боевой ленте) — прежние ветки 6/12.
+		{"12 порожний в порту", domain.Dislocation{PorozhPriznak: "1", Ves: f64(70.5), StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА"}, 12},
+		{"6 порожний в пути", domain.Dislocation{PorozhPriznak: "1", Ves: f64(70.5), StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА"}, 6},
+		{"6 порожний раньше 0/1", domain.Dislocation{PorozhPriznak: "1", Ves: f64(70.5), CodeStationNach: "111", CodeStationOper: "111", StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА", Index: "Б/И"}, 6},
+		// Порожние ПОД ПОГРУЗКУ (решение владельца 04.08.2026): живут деревом
+		// статусов движения, а не порожней веткой.
+		{"2 под погрузку: вес пуст", domain.Dislocation{PorozhPriznak: "1", StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА", StationNach: "СМЫЧКА"}, 2},
+		{"2 под погрузку: вес 0", domain.Dislocation{PorozhPriznak: "1", Ves: f64(0), StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА", StationNach: "СМЫЧКА"}, 2},
+		{"2 под погрузку: код порожнякового рейса при весе тары", domain.Dislocation{PorozhPriznak: "1", Ves: f64(22.0), CodeCargo: "421034", StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА", StationNach: "СМЫЧКА"}, 2},
+		{"6 выключенный код не спасает", domain.Dislocation{PorozhPriznak: "1", Ves: f64(22.0), CodeCargo: "693157", StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА", StationNach: "СМЫЧКА"}, 6},
+		{"9 под погрузку прибыл без date_prib", domain.Dislocation{PorozhPriznak: "1", StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА"}, 9},
+		{"10 под погрузку прибыл", domain.Dislocation{PorozhPriznak: "1", StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА", DatePrib: lt(2026, 7, 2, 5, 0)}, 10},
 		{"10 прибыл", domain.Dislocation{StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА", DatePrib: lt(2026, 7, 2, 5, 0)}, 10},
 		{"9 кандидат", domain.Dislocation{StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА"}, 9},
 		{"0 ст. отправления Б/И", domain.Dislocation{CodeStationNach: "111", CodeStationOper: "111", Index: "Б/И", StationOper: "УЛАК", StanNazn: "МЫС АСТАФЬЕВА"}, 0},
@@ -233,7 +247,7 @@ func TestStage1_DateKon(t *testing.T) {
 	require.NotNil(t, r10.DateKon)
 	assert.Equal(t, r10.DateOpJd.String(), r10.DateKon.String())
 
-	r12 := statusOf(t, domain.Dislocation{PorozhPriznak: "1", StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА", TimeOp: lt(2026, 7, 2, 20, 0)})
+	r12 := statusOf(t, domain.Dislocation{PorozhPriznak: "1", Ves: f64(70.5), StationOper: "МЫС АСТАФЬЕВА", StanNazn: "МЫС АСТАФЬЕВА", TimeOp: lt(2026, 7, 2, 20, 0)})
 	require.Equal(t, 12, *r12.Status)
 	require.NotNil(t, r12.DateKon)
 	assert.Equal(t, "2026-07-02T20:00:00", r12.DateKon.String()) // 12 → time_op (выгружен)

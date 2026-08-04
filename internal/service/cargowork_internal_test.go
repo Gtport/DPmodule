@@ -22,6 +22,7 @@ type cwDir struct{ ports []domain.Ports }
 func (cwDir) LoadStations(context.Context) ([]domain.Station, error)               { return nil, nil }
 func (cwDir) LoadCargoOperations(context.Context) ([]domain.CargoOperation, error) { return nil, nil }
 func (cwDir) LoadCargo(context.Context) ([]domain.Cargo, error)                    { return nil, nil }
+func (cwDir) LoadPorozhCargo(context.Context) ([]domain.PorozhCargo, error)        { return nil, nil }
 func (cwDir) LoadMarka(context.Context) ([]domain.Marka, error)                    { return nil, nil }
 func (d cwDir) LoadPorts(context.Context) ([]domain.Ports, error)                  { return d.ports, nil }
 func (cwDir) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error)          { return nil, nil }

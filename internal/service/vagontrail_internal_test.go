@@ -32,6 +32,7 @@ func (trailDirRepo) LoadCargoOperations(context.Context) ([]domain.CargoOperatio
 }
 
 func (trailDirRepo) LoadCargo(context.Context) ([]domain.Cargo, error) { return nil, nil }
+func (trailDirRepo) LoadPorozhCargo(context.Context) ([]domain.PorozhCargo, error) { return nil, nil }
 func (trailDirRepo) LoadMarka(context.Context) ([]domain.Marka, error) { return nil, nil }
 func (trailDirRepo) LoadPorts(context.Context) ([]domain.Ports, error) {
 	return []domain.Ports{{Okpo: 1126022, Location: "НАХОДКА", NameS: "УТ-1", ProviderClient: "nmtp"}}, nil

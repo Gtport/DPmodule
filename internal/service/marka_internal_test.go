@@ -13,11 +13,12 @@ import (
 // markaStubRepo — минимальный DirectoryRepository для внутренних тестов Stage 2/3
 // (marka + перестановки + станции + профили скоростей).
 type markaStubRepo struct {
-	marka      []domain.Marka
-	cargo      []domain.Cargo
-	naznach    []domain.NaznachStation
-	stations   []domain.Station
-	routeSpeed []domain.RouteSpeed
+	marka       []domain.Marka
+	cargo       []domain.Cargo
+	porozhCargo []domain.PorozhCargo
+	naznach     []domain.NaznachStation
+	stations    []domain.Station
+	routeSpeed  []domain.RouteSpeed
 }
 
 func (s markaStubRepo) LoadStations(context.Context) ([]domain.Station, error) {
@@ -27,6 +28,9 @@ func (markaStubRepo) LoadCargoOperations(context.Context) ([]domain.CargoOperati
 	return nil, nil
 }
 func (s markaStubRepo) LoadCargo(context.Context) ([]domain.Cargo, error) { return s.cargo, nil }
+func (s markaStubRepo) LoadPorozhCargo(context.Context) ([]domain.PorozhCargo, error) {
+	return s.porozhCargo, nil
+}
 func (s markaStubRepo) LoadMarka(context.Context) ([]domain.Marka, error) { return s.marka, nil }
 func (markaStubRepo) LoadPorts(context.Context) ([]domain.Ports, error)   { return nil, nil }
 func (s markaStubRepo) LoadRouteSpeed(context.Context) ([]domain.RouteSpeed, error) {
