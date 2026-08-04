@@ -1,0 +1,343 @@
+/* Оформление страницы входа DPmodule — восстановление прежнего вида нашей
+ * формы (pages/login/login.component.ts до коммита 12ce9f4) на hosted-странице
+ * Keycloak. Значения взяты из frontend/src/styles/tokens.css, чтобы страница
+ * входа и само приложение выглядели одинаково; переменные продублированы здесь
+ * потому, что Keycloak про наши токены ничего не знает.
+ */
+
+:root {
+  --dp-primary:        #1677ff;
+  --dp-primary-hover:  #40a9ff;
+  --dp-primary-active: #096dd9;
+  --dp-surface:        #ffffff;
+  --dp-subtle:         #fafafa;
+  --dp-hover:          #f0f0f0;
+  --dp-border-light:   #f0f0f0;
+  --dp-text:           #262626;
+  --dp-text-secondary: #666666;
+  --dp-radius-sm:      4px;
+  --dp-radius-lg:      8px;
+  --dp-shadow-xl:      0 8px 24px rgba(0, 0, 0, .25);
+  --dp-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+             'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ---------- Фон: фирменный градиент во весь экран ---------- */
+/* Родительская тема вешает на body свою картинку и цвет — гасим оба. */
+html.login-pf,
+html.login-pf body {
+  height: 100%;
+  background: none;
+}
+
+html.login-pf {
+  background:
+    radial-gradient(130% 130% at 78% 12%, var(--dp-primary-hover) 0%, transparent 55%),
+    linear-gradient(135deg, var(--dp-primary) 0%, var(--dp-primary-active) 100%) !important;
+  background-attachment: fixed !important;
+}
+
+body {
+  font-family: var(--dp-font);
+  color: var(--dp-text);
+}
+
+/* Центрируем карточку по экрану — в оригинале это делал flex-контейнер .auth */
+.login-pf-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+  margin: 0;
+}
+
+/* Bootstrap-колонки родителя мешают центрированию — нейтрализуем. */
+.login-pf-page .container-fluid,
+.login-pf-page [class*='col-'] {
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  float: none;
+}
+
+/* Шапку с именем realm'а не показываем: бренд живёт в самой карточке. */
+#kc-header {
+  display: none;
+}
+
+/* ---------- Всплывающие слова на фоне ---------- */
+.dp-floats {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dp-float {
+  position: absolute;
+  transform: translate(-50%, 0);
+  color: var(--dp-surface);
+  font-family: var(--dp-font);
+  font-weight: 600;
+  letter-spacing: .5px;
+  white-space: nowrap;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation-name: dp-float-up;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes dp-float-up {
+  0%   { opacity: 0;   transform: translate(-50%, 44px) scale(.94); }
+  18%  { opacity: .30; }
+  50%  { opacity: .22; transform: translate(-50%, -8px) scale(1); }
+  82%  { opacity: .10; }
+  100% { opacity: 0;   transform: translate(-50%, -64px) scale(1.03); }
+}
+
+/* ---------- «Стеклянная» карточка формы ---------- */
+.login-pf-page .card-pf {
+  position: relative;
+  z-index: 1;
+  width: 340px;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 32px 24px;
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, .55);
+  border-top: 1px solid rgba(255, 255, 255, .55);
+  border-radius: var(--dp-radius-lg);
+  box-shadow: var(--dp-shadow-xl);
+}
+
+/* Бренд — чистым CSS, чтобы он был на месте даже при отключённом JS. */
+.login-pf-page .card-pf::before {
+  content: 'IQPort\2122';
+  display: block;
+  margin-bottom: 24px;
+  text-align: center;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: var(--dp-primary-active);
+}
+
+/* Заголовок страницы («Войдите в учётную запись», «Обновите пароль» и т.д.)
+ * оставляем — на страницах смены пароля и ошибок он несёт смысл, — но делаем
+ * подписью под брендом, а не главным заголовком. */
+#kc-page-title {
+  margin: -8px 0 20px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--dp-text-secondary);
+}
+
+/* ---------- Поля ввода ---------- */
+.login-pf-page .form-group,
+.login-pf-page .pf-c-form__group {
+  margin-bottom: 16px;
+}
+
+.login-pf-page label,
+.login-pf-page .pf-c-form__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dp-text-secondary);
+}
+
+.login-pf-page input[type='text'],
+.login-pf-page input[type='password'],
+.login-pf-page input[type='email'],
+.login-pf-page .pf-c-form-control {
+  width: 100%;
+  height: 36px;
+  padding: 4px 11px;
+  font-family: var(--dp-font);
+  font-size: 14px;
+  color: var(--dp-text);
+  background: var(--dp-surface);
+  border: 1px solid #d9d9d9;
+  border-radius: var(--dp-radius-sm);
+  box-shadow: none;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.login-pf-page input[type='text']:focus,
+.login-pf-page input[type='password']:focus,
+.login-pf-page input[type='email']:focus,
+.login-pf-page .pf-c-form-control:focus {
+  border-color: var(--dp-primary-hover);
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, .2);
+  outline: none;
+}
+
+/* Кнопка показа пароля — прижимаем к правому краю поля. */
+.login-pf-page .pf-c-input-group {
+  display: flex;
+  align-items: stretch;
+}
+
+.login-pf-page .pf-c-input-group .pf-c-button {
+  border: 1px solid #d9d9d9;
+  border-left: none;
+  border-radius: 0 var(--dp-radius-sm) var(--dp-radius-sm) 0;
+  background: var(--dp-subtle);
+  color: var(--dp-text-secondary);
+}
+
+.login-pf-page .pf-c-input-group .pf-c-form-control {
+  border-radius: var(--dp-radius-sm) 0 0 var(--dp-radius-sm);
+}
+
+/* ---------- Кнопка «Войти» ---------- */
+.login-pf-page .pf-c-button.pf-m-primary,
+.login-pf-page input[type='submit'] {
+  width: 100%;
+  height: 36px;
+  margin-top: 4px;
+  font-family: var(--dp-font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dp-surface);
+  background: var(--dp-primary);
+  border: none;
+  border-radius: var(--dp-radius-sm);
+  cursor: pointer;
+  transition: background .2s ease;
+}
+
+.login-pf-page .pf-c-button.pf-m-primary:hover,
+.login-pf-page input[type='submit']:hover {
+  background: var(--dp-primary-hover);
+}
+
+.login-pf-page .pf-c-button.pf-m-primary:active,
+.login-pf-page input[type='submit']:active {
+  background: var(--dp-primary-active);
+}
+
+/* ---------- Ошибки и уведомления ---------- */
+.login-pf-page .pf-c-alert,
+.login-pf-page .alert {
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: var(--dp-radius-sm);
+}
+
+.login-pf-page .pf-c-alert.pf-m-danger,
+.login-pf-page .alert-error {
+  color: #a8071a;
+  background: #fff1f0;
+  border: 1px solid #ffccc7;
+}
+
+.login-pf-page .pf-c-form__helper-text.pf-m-error,
+.login-pf-page .kc-feedback-text {
+  font-size: 12px;
+  color: #cf1322;
+}
+
+/* ---------- Ссылки формы («Забыли пароль?», регистрация) ---------- */
+.login-pf-page a {
+  color: var(--dp-primary-active);
+  text-decoration: none;
+}
+
+.login-pf-page a:hover {
+  color: var(--dp-primary-hover);
+  text-decoration: underline;
+}
+
+#kc-form-options,
+#kc-registration,
+#kc-registration-container {
+  margin-top: 12px;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ---------- Блок «Связаться с поддержкой» (рисует JS) ---------- */
+.dp-contact {
+  margin-top: 24px;
+  padding-top: 16px;
+  text-align: center;
+  border-top: 1px solid var(--dp-border-light);
+}
+
+.dp-contact__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px;
+  font: inherit;
+  font-family: var(--dp-font);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dp-primary-active);
+  background: var(--dp-subtle);
+  border: none;
+  border-radius: var(--dp-radius-sm);
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease;
+}
+
+.dp-contact__link:hover {
+  background: var(--dp-hover);
+  color: var(--dp-primary-hover);
+}
+
+.dp-contact__email {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--dp-subtle);
+  border-radius: var(--dp-radius-sm);
+}
+
+.dp-contact__addr {
+  font-family: var(--dp-font);
+  font-size: 12px;
+  color: var(--dp-text-secondary);
+}
+
+.dp-contact__copy {
+  padding: 2px 8px;
+  font-family: var(--dp-font);
+  font-size: 12px;
+  color: var(--dp-surface);
+  background: var(--dp-primary);
+  border: none;
+  border-radius: var(--dp-radius-sm);
+  cursor: pointer;
+  transition: background .2s ease;
+}
+
+.dp-contact__copy:hover {
+  background: var(--dp-primary-hover);
+}
+
+/* ---------- Доступность и узкие экраны ---------- */
+/* Без анимации слова замирают полупрозрачными — как было в оригинале. */
+@media (prefers-reduced-motion: reduce) {
+  .dp-float {
+    animation: none;
+    opacity: .16;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* На узких экранах фон-слова убираем, чтобы не мешали форме. */
+@media (max-width: 600px) {
+  .dp-floats {
+    display: none;
+  }
+}
