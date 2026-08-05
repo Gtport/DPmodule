@@ -36,6 +36,11 @@ type Train struct {
 	VagonCount int        // число вагонов (для формулы интервала, с учётом лимита станции)
 	Pc         int        // перерабатывающая способность причала по роду, ваг/сут; 0 — не спейсим
 	Bros       bool       // статус 5 (брошен) — штраф + снижённый порог вагонов
+	// Delay — явная задержка what-if (эталон gtport delay_hours: интерфейсный бросок
+	// N×24ч, частичное восстановление M ч). Ненулевая — ЗАМЕЩАЕТ штраф Bros в базе
+	// распределения (единый источник истины о задержке); нулевая — прежнее поведение
+	// (Bros → BrosPenalty). Конвейер поле не заполняет.
+	Delay time.Duration
 }
 
 // Config — пороги, допуски и лимиты (из client_settings / plan_profile).
@@ -46,6 +51,11 @@ type Config struct {
 	Tolerance    map[string]time.Duration // station_code → допуск: слот может быть ≥ Rasch − допуск (квирк «−6ч»)
 	MaxLen       map[string]int           // station_code → лимит длины состава (ваг) для формулы интервала; 0 — без лимита
 	Now          time.Time                // «сейчас» (clock.Now) — старт распределения, если плана нет вовсе
+	// StartTime — фиксированное стартовое время беспланового распределения (what-if:
+	// вычисляется от БАЗОВЫХ поездов до правок и не плывёт, когда правка снимает
+	// план с последнего планового — иначе правка одного поезда двигала бы все).
+	// nil — прежнее поведение (NextEighteen от max PlanMsk / Now).
+	StartTime *time.Time
 }
 
 // Distribute возвращает ProgMsk для каждого поезда: плановым — их PlanMsk, беспланным —
@@ -67,7 +77,11 @@ func Distribute(trains []Train, schedules map[string][]HM, cfg Config) map[strin
 
 	// 2. Стартовое время беспланового распределения: ближайшие 18:00 ПОСЛЕ последнего
 	//    планового прибытия (беспланные идут строго после плановых). Плана нет → от «сейчас».
-	startTime := nextEighteen(maxPlan, cfg.Now)
+	//    What-if передаёт фиксированный StartTime — тогда maxPlan не участвует.
+	startTime := NextEighteen(maxPlan, cfg.Now)
+	if cfg.StartTime != nil {
+		startTime = *cfg.StartTime
+	}
 
 	// 3. Беспланные поезда, сгруппированные по станции → группе-причалу.
 	byStation := map[string]map[string][]Train{}
@@ -144,9 +158,14 @@ func distributeStation(station string, groups map[string][]Train, slots []HM, cf
 	}
 }
 
-// base — базовое расчётное время поезда: RaschMsk (+штраф, если брошен).
+// base — базовое расчётное время поезда: RaschMsk + задержка. Явная what-if
+// задержка (Delay) замещает штраф бросания — эталон gtport: delay_hours
+// единственный источник истины, штраф не задваивается.
 func base(t Train, cfg Config) time.Time {
 	b := *t.RaschMsk
+	if t.Delay != 0 {
+		return b.Add(t.Delay)
+	}
 	if t.Bros {
 		b = b.Add(cfg.BrosPenalty)
 	}
@@ -194,9 +213,10 @@ func findSlot(minTime time.Time, slots []HM, occupied map[time.Time]bool) time.T
 	return at(day.Add(7*24*time.Hour), slots[0]) // fallback (как эталон)
 }
 
-// nextEighteen — ближайшие 18:00 ПОСЛЕ ref (операционная граница суток). Нулевой ref →
+// NextEighteen — ближайшие 18:00 ПОСЛЕ ref (операционная граница суток). Нулевой ref →
 // ближайшие 18:00 от now. Перенос startTime из calculateProgMskWithSchedule эталона.
-func nextEighteen(ref, now time.Time) time.Time {
+// Экспортирована: what-if (gtforecast) считает ею фиксированный StartTime от базовых поездов.
+func NextEighteen(ref, now time.Time) time.Time {
 	if !ref.IsZero() {
 		if ref.Hour() < 18 {
 			return time.Date(ref.Year(), ref.Month(), ref.Day(), 18, 0, 0, 0, ref.Location())

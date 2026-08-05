@@ -104,3 +104,77 @@ func TestGtFlowTrains(t *testing.T) {
 		t.Errorf("calcTime %v, ожидалось %v", ae[0].CalcTime, want)
 	}
 }
+
+// What-if правки: throw/restore/assign/move и падения на некорректном входе.
+func TestApplyGtOverrides(t *testing.T) {
+	lt := func(s string) *domain.LocalTime {
+		tt, _ := time.Parse("2006-01-02T15:04:05", s)
+		v := domain.LocalTime(tt)
+		return &v
+	}
+	mk := func() []GtTrainDTO {
+		return []GtTrainDTO{
+			{Index: "8650-111-9840", Status: "2", PlanJd: lt("2026-08-05T20:00:00"), PlanMsk: lt("2026-08-04T20:00:00"),
+				SubGroups: []GtSubGroupDTO{{Naznach: "ГУТ-2", CargoGroup: "УГОЛЬ", IsUniversal: true, VagonCount: 40},
+					{Naznach: "ГУТ-2", CargoGroup: "МЕТАЛЛ", VagonCount: 20}}},
+			{Index: "прибыл", IsArrived: true},
+		}
+	}
+
+	// throw: план снят, статус 5, delay = сутки×24.
+	trains := mk()
+	delays, err := applyGtOverrides(trains, []GtOverride{{Index: "8650-111-9840", Action: "throw", DelayDays: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trains[0].Status != "5" || trains[0].PlanJd != nil || trains[0].PlanMsk != nil {
+		t.Errorf("throw: статус %q, план %v/%v — ожидалось 5 и nil", trains[0].Status, trains[0].PlanJd, trains[0].PlanMsk)
+	}
+	if d := delays["8650-111-9840"]; d != 48*time.Hour {
+		t.Errorf("throw: задержка %v, ожидалось 48ч", d)
+	}
+
+	// restore c остаточной задержкой.
+	trains = mk()
+	trains[0].Status = "5"
+	delays, err = applyGtOverrides(trains, []GtOverride{{Index: "8650-111-9840", Action: "restore", DelayHours: 6}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trains[0].Status != "0" || delays["8650-111-9840"] != 6*time.Hour {
+		t.Errorf("restore: статус %q, задержка %v", trains[0].Status, delays["8650-111-9840"])
+	}
+
+	// assign: план = слот, ЖД-производная по правилу ≥18 → +сутки.
+	trains = mk()
+	_, err = applyGtOverrides(trains, []GtOverride{{Index: "8650-111-9840", Action: "assign", Slot: lt("2026-08-06T21:00:00")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := time.Time(*trains[0].PlanJd).Format("02.01 15:04"); got != "07.08 21:00" {
+		t.Errorf("assign: plan_jd %s, ожидалось 07.08 21:00 (час ≥ 18 → +сутки)", got)
+	}
+
+	// move: только универсальные подгруппы меняют терминал.
+	trains = mk()
+	_, err = applyGtOverrides(trains, []GtOverride{{Index: "8650-111-9840", Action: "move", MoveTo: "АЭ"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trains[0].SubGroups[0].Naznach != "АЭ" || trains[0].SubGroups[1].Naznach != "ГУТ-2" {
+		t.Errorf("move: подгруппы %q/%q — универсальная должна уехать, обычная остаться",
+			trains[0].SubGroups[0].Naznach, trains[0].SubGroups[1].Naznach)
+	}
+
+	// Ошибки: неизвестный поезд, правка прибывшего, throw без суток.
+	for _, bad := range []GtOverride{
+		{Index: "нет такого", Action: "throw", DelayDays: 1},
+		{Index: "прибыл", Action: "throw", DelayDays: 1},
+		{Index: "8650-111-9840", Action: "throw"},
+		{Index: "8650-111-9840", Action: "танцевать"},
+	} {
+		if _, err := applyGtOverrides(mk(), []GtOverride{bad}); err == nil {
+			t.Errorf("правка %+v должна падать с ошибкой", bad)
+		}
+	}
+}

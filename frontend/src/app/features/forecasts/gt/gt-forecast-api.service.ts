@@ -52,13 +52,34 @@ export interface GtTrain {
   status: string; // номер статуса; прибывший — 'history'
   is_arrived: boolean;
   plan_jd: string | null;
+  plan_msk: string | null;
   prog_jd: string | null;
+  prog_msk: string | null;
   rasch_jd: string | null;
   rasch_msk: string | null;
   mistake: number | null;
   to_go: number | null;
+  /** Эффективная задержка (72 у брошенных, значение правки у what-if). */
+  delay_hours: number;
   vagon_count: number;
   sub_groups: GtSubGroup[];
+}
+
+/** What-if правка поезда (эталон gtport TrainEditDialog). */
+export interface GtOverride {
+  index: string;
+  action: 'throw' | 'restore' | 'assign' | 'move';
+  delay_days?: number;
+  delay_hours?: number;
+  /** МСК нитки для action=assign. */
+  slot?: string;
+  move_to?: string;
+}
+
+/** Свободная нитка расписания станции на горизонте. */
+export interface GtFreeSlot {
+  msk: string;
+  jd: string;
 }
 
 /** Блок диаграммы Ганта (выгрузка / остаток / простой). */
@@ -120,11 +141,14 @@ export interface GtSimulateRequest {
   use_norm: boolean;
   /** «терминал|груз» → дата → ваг/сут (правки скорости на конкретные сутки). */
   speed_overrides: Record<string, Record<string, number>>;
+  /** Накопленные what-if правки сеанса — сервер считает от базового снимка. */
+  overrides: GtOverride[];
 }
 
 export interface GtSimulateResponse {
   trains: GtTrain[];
   flows: GtFlow[];
+  free_slots: GtFreeSlot[];
   max_train_wagons: number;
 }
 

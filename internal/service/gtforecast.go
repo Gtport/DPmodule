@@ -7,8 +7,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
+	"github.com/Gtport/DPmodule/internal/service/stage4"
 	"github.com/Gtport/DPmodule/internal/service/unloadsim"
 )
 
@@ -79,13 +81,18 @@ type GtTrainDTO struct {
 	Status      string            `json:"status"` // номер статуса; прибывший — "history"
 	IsArrived   bool              `json:"is_arrived"`
 	PlanJd      *domain.LocalTime `json:"plan_jd"`
+	PlanMsk     *domain.LocalTime `json:"plan_msk"`
 	ProgJd      *domain.LocalTime `json:"prog_jd"`
+	ProgMsk     *domain.LocalTime `json:"prog_msk"`
 	RaschJd     *domain.LocalTime `json:"rasch_jd"`
 	RaschMsk    *domain.LocalTime `json:"rasch_msk"`
 	Mistake     *float64          `json:"mistake"`
 	ToGo        *float64          `json:"to_go"`
-	VagonCount  int               `json:"vagon_count"`
-	SubGroups   []GtSubGroupDTO   `json:"sub_groups"`
+	// DelayHours — эффективная задержка (эталон delay_hours): 72 у брошенных
+	// конвейером, значение правки у what-if-бросков/восстановлений, 0 иначе.
+	DelayHours float64         `json:"delay_hours"`
+	VagonCount int             `json:"vagon_count"`
+	SubGroups  []GtSubGroupDTO `json:"sub_groups"`
 }
 
 // GtOperationDTO — блок диаграммы Ганта (выгрузка / остаток / простой).
@@ -142,8 +149,31 @@ type GtFlowDTO struct {
 	Days             []GtDayDTO `json:"days"`
 }
 
-// GtSimulateRequest — запрос пересчёта. Overrides появятся на этапе 2 (what-if);
-// сейчас каркас: скорости по дням и тумблер План↔Норма.
+// GtOverride — what-if правка поезда (эталон gtport TrainEditDialog):
+//   - throw:   бросить на DelayDays суток (delay_hours = N×24, план снимается, статус 5);
+//   - restore: восстановить с остаточной задержкой DelayHours часов (0 = немедленно);
+//   - assign:  поставить на нитку Slot (МСК) — поезд становится плановым;
+//   - move:    переместить УНИВЕРСАЛЬНЫЕ подгруппы на терминал MoveTo.
+//
+// RaschMsk правкой не меняется никогда (физическое прибытие).
+type GtOverride struct {
+	Index      string            `json:"index"`
+	Action     string            `json:"action"` // throw | restore | assign | move
+	DelayDays  int               `json:"delay_days"`
+	DelayHours float64           `json:"delay_hours"`
+	Slot       *domain.LocalTime `json:"slot"`    // МСК нитки (assign)
+	MoveTo     string            `json:"move_to"` // терминал (move)
+}
+
+// GtFreeSlotDTO — свободная нитка расписания станции на горизонте прогноза.
+type GtFreeSlotDTO struct {
+	Msk domain.LocalTime `json:"msk"`
+	Jd  domain.LocalTime `json:"jd"`
+}
+
+// GtSimulateRequest — запрос пересчёта: скорости по дням, тумблер План↔Норма и
+// what-if правки поездов. Фронт шлёт ВЕСЬ накопленный список правок сеанса —
+// сервер каждый раз считает от базового снимка (stateless).
 type GtSimulateRequest struct {
 	Station   string `json:"station"`    // код причальной станции (режим)
 	StartDate string `json:"start_date"` // YYYY-MM-DD (расчётные ЖД-сутки)
@@ -151,13 +181,15 @@ type GtSimulateRequest struct {
 	UseNorm   bool   `json:"use_norm"`   // считать по нормам вместо плана
 	// SpeedOverrides: "терминал|груз" → дата YYYY-MM-DD → ваг/сут.
 	SpeedOverrides map[string]map[string]int `json:"speed_overrides"`
+	Overrides      []GtOverride              `json:"overrides"`
 }
 
 // GtSimulateDTO — полный ответ пересчёта: очередь поездов + диаграммы.
 type GtSimulateDTO struct {
-	Trains         []GtTrainDTO `json:"trains"`
-	Flows          []GtFlowDTO  `json:"flows"`
-	MaxTrainWagons int          `json:"max_train_wagons"`
+	Trains         []GtTrainDTO    `json:"trains"`
+	Flows          []GtFlowDTO     `json:"flows"`
+	FreeSlots      []GtFreeSlotDTO `json:"free_slots"`
+	MaxTrainWagons int             `json:"max_train_wagons"`
 }
 
 // ── Сервис ───────────────────────────────────────────────────────────────────
@@ -257,11 +289,36 @@ func (s *GtForecastService) Simulate(ctx context.Context, req GtSimulateRequest)
 		return GtSimulateDTO{}, fmt.Errorf("прибывшие за сутки: %w", err)
 	}
 	trains = append(trains, gtArrivedTrains(rows, known)...)
+
+	// Фиксированное стартовое время what-if — от БАЗОВЫХ поездов, до правок
+	// (эталон fixedStartTime: правка, снявшая план с последнего планового,
+	// не должна двигать прогнозы остальных).
+	var maxPlan time.Time
+	for _, t := range trains {
+		if !t.IsArrived && t.PlanMsk != nil && time.Time(*t.PlanMsk).After(maxPlan) {
+			maxPlan = time.Time(*t.PlanMsk)
+		}
+	}
+	fixedStart := stage4.NextEighteen(maxPlan, clock.Now().Time())
+
+	// What-if правки → пересчёт прибытия алгоритмом DPmodule stage4.
+	if len(req.Overrides) > 0 {
+		delays, err := applyGtOverrides(trains, req.Overrides)
+		if err != nil {
+			return GtSimulateDTO{}, err
+		}
+		s.recomputeArrival(trains, req.Station, fixedStart, delays)
+	}
+
 	sort.SliceStable(trains, func(i, j int) bool {
 		return gtCalcTime(trains[i]).Before(gtCalcTime(trains[j]))
 	})
 
-	dto := GtSimulateDTO{Trains: trains, MaxTrainWagons: s.maxTrainWagons(req.Station)}
+	dto := GtSimulateDTO{
+		Trains:         trains,
+		FreeSlots:      s.freeSlots(req.Station, start, req.Days, trains),
+		MaxTrainWagons: s.maxTrainWagons(req.Station),
+	}
 
 	// Потоки выгрузки: линия справочника = диаграмма Ганта.
 	yesterday := start.AddDate(0, 0, -1)
@@ -389,11 +446,16 @@ func gtTransitTrains(rows []domain.Dislocation, known map[string]bool, univers m
 		key := fmt.Sprintf("%s|%s|%d|%s", index, r.StationOper, rasst, status)
 		t, ok := trains[key]
 		if !ok {
+			delay := 0.0
+			if status == "5" {
+				delay = 72 // серверный штраф бросания (эталон initDelayHours)
+			}
 			t = &agg{
 				t: GtTrainDTO{
 					Index: index, StationOper: r.StationOper, Status: status,
-					PlanJd: r.PlanJd, ProgJd: r.ProgJd, RaschJd: r.RaschJd,
-					RaschMsk: r.RaschMsk, Mistake: r.Mistake, ToGo: r.ToGo,
+					PlanJd: r.PlanJd, PlanMsk: r.PlanMsk, ProgJd: r.ProgJd, ProgMsk: r.ProgMsk,
+					RaschJd: r.RaschJd, RaschMsk: r.RaschMsk, Mistake: r.Mistake, ToGo: r.ToGo,
+					DelayHours: delay,
 				},
 				subs: map[string]*GtSubGroupDTO{},
 			}
@@ -533,6 +595,206 @@ func gtFlowTrains(trains []GtTrainDTO, terminal, cargoKey string) []unloadsim.Tr
 			})
 		}
 	}
+	return out
+}
+
+// jd18 — ЖД-время от МСК: час ≥ 18 → +1 сутки (бизнес-правило ЖД-суток).
+func jd18(msk time.Time) time.Time {
+	if msk.Hour() >= 18 {
+		return msk.Add(24 * time.Hour)
+	}
+	return msk
+}
+
+// applyGtOverrides применяет what-if правки к очереди (по индексу поезда) и
+// возвращает явные задержки delay_hours для распределения. Неизвестный поезд
+// или правка прибывшего — ошибка (падать громко).
+func applyGtOverrides(trains []GtTrainDTO, ovs []GtOverride) (map[string]time.Duration, error) {
+	byIndex := map[string]int{}
+	for i, t := range trains {
+		byIndex[t.Index] = i
+	}
+	delays := map[string]time.Duration{}
+	for _, ov := range ovs {
+		i, ok := byIndex[ov.Index]
+		if !ok {
+			return nil, fmt.Errorf("правка %s: поезд %q не найден в очереди", ov.Action, ov.Index)
+		}
+		t := &trains[i]
+		if t.IsArrived {
+			return nil, fmt.Errorf("правка %s: поезд %q уже прибыл", ov.Action, ov.Index)
+		}
+		switch ov.Action {
+		case "throw":
+			if ov.DelayDays < 1 {
+				return nil, fmt.Errorf("бросить %q: суток простоя должно быть ≥ 1", ov.Index)
+			}
+			t.Status = "5"
+			t.PlanJd, t.PlanMsk = nil, nil // выбиваем из расписания → в пересчёт
+			t.DelayHours = float64(ov.DelayDays * 24)
+			delays[t.Index] = time.Duration(ov.DelayDays) * 24 * time.Hour
+		case "restore":
+			if ov.DelayHours < 0 {
+				return nil, fmt.Errorf("восстановить %q: остаточная задержка не может быть отрицательной", ov.Index)
+			}
+			t.Status = "0"
+			t.PlanJd, t.PlanMsk = nil, nil // в общую очередь
+			t.DelayHours = ov.DelayHours
+			delays[t.Index] = time.Duration(ov.DelayHours * float64(time.Hour))
+			if delays[t.Index] == 0 {
+				// «немедленно»: маркер, что штраф брошенного снят (Delay=0 в stage4
+				// вернул бы BrosPenalty при Bros — но статус уже сброшен, помечать нечего)
+				delete(delays, t.Index)
+			}
+		case "assign":
+			if ov.Slot == nil {
+				return nil, fmt.Errorf("на нитку %q: не указан слот", ov.Index)
+			}
+			msk := time.Time(*ov.Slot)
+			lt := domain.LocalTime(msk)
+			jd := domain.LocalTime(jd18(msk))
+			t.PlanMsk, t.PlanJd = &lt, &jd
+			t.DelayHours = 0
+		case "move":
+			if ov.MoveTo == "" {
+				return nil, fmt.Errorf("переместить %q: не указан терминал", ov.Index)
+			}
+			moved := false
+			for j := range t.SubGroups {
+				if t.SubGroups[j].IsUniversal {
+					t.SubGroups[j].Naznach = ov.MoveTo
+					moved = true
+				}
+			}
+			if !moved {
+				return nil, fmt.Errorf("переместить %q: у поезда нет универсальных подгрупп", ov.Index)
+			}
+		default:
+			return nil, fmt.Errorf("неизвестное действие правки: %q", ov.Action)
+		}
+	}
+	return delays, nil
+}
+
+// recomputeArrival пересчитывает прогноз прибытия очереди алгоритмом DPmodule
+// stage4 (pc-интервалы, реш. 000026 — НЕ фиксированные интервалы gtport) с
+// фиксированным стартовым временем. Обновляются только поезда, попавшие в
+// распределение (плановые + беспланные ≥ порога с RaschMsk); остальные
+// сохраняют снимковый прогноз. RaschMsk не меняется никогда.
+func (s *GtForecastService) recomputeArrival(trains []GtTrainDTO, station string, fixedStart time.Time, delays map[string]time.Duration) {
+	pol := s.cfg.Settings().Stage4
+	if pol.MinVagonCount <= 0 {
+		pol.MinVagonCount = 20
+	}
+	if pol.MinVagonBros <= 0 {
+		pol.MinVagonBros = 10
+	}
+	brosPenalty := time.Duration(pol.BrosPenaltyH) * time.Hour
+	if brosPenalty <= 0 {
+		brosPenalty = 72 * time.Hour
+	}
+
+	tol := map[string]time.Duration{}
+	maxLen := map[string]int{}
+	for _, p := range s.cfg.PlanProfiles() {
+		if p.SlotToleranceH > 0 {
+			tol[p.StationCode] = time.Duration(p.SlotToleranceH * float64(time.Hour))
+		}
+		if p.MaxTrainLength > 0 {
+			maxLen[p.StationCode] = p.MaxTrainLength
+		}
+	}
+
+	var list []stage4.Train
+	for i := range trains {
+		t := &trains[i]
+		if t.IsArrived || len(t.SubGroups) == 0 || t.RaschMsk == nil {
+			continue
+		}
+		st, pc := resolveStationPc(s.dir, t.SubGroups[0].Naznach, t.SubGroups[0].CargoGroup)
+		if st != station {
+			continue
+		}
+		list = append(list, stage4.Train{
+			Key: t.Index, Station: st,
+			Group:      t.SubGroups[0].Naznach + "|" + cargoRod(t.SubGroups[0].CargoGroup),
+			PlanMsk:    localTimePtr(t.PlanMsk),
+			RaschMsk:   localTimePtr(t.RaschMsk),
+			VagonCount: t.VagonCount, Pc: pc,
+			Bros:  t.Status == "5",
+			Delay: delays[t.Index],
+		})
+	}
+	if len(list) == 0 {
+		return
+	}
+
+	out := stage4.Distribute(list, toStage4Schedules(s.cfg.NitkaSchedule()), stage4.Config{
+		MinVagon: pol.MinVagonCount, MinVagonBros: pol.MinVagonBros,
+		BrosPenalty: brosPenalty, Tolerance: tol, MaxLen: maxLen,
+		Now: clock.Now().Time(), StartTime: &fixedStart,
+	})
+
+	for i := range trains {
+		t := &trains[i]
+		prog, ok := out[t.Index]
+		if !ok {
+			continue
+		}
+		pm := domain.LocalTime(prog)
+		pj := domain.LocalTime(jd18(prog))
+		t.ProgMsk, t.ProgJd = &pm, &pj
+		// Mistake = (прог − (Rasch + эффективная задержка)) в сутках, со знаком:
+		// явная what-if задержка замещает штраф бросания (эталон calcMistake).
+		if t.RaschMsk != nil {
+			eff := time.Time(*t.RaschMsk)
+			if d, has := delays[t.Index]; has && d != 0 {
+				eff = eff.Add(d)
+			} else if t.Status == "5" {
+				eff = eff.Add(brosPenalty)
+			}
+			m := prog.Sub(eff).Hours() / 24.0
+			t.Mistake = &m
+		}
+	}
+}
+
+// freeSlots — свободные нитки расписания станции, чьи ЖД-сутки попадают в
+// горизонт [start, start+days): слоты минус занятые (план и прогноз очереди).
+func (s *GtForecastService) freeSlots(station string, start time.Time, days int, trains []GtTrainDTO) []GtFreeSlotDTO {
+	slots := s.cfg.NitkaSchedule()[station]
+	if len(slots) == 0 {
+		return []GtFreeSlotDTO{}
+	}
+	occupied := map[time.Time]bool{}
+	for _, t := range trains {
+		if t.IsArrived {
+			continue
+		}
+		if t.PlanMsk != nil {
+			occupied[time.Time(*t.PlanMsk)] = true
+		}
+		if t.ProgMsk != nil {
+			occupied[time.Time(*t.ProgMsk)] = true
+		}
+	}
+	end := start.AddDate(0, 0, days)
+	out := []GtFreeSlotDTO{}
+	// МСК-сутки d-1 дают ЖД-время суток d (час ≥ 18 → +1), поэтому смотрим с кануна.
+	for d := -1; d < days; d++ {
+		day := start.AddDate(0, 0, d)
+		for _, hm := range slots {
+			msk := time.Date(day.Year(), day.Month(), day.Day(), hm.Hour, hm.Minute, 0, 0, day.Location())
+			jd := jd18(msk)
+			if jd.Before(start) || !jd.Before(end) || occupied[msk] {
+				continue
+			}
+			out = append(out, GtFreeSlotDTO{Msk: domain.LocalTime(msk), Jd: domain.LocalTime(jd)})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return time.Time(out[i].Msk).Before(time.Time(out[j].Msk))
+	})
 	return out
 }
 

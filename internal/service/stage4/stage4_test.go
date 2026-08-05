@@ -91,11 +91,11 @@ func TestDistribute_Tolerance(t *testing.T) {
 
 func TestNextEighteen(t *testing.T) {
 	// ref до 18:00 → 18:00 тех же суток.
-	assert.Equal(t, tm(2026, 7, 14, 18, 0), nextEighteen(tm(2026, 7, 14, 9, 0), time.Time{}))
+	assert.Equal(t, tm(2026, 7, 14, 18, 0), NextEighteen(tm(2026, 7, 14, 9, 0), time.Time{}))
 	// ref ≥ 18:00 → 18:00 следующих суток.
-	assert.Equal(t, tm(2026, 7, 15, 18, 0), nextEighteen(tm(2026, 7, 14, 20, 0), time.Time{}))
+	assert.Equal(t, tm(2026, 7, 15, 18, 0), NextEighteen(tm(2026, 7, 14, 20, 0), time.Time{}))
 	// нулевой ref → от now.
-	assert.Equal(t, tm(2026, 7, 14, 18, 0), nextEighteen(time.Time{}, tm(2026, 7, 14, 10, 0)))
+	assert.Equal(t, tm(2026, 7, 14, 18, 0), NextEighteen(time.Time{}, tm(2026, 7, 14, 10, 0)))
 }
 
 // расписание станции U: 02:00, 08:00, 14:00, 20:00 (каждые 6ч).
@@ -158,4 +158,83 @@ func TestDistribute_ReanchorsOnSlot(t *testing.T) {
 	out := Distribute(tr, schedU, tolCfg())
 	assert.Equal(t, tm(2026, 7, 14, 20, 0), out["A"])
 	assert.Equal(t, tm(2026, 7, 15, 2, 0), out["B"], "ре-якорь на нитку A → B на следующие сутки")
+}
+
+// ─── What-if (вкладка «Прогноз прибытия/выгрузки», эталон scheduleSimulation.ts) ───
+
+// Явная задержка Delay замещает штраф бросания — не задваивается (эталон gtport:
+// delay_hours — единственный источник истины о задержке).
+func TestDistribute_DelayReplacesBrosPenalty(t *testing.T) {
+	cfg := baseCfg() // штраф 72ч
+	// Брошенный с Delay=24ч: base = Rasch+24ч (НЕ +72 и НЕ +96).
+	trains := []Train{
+		{Key: "D", Station: "S", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 5, 0)), VagonCount: 30, Pc: 100000,
+			Bros: true, Delay: 24 * time.Hour},
+	}
+	out := Distribute(trains, schedS, cfg)
+	// base = 15.07 05:00; старт 14.07 18:00 → floor = 15.07 05:00 → слот 15.07 06:00.
+	// (при задвоении штрафа base был бы 18.07 05:00 → слот 18.07 06:00)
+	assert.Equal(t, tm(2026, 7, 15, 6, 0), out["D"], "Delay замещает BrosPenalty, а не суммируется")
+}
+
+// Частичное восстановление: Delay в часах, меньше штрафа.
+func TestDistribute_PartialRestoreDelay(t *testing.T) {
+	cfg := baseCfg()
+	trains := []Train{
+		{Key: "R", Station: "S", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 5, 0)), VagonCount: 30, Pc: 100000,
+			Delay: 13 * time.Hour}, // восстановлен, осталось 13ч хода
+	}
+	out := Distribute(trains, schedS, cfg)
+	// base = 14.07 18:00 = старт → слот 14.07 18:00.
+	assert.Equal(t, tm(2026, 7, 14, 18, 0), out["R"])
+}
+
+// Delay меняет ПОРЯДОК очереди: задержанный поезд пропускает вперёд соседа
+// с более поздним Rasch (сортировка по base = Rasch + Delay).
+func TestDistribute_DelayReordersQueue(t *testing.T) {
+	cfg := baseCfg()
+	trains := []Train{
+		{Key: "early", Station: "S", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 1, 0)), VagonCount: 60, Pc: 120,
+			Delay: 48 * time.Hour}, // физически раньше, но брошен на 2 суток → base 16.07 01:00
+		{Key: "late", Station: "S", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 8, 0)), VagonCount: 60, Pc: 120},
+	}
+	out := Distribute(trains, schedS, cfg)
+	// late идёт первым (base 08:00 < 16.07 01:00): старт 18:00 → слот 14.07 18:00.
+	assert.Equal(t, tm(2026, 7, 14, 18, 0), out["late"])
+	// early: floor = max(старт, 18:00+12ч интервала, base 16.07 01:00) = 16.07 01:00 → слот 16.07 06:00.
+	assert.Equal(t, tm(2026, 7, 16, 6, 0), out["early"], "задержанный поезд встаёт после base с учётом задержки")
+}
+
+// Фиксированный StartTime: what-if снял план с последнего планового — стартовое
+// время НЕ плывёт (иначе правка одного поезда сдвинула бы прогнозы всех).
+func TestDistribute_FixedStartTime(t *testing.T) {
+	cfg := baseCfg()
+	// База: плановый P (нитка 16.07 08:00) даёт стартовое время 16.07 18:00.
+	fixed := NextEighteen(tm(2026, 7, 16, 8, 0), cfg.Now)
+	require.Equal(t, tm(2026, 7, 16, 18, 0), fixed)
+	cfg.StartTime = &fixed
+	// What-if: план у P снят (бросок) — без StartTime старт откатился бы к Now-18:00.
+	trains := []Train{
+		{Key: "P", Station: "S", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 1, 0)), VagonCount: 60, Pc: 120,
+			Bros: true, Delay: 48 * time.Hour},
+		{Key: "B", Station: "S", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 8, 0)), VagonCount: 60, Pc: 120},
+	}
+	out := Distribute(trains, schedS, cfg)
+	// B первый: floor = max(StartTime 16.07 18:00, base 08:00) → слот 16.07 18:00.
+	assert.Equal(t, tm(2026, 7, 16, 18, 0), out["B"], "беспланные стартуют не раньше фиксированного StartTime")
+	// P: base 16.07 01:00 < очередь 16.07 18:00+12ч → слот 17.07 06:00.
+	assert.Equal(t, tm(2026, 7, 17, 6, 0), out["P"])
+}
+
+// «Поставить на нитку»: поезд с PlanMsk фиксируется на слоте, слот занят для остальных.
+func TestDistribute_AssignSlotOccupies(t *testing.T) {
+	cfg := baseCfg()
+	trains := []Train{
+		{Key: "assigned", Station: "S", Group: "g", PlanMsk: tp(tm(2026, 7, 14, 18, 0)), RaschMsk: tp(tm(2026, 7, 14, 1, 0)), VagonCount: 30, Pc: 100000},
+		{Key: "other", Station: "S", Group: "g2", RaschMsk: tp(tm(2026, 7, 14, 2, 0)), VagonCount: 30, Pc: 100000},
+	}
+	out := Distribute(trains, schedS, cfg)
+	assert.Equal(t, tm(2026, 7, 14, 18, 0), out["assigned"], "назначенный на нитку фиксирован")
+	// other: старт = после плановых (NextEighteen от 14.07 18:00 = 15.07 18:00), слот 18:00 занят... старт уже 15.07.
+	assert.Equal(t, tm(2026, 7, 15, 18, 0), out["other"], "чужая нитка занята, беспланный после плановых")
 }

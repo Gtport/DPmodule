@@ -1,14 +1,18 @@
-import { Component, computed, input, signal } from '@angular/core';
-import { GtTrain } from './gt-forecast-api.service';
+import { Component, computed, input, output, signal } from '@angular/core';
+import { GtFreeSlot, GtTrain } from './gt-forecast-api.service';
 
 /**
- * Таблица очереди поездов терминала (перенос gtport TrainTable, этап
- * просмотра). Колонки: Поезд (индекс + состав по подгруппам с цветом клиента),
- * Прибытие (prog_jd), Путь (осталось в пути), Опережение (mistake — риск
- * броска/срыва нитки), Ожид (ожидание начала выгрузки из симуляции).
+ * Таблица очереди поездов терминала (перенос gtport TrainTable). Колонки:
+ * Поезд (индекс + состав по подгруппам с цветом клиента), Прибытие (prog_jd),
+ * Путь (осталось в пути), Опережение (mistake — риск броска/срыва нитки),
+ * Ожид (ожидание начала выгрузки из симуляции).
  *
  * Шапка: остатки терминала, счётчики поездов/брошенных, кликабельные бейджи
  * риска ⚠/!/~ — клик подсвечивает строки этого уровня.
+ *
+ * Этап 2: ПКМ по строке — диалог what-if правки; строки свободных ниток 🟢
+ * встраиваются в хронологию, клик по нитке выделяет её и подсвечивает
+ * подходящие поезда (rasch ≤ слот + 3ч — эталон SLOT_TOLERANCE_H).
  */
 
 type RiskLevel = 'critical' | 'warning' | 'watch';
@@ -30,6 +34,14 @@ interface Row {
   wait: string;
   waitColor: string;
   waitBold: boolean;
+  fitsSlot: boolean;
+}
+
+/** Строка таблицы: поезд либо свободная нитка, в общей хронологии ЖД. */
+interface Line {
+  jdKey: string;
+  row?: Row;
+  slot?: GtFreeSlot;
 }
 
 const RISK_COLOR: Record<RiskLevel, string> = {
@@ -37,6 +49,9 @@ const RISK_COLOR: Record<RiskLevel, string> = {
   warning: '#e65100',
   watch: '#f9a825',
 };
+
+/** Допуск подбора поезда на нитку, часов (эталон SLOT_TOLERANCE_H). */
+const SLOT_TOLERANCE_H = 3;
 
 @Component({
   selector: 'app-gt-train-table',
@@ -72,38 +87,59 @@ const RISK_COLOR: Record<RiskLevel, string> = {
             </tr>
           </thead>
           <tbody>
-            @for (r of rows(); track r.train.index + r.train.station_oper) {
-              <tr [class.arrived]="r.train.is_arrived"
-                  [style.background]="rowBg(r)">
-                <td class="c-train">
-                  <div class="idx">
-                    @if (r.risk) {
-                      <span class="dot" [style.background]="riskColor[r.risk.level]"
-                            [title]="r.risk.reason"></span>
+            @for (ln of lines(); track ln.jdKey + (ln.row?.train?.index ?? 'slot')) {
+              @if (ln.slot; as s) {
+                <tr class="slot-row" [class.sel]="selectedSlot()?.msk === s.msk"
+                    (click)="onSlotClick(s)"
+                    title="Свободная нитка — клик для подбора поездов">
+                  <td class="c-train slot-cell">🟢 свободная нитка
+                    @if (selectedSlot()?.msk === s.msk && fitCount() > 0) {
+                      <span class="fit">({{ fitCount() }} подх.)</span>
                     }
-                    <b [title]="r.train.index">{{ shortIndex(r.train.index) }}</b>
-                    <span class="vc">{{ r.train.vagon_count }}в</span>
-                  </div>
-                  <div class="compose">
-                    @for (sg of r.train.sub_groups; track sg.key) {
-                      <span [style.color]="black() ? '#111' : (sg.color || '#111')"
-                            [title]="sg.station_nach + ' → ' + sg.naznach + (sg.cargo_group ? ' · ' + sg.cargo_group : '') + (sg.is_universal ? ' · универсальный' : '')">
-                        {{ sg.station_nach }}&thinsp;×{{ sg.vagon_count }}{{ sg.is_universal ? '·У' : '' }}
-                      </span>
-                    }
-                  </div>
-                </td>
-                <td [style.color]="r.arrivalColor" [class.b]="r.arrivalBold">{{ r.arrival }}</td>
-                <td>{{ r.path }}</td>
-                <td [style.color]="r.mistakeColor" class="b">{{ r.mistake }}</td>
-                <td [style.color]="r.waitColor" [class.b]="r.waitBold">{{ r.wait }}</td>
-              </tr>
+                  </td>
+                  <td class="slot-cell b">{{ fmtJdStr(s.jd) }}</td>
+                  <td class="slot-cell">—</td>
+                  <td class="slot-cell">—</td>
+                  <td class="slot-cell">—</td>
+                </tr>
+              } @else if (ln.row; as r) {
+                <tr [class.arrived]="r.train.is_arrived"
+                    [style.background]="rowBg(r)"
+                    (contextmenu)="onContext($event, r.train)">
+                  <td class="c-train">
+                    <div class="idx">
+                      @if (r.risk) {
+                        <span class="dot" [style.background]="riskColor[r.risk.level]"
+                              [title]="r.risk.reason"></span>
+                      }
+                      <b [title]="r.train.index">{{ shortIndex(r.train.index) }}</b>
+                      <span class="vc">{{ r.train.vagon_count }}в</span>
+                      @if (r.train.delay_hours && !r.train.is_arrived) {
+                        <span class="delay" title="Задержка (бросок/восстановление)">+{{ r.train.delay_hours }}ч</span>
+                      }
+                    </div>
+                    <div class="compose">
+                      @for (sg of r.train.sub_groups; track sg.key) {
+                        <span [style.color]="black() ? '#111' : (sg.color || '#111')"
+                              [title]="sg.station_nach + ' → ' + sg.naznach + (sg.cargo_group ? ' · ' + sg.cargo_group : '') + (sg.is_universal ? ' · универсальный' : '')">
+                          {{ sg.station_nach }}&thinsp;×{{ sg.vagon_count }}{{ sg.is_universal ? '·У' : '' }}
+                        </span>
+                      }
+                    </div>
+                  </td>
+                  <td [style.color]="r.arrivalColor" [class.b]="r.arrivalBold">{{ r.arrival }}</td>
+                  <td>{{ r.path }}</td>
+                  <td [style.color]="r.mistakeColor" class="b">{{ r.mistake }}</td>
+                  <td [style.color]="r.waitColor" [class.b]="r.waitBold">{{ r.wait }}</td>
+                </tr>
+              }
             } @empty {
               <tr><td colspan="5" class="empty">Нет поездов</td></tr>
             }
           </tbody>
         </table>
       </div>
+      <div class="hint">клик по 🟢 нитке — подбор поездов · ПКМ по поезду — правка</div>
     </div>
   `,
   styles: [`
@@ -118,16 +154,22 @@ const RISK_COLOR: Record<RiskLevel, string> = {
     .risk-badge { border: 1px solid transparent; background: transparent; border-radius: 3px;
                   font-size: 12px; font-weight: 600; cursor: pointer; padding: 0 4px; }
     .risk-badge.on { border-color: currentColor; background: rgba(0,0,0,0.04); }
-    .dp-tbl-wrap { max-height: 70vh; overflow: auto; }
+    .dp-tbl-wrap { max-height: 66vh; overflow: auto; }
     .dp-tbl td, .dp-tbl th { font-size: 11px; padding: 2px 4px; text-align: center; }
     .c-train { text-align: left; }
     .idx { display: flex; align-items: center; gap: 4px; }
     .vc { color: #777; }
+    .delay { color: #c62828; font-size: 10px; font-weight: 600; }
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
     .compose { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: 10px; }
     .b { font-weight: 600; }
     .arrived { opacity: 0.85; }
     .empty { color: #888; padding: var(--space-md); }
+    .slot-row { cursor: pointer; }
+    .slot-cell { color: #2e7d32; background: rgba(46,125,50,0.05); }
+    .slot-row.sel .slot-cell { background: rgba(46,125,50,0.18); font-weight: 600; }
+    .fit { color: #1b5e20; }
+    .hint { font-size: 10px; color: #999; padding: 2px var(--space-sm); }
   `],
 })
 export class GtTrainTableComponent {
@@ -140,6 +182,12 @@ export class GtTrainTableComponent {
   /** Ожидание выгрузки по индексу поезда (минуты, из операций симуляции). */
   readonly waitByIndex = input<Record<string, number>>({});
   readonly black = input<boolean>(false);
+  /** Свободные нитки станции (пустой список = показ выключен). */
+  readonly slots = input<GtFreeSlot[]>([]);
+  readonly selectedSlot = input<GtFreeSlot | null>(null);
+
+  readonly slotSelect = output<GtFreeSlot | null>();
+  readonly editTrain = output<GtTrain>();
 
   readonly riskFilter = signal<RiskLevel | null>(null);
 
@@ -168,9 +216,20 @@ export class GtTrainTableComponent {
         wait: waitMin > 0 ? waitH.toFixed(1) + 'ч' : '',
         waitColor: waitH > 12 ? '#c62828' : waitH > 6 ? '#e65100' : waitMin > 0 ? '#2e7d32' : '',
         waitBold: waitH > 6,
+        fitsSlot: this.fitsSelected(t),
       };
     })
   );
+
+  /** Поезда и свободные нитки в единой хронологии ЖД-времени. */
+  readonly lines = computed<Line[]>(() => {
+    const out: Line[] = this.rows().map((row) => ({ jdKey: row.train.prog_jd ?? '', row }));
+    for (const slot of this.slots()) {
+      out.push({ jdKey: slot.jd, slot });
+    }
+    out.sort((a, b) => a.jdKey.localeCompare(b.jdKey));
+    return out;
+  });
 
   readonly thrownCount = computed(() => this.trains().filter((t) => t.status === '5').length);
 
@@ -180,17 +239,39 @@ export class GtTrainTableComponent {
     return c;
   });
 
+  readonly fitCount = computed(() => this.rows().filter((r) => r.fitsSlot).length);
+
   toggleFilter(lvl: RiskLevel): void {
     this.riskFilter.set(this.riskFilter() === lvl ? null : lvl);
   }
 
+  onSlotClick(s: GtFreeSlot): void {
+    this.slotSelect.emit(this.selectedSlot()?.msk === s.msk ? null : s);
+  }
+
+  onContext(e: MouseEvent, t: GtTrain): void {
+    e.preventDefault();
+    if (!t.is_arrived) this.editTrain.emit(t);
+  }
+
+  /** Подходит ли поезд на выбранную нитку: rasch ≤ слот + 3ч, не в плане, не прибыл. */
+  private fitsSelected(t: GtTrain): boolean {
+    const s = this.selectedSlot();
+    if (!s || t.is_arrived || t.plan_jd) return false;
+    const rasch = t.rasch_msk ?? t.rasch_jd;
+    if (!rasch) return false;
+    return Date.parse(rasch + 'Z') <= Date.parse(s.msk + 'Z') + SLOT_TOLERANCE_H * 3600000;
+  }
+
   rowBg(r: Row): string {
+    if (r.fitsSlot) return 'rgba(46,125,50,0.15)';
     const f = this.riskFilter();
     if (!f || r.risk?.level !== f) return '';
     return { critical: 'rgba(198,40,40,0.10)', warning: 'rgba(230,81,0,0.10)', watch: 'rgba(249,168,37,0.12)' }[f];
   }
 
   shortIndex = shortIndex;
+  fmtJdStr = fmtJd;
 }
 
 /** Индикатор риска поезда (перенос gtport getRiskIndicator). */
