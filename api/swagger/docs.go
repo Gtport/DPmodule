@@ -15,6 +15,3040 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/admin/tables": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Реестр редактируемых справочников (list_tables)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.AdminTable"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/tables/{table}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Колонки и строки справочника",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cargo-work/{date}/{terminal}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "cargo-work"
+                ],
+                "summary": "Учётный лист «Грузовой работы» терминала за сутки",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ЖД-сутки, ГГГГ-ММ-ДД",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Терминал (ports.name_s)",
+                        "name": "terminal",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkDayDTO"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "cargo-work"
+                ],
+                "summary": "Правка учётного листа (только ручные поля: план, факт выгрузки, комментарий, погрузка)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ЖД-сутки, ГГГГ-ММ-ДД",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Терминал (ports.name_s)",
+                        "name": "terminal",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Ручные поля по линиям",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkManual"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkDayDTO"
+                        }
+                    },
+                    "403": {
+                        "description": "оператору доступны только вчерашние сутки",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "cargo-work"
+                ],
+                "summary": "Удалить учёт суток по терминалу (выгрузка и погрузка)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ЖД-сутки, ГГГГ-ММ-ДД",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Терминал (ports.name_s)",
+                        "name": "terminal",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "оператору доступны только вчерашние сутки",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cargo-work/{date}/{terminal}/recalc": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "cargo-work"
+                ],
+                "summary": "Пересчитать авто-слой суток (прибытие, выгрузка по станции, аналитика); ручные поля сохраняются",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ЖД-сутки, ГГГГ-ММ-ДД",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Терминал (ports.name_s)",
+                        "name": "terminal",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkDayDTO"
+                        }
+                    },
+                    "403": {
+                        "description": "оператору доступны только вчерашние сутки",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/arrivals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Прибывшие поезда за период (группы index_pp+date_prib из vagon_history)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "начало периода yyyy-MM-dd (дефолт: вчера)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "конец периода yyyy-MM-dd (дефолт: сегодня)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "терминалы через запятую (АЭ,ГУТ-2); пусто — все",
+                        "name": "naznach",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalsDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/arrivals/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Отмена прибытия: снимок 10→9 (вагон снова кандидат) + очистка вехи в истории",
+                "parameters": [
+                    {
+                        "description": "vagon_ids",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.dismissRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalsUpdateResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/arrivals/candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Кандидаты в прибывшие (статус 9 из снимка, минус отклонённые)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "терминалы через запятую; пусто — все",
+                        "name": "naznach",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CandidateGroupDTO"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/arrivals/confirm": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Подтверждение прибытия кандидатов (в снимок: статус 10 + date_prib; веха в историю)",
+                "parameters": [
+                    {
+                        "description": "vagon_ids + фактическое время",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ConfirmArrivalRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalsUpdateResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/arrivals/dismiss": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Отклонение кандидатов («скрыть до новых данных», вагоны остаются 9)",
+                "parameters": [
+                    {
+                        "description": "vagon_ids",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.dismissRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalsUpdateResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/arrivals/vagons": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Правка выбранных вагонов истории прибывших (прибытие/отмена/выгрузка/назначение)",
+                "parameters": [
+                    {
+                        "description": "vagon_ids + применяемые поля",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalsUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalsUpdateResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/asu/pull": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Автозагрузка дислокации из АСУ-АСУ (cron): забор + сверка меток + снимок",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "409": {
+                        "description": "рассогласование меток формирования источников",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "502": {
+                        "description": "АСУ недоступна / ошибка забора",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "503": {
+                        "description": "источник АСУ не настроен",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/bros/active": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "Активные брошенные поезда",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/bros/filter": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "Броски по фильтру (терминал/период/статус) — отчёт",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/bros/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "История брошенных (завершённые)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/bros/journal": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "История журнала броска",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "Запись в журнал броска (фиксация состояния оператором)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/bros/journal/bulk-save": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "Массовая фиксация журнала за сегодня (перед рассылкой в MAX)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/bros/reason-codes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "Справочник кодов бросания (классификатор РЖД)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/bros/report": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "Отчёт по броскам за период с разбивкой суток по кодам",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/bros/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "bros"
+                ],
+                "summary": "Поиск брошенных по индексу (подстрока)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/delays/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "«Задержанные вагоны»: открытые эпизоды задержек (стоят прямо сейчас)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.VagonDelayRow"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/delays/report": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Отчёт «Простои за период»: эпизоды задержек (статусы 4/5) + агрегат по станциям",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "начало периода YYYY-MM-DD (дефолт: to − 6 дней)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "конец периода YYYY-MM-DD, включительно (дефолт: сегодня МСК)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "терминал (gruzpol_s); пусто — все",
+                        "name": "terminal",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.DelayReport"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/directories/reload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Обновить справочники: перезагрузка словарей + пересчёт снимка (Stage 3–4)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.DictReloadResult"
+                        }
+                    },
+                    "409": {
+                        "description": "снимок дислокации не загружен",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/forecast/board": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Доска «Новый прогноз»: поезда в подходе, прибывшие за сутки, линии выгрузки",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ForecastBoardDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/gt-forecast/context": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Режимы прогноза ГТ: причальные станции, терминалы, линии выгрузки со скоростями",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtContextDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/gt-forecast/simulate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Пересчёт прогноза ГТ: очередь поездов режима + симуляция выгрузки по суткам",
+                "parameters": [
+                    {
+                        "description": "режим, дата начала, горизонт, скорости",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtSimulateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtSimulateDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/gt-forecast/snapshots": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Список сохранённых планов прогноза ГТ за период",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "код причальной станции (пусто — все)",
+                        "name": "station",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtSnapshotMetaDTO"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Сохранить план прогноза ГТ на дату (сервер пересчитывает по входу сеанса; upsert по дате × станции)",
+                "parameters": [
+                    {
+                        "description": "дата плана, вход сеанса, журнал правок",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtSnapshotSaveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/gt-forecast/snapshots/analytics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "CSV-аналитика сохранённых планов за период (ZIP: trains / gantt_days / free_slots, прогноз vs факт)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "код причальной станции (пусто — все)",
+                        "name": "station",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/gt-forecast/snapshots/{date}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Сохранённый план прогноза ГТ (архивный просмотр, read-only)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "код причальной станции",
+                        "name": "station",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtSnapshotDTO"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Удалить сохранённый план прогноза ГТ",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "код причальной станции",
+                        "name": "station",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/gt-forecast/speeds": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Правка скоростей линий выгрузки (план plan_speed и норма pc) — настройка вкладки прогноза ГТ",
+                "parameters": [
+                    {
+                        "description": "линии со скоростями",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtSpeedUpdate"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/journal": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Журнал обновлений дислокации за период (источник, триггер, кто, когда, вагоны)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "начало периода (2006-01-02 или 2006-01-02T15:04:05, МСК)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "конец периода (МСК)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "макс. записей (по умолчанию 200)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/lk/files": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Список загруженных файлов ЛК + контроль приёма (шаг между загрузкой и обработкой)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/lk/process": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Обработка загруженных файлов ЛК в снимок дислокации (шаг 2)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/lk/robot/accounts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Аккаунты ЛК РЖД для автовыгрузки (по одному на поток/порт)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "503": {
+                        "description": "аккаунты не заведены",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/lk/robot/run": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Запуск автовыгрузки из ЛК РЖД (фоновый; пароли вводит диспетчер, не хранятся)",
+                "parameters": [
+                    {
+                        "description": "пароли по ОКПО",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.lkRobotRunRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "принято в работу, состояние — в /state",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "не передан ни один пароль",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "409": {
+                        "description": "забор уже идёт",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "503": {
+                        "description": "аккаунты не заведены",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/lk/robot/state": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Состояние забора из ЛК: прогресс по потокам, приём, итог обновления",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/lk/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Загрузка файла дислокации из ЛК (шаг 1: сохранение в папку)",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "xlsx-файл выгрузки ЛК",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/map": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Карта: все группы «поезд на станции» с координатами + терминалы для чипов",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MapDataDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/map/mark": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Карта: пометка выбранных групп (текст+цвет в info_1/info_2; оба пустых = снять)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.RearrApplyResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/map/wagons": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Карта: вагоны одной группы (drill-down из попапа маркера)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ключ группы (key из /dislocation/map)",
+                        "name": "key",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MapWagonsDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/missing": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Пропавшие вагоны (статус 8): последняя известная позиция",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MissingVagonDTO"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/missing/confirm": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Подтверждение прибытия ПРОПАВШЕГО (веха в историю + снятие записи-8; выгрузка опционально)",
+                "parameters": [
+                    {
+                        "description": "vagon_ids + факт прибытия (+ выгрузка)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ConfirmMissingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalsUpdateResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/missing/groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Пропавшие вагоны агрегированно: поезд → подгруппа → вагоны (модалка с действиями)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MissingGroupDTO"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/nearest": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Ближайшие поезда в подходе (снимок, время план→прогноз→расчёт)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "терминалы через запятую; пусто — все",
+                        "name": "naznach",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "максимум поездов (дефолт 50)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.NearestTrainDTO"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/operativka": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "«Оперативка»: прибыло/выгружено по терминалам за вчера и сегодня (ЖД-сутки) + не выгружено (статус 10)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.OperativkaDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/operativka/unplanned/dismiss": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "«Скрыть» бесплановых в подходе (указание оператора — записи удаляются)",
+                "parameters": [
+                    {
+                        "description": "vagons",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.dismissUnplannedRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/plan-form": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Форма «План подвода» по терминалам (вчера факт + сегодня прогноз + поезда)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ЖД-сутки yyyy-MM-dd; пусто — сегодня по МСК",
+                        "name": "date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.PlanFormTerminalDTO"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/plan/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Загрузка плана подвода (разбор + матч + простановка PlanMsk в снимок)",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "xlsx-файл плана подвода",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "код станции плана: ma|nk",
+                        "name": "code",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/plan/{code}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Сетка плана подвода (заголовок + нитки): свежая или по ?id",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "код станции плана: ma|nk",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "id конкретной загрузки (иначе — самая свежая)",
+                        "name": "id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/plan/{code}/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Список загрузок плана станции (свежие первыми) для выбора",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "код станции плана: ma|nk",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/rearrangement/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Перестановка: выбранным вагонам — новый терминал (одна операция = один пересбор)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.RearrApplyResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/rearrangement/groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Группировки вкладки «Перестановки» (?group_by=parent_index|collective_train)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.RearrGroupsDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/rearrangement/stations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Панель станций перестановок: включённые (enabled) пары справочника naznach_station",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.NaznachStationDTO"
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Смена дефолтного назначения пары станций (drag\u0026drop/ПКМ панели)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/redirection/apply": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Переадресация: kind=own|ext|cancel (одна операция = один пересбор)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.RearrApplyResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/redirection/groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Группировки вкладки «Переадресация» (с флагом available)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.RearrGroupsDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Статус-панель: актуальность дислокации и планов подвода",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/status6": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Доноры перегруза (статус 6): последняя позиция и груз",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.Status6VagonDTO"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/terminals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Реестр терминалов с их станциями (раскладка домашней страницы, ports)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TargetDTO"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/trains": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Поезда в движении: снимок деревом «поезд → подгруппа → вагоны»",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TrainsDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/vagons/trail": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "История движения вагона: сохранённый трейл рейса со справочниками",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "id рейса (строка vagon_history)",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.trailResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/vagons/trail/pull": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Обновить историю движения вагона из АСУ (запрос 601, синхронно)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "id рейса (строка vagon_history)",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.trailResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/vagons/{vagon}/operations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Сохранённый трейл продвижения текущего рейса вагона (запрос 601)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "номер вагона",
+                        "name": "vagon",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.vagonOperationsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dislocation/vagons/{vagon}/operations/pull": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dislocation"
+                ],
+                "summary": "Запросить историю продвижения у провайдера сейчас (оператор, синхронно)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "номер вагона",
+                        "name": "vagon",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.vagonOperationsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/history/excel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "history"
+                ],
+                "summary": "История вагонов: книга .xlsx по ВСЕМУ отфильтрованному набору",
+                "parameters": [
+                    {
+                        "description": "фильтр + сортировка (page игнорируется)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.HistorySearchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "книга .xlsx",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "ошибка фильтра либо превышен потолок строк",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/history/meta": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "history"
+                ],
+                "summary": "История вагонов: данные панели фильтров (терминалы с цветами, станции погрузки)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.HistoryMetaDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/history/search": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "history"
+                ],
+                "summary": "История вагонов: страница по фильтру (серверные пагинация и сортировка)",
+                "parameters": [
+                    {
+                        "description": "фильтр + сортировка + страница",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.HistorySearchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.HistorySearchDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "ошибка валидации фильтра",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/map/tiles/{z}/{x}/{y}": {
+            "get": {
+                "produces": [
+                    "image/png"
+                ],
+                "tags": [
+                    "map"
+                ],
+                "summary": "Тайл подложки карты из кэша OSM (публичная, без JWT)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "зум (0–11; сплошное покрытие кэша — 4–8)",
+                        "name": "z",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "колонка тайла",
+                        "name": "x",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "строка тайла",
+                        "name": "y",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "404": {
+                        "description": "тайла нет в кэше",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/max/broadcast/image": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "tags": [
+                    "max"
+                ],
+                "summary": "Рассылка картинки формы (готовый PNG с фронта) в чаты MAX по маршруту",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "PNG формы (собирает фронт)",
+                        "name": "image",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "форма: spravki|oper|plan",
+                        "name": "report",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "терминал (ports.name_s); пусто — сводная",
+                        "name": "terminal",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "подпись под картинкой",
+                        "name": "caption",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.BroadcastResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/max/broadcast/text": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "max"
+                ],
+                "summary": "Рассылка текстовой формы в чаты MAX по маршруту (форма×терминал)",
+                "parameters": [
+                    {
+                        "description": "форма, терминал, текст",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.broadcastTextRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.BroadcastResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/max/chats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "max"
+                ],
+                "summary": "Справочник чатов MAX (для выбора адресатов рассылки)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MaxChatDTO"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/max/health": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "max"
+                ],
+                "summary": "Состояние канала MAX (и проверка токена боем, если включён)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Текущий аутентифицированный пользователь (из JWT)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reference": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reference"
+                ],
+                "summary": "Памятка по номеру и дате создания — сырой документ провайдера (диагностика)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "номер памятки (NUMBER_PAMYATKA)",
+                        "name": "number",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "DATE_CREATE памятки из инкремента, дословно (MM-DD-YYYY); у документа без даты — пустое значение",
+                        "name": "date_create",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "код клиента у провайдера; по умолчанию первый из reference.clients",
+                        "name": "client",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "не задан number или date_create",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "502": {
+                        "description": "провайдер недоступен / ошибка забора",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reference/excel": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "reference"
+                ],
+                "summary": "Памятка по номеру бланком ГУ-45 в Excel",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "номер памятки (NUMBER_PAMYATKA)",
+                        "name": "number",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "DATE_CREATE памятки из инкремента, дословно (MM-DD-YYYY); у документа без даты — пустое значение",
+                        "name": "date_create",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "код клиента у провайдера; по умолчанию первый из reference.clients",
+                        "name": "client",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "книга .xlsx с бланком памятки",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "не задан number или date_create",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "502": {
+                        "description": "провайдер недоступен / документа нет в ответе / ошибка сборки",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reference/update/pull": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reference"
+                ],
+                "summary": "Инкремент памяток по всем клиентам: разнос вех подачи/уборки по рейсам",
+                "responses": {
+                    "200": {
+                        "description": "по клиенту: разобрано памяток/вагонов, обновлено рейсов, пропущено с причинами",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "502": {
+                        "description": "провайдер недоступен / ошибка забора или записи",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/loading": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Отчёт «Погрузка»: дневные агрегаты погрузки в адрес терминалов за период",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "начало периода YYYY-MM-DD (дефолт: 1-е число месяца даты to)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "конец периода YYYY-MM-DD, включительно (дефолт: сегодня МСК)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.LoadingReportDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/nmtp": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "«Подход вагонов» по форме порта (НМТП): данные формы для экрана",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "терминал (ports.name_s)",
+                        "name": "terminal",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "naznach — скрыть перестановки (строго по назначению)",
+                        "name": "mode",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.NmtpReport"
+                        }
+                    },
+                    "400": {
+                        "description": "терминал не задан / неизвестен / раскладка не настроена",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/nmtp/excel": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "«Подход вагонов» по форме порта (НМТП): книга .xlsx из текущего снимка",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "терминал (ports.name_s)",
+                        "name": "terminal",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "naznach — скрыть перестановки (строго по назначению)",
+                        "name": "mode",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "книга .xlsx",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "терминал не задан / неизвестен / раскладка не настроена",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Книга .xlsx из ПРАВЛЕНОГО на экране отчёта (правки нигде не хранятся)",
+                "parameters": [
+                    {
+                        "description": "отчёт с ручными правками (как отображён)",
+                        "name": "report",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.NmtpReport"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "книга .xlsx",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/nmtp/move": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Перенос поезда в колонку формы: привязка вагонов состава (nmtp_vagon_column)",
+                "parameters": [
+                    {
+                        "description": "поезд (ключ строки) и колонка; column_id=0 — вернуть по правилам",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.nmtpMoveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "vagons — сколько вагонов привязано/отвязано",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/nmtp/terminals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Терминалы с настроенной раскладкой НМТП-отчёта (nmtp_column)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/perestanovka/excel": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "«Перестановка на {терминал}»: текущие перестановки книгой .xlsx (Поезда + Вагоны)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "терминал-цель (ports.name_s)",
+                        "name": "terminal",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "книга .xlsx",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "терминал не задан / неизвестен / нет вагонов",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/perestanovka/fact": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "«Факт перестановок» за период (строки vagon_history с gruzpol_s ≠ naznach)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "начало периода yyyy-MM-dd (дефолт: вчера)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "конец периода yyyy-MM-dd (дефолт: сегодня)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "поле периода: prib (дефолт) | vigr",
+                        "name": "by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "срез по терминалу-цели (naznach); пусто — все",
+                        "name": "terminal",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.PerestanovkaFactDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "некорректные параметры",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/podhod": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Отчёт «Подход»: поезда, идущие на терминал (двухуровневая группировка из снимка)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "терминал (ports.name_s: АЭ/ГУТ-2/УТ-1)",
+                        "name": "terminal",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "фильтр клиентов, имена через | (формат gtport client_filter)",
+                        "name": "clients",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.PodhodReport"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/podhod/presets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Пресеты отчёта «Подход» (клиентские варианты карточек, напр. «Марис»)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.ReportPreset"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/vagonka/excel": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "«Повагонка»: текущий снимок дислокации книгой .xlsx (полная либо по терминалу)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "терминал (ports.name_s); пусто — весь снимок",
+                        "name": "terminal",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "книга .xlsx",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "неизвестный терминал",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/reports/vygruzka": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Отчёт «Выгрузка за период»: сохранённые учётные листы терминала по суткам",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Терминал (ports.name_s)",
+                        "name": "terminal",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "начало периода YYYY-MM-DD (дефолт: 1-е число месяца даты to)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "конец периода YYYY-MM-DD, включительно (дефолт: вчера МСК)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkPeriodDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/settings/ui": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "settings"
+                ],
+                "summary": "Настройки интерфейса (client_settings.extra.ui): шкала ввода времени",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.uiSettingsDTO"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "tags": [
@@ -50,6 +3084,3309 @@ const docTemplate = `{
                             "type": "object"
                         }
                     }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_Gtport_DPmodule_internal_domain.AdminTable": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "имя таблицы в схеме dpport",
+                    "type": "string"
+                },
+                "name_ru": {
+                    "description": "подпись для владельца",
+                    "type": "string"
+                },
+                "pk": {
+                    "description": "колонка-идентификатор строки: id, если есть, иначе одноколоночный PK",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.DelayReport": {
+            "type": "object",
+            "properties": {
+                "open_now": {
+                    "type": "integer"
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.VagonDelayRow"
+                    }
+                },
+                "stations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.DelayStationAgg"
+                    }
+                },
+                "total_episodes": {
+                    "type": "integer"
+                },
+                "total_hours": {
+                    "type": "number"
+                },
+                "total_vagons": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.DelayStationAgg": {
+            "type": "object",
+            "properties": {
+                "doroga": {
+                    "type": "string"
+                },
+                "episodes": {
+                    "type": "integer"
+                },
+                "hours": {
+                    "description": "всего за период",
+                    "type": "number"
+                },
+                "hours4": {
+                    "description": "долгий простой",
+                    "type": "number"
+                },
+                "hours5": {
+                    "description": "брошен",
+                    "type": "number"
+                },
+                "open_now": {
+                    "type": "integer"
+                },
+                "station_code": {
+                    "type": "string"
+                },
+                "station_name": {
+                    "type": "string"
+                },
+                "vagons": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.LoadingDailyRow": {
+            "type": "object",
+            "properties": {
+                "cargo_group": {
+                    "type": "string"
+                },
+                "client": {
+                    "type": "string"
+                },
+                "day": {
+                    "description": "date_nach_d (сутки)",
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "sms_1": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "total_weight": {
+                    "type": "number"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.NmtpClientTons": {
+            "type": "object",
+            "properties": {
+                "client": {
+                    "type": "string"
+                },
+                "tons": {
+                    "description": "тыс. тонн",
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.NmtpColumnHead": {
+            "type": "object",
+            "properties": {
+                "group": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "nmtp_column.id — цель ручного переноса поезда",
+                    "type": "integer"
+                },
+                "mark": {
+                    "type": "string"
+                },
+                "station": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.NmtpReport": {
+            "type": "object",
+            "properties": {
+                "abandoned": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.NmtpSection"
+                    }
+                },
+                "client_tons": {
+                    "description": "свод по клиентам (group_label)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.NmtpClientTons"
+                    }
+                },
+                "col_counts": {
+                    "description": "итого вагонов по колонкам (актив + брошенные)",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "col_tons": {
+                    "description": "итого тыс. тонн по колонкам",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.NmtpColumnHead"
+                    }
+                },
+                "has_other": {
+                    "description": "есть вагоны вне правил — колонка «прочее»",
+                    "type": "boolean"
+                },
+                "norm": {
+                    "description": "норма вагонов на сети (0 — блока нет)",
+                    "type": "integer"
+                },
+                "sections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.NmtpSection"
+                    }
+                },
+                "terminal": {
+                    "type": "string"
+                },
+                "total_tons": {
+                    "description": "тыс. тонн",
+                    "type": "number"
+                },
+                "total_vagons": {
+                    "type": "integer"
+                },
+                "trains_abandoned": {
+                    "type": "integer"
+                },
+                "trains_active": {
+                    "type": "integer"
+                },
+                "unload_forecast": {
+                    "description": "вагонов/сут: ближние секции / 7",
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.NmtpSection": {
+            "type": "object",
+            "properties": {
+                "is_station": {
+                    "description": "причальная станция (не дорога) — экран пустую прячет",
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "near": {
+                    "description": "участвует в «Прогнозе выгрузки по подходу»",
+                    "type": "boolean"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.NmtpTrainRow"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.NmtpTrainRow": {
+            "type": "object",
+            "properties": {
+                "control_vagon": {
+                    "description": "«вагон для контроля» — первый вагон состава",
+                    "type": "string"
+                },
+                "counts": {
+                    "description": "по колонкам; последний элемент — «прочее»",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "date_bros": {
+                    "type": "string"
+                },
+                "date_nach": {
+                    "description": "мода даты приёма к перевозке",
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "note": {
+                    "description": "перестановка: «НА {терминал}» / «С {терминал}»",
+                    "type": "string"
+                },
+                "planned": {
+                    "description": "поезд в плане подвода (есть plan_jd) — только таким печатается прибытие",
+                    "type": "boolean"
+                },
+                "prog": {
+                    "description": "ожидаемое прибытие (prog_jd, МСК)",
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.ReportPreset": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "description": "фильтр клиентов, разделитель '|' (формат gtport)",
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "description": "подпись карточки («Марис»)",
+                    "type": "string"
+                },
+                "report": {
+                    "description": "форма, к которой пресет ('podhod')",
+                    "type": "string"
+                },
+                "sort_order": {
+                    "description": "порядок карточек",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_domain.VagonDelayRow": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "date_from": {
+                    "description": "начало стоянки (time_op)",
+                    "type": "string"
+                },
+                "date_nach_d": {
+                    "description": "дата начала рейса (привязка к vagon_history)",
+                    "type": "string"
+                },
+                "date_to": {
+                    "description": "nil — стоит до сих пор",
+                    "type": "string"
+                },
+                "doroga": {
+                    "type": "string"
+                },
+                "group_key": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "description": "терминал (краткое имя причала)",
+                    "type": "string"
+                },
+                "hours": {
+                    "description": "длительность, часы (при закрытии)",
+                    "type": "number"
+                },
+                "hours_in_period": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "index": {
+                    "description": "текущий индекс поезда",
+                    "type": "string"
+                },
+                "index_main": {
+                    "description": "«родительский» индекс (ключ плана)",
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "DelayKindProstoi | DelayKindBros",
+                    "type": "integer"
+                },
+                "station_code": {
+                    "type": "string"
+                },
+                "station_name": {
+                    "type": "string"
+                },
+                "trip_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vagon": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ArrivalGroupDTO": {
+            "type": "object",
+            "properties": {
+                "date_prib": {
+                    "type": "string"
+                },
+                "date_prib_d": {
+                    "type": "string"
+                },
+                "index_pp": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "otkl": {
+                    "type": "string"
+                },
+                "plan_jd": {
+                    "type": "string"
+                },
+                "plan_msk": {
+                    "type": "string"
+                },
+                "stan_nazn": {
+                    "type": "string"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalSubgroupDTO"
+                    }
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ArrivalSubgroupDTO": {
+            "type": "object",
+            "properties": {
+                "display": {
+                    "description": "«(N)-783-Челутай АЭ» / «… ГУТ-2 → АЭ»",
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "sms_1": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                },
+                "vagons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalVagonDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ArrivalVagonDTO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "shipments": {
+                    "description": "судовая партия",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "vagon": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ArrivalsDTO": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalGroupDTO"
+                    }
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TargetDTO"
+                    }
+                },
+                "to": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ArrivalsUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "date_prib": {
+                    "type": "string"
+                },
+                "date_vigr": {
+                    "description": "«Выгрузить»: факт выгрузки, место, смерзаемость %.",
+                    "type": "string"
+                },
+                "frost": {
+                    "type": "integer"
+                },
+                "index_pp": {
+                    "description": "«Изменить прибытие»: индекс поезда, план (ЖД) и факт; otkl/plan_msk/\ndate_prib_d пересчитываются на сервере.",
+                    "type": "string"
+                },
+                "naznach": {
+                    "description": "«Изменить назначение»: перераспределение по терминалам после прибытия\n(значение валидируется по реестру портов).",
+                    "type": "string"
+                },
+                "place_vigr": {
+                    "type": "string"
+                },
+                "plan_jd": {
+                    "type": "string"
+                },
+                "time_base": {
+                    "description": "Шкала введённых времён DatePrib/DateVigr: \"jd\" | \"msk\" (пусто — прежнее\nсмешанное поведение). План PlanJd шкале не подчиняется — он всегда ЖД.",
+                    "type": "string"
+                },
+                "vagon_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ArrivalsUpdateResult": {
+            "type": "object",
+            "properties": {
+                "selected": {
+                    "type": "integer"
+                },
+                "updated": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.BroadcastResult": {
+            "type": "object",
+            "properties": {
+                "chats": {
+                    "description": "сколько чатов разрешил маршрут",
+                    "type": "integer"
+                },
+                "failed": {
+                    "description": "код чата → текст ошибки",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "sent": {
+                    "description": "коды чатов с успешной отправкой",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CandidateGroupDTO": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "stan_nazn": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ArrivalSubgroupDTO"
+                    }
+                },
+                "time_op": {
+                    "description": "последняя операция (момент постановки)",
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkAnalytics": {
+            "type": "object",
+            "properties": {
+                "downtime": {
+                    "type": "string"
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkOperation"
+                    }
+                },
+                "total_formation": {
+                    "type": "integer"
+                },
+                "useful_formation": {
+                    "type": "integer"
+                },
+                "waits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkWait"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkDayDTO": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "description": "ports.color — шапка таблицы",
+                    "type": "string"
+                },
+                "date": {
+                    "description": "yyyy-MM-dd, ЖД-сутки",
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkLineDTO"
+                    }
+                },
+                "load": {
+                    "description": "пусто → блока погрузки нет",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkLoadDTO"
+                    }
+                },
+                "terminal": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkLineDTO": {
+            "type": "object",
+            "properties": {
+                "analytics": {
+                    "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkAnalytics"
+                },
+                "cargo_key": {
+                    "type": "string"
+                },
+                "downtime": {
+                    "type": "string"
+                },
+                "effectiv": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "ost": {
+                    "type": "integer"
+                },
+                "ost_18": {
+                    "type": "integer"
+                },
+                "ost_st": {
+                    "type": "integer"
+                },
+                "pc": {
+                    "description": "способность, ваг/сут (0 — линия не настроена)",
+                    "type": "integer"
+                },
+                "perepokaz": {
+                    "type": "integer"
+                },
+                "plan": {
+                    "type": "integer"
+                },
+                "prib": {
+                    "type": "integer"
+                },
+                "prim": {
+                    "type": "string"
+                },
+                "total_formation": {
+                    "type": "integer"
+                },
+                "useful_formation": {
+                    "type": "integer"
+                },
+                "vigr_fact": {
+                    "type": "integer"
+                },
+                "vigr_stan": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkLoadDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_key": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "load_fact": {
+                    "type": "integer"
+                },
+                "ost": {
+                    "type": "integer"
+                },
+                "plan": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkManual": {
+            "type": "object",
+            "properties": {
+                "lines": {
+                    "description": "ключ — cargo_key",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkManualLine"
+                    }
+                },
+                "load": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkManualLoad"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkManualLine": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "type": "integer"
+                },
+                "prim": {
+                    "type": "string"
+                },
+                "vigr_fact": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkManualLoad": {
+            "type": "object",
+            "properties": {
+                "load_fact": {
+                    "type": "integer"
+                },
+                "ost": {
+                    "type": "integer"
+                },
+                "plan": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkOperation": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "train_name": {
+                    "type": "string"
+                },
+                "wagons": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkPeriodDTO": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "days": {
+                    "description": "по возрастанию даты",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.CargoWorkDayDTO"
+                    }
+                },
+                "from": {
+                    "description": "yyyy-MM-dd",
+                    "type": "string"
+                },
+                "terminal": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.CargoWorkWait": {
+            "type": "object",
+            "properties": {
+                "arrival_time": {
+                    "type": "string"
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "train_name": {
+                    "type": "string"
+                },
+                "wait_duration": {
+                    "type": "string"
+                },
+                "wait_reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ConfirmArrivalRequest": {
+            "type": "object",
+            "properties": {
+                "date_prib": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "time_base": {
+                    "type": "string"
+                },
+                "vagon_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ConfirmMissingRequest": {
+            "type": "object",
+            "properties": {
+                "date_prib": {
+                    "description": "факт прибытия, обязательно",
+                    "type": "string"
+                },
+                "date_vigr": {
+                    "description": "факт выгрузки (пусто — не выгружен)",
+                    "type": "string"
+                },
+                "index": {
+                    "description": "правка индекса поезда (пусто — индекс записи-8)",
+                    "type": "string"
+                },
+                "place_vigr": {
+                    "description": "терминал выгрузки (пусто — naznach записи)",
+                    "type": "string"
+                },
+                "time_base": {
+                    "description": "шкала введённых времён: \"jd\"|\"msk\" (пусто — как ЖД)",
+                    "type": "string"
+                },
+                "vagon_ids": {
+                    "description": "id рейсов (записи-8 в status9)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.DictReloadResult": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "description": "вагонов в снимке",
+                    "type": "integer"
+                },
+                "filled": {
+                    "description": "были без атрибуции — заполнены строгим матчем marka",
+                    "type": "integer"
+                },
+                "filled_by_train": {
+                    "description": "заполнены наследованием по составу",
+                    "type": "integer"
+                },
+                "forecast_computed": {
+                    "description": "вагонов с пересчитанным ходом (Stage 3)",
+                    "type": "integer"
+                },
+                "prog_computed": {
+                    "description": "вагонов с пересчитанным прогнозом порта (Stage 4)",
+                    "type": "integer"
+                },
+                "refreshed": {
+                    "description": "атрибутированные: строка marka переприменена (правка словаря доехала)",
+                    "type": "integer"
+                },
+                "still_empty": {
+                    "description": "остались без атрибуции (нет ни marka, ни состава)",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ForecastArrivedGroup": {
+            "type": "object",
+            "properties": {
+                "date_prib": {
+                    "type": "string"
+                },
+                "index_pp": {
+                    "type": "string"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ForecastSubGroup"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ForecastBoardDTO": {
+            "type": "object",
+            "properties": {
+                "arrived": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ForecastArrivedGroup"
+                    }
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ForecastTrainGroup"
+                    }
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ForecastLine"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ForecastLine": {
+            "type": "object",
+            "properties": {
+                "cargo_key": {
+                    "description": "пусто — терминал считается одной таблицей",
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "ost": {
+                    "description": "«Остаток на 18:00»: вчерашний остаток линии",
+                    "type": "integer"
+                },
+                "pc": {
+                    "description": "норма выгрузки, ваг/сут (стартовое значение поля «Выгрузка»)",
+                    "type": "integer"
+                },
+                "terminal": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ForecastSubGroup": {
+            "type": "object",
+            "properties": {
+                "cargo_group": {
+                    "type": "string"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "date_nach": {
+                    "description": "дата погрузки (максимум по вагонам)",
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.ForecastTrainGroup": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "description": "index_pp, если нитка задана планом",
+                    "type": "string"
+                },
+                "prog_jd": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "5 — брошен (красная подсветка)",
+                    "type": "integer"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.ForecastSubGroup"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtCarriedDTO": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "string"
+                },
+                "wagons": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtContextDTO": {
+            "type": "object",
+            "properties": {
+                "stations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtStationDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtDayDTO": {
+            "type": "object",
+            "properties": {
+                "arrival": {
+                    "type": "integer"
+                },
+                "carried_over": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtCarriedDTO"
+                    }
+                },
+                "date": {
+                    "type": "string"
+                },
+                "incoming_total": {
+                    "type": "integer"
+                },
+                "norm_speed": {
+                    "type": "integer"
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtOperationDTO"
+                    }
+                },
+                "plan_speed": {
+                    "type": "integer"
+                },
+                "remaining": {
+                    "type": "integer"
+                },
+                "total_formation": {
+                    "type": "integer"
+                },
+                "total_wait_min": {
+                    "type": "number"
+                },
+                "unloaded": {
+                    "type": "integer"
+                },
+                "useful_formation": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtFlowDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_key": {
+                    "type": "string"
+                },
+                "color": {
+                    "description": "цвет терминала (шапка диаграммы)",
+                    "type": "string"
+                },
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtDayDTO"
+                    }
+                },
+                "initial_remainder": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "terminal": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtFreeSlotDTO": {
+            "type": "object",
+            "properties": {
+                "jd": {
+                    "type": "string"
+                },
+                "msk": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtLineDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_key": {
+                    "description": "пусто — все грузы терминала одним потоком",
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "norm_speed": {
+                    "description": "норма = способность линии",
+                    "type": "integer"
+                },
+                "plan_speed": {
+                    "description": "план, ваг/сут (правится в Админе)",
+                    "type": "integer"
+                },
+                "terminal": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtOperationDTO": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "end_calc": {
+                    "type": "string"
+                },
+                "end_jd": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "is_carried_over": {
+                    "type": "boolean"
+                },
+                "is_partial": {
+                    "type": "boolean"
+                },
+                "is_remainder": {
+                    "type": "boolean"
+                },
+                "orig_index": {
+                    "description": "чей остаток",
+                    "type": "string"
+                },
+                "original_arrival_jd": {
+                    "type": "string"
+                },
+                "start_calc": {
+                    "type": "string"
+                },
+                "start_jd": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "total_wagons": {
+                    "type": "integer"
+                },
+                "train_index": {
+                    "type": "string"
+                },
+                "train_name": {
+                    "type": "string"
+                },
+                "wagons": {
+                    "type": "integer"
+                },
+                "wait_min": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtOverride": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "throw | restore | assign | move",
+                    "type": "string"
+                },
+                "delay_days": {
+                    "type": "integer"
+                },
+                "delay_hours": {
+                    "type": "number"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "move_to": {
+                    "description": "терминал (move)",
+                    "type": "string"
+                },
+                "slot": {
+                    "description": "МСК нитки (assign)",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtSimulateDTO": {
+            "type": "object",
+            "properties": {
+                "flows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtFlowDTO"
+                    }
+                },
+                "free_slots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtFreeSlotDTO"
+                    }
+                },
+                "max_train_wagons": {
+                    "type": "integer"
+                },
+                "trains": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtTrainDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtSimulateRequest": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "description": "1..14",
+                    "type": "integer"
+                },
+                "overrides": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtOverride"
+                    }
+                },
+                "speed_overrides": {
+                    "description": "SpeedOverrides: \"терминал|груз\" → дата YYYY-MM-DD → ваг/сут.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "start_date": {
+                    "description": "YYYY-MM-DD (расчётные ЖД-сутки)",
+                    "type": "string"
+                },
+                "station": {
+                    "description": "код причальной станции (режим)",
+                    "type": "string"
+                },
+                "use_norm": {
+                    "description": "считать по нормам вместо плана",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtSnapshotDTO": {
+            "type": "object",
+            "properties": {
+                "days_count": {
+                    "type": "integer"
+                },
+                "flows": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "free_slots": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "journal": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "plan_date": {
+                    "type": "string"
+                },
+                "request": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "saved_by": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "station": {
+                    "type": "string"
+                },
+                "trains": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtSnapshotMetaDTO": {
+            "type": "object",
+            "properties": {
+                "days_count": {
+                    "type": "integer"
+                },
+                "plan_date": {
+                    "type": "string"
+                },
+                "saved_by": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "station": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtSnapshotSaveRequest": {
+            "type": "object",
+            "properties": {
+                "journal": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "plan_date": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "request": {
+                    "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtSimulateRequest"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtSpeedUpdate": {
+            "type": "object",
+            "properties": {
+                "cargo_key": {
+                    "type": "string"
+                },
+                "norm_speed": {
+                    "type": "integer"
+                },
+                "plan_speed": {
+                    "type": "integer"
+                },
+                "terminal": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtStationDTO": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "terminals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtTerminalDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtSubGroupDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_group": {
+                    "type": "string"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "date_nach": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "is_universal": {
+                    "description": "груз можно переместить на другой терминал",
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtTerminalDTO": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtLineDTO"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.GtTrainDTO": {
+            "type": "object",
+            "properties": {
+                "delay_hours": {
+                    "description": "DelayHours — эффективная задержка (эталон delay_hours): 72 у брошенных\nконвейером, значение правки у what-if-бросков/восстановлений, 0 иначе.",
+                    "type": "number"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "is_arrived": {
+                    "type": "boolean"
+                },
+                "mistake": {
+                    "type": "number"
+                },
+                "plan_jd": {
+                    "type": "string"
+                },
+                "plan_msk": {
+                    "type": "string"
+                },
+                "prog_jd": {
+                    "type": "string"
+                },
+                "prog_msk": {
+                    "type": "string"
+                },
+                "rasch_jd": {
+                    "type": "string"
+                },
+                "rasch_msk": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "номер статуса; прибывший — \"history\"",
+                    "type": "string"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.GtSubGroupDTO"
+                    }
+                },
+                "to_go": {
+                    "type": "number"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.HistoryMetaDTO": {
+            "type": "object",
+            "properties": {
+                "stations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TargetDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.HistoryPageDTO": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.HistoryRowDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_s": {
+                    "type": "string"
+                },
+                "client": {
+                    "type": "string"
+                },
+                "date_dostav": {
+                    "type": "string"
+                },
+                "date_nach_d": {
+                    "type": "string"
+                },
+                "date_prib_d": {
+                    "type": "string"
+                },
+                "date_vigr": {
+                    "type": "string"
+                },
+                "delay": {
+                    "type": "integer"
+                },
+                "freight": {
+                    "description": "freight_exact_name (марка)",
+                    "type": "string"
+                },
+                "frost": {
+                    "type": "integer"
+                },
+                "gruzotpr": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "gtd_number": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "index_pp": {
+                    "type": "string"
+                },
+                "invoice": {
+                    "type": "string"
+                },
+                "invoice_main": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "peregruz": {
+                    "type": "string"
+                },
+                "place_vigr": {
+                    "type": "string"
+                },
+                "plan_jd": {
+                    "type": "string"
+                },
+                "shipments": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "vagon": {
+                    "type": "string"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.HistorySearchDTO": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.HistoryRowDTO"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.HistorySearchFilterDTO": {
+            "type": "object",
+            "properties": {
+                "date_nach_d_from": {
+                    "type": "string"
+                },
+                "date_nach_d_to": {
+                    "type": "string"
+                },
+                "date_prib_d_from": {
+                    "type": "string"
+                },
+                "date_prib_d_to": {
+                    "type": "string"
+                },
+                "date_vigr_d_from": {
+                    "type": "string"
+                },
+                "date_vigr_d_to": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "invoices": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "naznach": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "not_unloaded": {
+                    "type": "boolean"
+                },
+                "place_vigr": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "station_nach": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "vagons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.HistorySearchRequest": {
+            "type": "object",
+            "properties": {
+                "filter": {
+                    "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.HistorySearchFilterDTO"
+                },
+                "page": {
+                    "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.HistoryPageDTO"
+                },
+                "sort": {
+                    "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.HistorySortDTO"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.HistorySortDTO": {
+            "type": "object",
+            "properties": {
+                "by": {
+                    "type": "string"
+                },
+                "dir": {
+                    "description": "asc | desc",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.LoadingReportDTO": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "description": "yyyy-MM-dd",
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_domain.LoadingDailyRow"
+                    }
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.MapDataDTO": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "description": "с координатами — на карту",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MapGroupDTO"
+                    }
+                },
+                "no_coords": {
+                    "description": "станция без координат в справочнике — боковой список",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MapGroupDTO"
+                    }
+                },
+                "targets": {
+                    "description": "терминалы для чипов (правило унификации)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TargetDTO"
+                    }
+                },
+                "total": {
+                    "description": "групп всего",
+                    "type": "integer"
+                },
+                "vagons": {
+                    "description": "вагонов всего в снимке",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.MapGroupDTO": {
+            "type": "object",
+            "properties": {
+                "arrived": {
+                    "description": "все вагоны на станции назначения (9/10/12)",
+                    "type": "boolean"
+                },
+                "broshen": {
+                    "description": "есть вагон-5",
+                    "type": "boolean"
+                },
+                "doroga_oper": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "key": {
+                    "description": "trainKey — им же ходят ручки вагонов и пометки",
+                    "type": "string"
+                },
+                "lat": {
+                    "description": "nil → группа уходит в no_coords",
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "mark_color": {
+                    "description": "пометка диспетчера: info_2",
+                    "type": "string"
+                },
+                "mark_text": {
+                    "description": "пометка диспетчера: info_1",
+                    "type": "string"
+                },
+                "naznach": {
+                    "description": "терминал-большинство → цвет маркера",
+                    "type": "string"
+                },
+                "naznach_list": {
+                    "description": "все терминалы группы → фильтр чипами",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "oper_s": {
+                    "type": "string"
+                },
+                "plan_jd": {
+                    "type": "string"
+                },
+                "prog_jd": {
+                    "description": "непустой = «ходовой», пустой = «отцепка»",
+                    "type": "string"
+                },
+                "rasst": {
+                    "description": "остаток до станции назначения, км",
+                    "type": "integer"
+                },
+                "stan_nazn": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "большинство по вагонам (как «Поезда»)",
+                    "type": "integer"
+                },
+                "time_op": {
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.MapWagonDTO": {
+            "type": "object",
+            "properties": {
+                "freight": {
+                    "description": "freight_exact_name, пусто — cargo_s",
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "id рейса — для «Истории движения вагона» по ПКМ",
+                    "type": "string"
+                },
+                "invoice": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "npp_vag": {
+                    "type": "integer"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "vagon": {
+                    "type": "string"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.MapWagonsDTO": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "wagons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MapWagonDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.MaxChatDTO": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.MissingGroupDTO": {
+            "type": "object",
+            "properties": {
+                "days_missing": {
+                    "description": "от самой свежей фиксации",
+                    "type": "integer"
+                },
+                "doroga_oper": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "key": {
+                    "description": "index|stan_nazn",
+                    "type": "string"
+                },
+                "missing_since": {
+                    "description": "самая свежая фиксация пропажи",
+                    "type": "string"
+                },
+                "oper_s": {
+                    "type": "string"
+                },
+                "stan_nazn": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MissingSubgroupDTO"
+                    }
+                },
+                "time_op": {
+                    "description": "самая свежая операция группы",
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.MissingSubgroupDTO": {
+            "type": "object",
+            "properties": {
+                "display": {
+                    "description": "«(N)-783-Челутай АЭ»",
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "key": {
+                    "description": "index_main|naznach|gruzpol_s",
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                },
+                "vagons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.MissingVagonDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.MissingVagonDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_s": {
+                    "type": "string"
+                },
+                "date_dostav": {
+                    "type": "string"
+                },
+                "days_missing": {
+                    "description": "полных суток с пропажи (от «сейчас» МСК)",
+                    "type": "integer"
+                },
+                "doroga_oper": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "index": {
+                    "description": "последний поездной индекс",
+                    "type": "string"
+                },
+                "missing_since": {
+                    "description": "когда зафиксирована пропажа",
+                    "type": "string"
+                },
+                "naznach": {
+                    "description": "терминал назначения",
+                    "type": "string"
+                },
+                "oper_s": {
+                    "description": "последняя операция",
+                    "type": "string"
+                },
+                "stan_nazn": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "description": "где видели в последний раз",
+                    "type": "string"
+                },
+                "time_op": {
+                    "description": "время последней операции",
+                    "type": "string"
+                },
+                "vagon": {
+                    "type": "string"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.NaznachStationDTO": {
+            "type": "object",
+            "properties": {
+                "dest_station": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "naznach": {
+                    "description": "пусто = «по назначению» (родному получателю)",
+                    "type": "string"
+                },
+                "origin_station": {
+                    "type": "string"
+                },
+                "univers": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.NearestSubgroupDTO": {
+            "type": "object",
+            "properties": {
+                "display": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "sms_1": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                },
+                "vagons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.NearestVagonDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.NearestTrainDTO": {
+            "type": "object",
+            "properties": {
+                "broshen": {
+                    "description": "в составе есть брошенные (статус 5)",
+                    "type": "boolean"
+                },
+                "doroga_oper": {
+                    "type": "string"
+                },
+                "has_plan": {
+                    "description": "время из нитки плана (зелёная метка)",
+                    "type": "boolean"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "key": {
+                    "description": "IdDisl",
+                    "type": "string"
+                },
+                "rasst": {
+                    "description": "остаток до станции назначения, км",
+                    "type": "integer"
+                },
+                "stan_nazn": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "description": "текущая станция операции",
+                    "type": "string"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.NearestSubgroupDTO"
+                    }
+                },
+                "time_jd": {
+                    "description": "время для показа (ЖД): план либо прогноз",
+                    "type": "string"
+                },
+                "time_msk": {
+                    "description": "время сортировки (МСК)",
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.NearestVagonDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_s": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "npp_vag": {
+                    "type": "integer"
+                },
+                "owner": {
+                    "description": "собственник/оператор (наше поле, PR #100)",
+                    "type": "string"
+                },
+                "sms_1": {
+                    "type": "string"
+                },
+                "vagon": {
+                    "type": "string"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.OperativkaDTO": {
+            "type": "object",
+            "properties": {
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.OperativkaRowDTO"
+                    }
+                },
+                "today": {
+                    "type": "string"
+                },
+                "unplanned": {
+                    "description": "«бесплановые в подходе» (до «Скрыть»)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.UnplannedTrainDTO"
+                    }
+                },
+                "yesterday": {
+                    "description": "yyyy-MM-dd (ЖД-сутки)",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.OperativkaRowDTO": {
+            "type": "object",
+            "properties": {
+                "not_unloaded": {
+                    "description": "сейчас в статусе 10 (прибыл, не выгружен)",
+                    "type": "integer"
+                },
+                "prib_today": {
+                    "type": "integer"
+                },
+                "prib_yesterday": {
+                    "type": "integer"
+                },
+                "station": {
+                    "type": "string"
+                },
+                "station_code": {
+                    "type": "string"
+                },
+                "terminal": {
+                    "type": "string"
+                },
+                "vigr_today": {
+                    "type": "integer"
+                },
+                "vigr_yesterday": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.PerestanovkaFactDTO": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.PerestanovkaFactRow"
+                    }
+                },
+                "to": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.PerestanovkaFactRow": {
+            "type": "object",
+            "properties": {
+                "cargo_s": {
+                    "type": "string"
+                },
+                "client": {
+                    "type": "string"
+                },
+                "date_dostav": {
+                    "type": "string"
+                },
+                "date_nach_d": {
+                    "type": "string"
+                },
+                "date_prib": {
+                    "type": "string"
+                },
+                "date_vigr": {
+                    "type": "string"
+                },
+                "delay": {
+                    "type": "integer"
+                },
+                "frost": {
+                    "type": "integer"
+                },
+                "gruzotpr": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "gtd": {
+                    "description": "gtd_number",
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "index_pp": {
+                    "type": "string"
+                },
+                "invoice": {
+                    "type": "string"
+                },
+                "invoice_main": {
+                    "type": "string"
+                },
+                "marka": {
+                    "description": "freight_exact_name",
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "place_vigr": {
+                    "type": "string"
+                },
+                "plan_jd": {
+                    "type": "string"
+                },
+                "shipments": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "vagon": {
+                    "type": "string"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.PlanFormLineDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_key": {
+                    "type": "string"
+                },
+                "downtime_today": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "ost_18": {
+                    "type": "integer"
+                },
+                "ost_today": {
+                    "type": "integer"
+                },
+                "ost_y": {
+                    "type": "integer"
+                },
+                "prib": {
+                    "type": "integer"
+                },
+                "total_today": {
+                    "type": "integer"
+                },
+                "total_y": {
+                    "type": "integer"
+                },
+                "useful_today": {
+                    "type": "integer"
+                },
+                "useful_y": {
+                    "type": "integer"
+                },
+                "vigr_fact": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.PlanFormTerminalDTO": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.PlanFormLineDTO"
+                    }
+                },
+                "terminal": {
+                    "type": "string"
+                },
+                "trains": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.PlanFormTrainDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.PlanFormTrainDTO": {
+            "type": "object",
+            "properties": {
+                "date_jd": {
+                    "description": "yyyy-MM-dd",
+                    "type": "string"
+                },
+                "date_msk": {
+                    "description": "yyyy-MM-dd",
+                    "type": "string"
+                },
+                "display": {
+                    "description": "«904 - приб 19:23 (13) 175 ЛК-1 от ГУТ-2»",
+                    "type": "string"
+                },
+                "time_msk": {
+                    "description": "HH:MM — сортировка в ГР-режиме",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.PodhodItem": {
+            "type": "object",
+            "properties": {
+                "doroga_oper": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "n": {
+                    "type": "integer"
+                },
+                "oper_s": {
+                    "type": "string"
+                },
+                "plan_msk": {
+                    "type": "string"
+                },
+                "prog_msk": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "subgroups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.PodhodSubgroup"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.PodhodReport": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.PodhodItem"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.PodhodSubgroup": {
+            "type": "object",
+            "properties": {
+                "date_nach": {
+                    "description": "самая частая дата погрузки подгруппы",
+                    "type": "string"
+                },
+                "gruzotpr": {
+                    "type": "string"
+                },
+                "prim_1": {
+                    "description": "«был CCC» при смене индекса",
+                    "type": "string"
+                },
+                "prim_2": {
+                    "description": "переадресация / перестановка",
+                    "type": "string"
+                },
+                "prim_3": {
+                    "description": "prim_1 + prim_2",
+                    "type": "string"
+                },
+                "prim_4": {
+                    "description": "цветовая метка вагона",
+                    "type": "string"
+                },
+                "sprav_1": {
+                    "type": "string"
+                },
+                "sprav_2": {
+                    "description": "первый вагон подгруппы",
+                    "type": "string"
+                },
+                "sprav_3": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "total_weight": {
+                    "type": "number"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.RearrApplyResult": {
+            "type": "object",
+            "properties": {
+                "forecast_computed": {
+                    "description": "пересчитан ход (Stage 3)",
+                    "type": "integer"
+                },
+                "prog_computed": {
+                    "description": "пересчитан прогноз порта (Stage 4)",
+                    "type": "integer"
+                },
+                "selected": {
+                    "description": "вагонов было выбрано",
+                    "type": "integer"
+                },
+                "updated": {
+                    "description": "вагонов изменено",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.RearrGroupDTO": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "pereadr_port": {
+                    "type": "string"
+                },
+                "stan_nazn": {
+                    "description": "станция назначения (имя, для показа)",
+                    "type": "string"
+                },
+                "stan_nazn_code": {
+                    "description": "4-значный код — опора правил целей",
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.RearrSubGroupDTO"
+                    }
+                },
+                "vagon_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.RearrGroupsDTO": {
+            "type": "object",
+            "properties": {
+                "group_by": {
+                    "type": "string"
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.RearrGroupDTO"
+                    }
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TargetDTO"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.RearrSubGroupDTO": {
+            "type": "object",
+            "properties": {
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "rasst_stan_nazn": {
+                    "type": "integer"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                },
+                "vagons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.RearrVagonDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.RearrVagonDTO": {
+            "type": "object",
+            "properties": {
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "npp_vag": {
+                    "type": "integer"
+                },
+                "vagon": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.Status6VagonDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_s": {
+                    "type": "string"
+                },
+                "date_dostav": {
+                    "type": "string"
+                },
+                "days_donor": {
+                    "type": "integer"
+                },
+                "doroga_oper": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "oper_s": {
+                    "type": "string"
+                },
+                "since": {
+                    "description": "когда запись донора обновлена",
+                    "type": "string"
+                },
+                "stan_nazn": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "time_op": {
+                    "type": "string"
+                },
+                "vagon": {
+                    "type": "string"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.TargetDTO": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "description": "ports.color — цвет терминала в шапках таблиц",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "NameS терминала (значение naznach)",
+                    "type": "string"
+                },
+                "station": {
+                    "description": "имя причальной станции терминала",
+                    "type": "string"
+                },
+                "station_code": {
+                    "description": "4-значный код станции (= code4_stan_nazn вагона)",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.TrainDTO": {
+            "type": "object",
+            "properties": {
+                "arrived": {
+                    "description": "все вагоны на станции назначения (9/10/12)",
+                    "type": "boolean"
+                },
+                "broshen": {
+                    "description": "есть вагон-5",
+                    "type": "boolean"
+                },
+                "doroga_oper": {
+                    "type": "string"
+                },
+                "has_plan": {
+                    "type": "boolean"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "key": {
+                    "description": "нормализованный индекс + станция операции",
+                    "type": "string"
+                },
+                "oper_s": {
+                    "type": "string"
+                },
+                "plan_jd": {
+                    "type": "string"
+                },
+                "prog_jd": {
+                    "description": "непустой = «ходовой», пустой = «отцепка»",
+                    "type": "string"
+                },
+                "prost_ch": {
+                    "type": "integer"
+                },
+                "prost_dn": {
+                    "description": "максимум по вагонам",
+                    "type": "integer"
+                },
+                "rasch_jd": {
+                    "type": "string"
+                },
+                "rasst": {
+                    "description": "остаток до станции назначения, км",
+                    "type": "integer"
+                },
+                "stan_nazn": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "sub_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TrainSubgroupDTO"
+                    }
+                },
+                "time_op": {
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.TrainSubgroupDTO": {
+            "type": "object",
+            "properties": {
+                "cargo_group": {
+                    "type": "string"
+                },
+                "cargo_s": {
+                    "type": "string"
+                },
+                "client": {
+                    "type": "string"
+                },
+                "gruzotpr": {
+                    "type": "string"
+                },
+                "gruzpol_s": {
+                    "type": "string"
+                },
+                "index_main": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "naznach": {
+                    "type": "string"
+                },
+                "shipments": {
+                    "type": "string"
+                },
+                "station_nach": {
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                },
+                "vagons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TrainVagonDTO"
+                    }
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.TrainVagonDTO": {
+            "type": "object",
+            "properties": {
+                "date_dostav": {
+                    "description": "нормативный срок доставки",
+                    "type": "string"
+                },
+                "date_nach": {
+                    "description": "дата погрузки",
+                    "type": "string"
+                },
+                "freight": {
+                    "description": "марка груза: freight_exact_name, пусто — cargo_s",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "id рейса — для «Истории движения вагона» по ПКМ",
+                    "type": "string"
+                },
+                "invoice": {
+                    "type": "string"
+                },
+                "npp_vag": {
+                    "type": "integer"
+                },
+                "owner": {
+                    "description": "собственник/оператор (наше поле)",
+                    "type": "string"
+                },
+                "rod_vag": {
+                    "description": "код рода вагона (rod_vag_uch)",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "vagon": {
+                    "type": "string"
+                },
+                "ves": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.TrainsDTO": {
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TargetDTO"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "trains": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Gtport_DPmodule_internal_service.TrainDTO"
+                    }
+                }
+            }
+        },
+        "github_com_Gtport_DPmodule_internal_service.UnplannedTrainDTO": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "string"
+                },
+                "rasst": {
+                    "type": "integer"
+                },
+                "sostav": {
+                    "description": "display-строки подгрупп (как в «Ближайших»)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "station_oper": {
+                    "description": "последняя известная станция",
+                    "type": "string"
+                },
+                "vagon_count": {
+                    "type": "integer"
+                },
+                "vagons": {
+                    "description": "номера вагонов (для «Скрыть»)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handler.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.broadcastTextRequest": {
+            "type": "object",
+            "properties": {
+                "report": {
+                    "description": "'spravki' | 'oper' | 'plan'",
+                    "type": "string"
+                },
+                "terminal": {
+                    "description": "ports.name_s; пусто — сводная форма",
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.dismissRequest": {
+            "type": "object",
+            "properties": {
+                "vagon_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handler.dismissUnplannedRequest": {
+            "type": "object",
+            "properties": {
+                "vagons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handler.lkRobotRunRequest": {
+            "type": "object",
+            "properties": {
+                "accounts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "okpo": {
+                                "type": "integer"
+                            },
+                            "password": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "internal_handler.nmtpMoveRequest": {
+            "type": "object",
+            "required": [
+                "index",
+                "prog",
+                "station_oper",
+                "terminal"
+            ],
+            "properties": {
+                "column_id": {
+                    "type": "integer"
+                },
+                "from_column_id": {
+                    "type": "integer"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "prog": {
+                    "type": "string"
+                },
+                "station_oper": {
+                    "type": "string"
+                },
+                "terminal": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.trailDelayDTO": {
+            "type": "object",
+            "properties": {
+                "date_from": {
+                    "type": "string"
+                },
+                "date_to": {
+                    "type": "string"
+                },
+                "hours": {
+                    "type": "number"
+                },
+                "kind": {
+                    "type": "integer"
+                },
+                "station_code": {
+                    "type": "string"
+                },
+                "station_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.trailOpDTO": {
+            "type": "object",
+            "properties": {
+                "date_op": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "string"
+                },
+                "kop_vmd": {
+                    "type": "string"
+                },
+                "oper": {
+                    "type": "string"
+                },
+                "oper_s": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.trailResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "date_nach": {
+                    "type": "string"
+                },
+                "delay_hours": {
+                    "description": "суммарные задержки, часы",
+                    "type": "number"
+                },
+                "delays": {
+                    "description": "все эпизоды задержек рейса",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handler.trailDelayDTO"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "terminal": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "trip_hours": {
+                    "description": "длительность рейса, часы",
+                    "type": "number"
+                },
+                "vagon": {
+                    "type": "string"
+                },
+                "visits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handler.trailVisitDTO"
+                    }
+                }
+            }
+        },
+        "internal_handler.trailVisitDTO": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "delay": {
+                    "description": "визит был задержкой",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_handler.trailDelayDTO"
+                        }
+                    ]
+                },
+                "first": {
+                    "$ref": "#/definitions/internal_handler.trailOpDTO"
+                },
+                "last": {
+                    "$ref": "#/definitions/internal_handler.trailOpDTO"
+                },
+                "ops": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handler.trailOpDTO"
+                    }
+                },
+                "road": {
+                    "type": "string"
+                },
+                "stan_op": {
+                    "type": "string"
+                },
+                "station": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.uiSettingsDTO": {
+            "type": "object",
+            "properties": {
+                "time_base": {
+                    "description": "Шкала ручного ввода времени прибытия/выгрузки: \"jd\" | \"msk\"\n(дефолт переключателя в диалогах; диспетчер может сменить на сессию).",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.vagonOperationDTO": {
+            "type": "object",
+            "properties": {
+                "date_op": {
+                    "type": "string"
+                },
+                "index_poezd": {
+                    "type": "string"
+                },
+                "kop_vmd": {
+                    "type": "string"
+                },
+                "stan_op": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.vagonOperationsResponse": {
+            "type": "object",
+            "properties": {
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handler.vagonOperationDTO"
+                    }
+                },
+                "vagon": {
+                    "type": "string"
                 }
             }
         }

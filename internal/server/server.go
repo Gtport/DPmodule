@@ -57,6 +57,7 @@ func Build(
 	reportPresetRepo port.ReportPresetRepository,
 	nmtpRepo port.NmtpRepository,
 	gtSnapRepo port.GtSnapshotRepository,
+	tilesRepo port.TileRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -116,6 +117,14 @@ func Build(
 		router.GET("/metrics", metrics.Handler())
 	}
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Тайлы подложки карты — публично, вне JWT-группы: Leaflet запрашивает их
+	// обычным <img> без Authorization (данных дислокации в тайлах нет — это
+	// картинки OSM). Репозитория нет (tiles.enabled: false или БД недоступна) →
+	// роут не регистрируется, фронт получает 404 и рисует прозрачную подложку.
+	if tilesRepo != nil {
+		handler.NewTilesHandler(tilesRepo).RegisterPublicRoutes(router)
+	}
 
 	// ---- protected API routes ----
 	// jwtMW may be nil when keycloak is disabled — guard so the template still
@@ -343,6 +352,11 @@ func Build(
 			// Экран «Поезда в движении» (Инструменты оператора): весь снимок
 			// трёхуровневым деревом, фильтры/поиски на клиенте, только чтение.
 			handler.NewTrainsHandler(service.NewTrainsService(actualCache, dirCache)).RegisterRoutes(api)
+
+			// Экран «Карта»: группы поездов с координатами (ключ = trainKey, как
+			// у «Поездов»), вагоны группы по требованию, пометка диспетчера
+			// (info_1/info_2) через конвейер proc. Подложка — публичные тайлы выше.
+			handler.NewMapHandler(service.NewMapService(actualCache, dirCache, proc)).RegisterRoutes(api)
 
 			// Экран «Работа с историческими данными» (Инструменты оператора):
 			// поиск по vagon_history с серверными пагинацией/сортировкой и

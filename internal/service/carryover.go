@@ -103,6 +103,13 @@ func copySelectedFromActual(newRec, ex *domain.Dislocation, now domain.LocalTime
 	newRec.PereadrType = ex.PereadrType
 	newRec.PereadrPort = ex.PereadrPort
 
+	// Пометка диспетчера с карты (info_1 — текст, info_2 — цвет) — тоже
+	// операторское решение: свежая запись потока всегда приходит с пустыми
+	// info-полями, значение живёт в снимке; снимается только явной очисткой
+	// (POST /dislocation/map/mark с пустыми text и color).
+	newRec.Info1 = ex.Info1
+	newRec.Info2 = ex.Info2
+
 	// Груз-поля из актуальной, только если там заполнен грузоотправитель (иначе
 	// оставляем как есть — заполнит marka в S2-3).
 	if ex.Gruzotpr != "" {

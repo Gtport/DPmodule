@@ -6,7 +6,7 @@ import { ADMIN, OPER, DISPATCHER_NAV } from './layout/shell/nav.config';
 
 // Разделы, перенесённые из заглушки на реальный экран — исключаем из
 // автогенерации ниже и подключаем явно (см. routes).
-const IMPLEMENTED_PATHS = new Set(['dislocation', 'missing', 'rearrangement', 'plan', 'reports', 'forecasts', 'admin', 'operator-tools']);
+const IMPLEMENTED_PATHS = new Set(['dislocation', 'missing', 'rearrangement', 'plan', 'reports', 'forecasts', 'admin', 'operator-tools', 'maps']);
 
 // Разделы диспетчера — генерируем из реестра навигации: каждый пункт (кроме
 // external, напр. home, и уже перенесённых из IMPLEMENTED_PATHS) → маршрут на
@@ -90,6 +90,16 @@ export const routes: Routes = [
         path: 'operator-tools',
         loadComponent: () =>
           import('./features/operator-tools/operator-tools.component').then((m) => m.OperatorToolsComponent),
+        canActivate: [authGuard],
+        data: { roles: OPER },
+      },
+      {
+        // «Карта»: дислокация на карте — группы поездов (ключ как у «Поездов
+        // в движении»), тайлы из своего кэша, пометки диспетчера. Leaflet
+        // уезжает в lazy-чанк этого маршрута — в initial bundle не попадает.
+        path: 'maps',
+        loadComponent: () =>
+          import('./features/maps/maps.component').then((m) => m.MapsComponent),
         canActivate: [authGuard],
         data: { roles: OPER },
       },

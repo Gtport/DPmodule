@@ -164,6 +164,25 @@ func TestCarryOver_PereadrCarried(t *testing.T) {
 	assert.Equal(t, "", nw2.PereadrPort)
 }
 
+// Пометка карты (info_1 текст, info_2 цвет) переживает пересборку снимка и
+// снимается только явной очисткой в снимке — как переадресация.
+func TestCarryOver_MapMarkCarried(t *testing.T) {
+	st2 := 2
+	ex := domain.Dislocation{Vagon: "V", Status: &st2, Info1: "контроль подвода", Info2: "#fa8c16"}
+	nw := domain.Dislocation{Vagon: "V"}
+
+	enrichFromActual(&nw, &ex, now0())
+	assert.Equal(t, "контроль подвода", nw.Info1)
+	assert.Equal(t, "#fa8c16", nw.Info2)
+
+	// после снятия пометки (в актуальной пусто) — не «воскресает»
+	ex2 := domain.Dislocation{Vagon: "V", Status: &st2}
+	nw2 := domain.Dislocation{Vagon: "V", Info1: "ФАНТОМ", Info2: "#000000"}
+	enrichFromActual(&nw2, &ex2, now0())
+	assert.Equal(t, "", nw2.Info1)
+	assert.Equal(t, "", nw2.Info2)
+}
+
 // fixZeroRasst: RasstStanNazn=0 и вагон не на станции назначения → из актуальной.
 func TestCarryOver_FixZeroRasst(t *testing.T) {
 	st2, zero, valid := 2, 0, 500

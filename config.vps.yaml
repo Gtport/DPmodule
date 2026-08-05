@@ -30,6 +30,17 @@ postgres:
   max_idle_conns: 5
   conn_max_lifetime: 5m
 
+# Кэш тайлов OSM для карты (docs/MAP_TILES.md): отдельная БД на том же кластере,
+# владелец gtport_app — пароль падает на postgres.password. Промах кэша = 404,
+# в OSM приложение не ходит (решение владельца 06.08.2026).
+tiles:
+  enabled: true
+  host: localhost
+  port: 5432
+  dbname: tiles
+  user: gtport_app
+  sslmode: disable
+
 keycloak:
   enabled: true    # /api требует валидный JWT (issuer+audience+подпись); «кто» → в журнал
   jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs   # внутренний адрес (ключи), доступен бэкенду

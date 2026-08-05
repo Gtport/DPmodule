@@ -36,6 +36,10 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 				if !cfg.Keycloak.StrictRoles {
 					t.Error("keycloak.strict_roles обязан быть true в конфиге стенда")
 				}
+				// Тайлы карты на стенде — в общей базе, своя схема (MAP_TILES.md).
+				if !cfg.Tiles.Enabled || cfg.Tiles.Schema == "" {
+					t.Error("tiles: на стенде ждали enabled: true и заполненную schema")
+				}
 			},
 		},
 		{
@@ -45,6 +49,10 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 				// EnvironmentFile), Vault-шаблонов в файле нет.
 				if cfg.Keycloak.Issuer == "" || cfg.Keycloak.JWKSURL == "" {
 					t.Error("keycloak: issuer и jwks_url обязаны быть заполнены")
+				}
+				// Кэш тайлов живёт на VPS отдельной базой tiles (MAP_TILES.md).
+				if !cfg.Tiles.Enabled || cfg.Tiles.DBName != "tiles" {
+					t.Error("tiles: на VPS ждали enabled: true и dbname: tiles")
 				}
 			},
 		},

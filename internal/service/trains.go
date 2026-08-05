@@ -102,21 +102,7 @@ func (s *TrainsService) Trains(_ context.Context) TrainsDTO {
 	records := s.actual.All()
 	// Детерминированность: обход мапы случаен, а «первое непустое» поле поезда
 	// должно быть стабильным между вызовами — упорядочиваем натурным листом.
-	sort.SliceStable(records, func(i, j int) bool {
-		a, b := records[i].NppVag, records[j].NppVag
-		switch {
-		case a == nil && b == nil:
-			return records[i].Vagon < records[j].Vagon
-		case a == nil:
-			return false
-		case b == nil:
-			return true
-		case *a != *b:
-			return *a < *b
-		default:
-			return records[i].Vagon < records[j].Vagon
-		}
-	})
+	sortNaturalList(records)
 
 	type subKey struct{ im, sn, gp, nz, cg string }
 	trains := map[string]*TrainDTO{}
@@ -127,11 +113,7 @@ func (s *TrainsService) Trains(_ context.Context) TrainsDTO {
 	var order []string
 
 	for _, r := range records {
-		index := r.Index
-		if r.IndexPp != "" {
-			index = r.IndexPp
-		}
-		key := index + "|" + r.StationOper
+		index, key := trainKey(&r)
 
 		t, ok := trains[key]
 		if !ok {
@@ -275,4 +257,35 @@ func (s *TrainsService) Trains(_ context.Context) TrainsDTO {
 		targets = terminalTargets(s.dir)
 	}
 	return TrainsDTO{Trains: out, Targets: targets, Total: len(out)}
+}
+
+// trainKey — нормализованный индекс поезда (index_pp, если есть, иначе index) и
+// ключ группы «индекс|станция операции». ЕДИНЫЙ для «Поездов» и «Карты»: пометка,
+// поставленная с карты, находит ровно ту группу, что видна на экране поездов.
+func trainKey(r *domain.Dislocation) (index, key string) {
+	index = r.Index
+	if r.IndexPp != "" {
+		index = r.IndexPp
+	}
+	return index, index + "|" + r.StationOper
+}
+
+// sortNaturalList упорядочивает записи натурным листом (npp_vag, затем номер
+// вагона): «первое непустое» поле группы становится стабильным между вызовами.
+func sortNaturalList(records []domain.Dislocation) {
+	sort.SliceStable(records, func(i, j int) bool {
+		a, b := records[i].NppVag, records[j].NppVag
+		switch {
+		case a == nil && b == nil:
+			return records[i].Vagon < records[j].Vagon
+		case a == nil:
+			return false
+		case b == nil:
+			return true
+		case *a != *b:
+			return *a < *b
+		default:
+			return records[i].Vagon < records[j].Vagon
+		}
+	})
 }

@@ -26,6 +26,11 @@ type Config struct {
 	WagonOps  WagonOps  `yaml:"wagonops"`
 	MAX       MAX       `yaml:"max"`
 	Bros      Bros      `yaml:"bros"`
+
+	// Tiles — вторая БД: кэш тайлов OSM для карты (docs/MAP_TILES.md). Тип
+	// переиспользуется целиком; на стендах, где тайлы лежат в общей базе,
+	// отличается только schema. Enabled=false → карта работает без подложки.
+	Tiles Postgres `yaml:"tiles"`
 }
 
 // Bros — подсистема «Брошенные»: фоновый крон ежедневной фиксации журнала
@@ -143,6 +148,7 @@ type Postgres struct {
 	Port            int           `yaml:"port"`
 	DBName          string        `yaml:"dbname"`
 	User            string        `yaml:"user"`
+	Schema          string        `yaml:"schema"` // непусто → search_path в DSN (общая база стенда, таблицы в своей схеме)
 	SSLMode         string        `yaml:"sslmode"`
 	MaxOpenConns    int           `yaml:"max_open_conns"`
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
@@ -220,18 +226,32 @@ func Load(path string) (*Config, error) {
 	setDefaults(cfg)
 
 	if cfg.Postgres.Enabled {
-		cfg.Postgres.DSN = fmt.Sprintf(
-			"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
-			cfg.Postgres.Host,
-			cfg.Postgres.Port,
-			cfg.Postgres.DBName,
-			cfg.Postgres.User,
-			cfg.Postgres.Password,
-			cfg.Postgres.SSLMode,
-		)
+		cfg.Postgres.DSN = cfg.Postgres.BuildDSN()
+	}
+	if cfg.Tiles.Enabled {
+		cfg.Tiles.DSN = cfg.Tiles.BuildDSN()
 	}
 
 	return cfg, nil
+}
+
+// BuildDSN собирает строку подключения lib/pq из полей блока. Schema (если
+// задана) уходит в search_path — так один тип Postgres обслуживает и основную
+// базу, и кэш тайлов в общей базе стенда.
+func (p Postgres) BuildDSN() string {
+	dsn := fmt.Sprintf(
+		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
+		p.Host,
+		p.Port,
+		p.DBName,
+		p.User,
+		p.Password,
+		p.SSLMode,
+	)
+	if p.Schema != "" {
+		dsn += fmt.Sprintf(" search_path=%s", p.Schema)
+	}
+	return dsn
 }
 
 func loadFile(path string) (*Config, error) {
@@ -279,6 +299,16 @@ func loadSecrets(cfg *Config) error {
 	// окружения по имени, которое объявил источник (data_source.auth_secret_key).
 	if cfg.MAX.BotToken == "" {
 		cfg.MAX.BotToken = os.Getenv("MAX_BOT_TOKEN")
+	}
+
+	// Пароль БД тайлов: свой секрет нужен только если роль отличается; обычно
+	// это тот же gtport_app — падаем на пароль основной базы (решение владельца,
+	// docs/MAP_TILES.md).
+	if cfg.Tiles.Password == "" {
+		cfg.Tiles.Password = os.Getenv("TILES_PG_PASSWORD")
+	}
+	if cfg.Tiles.Password == "" {
+		cfg.Tiles.Password = cfg.Postgres.Password
 	}
 
 	return nil
@@ -387,5 +417,21 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Bros.JournalCron == "" {
 		cfg.Bros.JournalCron = "01:00"
+	}
+	// Тайлы — вспомогательное чтение картинок: пул скромнее основного.
+	if cfg.Tiles.Port == 0 {
+		cfg.Tiles.Port = 5432
+	}
+	if cfg.Tiles.SSLMode == "" {
+		cfg.Tiles.SSLMode = "disable"
+	}
+	if cfg.Tiles.MaxOpenConns == 0 {
+		cfg.Tiles.MaxOpenConns = 10
+	}
+	if cfg.Tiles.MaxIdleConns == 0 {
+		cfg.Tiles.MaxIdleConns = 2
+	}
+	if cfg.Tiles.ConnMaxLifetime == 0 {
+		cfg.Tiles.ConnMaxLifetime = 5 * time.Minute
 	}
 }

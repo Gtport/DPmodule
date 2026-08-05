@@ -204,6 +204,27 @@ func run() error {
 			zap.Int("status9", status9Cache.Count()), zap.Int("status6", status6Cache.Count()))
 	}
 
+	// -- tiles: кэш подложки карты (optional) --
+	// Осознанный отход от «падать громко»: тайлы — вспомогательная картинка, не
+	// данные дислокации. БД недоступна → карта работает без подложки (маркеры на
+	// пустом фоне), ровно как при tiles.enabled: false в WSL.
+	var tilesRepo port.TileRepository
+	if cfg.Tiles.Enabled {
+		tdb, terr := gormrepo.Open(cfg.Tiles)
+		if terr == nil {
+			var tsql *sql.DB
+			if tsql, terr = tdb.DB(); terr == nil {
+				terr = tsql.PingContext(context.Background())
+			}
+		}
+		if terr != nil {
+			log.Error("tiles: БД кэша тайлов недоступна — карта будет без подложки", zap.Error(terr))
+		} else {
+			tilesRepo = gormrepo.NewTileRepository(tdb)
+			log.Info("tiles connected")
+		}
+	}
+
 	// -- auth middleware (optional) --
 	var jwtMW *middleware.KeycloakJWT
 	if cfg.Keycloak.Enabled {
@@ -215,7 +236,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps, brosJournal := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps, brosJournal := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, tilesRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
