@@ -23,6 +23,8 @@ interface Block {
   textColor: string;
   isWait: boolean;
   title: string;
+  /** Индекс поезда для выделения/правки (пустой у простоев и остатков). */
+  trainIndex: string;
 }
 
 const HOUR_LABELS = ['18', '21', '0', '3', '6', '9', '12', '15'];
@@ -69,9 +71,13 @@ const HOUR_LABELS = ['18', '21', '0', '3', '6', '9', '12', '15'];
                 <div class="lane">
                   @for (b of d.blocks; track $index) {
                     <div class="blk" [class.wait]="b.isWait"
+                         [class.sel]="b.trainIndex && b.trainIndex === selectedTrain()"
+                         [class.clickable]="!!b.trainIndex"
                          [style.left.%]="b.left" [style.width.%]="b.width"
                          [style.background]="b.bg" [style.border-color]="b.border"
-                         [style.color]="b.textColor" [title]="b.title">
+                         [style.color]="b.textColor" [title]="b.title"
+                         (click)="onBlockClick(b)"
+                         (contextmenu)="onBlockContext($event, b)">
                       {{ b.label }}
                     </div>
                   }
@@ -115,6 +121,9 @@ const HOUR_LABELS = ['18', '21', '0', '3', '6', '9', '12', '15'];
            font-size: 10px; line-height: 16px; overflow: hidden; white-space: nowrap;
            text-overflow: clip; text-align: center; cursor: default; }
     .blk.wait { background: #fff; border-color: #bbb; color: #888; }
+    .blk.clickable { cursor: pointer; }
+    .blk.sel { outline: 2px solid #1565c0; outline-offset: 1px; z-index: 1;
+               box-shadow: 0 0 6px rgba(21,101,192,0.5); }
     .speed { width: 100%; min-width: 34px; box-sizing: border-box; border: 1px solid transparent;
              text-align: center; font-size: 11px; background: transparent; -moz-appearance: textfield; }
     .speed::-webkit-outer-spin-button, .speed::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -123,8 +132,14 @@ const HOUR_LABELS = ['18', '21', '0', '3', '6', '9', '12', '15'];
 })
 export class GtGanttComponent {
   readonly flow = input.required<GtFlow>();
+  /** Выделенный поезд (синхронно с таблицей). */
+  readonly selectedTrain = input<string | null>(null);
   /** Правка скорости суток: родитель кладёт её в overrides и пересчитывает. */
   readonly speedChange = output<{ date: string; value: number }>();
+  /** Клик по блоку поезда — выделение (toggle в родителе). */
+  readonly trainSelect = output<string>();
+  /** ПКМ по блоку поезда — диалог правки. */
+  readonly trainContext = output<string>();
 
   readonly hourLabels = HOUR_LABELS;
 
@@ -140,6 +155,16 @@ export class GtGanttComponent {
   onSpeed(day: GtDay, value: number | null): void {
     if (!value || value <= 0 || value === day.plan_speed) return;
     this.speedChange.emit({ date: day.date, value });
+  }
+
+  onBlockClick(b: Block): void {
+    if (b.trainIndex) this.trainSelect.emit(b.trainIndex);
+  }
+
+  onBlockContext(e: MouseEvent, b: Block): void {
+    if (!b.trainIndex) return;
+    e.preventDefault();
+    this.trainContext.emit(b.trainIndex);
   }
 }
 
@@ -159,6 +184,7 @@ function toBlock(day: GtDay, op: GtOperation): Block {
       left, width, isWait: true, bg: '#fff', border: '#bbb', textColor: '#888',
       label: width > 4 && op.wait_min > 30 ? hm(op.wait_min) : '',
       title: `Простой ${hm(op.wait_min)} (${jd(op.start_jd)} – ${jd(op.end_jd)} ЖД)`,
+      trainIndex: '',
     };
   }
   const base = op.color || '#4CAF50';
@@ -180,6 +206,7 @@ function toBlock(day: GtDay, op: GtOperation): Block {
     bg: pastel(base), border: base, textColor: '#222',
     label: width > 3 ? label : '',
     title: parts.join('\n'),
+    trainIndex: op.is_remainder ? '' : op.train_index,
   };
 }
 

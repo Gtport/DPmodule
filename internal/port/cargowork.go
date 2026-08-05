@@ -17,6 +17,11 @@ type CargoWorkRepository interface {
 	// Lines — справочник линий учёта (enabled), порядок: терминал, вид, sort_order.
 	Lines(ctx context.Context) ([]domain.PortCargoLine, error)
 
+	// UpdateLineSpeed — правка скоростей линии выгрузки из вкладки прогноза ГТ
+	// (как gtport gt_port_speeds): план (plan_speed) и норма (pc), ваг/сут.
+	// Линии с таким ключом нет — ошибка (не создаём молча).
+	UpdateLineSpeed(ctx context.Context, terminal, cargoKey string, planSpeed, pc int) error
+
 	// Rows — учётные листы выгрузки за диапазон ЖД-суток (включительно),
 	// опционально по одному терминалу (пусто — все).
 	Rows(ctx context.Context, from, to domain.LocalTime, terminal string) ([]domain.CargoWorkRow, error)

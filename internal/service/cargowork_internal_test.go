@@ -51,6 +51,7 @@ func cwRowKey(d domain.LocalTime, terminal, key string) string {
 }
 
 func (r *cwRepo) Lines(context.Context) ([]domain.PortCargoLine, error) { return r.lines, nil }
+func (r *cwRepo) UpdateLineSpeed(context.Context, string, string, int, int) error { return nil }
 
 func (r *cwRepo) Rows(_ context.Context, from, to domain.LocalTime, terminal string) ([]domain.CargoWorkRow, error) {
 	var out []domain.CargoWorkRow

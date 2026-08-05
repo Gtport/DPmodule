@@ -205,6 +205,11 @@ export class GtForecastApiService {
       { params: { station } }));
   }
 
+  /** Правка скоростей линий выгрузки (план plan_speed и норма pc). */
+  updateSpeeds(updates: { terminal: string; cargo_key: string; plan_speed: number; norm_speed: number }[]): Promise<unknown> {
+    return firstValueFrom(this.http.put(`${this.base}/speeds`, updates));
+  }
+
   /** ZIP CSV-аналитики за период (прогноз vs факт). */
   analytics(from: string, to: string, station: string): Promise<Blob> {
     return firstValueFrom(this.http.get(`${this.base}/snapshots/analytics`,

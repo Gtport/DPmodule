@@ -2,6 +2,7 @@ package gormrepo
 
 import (
 	"context"
+	"fmt"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -99,6 +100,19 @@ func (r *CargoWorkRepository) Lines(ctx context.Context) ([]domain.PortCargoLine
 		})
 	}
 	return out, nil
+}
+
+func (r *CargoWorkRepository) UpdateLineSpeed(ctx context.Context, terminal, cargoKey string, planSpeed, pc int) error {
+	res := r.db.WithContext(ctx).Model(&portCargoLineModel{}).
+		Where("terminal = ? AND kind = ? AND cargo_key = ?", terminal, domain.CargoLineUnload, cargoKey).
+		Updates(map[string]any{"plan_speed": planSpeed, "pc": pc})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("линия выгрузки %s|%s не найдена", terminal, cargoKey)
+	}
+	return nil
 }
 
 func (r *CargoWorkRepository) Rows(ctx context.Context, from, to domain.LocalTime, terminal string) ([]domain.CargoWorkRow, error) {

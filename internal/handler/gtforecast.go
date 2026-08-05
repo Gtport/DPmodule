@@ -25,6 +25,7 @@ func NewGtForecastHandler(svc *service.GtForecastService) *gtForecastHandler {
 func (h *gtForecastHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/gt-forecast/context", h.context)
 	g.POST("/dislocation/gt-forecast/simulate", h.simulate)
+	g.PUT("/dislocation/gt-forecast/speeds", h.updateSpeeds)
 	g.POST("/dislocation/gt-forecast/snapshots", h.snapshotSave)
 	g.GET("/dislocation/gt-forecast/snapshots", h.snapshotList)
 	g.GET("/dislocation/gt-forecast/snapshots/analytics", h.snapshotAnalytics)
@@ -66,6 +67,26 @@ func (h *gtForecastHandler) simulate(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, dto)
+}
+
+// updateSpeeds godoc
+// @Summary  Правка скоростей линий выгрузки (план plan_speed и норма pc) — настройка вкладки прогноза ГТ
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    request body []service.GtSpeedUpdate true "линии со скоростями"
+// @Success  200 {object} map[string]string
+// @Router   /api/v1/dislocation/gt-forecast/speeds [put]
+func (h *gtForecastHandler) updateSpeeds(c *gin.Context) {
+	var updates []service.GtSpeedUpdate
+	if err := c.ShouldBindJSON(&updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса: " + err.Error()})
+		return
+	}
+	if err := h.svc.UpdateSpeeds(c.Request.Context(), updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "сохранено"})
 }
 
 // snapshotSave godoc

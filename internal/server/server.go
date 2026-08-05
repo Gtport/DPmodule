@@ -402,7 +402,8 @@ func Build(
 				// симуляция выгрузки (пакет unloadsim, golden-тесты);
 				// снапшоты планов и CSV-аналитика «прогноз vs факт».
 				handler.NewGtForecastHandler(service.NewGtForecastService(
-					actualCache, dirCache, historyRepo, cwSvc, cfgCache, gtSnapRepo)).RegisterRoutes(api)
+					actualCache, dirCache, historyRepo, cwSvc, cfgCache, gtSnapRepo,
+					planRepo, cargoWorkRepo)).RegisterRoutes(api)
 			}
 		}
 	}

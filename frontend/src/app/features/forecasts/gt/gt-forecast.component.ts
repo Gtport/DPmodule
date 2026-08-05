@@ -4,6 +4,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzRadioModule } from 'ng-zorro-antd/radio';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
+import { NzSwitchModule } from 'ng-zorro-antd/switch';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../../core/api/api-error';
 import {
@@ -22,6 +23,7 @@ import { GtGanttComponent } from './gantt-chart.component';
 import { GtTrainTableComponent } from './train-table.component';
 import { GtTrainEditComponent } from './train-edit-dialog.component';
 import { GtSnapshotsComponent } from './snapshots-dialog.component';
+import { GtSpeedsComponent } from './speeds-dialog.component';
 
 /**
  * Вкладка «Прогноз прибытия/выгрузки» (перенос страницы «Прогноз GT» gtport).
@@ -57,8 +59,9 @@ const ACTION_LABEL: Record<string, string> = {
 
 @Component({
   selector: 'app-gt-forecast',
-  imports: [FormsModule, NzButtonModule, NzIconModule, NzRadioModule, NzSpinModule,
-    GtGanttComponent, GtTrainTableComponent, GtTrainEditComponent, GtSnapshotsComponent],
+  imports: [FormsModule, NzButtonModule, NzIconModule, NzRadioModule, NzSpinModule, NzSwitchModule,
+    GtGanttComponent, GtTrainTableComponent, GtTrainEditComponent, GtSnapshotsComponent,
+    GtSpeedsComponent],
   template: `
     <div class="page">
       <div class="bar">
@@ -72,12 +75,15 @@ const ACTION_LABEL: Record<string, string> = {
         <label class="days">дней:
           <input type="number" min="1" max="14" [ngModel]="days()" (ngModelChange)="setDays($event)" />
         </label>
-        <button nz-button nzSize="small" [nzType]="useNorm() ? 'primary' : 'default'"
-                title="Считать по нормативной скорости вместо плановой"
-                (click)="toggleNorm()">
-          {{ useNorm() ? 'Норма' : 'План' }}
-        </button>
+        <nz-switch [ngModel]="useNorm()" (ngModelChange)="toggleNorm()" nzSize="small"
+                   nzCheckedChildren="Норма" nzUnCheckedChildren="План"
+                   [nzDisabled]="archived()"
+                   title="Считать по нормативной скорости вместо плановой"></nz-switch>
         <span class="spacer"></span>
+        <button nz-button nzSize="small" title="Настройки скоростей выгрузки (план и норма линий)"
+                (click)="speedsOpen.set(true)" [disabled]="archived() || !currentStation()">
+          <span nz-icon nzType="setting"></span>
+        </button>
         <button nz-button nzSize="small" [nzType]="showSlots() ? 'primary' : 'default'"
                 title="Показать свободные нитки" (click)="toggleSlots()">
           🟢
@@ -129,7 +135,9 @@ const ACTION_LABEL: Record<string, string> = {
                 [remainder]="t.remainder" [waitByIndex]="t.waitByIndex" [black]="black()"
                 [slots]="showSlots() ? d.free_slots : []"
                 [selectedSlot]="selectedSlot()"
+                [selectedTrain]="selectedTrain()"
                 (slotSelect)="selectedSlot.set($event)"
+                (trainSelect)="toggleTrainSelect($event)"
                 (editTrain)="onEditTrain($event)" />
             }
             @if (journalOpen()) {
@@ -154,7 +162,10 @@ const ACTION_LABEL: Record<string, string> = {
           </div>
           <div class="right" [class.dim]="loading()">
             @for (f of d.flows; track f.terminal + f.cargo_key) {
-              <app-gt-gantt [flow]="f" (speedChange)="onSpeed(f.terminal, f.cargo_key, $event)" />
+              <app-gt-gantt [flow]="f" [selectedTrain]="selectedTrain()"
+                            (speedChange)="onSpeed(f.terminal, f.cargo_key, $event)"
+                            (trainSelect)="toggleTrainSelect($event)"
+                            (trainContext)="onGanttContext($event)" />
             }
           </div>
         </div>
@@ -179,6 +190,12 @@ const ACTION_LABEL: Record<string, string> = {
           [overridesCount]="trainOverrides().length"
           (openSnap)="openSnapshot($event)"
           (closed)="snapshotsOpen.set(false)" />
+      }
+
+      @if (speedsOpen() && currentStation(); as st) {
+        <app-gt-speeds [station]="st"
+          (saved)="onSpeedsSaved()"
+          (closed)="speedsOpen.set(false)" />
       }
     </div>
   `,
@@ -240,6 +257,9 @@ export class GtForecastComponent implements OnInit {
   readonly selectedSlot = signal<GtFreeSlot | null>(null);
   readonly editTrain = signal<GtTrain | null>(null);
   readonly snapshotsOpen = signal(false);
+  readonly speedsOpen = signal(false);
+  /** Выделенный поезд — синхронно в таблицах и на диаграммах (клик, toggle). */
+  readonly selectedTrain = signal<string | null>(null);
   /** Открытый архивный план: подменяет данные экрана, правки блокируются. */
   readonly archive = signal<GtSnapshotFull | null>(null);
 
@@ -257,9 +277,13 @@ export class GtForecastComponent implements OnInit {
   readonly hasOverrides = computed(() =>
     Object.keys(this.overrides()).length > 0 || this.trainOverrides().length > 0);
 
+  /** Станция текущего режима (для диалогов настроек/перемещения). */
+  readonly currentStation = computed(() =>
+    this.stations().find((s) => s.code === this.station()) ?? null);
+
   /** Терминалы текущего режима (для «Переместить»). */
   readonly modeTerminals = computed(() => {
-    const st = this.stations().find((s) => s.code === this.station());
+    const st = this.currentStation();
     return st ? st.terminals.map((t) => t.name) : [];
   });
 
@@ -400,6 +424,29 @@ export class GtForecastComponent implements OnInit {
 
   onEditTrain(t: GtTrain): void {
     if (!this.archived()) this.editTrain.set(t);
+  }
+
+  toggleTrainSelect(index: string): void {
+    this.selectedTrain.set(this.selectedTrain() === index ? null : index);
+  }
+
+  /** ПКМ по блоку диаграммы — диалог правки поезда по индексу. */
+  onGanttContext(index: string): void {
+    if (this.archived()) return;
+    const t = this.viewData()?.trains.find((x) => x.index === index);
+    if (t && !t.is_arrived) this.editTrain.set(t);
+  }
+
+  /** Скорости линий сохранены: перечитать context (линии) и пересчитать. */
+  async onSpeedsSaved(): Promise<void> {
+    this.speedsOpen.set(false);
+    try {
+      const ctx = await this.api.getContext();
+      this.stations.set(ctx.stations);
+    } catch (e) {
+      this.msg.error(apiErrorMessage(e));
+    }
+    void this.simulate();
   }
 
   /** Открыть архивный план read-only (данные зафиксированы при сохранении). */

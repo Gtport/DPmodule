@@ -202,12 +202,43 @@ type GtForecastService struct {
 	cargo     *CargoWorkService
 	cfg       *ConfigCache
 	snapshots port.GtSnapshotRepository
+	plans     port.PlanRepository      // свободные нитки — из текущего плана подвода
+	lines     port.CargoWorkRepository // правка скоростей линий из вкладки
 }
 
 func NewGtForecastService(actual *ActualCache, dir *DirectoryCache,
 	history port.HistoryRepository, cargo *CargoWorkService, cfg *ConfigCache,
-	snapshots port.GtSnapshotRepository) *GtForecastService {
-	return &GtForecastService{actual: actual, dir: dir, history: history, cargo: cargo, cfg: cfg, snapshots: snapshots}
+	snapshots port.GtSnapshotRepository, plans port.PlanRepository,
+	lines port.CargoWorkRepository) *GtForecastService {
+	return &GtForecastService{actual: actual, dir: dir, history: history, cargo: cargo,
+		cfg: cfg, snapshots: snapshots, plans: plans, lines: lines}
+}
+
+// GtSpeedUpdate — правка скоростей линии выгрузки (диалог настроек вкладки).
+type GtSpeedUpdate struct {
+	Terminal  string `json:"terminal"`
+	CargoKey  string `json:"cargo_key"`
+	PlanSpeed int    `json:"plan_speed"`
+	NormSpeed int    `json:"norm_speed"`
+}
+
+// UpdateSpeeds сохраняет скорости линий (план plan_speed, норма pc) —
+// перенос настройки gtport gt_port_speeds, права operator+ (мутация).
+func (s *GtForecastService) UpdateSpeeds(ctx context.Context, updates []GtSpeedUpdate) error {
+	if len(updates) == 0 {
+		return fmt.Errorf("пустой список правок")
+	}
+	for _, u := range updates {
+		if u.PlanSpeed <= 0 || u.NormSpeed <= 0 {
+			return fmt.Errorf("линия %s|%s: скорости должны быть больше нуля", u.Terminal, u.CargoKey)
+		}
+	}
+	for _, u := range updates {
+		if err := s.lines.UpdateLineSpeed(ctx, u.Terminal, u.CargoKey, u.PlanSpeed, u.NormSpeed); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Context — режимы вкладки: причальные станции с терминалами и линиями выгрузки.
@@ -316,9 +347,13 @@ func (s *GtForecastService) Simulate(ctx context.Context, req GtSimulateRequest)
 		return gtCalcTime(trains[i]).Before(gtCalcTime(trains[j]))
 	})
 
+	free, err := s.freeSlots(ctx, req.Station, terminals)
+	if err != nil {
+		return GtSimulateDTO{}, err
+	}
 	dto := GtSimulateDTO{
 		Trains:         trains,
-		FreeSlots:      s.freeSlots(req.Station, start, req.Days, trains),
+		FreeSlots:      free,
 		MaxTrainWagons: s.maxTrainWagons(req.Station),
 	}
 
@@ -761,43 +796,62 @@ func (s *GtForecastService) recomputeArrival(trains []GtTrainDTO, station string
 	}
 }
 
-// freeSlots — свободные нитки расписания станции, чьи ЖД-сутки попадают в
-// горизонт [start, start+days): слоты минус занятые (план и прогноз очереди).
-func (s *GtForecastService) freeSlots(station string, start time.Time, days int, trains []GtTrainDTO) []GtFreeSlotDTO {
+// freeSlots — НЕИСПОЛЬЗУЕМЫЕ нитки текущего плана подвода (эталон gtport:
+// unused_slots аналитики плана, решение владельца 05.08.2026): по каждым
+// суткам, на которые есть нитки свежего плана станции, — слоты расписания
+// (nitka_schedule), не занятые нитками плана. Показывают резерв закреплённого
+// расписания, а не «пустые дни» горизонта. Плана нет — ниток нет (не ошибка).
+func (s *GtForecastService) freeSlots(ctx context.Context, station string, terminals []string) ([]GtFreeSlotDTO, error) {
+	out := []GtFreeSlotDTO{}
 	slots := s.cfg.NitkaSchedule()[station]
-	if len(slots) == 0 {
-		return []GtFreeSlotDTO{}
+	if len(slots) == 0 || s.plans == nil {
+		return out, nil
 	}
-	occupied := map[time.Time]bool{}
-	for _, t := range trains {
-		if t.IsArrived {
+	planCode := ""
+	for _, term := range terminals {
+		if p, ok := s.dir.PortByNameS(term); ok && p.PlanCode != "" {
+			planCode = p.PlanCode
+			break
+		}
+	}
+	if planCode == "" {
+		return out, nil
+	}
+	_, nitki, err := s.plans.GetLatestPlan(ctx, planCode)
+	if err != nil {
+		return nil, fmt.Errorf("план подвода %s: %w", planCode, err)
+	}
+
+	// Занятые слоты по МСК-суткам плана: дата → «Ч:М» ниток.
+	type hm struct{ h, m int }
+	occupied := map[time.Time]map[hm]bool{}
+	for _, n := range nitki {
+		if n.IsOstatok || n.PlanMsk == nil {
 			continue
 		}
-		if t.PlanMsk != nil {
-			occupied[time.Time(*t.PlanMsk)] = true
+		t := time.Time(*n.PlanMsk)
+		day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+		if occupied[day] == nil {
+			occupied[day] = map[hm]bool{}
 		}
-		if t.ProgMsk != nil {
-			occupied[time.Time(*t.ProgMsk)] = true
-		}
+		occupied[day][hm{t.Hour(), t.Minute()}] = true
 	}
-	end := start.AddDate(0, 0, days)
-	out := []GtFreeSlotDTO{}
-	// МСК-сутки d-1 дают ЖД-время суток d (час ≥ 18 → +1), поэтому смотрим с кануна.
-	for d := -1; d < days; d++ {
-		day := start.AddDate(0, 0, d)
-		for _, hm := range slots {
-			msk := time.Date(day.Year(), day.Month(), day.Day(), hm.Hour, hm.Minute, 0, 0, day.Location())
-			jd := jd18(msk)
-			if jd.Before(start) || !jd.Before(end) || occupied[msk] {
+
+	var days []time.Time
+	for day := range occupied {
+		days = append(days, day)
+	}
+	sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
+	for _, day := range days {
+		for _, sl := range slots {
+			if occupied[day][hm{sl.Hour, sl.Minute}] {
 				continue
 			}
-			out = append(out, GtFreeSlotDTO{Msk: domain.LocalTime(msk), Jd: domain.LocalTime(jd)})
+			msk := time.Date(day.Year(), day.Month(), day.Day(), sl.Hour, sl.Minute, 0, 0, day.Location())
+			out = append(out, GtFreeSlotDTO{Msk: domain.LocalTime(msk), Jd: domain.LocalTime(jd18(msk))})
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return time.Time(out[i].Msk).Before(time.Time(out[j].Msk))
-	})
-	return out
+	return out, nil
 }
 
 // gtDaysDTO — результат симуляции → DTO диаграммы.

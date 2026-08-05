@@ -104,7 +104,9 @@ const SLOT_TOLERANCE_H = 3;
                 </tr>
               } @else if (ln.row; as r) {
                 <tr [class.arrived]="r.train.is_arrived"
+                    class="train-row"
                     [style.background]="rowBg(r)"
+                    (click)="trainSelect.emit(r.train.index)"
                     (contextmenu)="onContext($event, r.train)">
                   <td class="c-train">
                     <div class="idx">
@@ -139,7 +141,7 @@ const SLOT_TOLERANCE_H = 3;
           </tbody>
         </table>
       </div>
-      <div class="hint">клик по 🟢 нитке — подбор поездов · ПКМ по поезду — правка</div>
+      <div class="hint">клик — выделить поезд · клик по 🟢 нитке — подбор поездов · ПКМ — правка</div>
     </div>
   `,
   styles: [`
@@ -165,6 +167,7 @@ const SLOT_TOLERANCE_H = 3;
     .b { font-weight: 600; }
     .arrived { opacity: 0.85; }
     .empty { color: #888; padding: var(--space-md); }
+    .train-row { cursor: pointer; }
     .slot-row { cursor: pointer; }
     .slot-cell { color: #2e7d32; background: rgba(46,125,50,0.05); }
     .slot-row.sel .slot-cell { background: rgba(46,125,50,0.18); font-weight: 600; }
@@ -186,8 +189,12 @@ export class GtTrainTableComponent {
   readonly slots = input<GtFreeSlot[]>([]);
   readonly selectedSlot = input<GtFreeSlot | null>(null);
 
+  /** Выделенный поезд (синхронно с диаграммой). */
+  readonly selectedTrain = input<string | null>(null);
+
   readonly slotSelect = output<GtFreeSlot | null>();
   readonly editTrain = output<GtTrain>();
+  readonly trainSelect = output<string>();
 
   readonly riskFilter = signal<RiskLevel | null>(null);
 
@@ -264,6 +271,7 @@ export class GtTrainTableComponent {
   }
 
   rowBg(r: Row): string {
+    if (r.train.index === this.selectedTrain()) return '#e3f2fd'; // выделение — как gtport
     if (r.fitsSlot) return 'rgba(46,125,50,0.15)';
     const f = this.riskFilter();
     if (!f || r.risk?.level !== f) return '';
