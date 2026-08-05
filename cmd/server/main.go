@@ -125,6 +125,7 @@ func run() error {
 		pamCursorRepo    port.PamyatkaCursorRepository
 		reportPresetRepo port.ReportPresetRepository
 		nmtpRepo         port.NmtpRepository
+		gtSnapRepo       port.GtSnapshotRepository
 		status9Cache     *service.Status9Cache
 		status6Cache     *service.Status6Cache
 	)
@@ -148,6 +149,7 @@ func run() error {
 		pamCursorRepo = gormrepo.NewPamyatkaCursorRepository(db)
 		reportPresetRepo = gormrepo.NewReportPresetRepository(db)
 		nmtpRepo = gormrepo.NewNmtpRepository(db)
+		gtSnapRepo = gormrepo.NewGtSnapshotRepository(db)
 		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
@@ -213,7 +215,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps, brosJournal := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps, brosJournal := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {

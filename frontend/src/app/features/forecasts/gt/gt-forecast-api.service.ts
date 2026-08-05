@@ -152,6 +152,25 @@ export interface GtSimulateResponse {
   max_train_wagons: number;
 }
 
+/** Строка списка сохранённых планов. */
+export interface GtSnapshotMeta {
+  plan_date: string;
+  station: string;
+  start_date: string;
+  days_count: number;
+  saved_by: string;
+  updated_at: string | null;
+}
+
+/** Полный сохранённый план (архивный просмотр read-only). */
+export interface GtSnapshotFull extends GtSnapshotMeta {
+  request: GtSimulateRequest;
+  trains: GtTrain[];
+  flows: GtFlow[];
+  free_slots: GtFreeSlot[];
+  journal: unknown[] | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class GtForecastApiService {
   private readonly http = inject(HttpClient);
@@ -163,5 +182,32 @@ export class GtForecastApiService {
 
   simulate(req: GtSimulateRequest): Promise<GtSimulateResponse> {
     return firstValueFrom(this.http.post<GtSimulateResponse>(`${this.base}/simulate`, req));
+  }
+
+  /** Сохранить план: сервер сам пересчитывает по входу сеанса (upsert). */
+  saveSnapshot(planDate: string, request: GtSimulateRequest, journal: unknown[]): Promise<unknown> {
+    return firstValueFrom(this.http.post(`${this.base}/snapshots`,
+      { plan_date: planDate, request, journal }));
+  }
+
+  listSnapshots(from: string, to: string, station: string): Promise<GtSnapshotMeta[]> {
+    return firstValueFrom(this.http.get<GtSnapshotMeta[]>(`${this.base}/snapshots`,
+      { params: { from, to, station } }));
+  }
+
+  getSnapshot(planDate: string, station: string): Promise<GtSnapshotFull> {
+    return firstValueFrom(this.http.get<GtSnapshotFull>(`${this.base}/snapshots/${planDate}`,
+      { params: { station } }));
+  }
+
+  deleteSnapshot(planDate: string, station: string): Promise<unknown> {
+    return firstValueFrom(this.http.delete(`${this.base}/snapshots/${planDate}`,
+      { params: { station } }));
+  }
+
+  /** ZIP CSV-аналитики за период (прогноз vs факт). */
+  analytics(from: string, to: string, station: string): Promise<Blob> {
+    return firstValueFrom(this.http.get(`${this.base}/snapshots/analytics`,
+      { params: { from, to, station }, responseType: 'blob' }));
   }
 }

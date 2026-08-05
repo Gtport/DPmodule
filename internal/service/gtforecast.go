@@ -196,16 +196,18 @@ type GtSimulateDTO struct {
 
 // GtForecastService — сборка данных вкладки и запуск симуляции.
 type GtForecastService struct {
-	actual  *ActualCache
-	dir     *DirectoryCache
-	history port.HistoryRepository
-	cargo   *CargoWorkService
-	cfg     *ConfigCache
+	actual    *ActualCache
+	dir       *DirectoryCache
+	history   port.HistoryRepository
+	cargo     *CargoWorkService
+	cfg       *ConfigCache
+	snapshots port.GtSnapshotRepository
 }
 
 func NewGtForecastService(actual *ActualCache, dir *DirectoryCache,
-	history port.HistoryRepository, cargo *CargoWorkService, cfg *ConfigCache) *GtForecastService {
-	return &GtForecastService{actual: actual, dir: dir, history: history, cargo: cargo, cfg: cfg}
+	history port.HistoryRepository, cargo *CargoWorkService, cfg *ConfigCache,
+	snapshots port.GtSnapshotRepository) *GtForecastService {
+	return &GtForecastService{actual: actual, dir: dir, history: history, cargo: cargo, cfg: cfg, snapshots: snapshots}
 }
 
 // Context — режимы вкладки: причальные станции с терминалами и линиями выгрузки.

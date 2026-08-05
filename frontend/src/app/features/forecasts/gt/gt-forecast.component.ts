@@ -13,12 +13,15 @@ import {
   GtOverride,
   GtSimulateRequest,
   GtSimulateResponse,
+  GtSnapshotFull,
+  GtSnapshotMeta,
   GtStation,
   GtTrain,
 } from './gt-forecast-api.service';
 import { GtGanttComponent } from './gantt-chart.component';
 import { GtTrainTableComponent } from './train-table.component';
 import { GtTrainEditComponent } from './train-edit-dialog.component';
+import { GtSnapshotsComponent } from './snapshots-dialog.component';
 
 /**
  * Вкладка «Прогноз прибытия/выгрузки» (перенос страницы «Прогноз GT» gtport).
@@ -55,7 +58,7 @@ const ACTION_LABEL: Record<string, string> = {
 @Component({
   selector: 'app-gt-forecast',
   imports: [FormsModule, NzButtonModule, NzIconModule, NzRadioModule, NzSpinModule,
-    GtGanttComponent, GtTrainTableComponent, GtTrainEditComponent],
+    GtGanttComponent, GtTrainTableComponent, GtTrainEditComponent, GtSnapshotsComponent],
   template: `
     <div class="page">
       <div class="bar">
@@ -88,18 +91,36 @@ const ACTION_LABEL: Record<string, string> = {
                 title="Скрыть окраску клиентов" (click)="black.set(!black())">
           <span nz-icon nzType="bg-colors"></span>
         </button>
+        <button nz-button nzSize="small" title="Сохранённые планы и CSV-аналитика"
+                (click)="snapshotsOpen.set(true)" [disabled]="archived()">
+          <span nz-icon nzType="book"></span>
+        </button>
+        <button nz-button nzSize="small" title="Экспорт в Excel" (click)="exportExcel()"
+                [disabled]="!viewData()">
+          <span nz-icon nzType="download"></span>
+        </button>
         <button nz-button nzSize="small" title="Сбросить правки сеанса (скорости и поезда)"
-                (click)="resetOverrides()" [disabled]="!hasOverrides()">
+                (click)="resetOverrides()" [disabled]="!hasOverrides() || archived()">
           <span nz-icon nzType="clear"></span>
         </button>
-        <button nz-button nzSize="small" title="Обновить" (click)="reload()" [disabled]="loading()">
+        <button nz-button nzSize="small" title="Обновить" (click)="reload()"
+                [disabled]="loading() || archived()">
           <span nz-icon nzType="reload"></span>
         </button>
       </div>
 
+      @if (archive(); as a) {
+        <div class="archive-banner">
+          📂 Архив плана на <b>{{ fmtDate(a.plan_date) }}</b>
+          (расчёт с {{ fmtDate(a.start_date) }} · {{ a.days_count }} дн. ·
+          сохранил {{ a.saved_by || '—' }}) — только просмотр, данные зафиксированы
+          <button nz-button nzSize="small" (click)="closeArchive()">Вернуться к текущему</button>
+        </div>
+      }
+
       @if (loading() && !data()) {
         <div class="empty"><nz-spin nzSimple /></div>
-      } @else if (data(); as d) {
+      } @else if (viewData(); as d) {
         <div class="cols">
           <div class="left">
             @for (t of terminalBlocks(); track t.name) {
@@ -109,7 +130,7 @@ const ACTION_LABEL: Record<string, string> = {
                 [slots]="showSlots() ? d.free_slots : []"
                 [selectedSlot]="selectedSlot()"
                 (slotSelect)="selectedSlot.set($event)"
-                (editTrain)="editTrain.set($event)" />
+                (editTrain)="onEditTrain($event)" />
             }
             @if (journalOpen()) {
               <div class="journal">
@@ -150,6 +171,15 @@ const ACTION_LABEL: Record<string, string> = {
           (apply)="applyOverride($event)"
           (closed)="editTrain.set(null)" />
       }
+
+      @if (snapshotsOpen()) {
+        <app-gt-snapshots
+          [request]="baseRequest()"
+          [journal]="journal()"
+          [overridesCount]="trainOverrides().length"
+          (openSnap)="openSnapshot($event)"
+          (closed)="snapshotsOpen.set(false)" />
+      }
     </div>
   `,
   styles: [`
@@ -173,6 +203,9 @@ const ACTION_LABEL: Record<string, string> = {
     .right.dim { opacity: 0.6; }
     .empty { display: flex; justify-content: center; padding: var(--space-xl);
              color: #888; background: var(--color-bg-surface); border-radius: var(--radius-card); }
+    .archive-banner { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap;
+             background: #fff8e1; border: 1px solid #ffe082; border-radius: var(--radius-card);
+             padding: var(--space-xs) var(--space-md); font-size: 12px; }
     .journal { background: var(--color-bg-surface); border-radius: var(--radius-card);
                box-shadow: var(--shadow-card); padding: var(--space-xs) var(--space-sm);
                font-size: 11px; max-height: 30vh; overflow: auto; }
@@ -206,6 +239,20 @@ export class GtForecastComponent implements OnInit {
   readonly showSlots = signal(false);
   readonly selectedSlot = signal<GtFreeSlot | null>(null);
   readonly editTrain = signal<GtTrain | null>(null);
+  readonly snapshotsOpen = signal(false);
+  /** Открытый архивный план: подменяет данные экрана, правки блокируются. */
+  readonly archive = signal<GtSnapshotFull | null>(null);
+
+  readonly archived = computed(() => this.archive() !== null);
+
+  /** Данные экрана: архив (read-only) либо живой пересчёт. */
+  readonly viewData = computed<GtSimulateResponse | null>(() => {
+    const a = this.archive();
+    if (a) {
+      return { trains: a.trains, flows: a.flows, free_slots: a.free_slots ?? [], max_train_wagons: 0 };
+    }
+    return this.data();
+  });
 
   readonly hasOverrides = computed(() =>
     Object.keys(this.overrides()).length > 0 || this.trainOverrides().length > 0);
@@ -228,7 +275,7 @@ export class GtForecastComponent implements OnInit {
 
   /** Блоки таблиц: терминал режима → его поезда, остатки и ожидания. */
   readonly terminalBlocks = computed(() => {
-    const d = this.data();
+    const d = this.viewData();
     const st = this.stations().find((s) => s.code === this.station());
     if (!d || !st) return [];
     return st.terminals.map((term) => {
@@ -270,25 +317,27 @@ export class GtForecastComponent implements OnInit {
   }
 
   setStation(code: string): void {
+    if (this.archived()) return;
     this.station.set(code);
     this.resetSession();
     void this.simulate();
   }
 
   setStartDate(v: string): void {
-    if (!v) return;
+    if (!v || this.archived()) return;
     this.startDate.set(v);
     this.resetSession();
     void this.simulate();
   }
 
   setDays(v: number | null): void {
-    if (!v || v < 1 || v > 14) return;
+    if (!v || v < 1 || v > 14 || this.archived()) return;
     this.days.set(v);
     void this.simulate();
   }
 
   toggleNorm(): void {
+    if (this.archived()) return;
     // Как gtport GlobalSpeedToggle: переключение затирает ручные правки скоростей.
     this.useNorm.set(!this.useNorm());
     this.overrides.set({});
@@ -318,6 +367,7 @@ export class GtForecastComponent implements OnInit {
   }
 
   onSpeed(terminal: string, cargoKey: string, e: { date: string; value: number }): void {
+    if (this.archived()) return;
     const key = `${terminal}|${cargoKey}`;
     const next = { ...this.overrides() };
     next[key] = { ...(next[key] ?? {}), [e.date]: e.value };
@@ -348,6 +398,99 @@ export class GtForecastComponent implements OnInit {
     this.journalOpen.set(true);
   }
 
+  onEditTrain(t: GtTrain): void {
+    if (!this.archived()) this.editTrain.set(t);
+  }
+
+  /** Открыть архивный план read-only (данные зафиксированы при сохранении). */
+  async openSnapshot(meta: GtSnapshotMeta): Promise<void> {
+    try {
+      const full = await this.api.getSnapshot(meta.plan_date, meta.station);
+      this.snapshotsOpen.set(false);
+      this.selectedSlot.set(null);
+      this.editTrain.set(null);
+      this.archive.set(full);
+    } catch (e) {
+      this.msg.error(apiErrorMessage(e));
+    }
+  }
+
+  closeArchive(): void {
+    this.archive.set(null);
+  }
+
+  /** Экспорт в Excel: поезда, выгрузка по суткам, журнал (xlsx-js-style лениво). */
+  async exportExcel(): Promise<void> {
+    const d = this.viewData();
+    if (!d) return;
+    const XLSX = await import('xlsx-js-style');
+    const wb = XLSX.utils.book_new();
+    const headStyle = { font: { bold: true } };
+    const head = (cells: string[]) => cells.map((v) => ({ v, s: headStyle }));
+
+    const trainsRows: unknown[][] = [head([
+      'Терминал', 'Поезд', 'Вагонов', 'Статус', 'Прибытие ЖД', 'Путь', 'Откл., сут', 'Задержка, ч', 'Ожид, ч',
+    ])];
+    for (const block of this.terminalBlocks()) {
+      for (const t of block.trains) {
+        const waitMin = block.waitByIndex[t.index] ?? 0;
+        trainsRows.push([
+          block.name, t.index, t.vagon_count,
+          t.is_arrived ? 'прибыл' : t.status === '5' ? 'брошен' : t.plan_jd ? 'в плане' : 'в пути',
+          this.fmtJd(t.prog_jd),
+          t.is_arrived || t.to_go == null ? '' : (t.to_go / 24).toFixed(1),
+          t.mistake == null ? '' : t.mistake.toFixed(2),
+          t.delay_hours || '',
+          waitMin > 0 ? (waitMin / 60).toFixed(1) : '',
+        ]);
+      }
+    }
+    const wsTrains = XLSX.utils.aoa_to_sheet(trainsRows);
+    wsTrains['!cols'] = [{ wch: 10 }, { wch: 16 }, { wch: 9 }, { wch: 9 }, { wch: 13 }, { wch: 7 }, { wch: 10 }, { wch: 11 }, { wch: 8 }];
+    XLSX.utils.book_append_sheet(wb, wsTrains, 'Поезда');
+
+    const ganttRows: unknown[][] = [head([
+      'Терминал', 'Груз', 'Сутки', 'План', 'Норма', 'Вход', 'Приб', 'Полн', 'Полез', 'Выгр', 'Ост', 'Простой',
+    ])];
+    for (const f of d.flows) {
+      for (const day of f.days) {
+        ganttRows.push([
+          f.terminal, f.cargo_key, `${day.date.slice(8, 10)}.${day.date.slice(5, 7)}`,
+          day.plan_speed, day.norm_speed, day.incoming_total, day.arrival,
+          day.total_formation, day.useful_formation, day.unloaded, day.remaining,
+          day.total_wait_min > 0 ? hm(day.total_wait_min) : '',
+        ]);
+      }
+      ganttRows.push([]);
+    }
+    const wsGantt = XLSX.utils.aoa_to_sheet(ganttRows);
+    wsGantt['!cols'] = [{ wch: 10 }, { wch: 9 }, { wch: 7 }, ...Array(8).fill({ wch: 7 }), { wch: 9 }];
+    XLSX.utils.book_append_sheet(wb, wsGantt, 'Выгрузка по суткам');
+
+    const journalRows: unknown[][] = [head([
+      'Время', 'Поезд', 'Действие', 'Порт', 'Задержка, ч', 'Было (ЖД)', 'Стало (ЖД)', 'Откл. было', 'Откл. стало',
+    ])];
+    for (const j of this.journal()) {
+      journalRows.push([
+        j.time, j.index, this.actionLabel(j.action), j.naznach, j.delayHours || '',
+        this.fmtJd(j.prevProgJd), this.fmtJd(j.newProgJd),
+        this.fmtM(j.prevMistake), this.fmtM(j.newMistake),
+      ]);
+    }
+    const wsJournal = XLSX.utils.aoa_to_sheet(journalRows);
+    wsJournal['!cols'] = [{ wch: 7 }, { wch: 16 }, { wch: 13 }, { wch: 8 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 10 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, wsJournal, 'Журнал');
+
+    const st = this.stations().find((s) => s.code === this.station());
+    const label = st ? st.terminals.map((t) => t.name).join('+') : this.station();
+    const date = this.archive()?.plan_date ?? this.startDate();
+    XLSX.writeFile(wb, `gt_prognoz_${label}_${date}.xlsx`);
+  }
+
+  fmtDate(iso: string): string {
+    return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
+  }
+
   actionLabel(a: string): string {
     return ACTION_LABEL[a] ?? a;
   }
@@ -372,6 +515,12 @@ export class GtForecastComponent implements OnInit {
       this.loading.set(false);
     }
   }
+}
+
+/** Минуты → «ЧЧ:ММ» (колонка простоя в Excel). */
+function hm(minutes: number): string {
+  const m = Math.round(minutes);
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
 /** Локальная дата YYYY-MM-DD (стартовые расчётные сутки по умолчанию). */

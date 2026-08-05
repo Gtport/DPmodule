@@ -56,6 +56,7 @@ func Build(
 	pamCursorRepo port.PamyatkaCursorRepository,
 	reportPresetRepo port.ReportPresetRepository,
 	nmtpRepo port.NmtpRepository,
+	gtSnapRepo port.GtSnapshotRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
@@ -398,9 +399,10 @@ func Build(
 
 				// Вкладка «Прогноз прибытия/выгрузки» (перенос страницы GT
 				// gtport): очередь поездов причальной станции + серверная
-				// симуляция выгрузки (пакет unloadsim, golden-тесты).
+				// симуляция выгрузки (пакет unloadsim, golden-тесты);
+				// снапшоты планов и CSV-аналитика «прогноз vs факт».
 				handler.NewGtForecastHandler(service.NewGtForecastService(
-					actualCache, dirCache, historyRepo, cwSvc, cfgCache)).RegisterRoutes(api)
+					actualCache, dirCache, historyRepo, cwSvc, cfgCache, gtSnapRepo)).RegisterRoutes(api)
 			}
 		}
 	}
