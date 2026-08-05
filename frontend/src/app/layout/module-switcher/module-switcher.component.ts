@@ -9,7 +9,14 @@ import { environment } from '../../../environments/environment';
 
 /**
  * Переход между модулями платформы (IQPort §1 — единый вход, SSO).
- * Показывает только те модули, к которым у пользователя есть роль, и прячет текущий.
+ * Показывает только те модули, которые развёрнуты (available) и к которым у
+ * пользователя есть роль; текущий модуль прячет. Первым пунктом — возврат на
+ * портал-лаунчер (роли не проверяем: портал открыт всем вошедшим, недоступные
+ * плитки он гасит сам).
+ *
+ * Переход — обычная ссылка на другой origin: сессия одна на весь realm iqport,
+ * повторный вход не потребуется, пока адрес Keycloak у модулей совпадает
+ * (docs/PORTAL_INTEGRATION.md §3).
  */
 @Component({
   selector: 'app-module-switcher',
@@ -23,6 +30,15 @@ import { environment } from '../../../environments/environment';
     </a>
     <nz-dropdown-menu #menu="nzDropdownMenu">
       <ul nz-menu class="switcher">
+        @if (portalUrl) {
+          <li nz-menu-item>
+            <a [href]="portalUrl">
+              <span nz-icon nzType="global"></span>
+              <span>Портал — все модули</span>
+            </a>
+          </li>
+          <li nz-menu-divider></li>
+        }
         @for (m of available(); track m.id) {
           <li nz-menu-item>
             <a [href]="m.url">
@@ -44,9 +60,11 @@ import { environment } from '../../../environments/environment';
 export class ModuleSwitcherComponent {
   private readonly auth = inject(AuthService);
 
+  readonly portalUrl = environment.portalUrl;
+
   readonly available = computed(() =>
     PLATFORM_MODULES.filter(
-      (m) => m.id !== environment.moduleId && this.auth.hasAnyRole(m.roles),
+      (m) => m.available && m.id !== environment.moduleId && this.auth.hasAnyRole(m.roles),
     ),
   );
 }

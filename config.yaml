@@ -3,84 +3,100 @@ app:
   env: dev
 
 http:
-  host: 127.0.0.1   # только loopback — наружу приложение отдаётся через nginx
-  port: 8080
+  port: 8580
   read_timeout: 10s
   write_timeout: 30s
   shutdown_timeout: 15s
 
 metrics:
-  port: 9090   # отдельный порт для /metrics; задать = http.port, чтобы отдавать на основном
+  port: 9580   # отдельный порт для /metrics; задать = http.port, чтобы отдавать на основном
 
-# Внешние зависимости отключены по умолчанию — шаблон поднимается «голым».
-# Переключи enabled: true и заполни секреты (env), когда подключишь зависимость.
+# Конфиг ДЕВ-СТЕНДА (корпоративный контур). Файл называется config.yaml и лежит
+# В GIT (решение владельца 03.08.2026): его забирает CI/CD под этим именем.
+# Конфиг боевого VPS — config.vps.yaml, машины разработчика — config.local.yaml.
+# Включены база и Keycloak; исходящие интеграции (АСУ,
+# памятки, MAX, крон «Брошенные») намеренно выключены — второй инстанс не должен
+# слать формы в живые чаты и дублировать забор данных у провайдера.
+#
+# Секреты объявляются шаблоном Vault ${vault:<движок>/<путь>:<ключ>} и резолвятся
+# CI/CD перед стартом — в самом приложении резолвинга нет, значение читается как есть.
+# Пусто → запасной путь: одноимённая переменная окружения (PG_PASSWORD и т.д.).
+# ⚠️ Пути ниже — по образцу шаблона, конкретные согласовать с DevOps.
 postgres:
   enabled: true
-  host: localhost
+  host: 176.53.160.9  # база стенда; НЕ localhost — из контейнера это он сам
   port: 5432
-  dbname: dpport
+  dbname: kgdm        # база общая с соседями, наши таблицы — в схеме dpport
   user: gtport_app
+  # Ключ секрета = имя роли БД (конвенция хранилища: один секрет на путь,
+  # ключи — по пользователям: dbadmin, kgdm, teh_user…).
+  password: ${vault:kv/databases/postgres/dev:gtport_app}
   sslmode: disable
   max_open_conns: 25
   max_idle_conns: 5
   conn_max_lifetime: 5m
 
 keycloak:
-  enabled: true    # /api требует валидный JWT (issuer+audience+подпись); «кто» → в журнал
-  jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs   # внутренний адрес (ключи), доступен бэкенду
-  issuer: https://95850.koara.live/realms/iqport   # ДОЛЖЕН совпадать с iss в токене браузера (Keycloak с динамическим hostname подставляет публичный хост и схему). При смене домена/схемы — править здесь.
-  audience: iqport-backend
+  enabled: true
+  # Значения сверены с живым токеном (Client scopes → Evaluate, клиент iqport-dpport):
+  # issuer сравнивается ДОСЛОВНО со строкой из токена — подставлять IP нельзя,
+  # Keycloak выдаёт токены с внешним именем (KC_HOSTNAME), хотя отвечает и по адресу.
+  jwks_url: https://uport1.ru/realms/iqport/protocol/openid-connect/certs
+  issuer: https://uport1.ru/realms/iqport
+  # aud токена = ["iqport-dpport", "account"]; проверка включена и закрывает
+  # «токен другого модуля того же realm'а проходит на наш API» (в realm живут
+  # и соседи — в токене видны их роли view_sspr / view_rtport).
+  audience: iqport-dpport
+  # Общий realm: в нём живут легаси-роли всего контура (admin/operator/dispatcher)
+  # и роли соседей — из токена принимаются только точные имена *_dpport.
+  strict_roles: true
+  # client_secret приложению НЕ нужен: входящие токены проверяются публичными
+  # ключами из JWKS. Поле осталось от шаблона, кодом не используется.
+  # service_account — ИСХОДЯЩИЕ походы к провайдеру (дислокация, запрос 601, памятки):
+  # поток client_credentials, человек в цикле не нужен → работает и в кронах.
+  # ⚠️ Заполненность блока = переключатель режима: пока token_url/client_id пусты,
+  # клиенты ходят запасным X-API-Key. Заполнять, КОГДА клиент с включённым
+  # Service accounts roles реально заведён, иначе интеграции встанут на авторизации.
+  service_account:
+    token_url: https://uport1.ru/realms/iqport/protocol/openid-connect/token
+    client_id: iqport_dpport_service   # клиент с включённым Service accounts roles
+    insecure_tls: false             # true для самоподписанного серта Keycloak на стенде
+    timeout_secs: 30
+    client_secret: ${vault:kv/authorization/keycloak/dev:dpport_service}
 
 log:
-  level: debug
-  file: logs/service.log   # лог-файл с ротацией (100 МБ × 5 бэкапов × 30 дней); stdout/journald остаётся
+  level: info
+  file: /var/log/iqport/service.log
   max_size_mb: 100
   max_backups: 5
   max_age_days: 30
 
 asu:
-  enabled: true         # true → фоновый забор дислокации из АСУ по тикеру
+  enabled: false        # true → фоновый забор дислокации из АСУ по тикеру
   pull_interval: 10m    # период забора (источники — в таблице data_source)
-  pull_offset: 5m       # сдвиг от начала часа: тики в :05, :15, :25, :35, :45, :55
+  # Авторизация у провайдера — Keycloak, сервис-аккаунт (keycloak.service_account).
+  # X-API-Key в конфиге не объявляется: он остался ЗАПАСНЫМ режимом для отката
+  # (data_source.config.auth_mode = "apikey") и берёт ключ из окружения по имени,
+  # которое объявил источник (data_source.auth_secret_key).
 
-lk_robot:               # автовыгрузка дислокации из ЛК РЖД вместо ручной работы диспетчера
-  enabled: true         # true → доступна ручка запуска (расписания пока нет, запуск кнопкой)
-  base_url: https://cargolk.rzd.ru
-  service_id: 226       # услуга «Дислокация вагонов по списку» (SPV4664)
-  timeout: 2m           # таймаут одного запроса к кабинету
-  poll_every: 5s        # период опроса готовности отчёта
-  poll_timeout: 5m      # сколько ждём готовности отчёта
-  run_timeout: 30m      # потолок фонового запуска целиком (все потоки + обновление дислокации)
-  dump_dir: _data/lk_raw # сырой ответ отчёта на диск (разбор контракта, golden-тесты); пусто — не сохранять
-  # Логины по потокам — в таблице lk_account (админ-редактор).
-  # Пароль вводит диспетчер при запуске, нигде не хранится.
-
-wagonops:               # история продвижения вагона (запрос 601, тот же провайдер)
-  enabled: true         # true → фоновый разбор очереди заявок (прибытие/пропажа/выбытие-10)
-  drain_interval: 15s   # тик воркера; заявки идут пачкой с паузой между запросами
-  batch: 50             # заявок за тик (подтверждено владельцем)
-  pause: 500ms          # пауза между HTTP-запросами (~2 мин на 200 вагонов)
-  max_attempts: 5       # неудач до снятия заявки
-
-reference:              # памятки ГУ-45 на подачу/уборку (тот же провайдер, что дислокация)
-  enabled: true         # фоновый крон-инкремент; ручной прогон — POST /reference/update/pull
-  base_url: https://176.53.160.9:8443/api/v1  # тот же адрес, что у АСУ (data_source.asu)
-  insecure_tls: true    # самоподписанный серт провайдера на IP (аналог curl -k)
-  pull_interval: 1h     # период крон-инкремента; курсор берётся из pamyatka_cursor, пропуск тика не теряет пачку
-  initial_lookback: 48h # окно ПЕРВОГО захода, когда курсора ещё нет; должно быть заметно глубже задержки публикации у провайдера (часовое окно пусто всегда — заклинивало холодный старт)
-  cursor_overlap: 30m   # курсор храним на столько раньше LAST_UPDATE: провайдер публикует записи не в порядке штампов, встык запоздавшие терялись бы
-  stale_after: 6h       # курсор не двигается дольше — пустой проход пишется в журнал (silent_hours), чтобы простой было видно
+reference:              # памятки на подачу/уборку (тот же провайдер, что дислокация)
+  enabled: false        # true → фоновый крон-инкремент по тикеру
+  # Провайдер тот же, что у дислокации (rwgate), но адрес задаётся ЗДЕСЬ, а не в
+  # data_source: у памяток нет реестра источников. При смене адреса править оба места.
+  base_url: http://176.53.160.9:8521
+  insecure_tls: false   # true для самоподписанного серта провайдера
+  pull_interval: 1h     # период крон-инкремента
+  initial_lookback: 48h # окно первого захода (курсора нет); глубже задержки публикации провайдера
+  cursor_overlap: 30m   # нахлёст курсора на запоздавшие записи
+  stale_after: 6h       # молчание дольше — пустой проход в журнал
   clients: [attis, nmtp] # коды клиентов провайдера: памятки разнесены по клиентам, у каждого свои номера
-  # auth_secret_key по умолчанию ASU_TOKEN (env) — ключ X-API-Key того же провайдера
-  # Инкремент пишет вехи подачи/уборки в vagon_history (date_pod/date_ubor/nom_gu45_*),
-  # стадия заполнения — колонка pamyatka_state (0/1/2). Итоги прохода — в event_journal.
+  # auth_mode: keycloak | apikey — пусто значит keycloak, если сервис-аккаунт настроен
+  # auth_secret_key — только для запасного режима apikey: ИМЯ ключа (дефолт
+  # ASU_TOKEN), значение читается из одноимённой переменной окружения
 
-max:                    # рассылка форм в мессенджер MAX (токен бота — env MAX_BOT_TOKEN)
-  enabled: true         # канал включён; чаты/маршруты — в БД (таблицы max_chat/max_route)
+max:                    # рассылка форм в мессенджер MAX
+  enabled: false        # включается в конфиге per-deployment; чаты/маршруты — в БД
   base_url: https://platform-api2.max.ru  # Bot API MAX (CA Минцифры вшит в бинарь)
   timeout_secs: 120     # таймаут HTTP (заливка картинок бывает долгой)
   send_delay: 500ms     # пауза между чатами (лимит API 30 rps)
-
-bros:                   # подсистема «Брошенные»
-  enabled: true         # ежедневный крон bulk-save журнала (фиксация без завязки на MAX)
-  journal_cron: "01:00" # время bulk-save по Москве (HH:MM); пустое → дефолт 01:00
+  bot_token: ${vault:kv/integrations/max/dev:bot_token}   # токен бота

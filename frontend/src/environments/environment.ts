@@ -9,6 +9,12 @@ export const environment = {
   // Базовый URL Go-бэкенда модуля (через API Gateway). Bearer вешается только на него.
   apiBaseUrl: '/api',
 
+  // Портал-лаунчер платформы (репозиторий iqport/portal): куда ведёт пункт
+  // «Портал» в переключателе модулей. Пустая строка — пункт скрыт.
+  // ⚠️ TODO подтвердить у DevOps: адрес взят по конвенции <модуль>.iqport.ru,
+  // в коде портала своего URL нет (docs/PORTAL_INTEGRATION.md §2).
+  portalUrl: 'https://portal.iqport.ru',
+
   // Keycloak (realm iqport). clientId = iqport-<moduleId>.
   keycloak: {
     url: 'https://uport1.ru',

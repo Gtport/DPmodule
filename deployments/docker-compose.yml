@@ -9,7 +9,7 @@ services:
       - "8580:8580"
       - "9580:9580"   # /metrics
     volumes:
-      - ../config.docker.yaml:/etc/app/config.yaml:ro
+      - ../config.yaml:/etc/app/config.yaml:ro
       # Лог-файл переживает пересборку контейнера. Приложение пишет и в stdout
       # (его забирает docker logs), и в файл — ротацию делает само.
       - app_logs:/var/log/iqport
@@ -45,7 +45,7 @@ services:
       - "${FRONTEND_PORT:-8581}:8581"
     environment:
       # Имя сервиса бэкенда в этой же сети compose (app), порт = http.port из
-      # config.docker.yaml. Пересборка образа для этого не нужна — адрес
+      # config.yaml. Пересборка образа для этого не нужна — адрес
       # подставляется на старте контейнера (см. frontend/nginx.conf).
       API_BACKEND: app:8580
     # Только порядок запуска. Ждать здоровья бэкенда НЕ нужно: адрес резолвится

@@ -22,6 +22,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 
 COPY --from=builder /app/bin/server .
+COPY config.yaml /etc/app/config.yaml
 
 # Порты должны совпадать с http.port / metrics.port в конфиге стенда.
 ENV APP_PORT=8580

@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-// Примеры конфигов в репозитории должны разбираться тем же кодом, что и боевой:
-// опечатка в YAML или переименованное поле иначе всплывают только на стенде,
-// когда сервис уже не поднимается.
+// Конфиги из репозитория должны разбираться тем же кодом, что и на стенде:
+// опечатка в YAML или переименованное поле иначе всплывают только при деплое,
+// когда сервис уже не поднимается. config.yaml забирает CI/CD, поэтому его
+// разбор проверяем в первую очередь.
 func TestRepoExampleConfigsParse(t *testing.T) {
 	// postgres.enabled: true в шаблоне разработчика требует пароль — на машине
 	// разработчика его даёт .env, здесь подставляем сами.
@@ -18,7 +19,7 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 		want func(*testing.T, *Config)
 	}{
 		{
-			file: "config.docker.yaml",
+			file: "config.yaml",
 			want: func(t *testing.T, cfg *Config) {
 				if cfg.Keycloak.Issuer == "" || cfg.Keycloak.JWKSURL == "" {
 					t.Error("keycloak: issuer и jwks_url обязаны быть заполнены")
@@ -27,6 +28,23 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 				// Пустое поле здесь означало бы, что стенд молча уедет на env.
 				if cfg.Postgres.Password == "" {
 					t.Error("postgres.password: ждали шаблон Vault (или значение)")
+				}
+				// Общий realm стенда: без strict-режима легаси-роль чужого
+				// пользователя контура превратилась бы в наши *_dpport (дыра,
+				// закрытая в dc0a811). Тест — от случайной потери при слияниях
+				// с ветками тимлида, где строки нет.
+				if !cfg.Keycloak.StrictRoles {
+					t.Error("keycloak.strict_roles обязан быть true в конфиге стенда")
+				}
+			},
+		},
+		{
+			file: "config.vps.yaml",
+			want: func(t *testing.T, cfg *Config) {
+				// Боевой VPS: свой realm, секреты приходят из env (systemd
+				// EnvironmentFile), Vault-шаблонов в файле нет.
+				if cfg.Keycloak.Issuer == "" || cfg.Keycloak.JWKSURL == "" {
+					t.Error("keycloak: issuer и jwks_url обязаны быть заполнены")
 				}
 			},
 		},

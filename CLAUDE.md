@@ -183,7 +183,15 @@ go build ./...
 источников может быть несколько, и заводятся они данными.
 Пути Vault: БД — `${vault:kv/databases/postgres/dev:gtport_app}` (боевая конвенция —
 один секрет `databases/postgres/dev`, ключ = имя роли БД); остальные в
-`config.docker.yaml` пока по образцу шаблона, **согласовать с DevOps**.
+`config.yaml` пока по образцу шаблона, **согласовать с DevOps**. ⚠️ Конфиг стенда
+называется **`config.yaml` и лежит В GIT** (решение владельца 03.08.2026, принято
+из ветки тимлида 05.08): его забирает CI/CD под этим именем, прежнее правило
+`.gitignore` снято — секретов в файле нет, только плейсхолдеры Vault. Конфиг
+боевого VPS переехал в **`config.vps.yaml`** (содержимое не менялось); ⚠️ при
+первом деплое этого изменения systemd-юнит `dpmodule-backend` на VPS надо
+переключить на `-config config.vps.yaml`, иначе бой прочитает стендовый
+`config.yaml` и уйдёт на чужую базу. Файл машины разработчика — `config.local.yaml`
+(по-прежнему вне git).
 
 Авторизация у провайдера (решение владельца 31.07.2026): **X-API-Key упраздняется,
 ходим через Keycloak** — сервис-аккаунт, поток client_credentials (человека в цикле
@@ -325,9 +333,9 @@ sms/цвет carry-over'ом; правки словарей применяютс
 Дев-стенд в контейнерах (перенос работы тимлида из архива backend-master,
 03.08.2026): фронт и бэк — раздельные docker-контейнеры. Бэкенд: порты
 **8580/9580** (`Dockerfile`, `deployments/docker-compose.yml`,
-`config.docker.yaml`), healthcheck по `/ready` (пингует базу: unhealthy =
+`config.yaml`), healthcheck по `/ready` (пингует базу: unhealthy =
 «трафик рано», не «процесс мёртв»), лог-файл в volume `app_logs`, в файл всегда
-JSON. `config.docker.yaml` — конфиг ИМЕННО стенда: Postgres `176.53.160.9`,
+JSON. `config.yaml` — конфиг ИМЕННО стенда: Postgres `176.53.160.9`,
 база `kgdm` (общая с соседями, наши таблицы в схеме `dpport`), роль
 `gtport_app`; Keycloak `https://uport1.ru/realms/iqport` (issuer проверен по
 discovery 03.08 — доменный, НЕ IP), audience `iqport-dpport`,
@@ -396,7 +404,7 @@ redirect_uri` (у нашего VPS это уже починил тимлид, `d
 §1).
 
 ⚠️ **Стенда два, и Keycloak у них разные.** Контейнеры выше настроены на
-корпоративный контур (`config.docker.yaml`: база 176.53.160.9, Keycloak
+корпоративный контур (`config.yaml`: база 176.53.160.9, Keycloak
 `uport1.ru`). Наш VPS `95850.koara.live` — отдельный стенд со СВОИМ Keycloak,
 который отдаётся тем же nginx (same-origin). Адрес Keycloak зашивается в бандл
 ПРИ СБОРКЕ фронта, поэтому production-сборка на VPS ломает вход — уводит логин
@@ -427,7 +435,7 @@ realm стенда описан в `docs/KEYCLOAK.md`): realm-роли Keycloak 
 dispatcher/client…) нормализует `auth.TokenRoles` при разборе токена — боевые
 токены работают до перевода realm'а (шаги миграции — в ROLES.md); значение
 `reject_older_role_exempt` из БД матчит админа через want-нормализацию в
-`HasRole`. ⚠️ **`keycloak.strict_roles: true` (стендовый `config.docker.yaml`)
+`HasRole`. ⚠️ **`keycloak.strict_roles: true` (стендовый `config.yaml`)
 выключает легаси-нормализацию токена**: в ОБЩЕМ realm'е голые admin/operator/
 dispatcher — легаси-роли контура и могут принадлежать пользователям чужих
 приложений (см. KEYCLOAK.md §3.4), превращать их в наши — дыра; принимаются
@@ -871,5 +879,22 @@ gtport), а не «слоты каждый день горизонта»; ско
 (шестерёнка → PUT /gt-forecast/speeds → port_cargo_line, operator+);
 выделение поезда кликом синхронно в таблице и на Ганте, ПКМ работает и на
 Ганте; План/Норма — переключателем.
+
+Сверка с ветками тимлида `backend-development`/`frontend-development` (срез
+05.08.2026, архивы zip). Принято к нам: переименование конфига стенда в
+`config.yaml` (в git, см. блок про Vault выше; боевой конфиг → `config.vps.yaml`),
+адрес памяток `reference.base_url` в стендовом конфиге, расширенный
+`.dockerignore`, стыковка фронта с порталом-лаунчером (`portalUrl` в
+environments, каталог `modules.config.ts` с ролями `view_*`/`edit_*` и
+признаком `available`, пункт «Портал — все модули» в свитчере,
+`frontend/docs/PORTAL_INTEGRATION.md`). НЕ принято: (1) в их ветке СНЯТ
+strict-режим ролей (`keycloak.strict_roles`, `auth.TokenRoles`) — дыра
+легаси-ролей общего realm'а, которую мы закрыли в `dc0a811`, у них снова
+открыта; наш код не трогали, в стендовом конфиге `strict_roles: true` оставлен,
+тест `examples_test.go` теперь сторожит строку; ⚠️ сказать тимлиду. (2) У MPPort
+в их каталоге остался `http://localhost:4202` — заменён боевым адресом.
+(3) Фронт-сервис из бэкендового compose у них удалён (на стенде пары нет) — у
+нас оставлен для локальной проверки пары. Их ветки отстают от нашего `main`
+примерно на два дня (нет gt-forecast, поиска по истории, правок nginx 04.08).
 
 <обновляй по ходу>

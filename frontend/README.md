@@ -50,8 +50,11 @@ npm start        # http://localhost:4200 → редирект на Keycloak, в�
 | `moduleId` | `dpport` / `rtport` / `mpport` / … |
 | `keycloak.clientId` | `iqport-<moduleId>` (клиент уже заведён в realm) |
 | `apiBaseUrl` | URL Go-бэкенда модуля |
+| `portalUrl` | адрес портала-лаунчера; пусто — пункт «Портал» в свитчере скрыт |
 
-Каталог модулей (для switcher) — `src/app/core/config/modules.config.ts`.
+Каталог модулей (для switcher) — `src/app/core/config/modules.config.ts`,
+копия каталога портала. Стыковка с порталом (что включить в `iqport/portal`,
+что настроить в Keycloak, как проверить SSO) — [`docs/PORTAL_INTEGRATION.md`](docs/PORTAL_INTEGRATION.md).
 
 ## Keycloak
 

@@ -1,0 +1,91 @@
+# Конфиг БОЕВОГО VPS (95850.koara.live). Бывший config.yaml: имя освобождено под
+# конфиг CI/CD-стенда (решение владельца 03.08.2026), содержимое НЕ менялось.
+# ⚠️ systemd-юнит dpmodule-backend на VPS должен запускать бинарь с
+# `-config config.vps.yaml` — переключить ПРИ ПЕРВОМ ЖЕ деплое этого коммита,
+# иначе сервис прочитает config.yaml и уйдёт на стендовую базу.
+app:
+  name: iqport-service
+  env: dev
+
+http:
+  host: 127.0.0.1   # только loopback — наружу приложение отдаётся через nginx
+  port: 8080
+  read_timeout: 10s
+  write_timeout: 30s
+  shutdown_timeout: 15s
+
+metrics:
+  port: 9090   # отдельный порт для /metrics; задать = http.port, чтобы отдавать на основном
+
+# Внешние зависимости отключены по умолчанию — шаблон поднимается «голым».
+# Переключи enabled: true и заполни секреты (env), когда подключишь зависимость.
+postgres:
+  enabled: true
+  host: localhost
+  port: 5432
+  dbname: dpport
+  user: gtport_app
+  sslmode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+
+keycloak:
+  enabled: true    # /api требует валидный JWT (issuer+audience+подпись); «кто» → в журнал
+  jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs   # внутренний адрес (ключи), доступен бэкенду
+  issuer: https://95850.koara.live/realms/iqport   # ДОЛЖЕН совпадать с iss в токене браузера (Keycloak с динамическим hostname подставляет публичный хост и схему). При смене домена/схемы — править здесь.
+  audience: iqport-backend
+
+log:
+  level: debug
+  file: logs/service.log   # лог-файл с ротацией (100 МБ × 5 бэкапов × 30 дней); stdout/journald остаётся
+  max_size_mb: 100
+  max_backups: 5
+  max_age_days: 30
+
+asu:
+  enabled: true         # true → фоновый забор дислокации из АСУ по тикеру
+  pull_interval: 10m    # период забора (источники — в таблице data_source)
+  pull_offset: 5m       # сдвиг от начала часа: тики в :05, :15, :25, :35, :45, :55
+
+lk_robot:               # автовыгрузка дислокации из ЛК РЖД вместо ручной работы диспетчера
+  enabled: true         # true → доступна ручка запуска (расписания пока нет, запуск кнопкой)
+  base_url: https://cargolk.rzd.ru
+  service_id: 226       # услуга «Дислокация вагонов по списку» (SPV4664)
+  timeout: 2m           # таймаут одного запроса к кабинету
+  poll_every: 5s        # период опроса готовности отчёта
+  poll_timeout: 5m      # сколько ждём готовности отчёта
+  run_timeout: 30m      # потолок фонового запуска целиком (все потоки + обновление дислокации)
+  dump_dir: _data/lk_raw # сырой ответ отчёта на диск (разбор контракта, golden-тесты); пусто — не сохранять
+  # Логины по потокам — в таблице lk_account (админ-редактор).
+  # Пароль вводит диспетчер при запуске, нигде не хранится.
+
+wagonops:               # история продвижения вагона (запрос 601, тот же провайдер)
+  enabled: true         # true → фоновый разбор очереди заявок (прибытие/пропажа/выбытие-10)
+  drain_interval: 15s   # тик воркера; заявки идут пачкой с паузой между запросами
+  batch: 50             # заявок за тик (подтверждено владельцем)
+  pause: 500ms          # пауза между HTTP-запросами (~2 мин на 200 вагонов)
+  max_attempts: 5       # неудач до снятия заявки
+
+reference:              # памятки ГУ-45 на подачу/уборку (тот же провайдер, что дислокация)
+  enabled: true         # фоновый крон-инкремент; ручной прогон — POST /reference/update/pull
+  base_url: https://176.53.160.9:8443/api/v1  # тот же адрес, что у АСУ (data_source.asu)
+  insecure_tls: true    # самоподписанный серт провайдера на IP (аналог curl -k)
+  pull_interval: 1h     # период крон-инкремента; курсор берётся из pamyatka_cursor, пропуск тика не теряет пачку
+  initial_lookback: 48h # окно ПЕРВОГО захода, когда курсора ещё нет; должно быть заметно глубже задержки публикации у провайдера (часовое окно пусто всегда — заклинивало холодный старт)
+  cursor_overlap: 30m   # курсор храним на столько раньше LAST_UPDATE: провайдер публикует записи не в порядке штампов, встык запоздавшие терялись бы
+  stale_after: 6h       # курсор не двигается дольше — пустой проход пишется в журнал (silent_hours), чтобы простой было видно
+  clients: [attis, nmtp] # коды клиентов провайдера: памятки разнесены по клиентам, у каждого свои номера
+  # auth_secret_key по умолчанию ASU_TOKEN (env) — ключ X-API-Key того же провайдера
+  # Инкремент пишет вехи подачи/уборки в vagon_history (date_pod/date_ubor/nom_gu45_*),
+  # стадия заполнения — колонка pamyatka_state (0/1/2). Итоги прохода — в event_journal.
+
+max:                    # рассылка форм в мессенджер MAX (токен бота — env MAX_BOT_TOKEN)
+  enabled: true         # канал включён; чаты/маршруты — в БД (таблицы max_chat/max_route)
+  base_url: https://platform-api2.max.ru  # Bot API MAX (CA Минцифры вшит в бинарь)
+  timeout_secs: 120     # таймаут HTTP (заливка картинок бывает долгой)
+  send_delay: 500ms     # пауза между чатами (лимит API 30 rps)
+
+bros:                   # подсистема «Брошенные»
+  enabled: true         # ежедневный крон bulk-save журнала (фиксация без завязки на MAX)
+  journal_cron: "01:00" # время bulk-save по Москве (HH:MM); пустое → дефолт 01:00

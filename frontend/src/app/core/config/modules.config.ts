@@ -2,8 +2,20 @@
  * Каталог модулей платформы IQPort. Один источник правды для:
  *  - module-switcher в навбаре (переход между модулями),
  *  - портала-лаунчера.
- * url — поддомен модуля (отдельные SPA + SSO). roles — кто видит плитку/пункт.
- * Пустой roles => виден всем аутентифицированным.
+ *
+ * ⚠️ Зеркало каталога ПОРТАЛА (репозиторий iqport/portal,
+ * src/app/core/config/modules.config.ts). Владелец списка — портал; здесь копия,
+ * чтобы свитчер в навбаре показывал ровно те же модули, что плитки лаунчера.
+ * Разъезжаются списки — правится и там, и тут (docs/PORTAL_INTEGRATION.md).
+ *
+ * url — поддомен модуля (отдельные SPA + SSO, один realm iqport).
+ * roles — realm-роли, дающие доступ к модулю: достаточно ЛЮБОЙ из списка.
+ *   Обычно это view_<id>/edit_<id>, но шкала у модуля может быть своя — у dpport
+ *   четыре уровня (admin/operator/client_dispatcher/client), и перечислены все,
+ *   потому что доступ к модулю даёт каждый из них.
+ *   ВАЖНО: пустой список = доступ ВСЕМ вошедшим.
+ * available — модуль реально развёрнут. false => в свитчере пункта нет вовсе
+ *   (в портале — серая плитка «Недоступно»), независимо от ролей.
  */
 export interface PlatformModule {
   id: string;
@@ -13,6 +25,7 @@ export interface PlatformModule {
   url: string;
   icon: string;
   roles: string[];
+  available: boolean;
 }
 
 export const PLATFORM_MODULES: PlatformModule[] = [
@@ -21,9 +34,12 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     name: 'Месячное планирование порта',
     short: 'MPPort',
     description: 'Стратегическое планирование шахта → судно',
+    // В ветке тимлида здесь остался http://localhost:4202 (локальная отладка) —
+    // в сборку такое не берём: боевой адрес по конвенции платформы.
     url: 'https://mpport.iqport.ru',
     icon: 'calendar',
-    roles: ['operator', 'admin'],
+    roles: ['view_mpport', 'edit_mpport'],
+    available: true,
   },
   {
     id: 'dpport',
@@ -32,7 +48,10 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Ведёт вагон от оформления до подачи',
     url: 'https://dpport.iqport.ru',
     icon: 'schedule',
-    roles: [],
+    // Наша ролевая модель (roles.ts, решение владельца 31.07.2026): четыре
+    // независимых уровня с суффиксом модуля, доступ в модуль даёт любой из них.
+    roles: ['admin_dpport', 'operator_dpport', 'client_dispatcher_dpport', 'client_dpport'],
+    available: true,
   },
   {
     id: 'rtport',
@@ -41,7 +60,8 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Статус вагонов, схема путей, маневры в реальном времени',
     url: 'https://rtport.iqport.ru',
     icon: 'deployment-unit',
-    roles: [],
+    roles: ['view_rtport', 'edit_rtport'],
+    available: true,
   },
   {
     id: 'sspr',
@@ -50,7 +70,8 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Обязательный документ, основание для компенсаций',
     url: 'https://sspr.iqport.ru',
     icon: 'file-done',
-    roles: ['operator', 'admin'],
+    roles: ['view_sspr', 'edit_sspr'],
+    available: true,
   },
   {
     id: 'rtgeo',
@@ -59,7 +80,8 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Реальное время, перестановки, фильтры',
     url: 'https://rtgeo.iqport.ru',
     icon: 'environment',
-    roles: [],
+    roles: ['view_rtgeo', 'edit_rtgeo'],
+    available: false,
   },
   {
     id: 'spport',
@@ -68,7 +90,8 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Прогноз формирования и расхода угля по маркам',
     url: 'https://spport.iqport.ru',
     icon: 'database',
-    roles: ['operator', 'admin'],
+    roles: ['view_spport', 'edit_spport'],
+    available: false,
   },
   {
     id: 'fpport',
@@ -77,6 +100,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Назначение угля, списание со склада, сверка отгрузок',
     url: 'https://fpport.iqport.ru',
     icon: 'container',
-    roles: [],
+    roles: ['view_fpport', 'edit_fpport'],
+    available: false,
   },
 ];
