@@ -538,9 +538,12 @@ func gtTransitTrains(rows []domain.Dislocation, known map[string]bool, univers m
 	return out
 }
 
-// gtArrivedTrains — прибывшие за сутки поезда из вех истории (группа по
-// index_pp + date_prib, как gtport history/groups): участвуют в симуляции
-// стартовых суток, «прибытие» = факт date_prib.
+// gtArrivedTrains — прибывшие за сутки поезда из вех истории: группа по
+// index_pp + ЖД-СУТКИ прибытия (date_prib_d), «прибытие» = самая ранняя веха.
+// В gtport группа шла по точному date_prib (оператор штамповал поезд одним
+// временем); в DPmodule вехи из потока АСУ проставляются вагонам порциями
+// (21:00/21:30/22:20 у одного поезда) — точное время развалило бы поезд на
+// части (боевой случай 05.08.2026, поезд 128).
 func gtArrivedTrains(rows []domain.VagonHistory, known map[string]bool) []GtTrainDTO {
 	type agg struct {
 		t    GtTrainDTO
@@ -554,7 +557,11 @@ func gtArrivedTrains(rows []domain.VagonHistory, known map[string]bool) []GtTrai
 		if !known[r.Naznach] || r.DatePrib == nil {
 			continue
 		}
-		key := r.IndexPp + "|" + time.Time(*r.DatePrib).Format("2006-01-02 15:04:05")
+		day := time.Time(*r.DatePrib).Format("2006-01-02")
+		if r.DatePribD != nil {
+			day = time.Time(*r.DatePribD).Format("2006-01-02")
+		}
+		key := r.IndexPp + "|" + day
 		g, ok := groups[key]
 		if !ok {
 			g = &agg{
@@ -566,6 +573,9 @@ func gtArrivedTrains(rows []domain.VagonHistory, known map[string]bool) []GtTrai
 			}
 			groups[key] = g
 			order = append(order, key)
+		}
+		if g.t.ProgJd == nil || time.Time(*r.DatePrib).Before(time.Time(*g.t.ProgJd)) {
+			g.t.ProgJd = r.DatePrib // прибытие поезда = первая веха
 		}
 
 		subKey := r.IndexMain + "|" + r.StationNach + "|" + r.Naznach + "|" + r.CargoGroup

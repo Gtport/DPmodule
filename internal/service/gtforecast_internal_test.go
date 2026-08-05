@@ -178,3 +178,38 @@ func TestApplyGtOverrides(t *testing.T) {
 		}
 	}
 }
+
+// Прибывший поезд, чьи вехи прибытия проставлены порциями (боевой случай
+// 05.08.2026, поезд 128: 21:00/21:30/22:20), — ОДНА группа по ЖД-суткам,
+// прибытие = самая ранняя веха.
+func TestGtArrivedTrains_PortionsMerge(t *testing.T) {
+	lt := func(s string) *domain.LocalTime {
+		tt, _ := time.Parse("2006-01-02T15:04:05", s)
+		v := domain.LocalTime(tt)
+		return &v
+	}
+	day := lt("2026-08-05T00:00:00")
+	mk := func(prib string, n int) []domain.VagonHistory {
+		out := make([]domain.VagonHistory, n)
+		for i := range out {
+			out[i] = domain.VagonHistory{
+				IndexPp: "8650-128-9857", Naznach: "АЭ", StationNach: "ПЕТРОВСКИЙ ЗАВОД",
+				CargoGroup: "УГОЛЬ", DatePrib: lt(prib), DatePribD: day,
+			}
+		}
+		return out
+	}
+	rows := append(append(mk("2026-08-05T21:30:00", 20), mk("2026-08-05T21:00:00", 22)...),
+		mk("2026-08-05T22:20:00", 21)...)
+
+	got := gtArrivedTrains(rows, map[string]bool{"АЭ": true})
+	if len(got) != 1 {
+		t.Fatalf("групп %d, ожидалась 1 (порции вех не должны разваливать поезд)", len(got))
+	}
+	if got[0].VagonCount != 63 {
+		t.Errorf("вагонов %d, ожидалось 63", got[0].VagonCount)
+	}
+	if p := time.Time(*got[0].ProgJd).Format("15:04"); p != "21:00" {
+		t.Errorf("прибытие группы %s, ожидалась самая ранняя веха 21:00", p)
+	}
+}

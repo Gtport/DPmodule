@@ -228,11 +228,14 @@ export class GtTrainTableComponent {
     })
   );
 
-  /** Поезда и свободные нитки в единой хронологии ЖД-времени. */
+  /** Поезда и свободные нитки в единой ФИЗИЧЕСКОЙ хронологии: ключ — расчётная
+   *  шкала (−18ч/+6ч), а не сырое ЖД-время. ЖД ≥ 18:00 — вечер предыдущих
+   *  физических суток и идёт РАНЬШЕ утренних времён тех же ЖД-суток
+   *  (замечание владельца 05.08.2026: сортировка по сырому ЖД врала). */
   readonly lines = computed<Line[]>(() => {
-    const out: Line[] = this.rows().map((row) => ({ jdKey: row.train.prog_jd ?? '', row }));
+    const out: Line[] = this.rows().map((row) => ({ jdKey: calcKey(row.train.prog_jd), row }));
     for (const slot of this.slots()) {
-      out.push({ jdKey: slot.jd, slot });
+      out.push({ jdKey: calcKey(slot.jd), slot });
     }
     out.sort((a, b) => a.jdKey.localeCompare(b.jdKey));
     return out;
@@ -306,6 +309,14 @@ function risk(t: GtTrain): Risk | null {
     return { level: 'watch', reason: 'Опережает нитку — следить' };
   }
   return null;
+}
+
+/** ЖД-время → ключ расчётной шкалы (час ≥ 18 → −18ч, иначе +6ч), ISO-строкой. */
+function calcKey(jd: string | null): string {
+  if (!jd) return '';
+  const d = new Date(jd.slice(0, 19) + 'Z'); // naive как UTC — только для арифметики
+  d.setUTCHours(d.getUTCHours() + (d.getUTCHours() >= 18 ? -18 : 6));
+  return d.toISOString();
 }
 
 function shortIndex(index: string): string {
