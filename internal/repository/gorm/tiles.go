@@ -2,6 +2,8 @@ package gormrepo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	"gorm.io/gorm"
 
@@ -20,11 +22,17 @@ func NewTileRepository(db *gorm.DB) *TileRepository {
 }
 
 func (r *TileRepository) Tile(ctx context.Context, z, x, y int) ([]byte, error) {
+	// Именно Row().Scan, НЕ gorm.Scan(&data): GORM трактует *[]byte как «срез
+	// строк из uint8» и валится на конвертации bytea (проверено 06.08.2026 —
+	// из-за этого карта на VPS осталась без подложки при живом кэше).
 	var data []byte
-	err := r.db.WithContext(ctx).
+	row := r.db.WithContext(ctx).
 		Raw(`SELECT data FROM map_tiles WHERE z = ? AND x = ? AND y = ?`, z, x, y).
-		Scan(&data).Error
-	if err != nil {
+		Row()
+	if err := row.Scan(&data); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, port.ErrTileNotFound
+		}
 		return nil, err
 	}
 	if len(data) == 0 {
