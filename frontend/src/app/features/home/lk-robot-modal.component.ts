@@ -60,27 +60,32 @@ import { LkProcessResultComponent } from './lk-process-result.component';
             </button>
           </div>
 
-          <!-- Поток = кабинет одного грузополучателя: слева подпись, справа либо
-               поле пароля (пока не бежим), либо состояние этого потока. -->
+          <!-- Поток = кабинет одного грузополучателя: слева подпись, справа состояние
+               (пока бежим) либо поле пароля с итогом ПРОШЛОГО запуска рядом.
+               ⚠️ Итог прошлого запуска поле пароля НЕ вытесняет: состояние робота
+               живёт в памяти сервера до его перезапуска, и раньше окно после
+               завершённого забора навсегда оставалось без полей — запустить новый
+               было нечем (разбор жалобы 07.08.2026). -->
           @for (a of accounts(); track a.okpo) {
             <div class="rrow">
               <span class="rname" [title]="'логин ' + a.login">{{ a.name || ('ОКПО ' + a.okpo) }}</span>
-              @if (running() || itemFor(a.okpo)) {
+              @if (running()) {
                 <span class="rstate">{{ stateLabel(itemFor(a.okpo)) }}</span>
-                @if (itemFor(a.okpo); as it) {
-                  @if (it.state === 'ok') {
-                    <nz-tag class="chip" nzColor="success"
-                            nz-tooltip [nzTooltipTitle]="'срез ' + formation(it)">{{ it.rows }} ваг.</nz-tag>
-                  } @else if (it.state === 'fail') {
-                    <nz-tag class="chip" nzColor="error" nz-tooltip [nzTooltipTitle]="it.error">отказ</nz-tag>
-                  }
-                }
               } @else {
                 <input nz-input type="password" autocomplete="off" nzSize="small"
                        [placeholder]="'пароль ' + a.login"
                        [ngModel]="pwdFor(a.okpo)"
                        (ngModelChange)="setPwd(a.okpo, $event)"
                        (keydown.enter)="run()" />
+              }
+              @if (itemFor(a.okpo); as it) {
+                @if (it.state === 'ok') {
+                  <nz-tag class="chip" [class.past]="!running()" nzColor="success"
+                          nz-tooltip [nzTooltipTitle]="'срез ' + formation(it)">{{ it.rows }} ваг.</nz-tag>
+                } @else if (it.state === 'fail') {
+                  <nz-tag class="chip" [class.past]="!running()" nzColor="error"
+                          nz-tooltip [nzTooltipTitle]="it.error">отказ</nz-tag>
+                }
               }
             </div>
           }
@@ -89,7 +94,8 @@ import { LkProcessResultComponent } from './lk-process-result.component';
             @if (running()) {
               <span class="hint">{{ stageLabel() }} — окно можно закрыть, работа не прервётся</span>
             } @else if (lastItems().length) {
-              <span class="hint">получено потоков: {{ state()?.ok }} из {{ lastItems().length }}</span>
+              <span class="hint">прошлый забор {{ finishedLabel() }}: получено потоков
+                {{ state()?.ok }} из {{ lastItems().length }}</span>
             }
             <span class="spacer"></span>
             <button nz-button nzType="primary" nzSize="small"
@@ -120,7 +126,10 @@ import { LkProcessResultComponent } from './lk-process-result.component';
     .rrow { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: 4px; }
     .rname { flex: 0 0 140px; font-size: var(--font-size-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .rstate { flex: 1 1 auto; font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+    .rrow input { flex: 1 1 auto; min-width: 0; }
     .chip { margin: 0; white-space: nowrap; }
+    /* Итог прошлого запуска приглушён — чтобы его не приняли за свежий. */
+    .chip.past { opacity: 0.6; }
     .rfoot { display: flex; align-items: center; gap: var(--space-sm); margin-top: 6px;
              padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-border, #f0f0f0); }
     .note { margin-top: var(--space-md); }
@@ -267,8 +276,21 @@ export class LkRobotModalComponent implements OnInit, OnDestroy {
 
   /** Метка среза кабинета «ДД.ММ ЧЧ:ММ» — по ней видно, насколько свежи данные. */
   formation(it: LKRobotItem): string {
-    const ts = it.formation_ts;
-    if (!ts) return 'неизвестен';
+    return this.stamp(it.formation_ts, 'неизвестен');
+  }
+
+  /**
+   * Когда закончился прошлый запуск. Робот помнит его до перезапуска сервера,
+   * поэтому в окне может лежать вчерашний итог — дата рядом не даёт принять его
+   * за сегодняшний.
+   */
+  finishedLabel(): string {
+    return this.stamp(this.state()?.finished_at, 'ранее');
+  }
+
+  /** Наше время без зоны («2026-08-06T09:43:00») в короткое «ДД.ММ ЧЧ:ММ». */
+  private stamp(ts: string | null | undefined, fallback: string): string {
+    if (!ts) return fallback;
     const [date, time] = ts.split('T');
     const [, m, d] = date.split('-');
     return `${d}.${m} ${(time ?? '').slice(0, 5)}`;
