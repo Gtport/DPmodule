@@ -109,11 +109,12 @@ const HOUR_LABELS = ['18', '21', '0', '3', '6', '9', '12', '15'];
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
     th, td { border: 1px solid var(--color-border, #e5e5e5); padding: 0 2px; text-align: center; }
     th { font-weight: 500; background: var(--color-bg-muted, #fafafa); }
-    .c-date { width: 44px; white-space: nowrap; }
-    .c-num { width: 40px; }
+    .c-date { width: 40px; white-space: nowrap; }
+    .c-num { width: 34px; }
     .c-num.b, .b { font-weight: 600; }
     .bad { color: #d32f2f; font-weight: 600; }
-    .c-scale { min-width: 340px; padding: 0; }
+    /* Узкая шкала: левая панель с таблицами занимает ~53% (эталон gtport). */
+    .c-scale { min-width: 220px; padding: 0; }
     .scale { position: relative; height: 14px; }
     .scale span { position: absolute; transform: translateX(-50%); font-weight: 400; color: #888; }
     .lane { position: relative; height: 20px; }

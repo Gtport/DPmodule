@@ -27,8 +27,9 @@ import { GtSpeedsComponent } from './speeds-dialog.component';
 
 /**
  * Вкладка «Прогноз прибытия/выгрузки» (перенос страницы «Прогноз GT» gtport).
- * Слева — таблицы очереди поездов терминалов режима, справа — диаграммы Ганта
- * симуляции выгрузки по потокам.
+ * Слева — таблицы очереди поездов терминалов режима РЯДОМ (как эталон:
+ * АЭ | ГУТ-2, строка = поезд), справа — диаграммы Ганта симуляции выгрузки
+ * по потокам.
  *
  * Вся математика — на сервере (POST simulate): смена режима/даты/горизонта/
  * скорости суток и what-if правки поездов → пересчёт запросом. Правки
@@ -129,17 +130,20 @@ const ACTION_LABEL: Record<string, string> = {
       } @else if (viewData(); as d) {
         <div class="cols">
           <div class="left">
-            @for (t of terminalBlocks(); track t.name) {
-              <app-gt-train-table
-                [title]="t.name" [color]="t.color" [trains]="t.trains"
-                [remainder]="t.remainder" [waitByIndex]="t.waitByIndex" [black]="black()"
-                [slots]="showSlots() ? d.free_slots : []"
-                [selectedSlot]="selectedSlot()"
-                [selectedTrain]="selectedTrain()"
-                (slotSelect)="selectedSlot.set($event)"
-                (trainSelect)="toggleTrainSelect($event)"
-                (editTrain)="onEditTrain($event)" />
-            }
+            <div class="tables">
+              @for (t of terminalBlocks(); track t.name) {
+                <app-gt-train-table
+                  [title]="t.name" [color]="t.color" [trains]="t.trains"
+                  [remainder]="t.remainder" [waitByIndex]="t.waitByIndex" [black]="black()"
+                  [compact]="terminalBlocks().length > 1"
+                  [slots]="showSlots() ? d.free_slots : []"
+                  [selectedSlot]="selectedSlot()"
+                  [selectedTrain]="selectedTrain()"
+                  (slotSelect)="selectedSlot.set($event)"
+                  (trainSelect)="toggleTrainSelect($event)"
+                  (editTrain)="onEditTrain($event)" />
+              }
+            </div>
             @if (journalOpen()) {
               <div class="journal">
                 <div class="jhead">Журнал правок ({{ journal().length }})</div>
@@ -213,10 +217,13 @@ const ACTION_LABEL: Record<string, string> = {
                   border-radius: 4px; padding: 1px 4px; font-size: 12px; }
     .jcount { font-size: 11px; font-weight: 600; margin-left: 2px; }
     .cols { display: flex; gap: var(--space-sm); align-items: flex-start; }
-    .left { flex: 0 0 38%; display: flex; flex-direction: column; gap: var(--space-sm);
-            min-width: 320px; }
+    /* Эталон gtport: таблицы терминалов РЯДОМ, левая панель ~53% ширины. */
+    .left { flex: 0 0 53%; display: flex; flex-direction: column; gap: var(--space-sm);
+            min-width: 480px; }
+    .tables { display: flex; gap: var(--space-sm); align-items: flex-start; }
+    .tables > * { flex: 1 1 0; min-width: 0; }
     .right { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--space-sm);
-             min-width: 0; }
+             min-width: 0; overflow-x: auto; }
     .right.dim { opacity: 0.6; }
     .empty { display: flex; justify-content: center; padding: var(--space-xl);
              color: #888; background: var(--color-bg-surface); border-radius: var(--radius-card); }

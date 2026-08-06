@@ -3,9 +3,15 @@ import { GtFreeSlot, GtTrain } from './gt-forecast-api.service';
 
 /**
  * Таблица очереди поездов терминала (перенос gtport TrainTable). Колонки:
- * Поезд (индекс + состав по подгруппам с цветом клиента), Прибытие (prog_jd),
+ * Поезд (индекс · состав одной строкой, как эталон), Прибытие (prog_jd),
  * Путь (осталось в пути), Опережение (mistake — риск броска/срыва нитки),
  * Ожид (ожидание начала выгрузки из симуляции).
+ *
+ * Вся информация о поезде — в ОДНОЙ строке (таблицы двух терминалов стоят
+ * рядом). Состав — подгруппы СВОЕГО терминала «станция (Nв)» через «·», лишнее
+ * срезается многоточием; в компакт-режиме сборный поезд (подгруппы с разными
+ * index_main) схлопывается в «сборный (Nв)» курсивом — эталон compact gtport.
+ * Полный состав — в тултипе строки.
  *
  * Шапка: остатки терминала, счётчики поездов/брошенных, кликабельные бейджи
  * риска ⚠/!/~ — клик подсвечивает строки этого уровня.
@@ -25,6 +31,14 @@ interface Risk {
 interface Row {
   train: GtTrain;
   risk: Risk | null;
+  /** Состав одной строкой: «станция (Nв) · …» либо «сборный (Nв)». */
+  compose: string;
+  /** Сборный в компакте — курсив (эталон compact+isMixed gtport). */
+  mixed: boolean;
+  /** Цвет клиента первой подгруппы терминала (эталон sg[0].color). */
+  composeColor: string;
+  /** Полный тултип строки: индекс + подгруппы с маршрутами. */
+  tip: string;
   arrival: string;
   arrivalColor: string;
   arrivalBold: boolean;
@@ -109,24 +123,16 @@ const SLOT_TOLERANCE_H = 3;
                     (click)="trainSelect.emit(r.train.index)"
                     (contextmenu)="onContext($event, r.train)">
                   <td class="c-train">
-                    <div class="idx">
+                    <div class="line" [title]="r.tip + (r.risk ? '\n⚠ ' + r.risk.reason : '')">
                       @if (r.risk) {
-                        <span class="dot" [style.background]="riskColor[r.risk.level]"
-                              [title]="r.risk.reason"></span>
+                        <span class="dot" [style.background]="riskColor[r.risk.level]"></span>
                       }
-                      <b [title]="r.train.index">{{ shortIndex(r.train.index) }}</b>
-                      <span class="vc">{{ r.train.vagon_count }}в</span>
+                      <b>{{ shortIndex(r.train.index) }}</b>
                       @if (r.train.delay_hours && !r.train.is_arrived) {
-                        <span class="delay" title="Задержка (бросок/восстановление)">+{{ r.train.delay_hours }}ч</span>
+                        <span class="delay">+{{ r.train.delay_hours }}ч</span>
                       }
-                    </div>
-                    <div class="compose">
-                      @for (sg of r.train.sub_groups; track sg.key) {
-                        <span [style.color]="black() ? '#111' : (sg.color || '#111')"
-                              [title]="sg.station_nach + ' → ' + sg.naznach + (sg.cargo_group ? ' · ' + sg.cargo_group : '') + (sg.is_universal ? ' · универсальный' : '')">
-                          {{ sg.station_nach }}&thinsp;×{{ sg.vagon_count }}{{ sg.is_universal ? '·У' : '' }}
-                        </span>
-                      }
+                      <span class="compose" [class.mixed]="r.mixed"
+                            [style.color]="r.composeColor">{{ r.compose }}</span>
                     </div>
                   </td>
                   <td [style.color]="r.arrivalColor" [class.b]="r.arrivalBold">{{ r.arrival }}</td>
@@ -157,13 +163,19 @@ const SLOT_TOLERANCE_H = 3;
                   font-size: 12px; font-weight: 600; cursor: pointer; padding: 0 4px; }
     .risk-badge.on { border-color: currentColor; background: rgba(0,0,0,0.04); }
     .dp-tbl-wrap { max-height: 66vh; overflow: auto; }
-    .dp-tbl td, .dp-tbl th { font-size: 11px; padding: 2px 4px; text-align: center; }
-    .c-train { text-align: left; }
-    .idx { display: flex; align-items: center; gap: 4px; }
-    .vc { color: #777; }
-    .delay { color: #c62828; font-size: 10px; font-weight: 600; }
+    .dp-tbl { table-layout: fixed; width: 100%; }
+    .dp-tbl td, .dp-tbl th { font-size: 11px; padding: 2px 4px; text-align: center;
+                             white-space: nowrap; }
+    .dp-tbl th:nth-child(2) { width: 70px; }
+    .dp-tbl th:nth-child(3) { width: 34px; }
+    .dp-tbl th:nth-child(4) { width: 44px; }
+    .dp-tbl th:nth-child(5) { width: 40px; }
+    .c-train { text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .line { display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; }
+    .delay { color: #c62828; font-size: 10px; font-weight: 600; flex: none; }
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
-    .compose { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: 10px; }
+    .compose { font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+    .compose.mixed { font-style: italic; }
     .b { font-weight: 600; }
     .arrived { opacity: 0.85; }
     .empty { color: #888; padding: var(--space-md); }
@@ -185,6 +197,8 @@ export class GtTrainTableComponent {
   /** Ожидание выгрузки по индексу поезда (минуты, из операций симуляции). */
   readonly waitByIndex = input<Record<string, number>>({});
   readonly black = input<boolean>(false);
+  /** Компакт (две таблицы рядом): сборный состав схлопнут в «сборный (Nв)». */
+  readonly compact = input<boolean>(false);
   /** Свободные нитки станции (пустой список = показ выключен). */
   readonly slots = input<GtFreeSlot[]>([]);
   readonly selectedSlot = input<GtFreeSlot | null>(null);
@@ -211,9 +225,26 @@ export class GtTrainTableComponent {
     this.trains().map((t) => {
       const waitMin = this.waitByIndex()[t.index] ?? 0;
       const waitH = waitMin / 60;
+      // Подгруппы СВОЕГО терминала (поезд может везти и на соседний).
+      const own = t.sub_groups.filter((sg) => sg.naznach === this.title());
+      const groups = own.length > 0 ? own : t.sub_groups;
+      const count = groups.reduce((s, g) => s + g.vagon_count, 0);
+      const mains = new Set(groups.map((g) => g.index_main).filter(Boolean));
+      const mixed = groups.length > 1 && mains.size > 1;
+      const full = groups.map((g) => `${g.station_nach || '—'} (${g.vagon_count}в)`).join(' · ');
       return {
         train: t,
         risk: risk(t),
+        compose: this.compact() && mixed ? `сборный (${count}в)` : full,
+        mixed,
+        composeColor: this.black() ? '#111' : (groups[0]?.color || '#111'),
+        tip: [
+          t.index,
+          ...groups.map((g) =>
+            `${g.station_nach || '—'} → ${g.naznach} · ${g.vagon_count}в` +
+            (g.cargo_group ? ` · ${g.cargo_group}` : '') +
+            (g.is_universal ? ' · универсальный' : '')),
+        ].join('\n'),
         arrival: fmtJd(t.prog_jd),
         arrivalColor: t.is_arrived ? '#1565c0' : t.status === '5' ? '#c62828' : t.plan_jd ? '#2e7d32' : '',
         arrivalBold: !!t.plan_jd || t.status === '5',
