@@ -69,8 +69,8 @@ func baseClaims() jwt.MapClaims {
 
 func newAuthRouter(kc *middleware.KeycloakJWT) *gin.Engine {
 	r := gin.New()
-	// Как в server.go: аутентификация + гейт «мутации — набору Writers» на всю группу.
-	api := r.Group("/api", kc.Middleware(), kc.RequireRolesForWrites(auth.Writers...))
+	// Как в server.go: аутентификация + гейт «мутации — набору правок» на всю группу.
+	api := r.Group("/api", kc.Middleware(), kc.RequireForWrites(auth.AccessWrite))
 	api.GET("/me", func(c *gin.Context) {
 		cl := auth.ClaimsFromContext(c.Request.Context())
 		c.JSON(http.StatusOK, gin.H{"username": cl.Username, "sub": cl.Subject})
@@ -78,7 +78,7 @@ func newAuthRouter(kc *middleware.KeycloakJWT) *gin.Engine {
 	api.POST("/edit", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
-	api.GET("/admin", kc.RequireAnyRole(auth.Admins...), func(c *gin.Context) {
+	api.GET("/admin", kc.Require(auth.AccessAdmin), func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 	return r
@@ -105,7 +105,9 @@ func TestKeycloakJWT_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	srv := jwksServer(t, testKid, &key.PublicKey)
-	cfg := config.Keycloak{JWKSURL: srv.URL, Issuer: testIssuer, Audience: testAudience}
+	// ClientID заполняет config.Load (дефолт из audience); здесь конфиг собирается
+	// руками, поэтому задаём явно — по нему читаются client-роли из resource_access.
+	cfg := config.Keycloak{JWKSURL: srv.URL, Issuer: testIssuer, Audience: testAudience, ClientID: testAudience}
 
 	t.Run("valid token → 200 + claims", func(t *testing.T) {
 		kc := middleware.NewKeycloakJWT(cfg)
@@ -221,6 +223,42 @@ func TestKeycloakJWT_RoundTrip(t *testing.T) {
 		c = baseClaims()
 		c["realm_access"] = map[string]any{"roles": []any{"operator_dpport"}}
 		assert.Equal(t, http.StatusOK, doReq(kc, http.MethodPost, "/api/edit", mintToken(t, key, testKid, c)).Code)
+	})
+
+	// Client-роли (переход 08.2026): права модуля читаются из
+	// resource_access[<наш clientId>].roles — независимо от strict_roles.
+	t.Run("client-роли: operator правит, но админки нет", func(t *testing.T) {
+		c := baseClaims()
+		c["realm_access"] = map[string]any{"roles": []any{}}
+		c["resource_access"] = map[string]any{testAudience: map[string]any{"roles": []any{"operator"}}}
+		kc := middleware.NewKeycloakJWT(cfg)
+		tok := mintToken(t, key, testKid, c)
+		assert.Equal(t, http.StatusOK, doReq(kc, http.MethodPost, "/api/edit", tok).Code)
+		assert.Equal(t, http.StatusForbidden, doGet(kc, "/api/admin", tok).Code)
+	})
+
+	t.Run("client-роли: admin проходит в админку", func(t *testing.T) {
+		c := baseClaims()
+		c["realm_access"] = map[string]any{"roles": []any{}}
+		c["resource_access"] = map[string]any{testAudience: map[string]any{"roles": []any{"admin"}}}
+		rr := doGet(middleware.NewKeycloakJWT(cfg), "/api/admin", mintToken(t, key, testKid, c))
+		assert.Equal(t, http.StatusOK, rr.Code)
+	})
+
+	// ЛОВУШКА СХЕМ: (1) роль operator у ЧУЖОГО клиента в resource_access — не
+	// наша; (2) realm-роль operator (легаси контура, strict) — тоже. Пройдут они
+	// только у того, кто сложил списки ролей в одну кучу.
+	t.Run("client-роли: чужая полка resource_access и realm-легаси не дают прав", func(t *testing.T) {
+		strictCfg := cfg
+		strictCfg.StrictRoles = true
+		c := baseClaims()
+		c["realm_access"] = map[string]any{"roles": []any{"operator"}}
+		c["resource_access"] = map[string]any{"iqport-rtport": map[string]any{"roles": []any{"operator", "admin"}}}
+		kc := middleware.NewKeycloakJWT(strictCfg)
+		tok := mintToken(t, key, testKid, c)
+		assert.Equal(t, http.StatusOK, doGet(kc, "/api/me", tok).Code, "токен валиден — чтение есть")
+		assert.Equal(t, http.StatusForbidden, doReq(kc, http.MethodPost, "/api/edit", tok).Code)
+		assert.Equal(t, http.StatusForbidden, doGet(kc, "/api/admin", tok).Code)
 	})
 }
 

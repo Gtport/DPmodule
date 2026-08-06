@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
@@ -441,7 +442,14 @@ type StationNaznachUpdate struct {
 // UpdateStationNaznach валидирует терминал по реестру, пишет справочник и
 // горячо перезагружает DirectoryCache (фильтр перестановок и Stage 2 видят
 // правку сразу; пересчёт уже стоящих вагонов — «Обновить справочники» / тик).
+// Это правка СПРАВОЧНИКА naznach_station («станции перестановок»), а не снимка:
+// доступна senior-operator и admin (решение владельца 06.08.2026), обычному
+// оператору панель станций видна, но не пишется. Без claims (auth выключен) —
+// разрешаем, как в остальных точечных правилах.
 func (s *RearrangeService) UpdateStationNaznach(ctx context.Context, req StationNaznachUpdate) error {
+	if cl := auth.ClaimsFromContext(ctx); cl != nil && !cl.Allows(auth.AccessDicts) {
+		return fmt.Errorf("%w: справочник станций правит старший оператор", ErrDictAccess)
+	}
 	if req.DestStation == "" || req.OriginStation == "" {
 		return fmt.Errorf("%w: не указана пара станций", ErrBadRearrange)
 	}
@@ -588,6 +596,9 @@ func (s *RearrangeService) ApplyRedirection(ctx context.Context, req RedirectApp
 
 // ErrBadRearrange — ошибка валидации запроса перестановки/переадресации (→ 400).
 var ErrBadRearrange = fmt.Errorf("некорректный запрос перестановки")
+
+// ErrDictAccess — правка справочника положена только senior-operator/admin.
+var ErrDictAccess = fmt.Errorf("нет прав на правку справочника")
 
 // mutateSnapshot — обёртка над общим каркасом LKProcessor.MutateSnapshot
 // (мьютекс → правка копии снимка → один пересчёт Stage 3–4 → атомарная подмена

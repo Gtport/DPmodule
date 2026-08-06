@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
@@ -14,6 +15,20 @@ import (
 
 // ErrTableNotEditable — таблица не в реестре list_tables (или editable=false).
 var ErrTableNotEditable = errors.New("таблица не входит в реестр редактируемых")
+
+// ErrTableForbidden — таблица есть в реестре, но роли пользователя не положена.
+var ErrTableForbidden = errors.New("таблица доступна только администратору")
+
+// seniorEditableTables — словари senior-operator'а (решение владельца
+// 06.08.2026): senior видит и правит в админ-редакторе ТОЛЬКО их, полный реестр
+// — у admin (auth.AccessAdmin). Новая таблица реестра по умолчанию admin-only —
+// расширение прав senior'а здесь осознанная правка, не строка в БД.
+var seniorEditableTables = map[string]struct{}{
+	"marka":           {}, // бизнес-атрибуция груза
+	"stations":        {}, // справочник станций
+	"naznach_station": {}, // станции перестановок (перестановка назначения)
+	"sf":              {}, // сборные поезда
+}
 
 // AdminTables — админ-редактор справочников: универсальный CRUD по реестру
 // dpport.list_tables (перенос эталона gtport). Слой валидирует имя таблицы по
@@ -29,8 +44,30 @@ func NewAdminTables(repo port.AdminTablesRepository) *AdminTables {
 }
 
 // Tables — список редактируемых таблиц (для селектора страницы «Админ»).
+// Не-администратору (senior-operator) отдаются только его словари — селектор
+// фронта строится по этому ответу, отдельной фильтрации там нет.
 func (s *AdminTables) Tables(ctx context.Context) ([]domain.AdminTable, error) {
-	return s.repo.ListTables(ctx)
+	tables, err := s.repo.ListTables(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if fullAdmin(ctx) {
+		return tables, nil
+	}
+	out := tables[:0]
+	for _, t := range tables {
+		if _, ok := seniorEditableTables[t.Name]; ok {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+// fullAdmin — полный доступ к реестру: admin либо auth выключен (dev/шаблон,
+// claims в контексте нет — вход в раздел тогда не гейтится вовсе).
+func fullAdmin(ctx context.Context) bool {
+	cl := auth.ClaimsFromContext(ctx)
+	return cl == nil || cl.Allows(auth.AccessAdmin)
 }
 
 // TableData — колонки и все строки таблицы.
@@ -88,8 +125,12 @@ func (s *AdminTables) Delete(ctx context.Context, table, id string) error {
 	return s.repo.Delete(ctx, t.Name, t.PK, id)
 }
 
-// resolve проверяет таблицу по реестру и читает её колонки (с пометкой ключа).
+// resolve проверяет таблицу по реестру и права роли на неё, читает колонки
+// (с пометкой ключа).
 func (s *AdminTables) resolve(ctx context.Context, table string) (domain.AdminTable, []domain.AdminColumn, error) {
+	if _, senior := seniorEditableTables[table]; !senior && !fullAdmin(ctx) {
+		return domain.AdminTable{}, nil, fmt.Errorf("%w: %s", ErrTableForbidden, table)
+	}
 	tables, err := s.repo.ListTables(ctx)
 	if err != nil {
 		return domain.AdminTable{}, nil, err

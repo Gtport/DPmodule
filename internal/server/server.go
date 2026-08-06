@@ -133,22 +133,25 @@ func Build(
 	api := router.Group("/api/v1")
 	if jwtMW != nil {
 		api.Use(jwtMW.Middleware())
-		// Ролевая модель (решение владельца 31.07.2026): роли Keycloak НЕЗАВИСИМЫ,
-		// иерархии с весами нет — доступ есть членство в наборе (auth.Writers).
-		// Чтение — любому залогиненному, ЛЮБАЯ мутация (POST/PUT/PATCH/DELETE) —
-		// operator_dpport или admin_dpport. Гейт висит на всей группе: новая
-		// мутирующая ручка закрыта автоматически, без раскладки по роутам.
-		api.Use(jwtMW.RequireRolesForWrites(auth.Writers...))
+		// Ролевая модель (решения владельца 31.07 и 06.08.2026): роли Keycloak
+		// НЕЗАВИСИМЫ, иерархии с весами нет — доступ есть членство в наборе
+		// (auth.AccessWrite: client-роли operator/senior-operator/admin ИЛИ
+		// realm-роли старой схемы). Чтение — любому залогиненному, ЛЮБАЯ мутация
+		// (POST/PUT/PATCH/DELETE) — набору правок. Гейт висит на всей группе:
+		// новая мутирующая ручка закрыта автоматически, без раскладки по роутам.
+		api.Use(jwtMW.RequireForWrites(auth.AccessWrite))
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
 
-	// Админ-редактор справочников (реестр list_tables) — только admin,
-	// включая чтение (это служебный редактор, не рабочий экран).
+	// Админ-редактор справочников (реестр list_tables) — admin и senior-operator,
+	// включая чтение (это служебный редактор, не рабочий экран). Senior видит и
+	// правит ТОЛЬКО свои словари (service.seniorEditableTables), полный реестр —
+	// admin; границу проводит сам сервис по claims из контекста.
 	// Правки применяются к снимку отдельной кнопкой «Обновить справочники».
 	if adminRepo != nil {
 		adminGrp := api.Group("")
 		if jwtMW != nil {
-			adminGrp.Use(jwtMW.RequireAnyRole(auth.Admins...))
+			adminGrp.Use(jwtMW.Require(auth.AccessDicts))
 		}
 		handler.NewAdminTablesHandler(service.NewAdminTables(adminRepo)).RegisterRoutes(adminGrp)
 	}

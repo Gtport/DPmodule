@@ -2,7 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
 import { ShellComponent } from './layout/shell/shell.component';
 import { PlaceholderComponent } from './features/placeholder/placeholder.component';
-import { ADMIN, OPER, DISPATCHER_NAV } from './layout/shell/nav.config';
+import { DICTS, OPER, DISPATCHER_NAV } from './layout/shell/nav.config';
 
 // Разделы, перенесённые из заглушки на реальный экран — исключаем из
 // автогенерации ниже и подключаем явно (см. routes).
@@ -108,7 +108,9 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/admin/admin.component').then((m) => m.AdminComponent),
         canActivate: [authGuard],
-        data: { roles: ADMIN },
+        // DICTS: senior-operator входит, но видит только свои 4 словаря —
+        // список таблиц отдаёт сервер уже отфильтрованным по роли.
+        data: { roles: DICTS },
       },
       ...dispatcherRoutes,
       {

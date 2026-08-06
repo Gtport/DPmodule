@@ -292,11 +292,13 @@ func trainIndexes(rows []domain.VagonHistory) []string {
 }
 
 // checkArrivalsEditAccess — правило дат (эталон gtport, строже: проверяем КАЖДЫЙ
-// вагон, не только первый): не-администратору можно править лишь строки с датой
-// прибытия сегодня/вчера (или без неё). Без claims (auth выключен) — разрешаем.
+// вагон, не только первый): за пределами смены (сегодня/вчера) правят только
+// senior-operator и admin (auth.AccessCrossShift), обычному оператору доступны
+// лишь строки с датой прибытия сегодня/вчера (или без неё). Без claims (auth
+// выключен) — разрешаем.
 func checkArrivalsEditAccess(ctx context.Context, rows []domain.VagonHistory) error {
 	cl := auth.ClaimsFromContext(ctx)
-	if cl == nil || cl.HasRole(auth.RoleAdmin) {
+	if cl == nil || cl.Allows(auth.AccessCrossShift) {
 		return nil
 	}
 	today := clock.Now().Time().Truncate(24 * time.Hour)
@@ -309,7 +311,7 @@ func checkArrivalsEditAccess(ctx context.Context, rows []domain.VagonHistory) er
 		day := d.Time().Truncate(24 * time.Hour)
 		if !day.Equal(today) && !day.Equal(yesterday) {
 			return fmt.Errorf("%w: править можно только прибытия за сегодня/вчера "+
-				"(вагон %s прибыл %s) — обратитесь к администратору",
+				"(вагон %s прибыл %s) — обратитесь к старшему оператору",
 				ErrArrivalsAccess, rows[i].Vagon, d.String()[:10])
 		}
 	}

@@ -65,37 +65,37 @@ func (k *KeycloakJWT) Middleware() gin.HandlerFunc {
 	}
 }
 
-// RequireAnyRole — доступ тем, у кого есть ХОТЯ БЫ ОДНА из перечисленных ролей.
-// Иерархии нет (роли независимы), поэтому набор перечисляется целиком.
-// 401 без claims, 403 при отсутствии роли.
-func (k *KeycloakJWT) RequireAnyRole(roles ...auth.Role) gin.HandlerFunc {
+// Require — доступ тем, кого пускает набор (client-роль ИЛИ realm-роль, каждая
+// схема сверяется со своим списком — auth.Access). Иерархии нет (роли
+// независимы), набор перечисляется целиком. 401 без claims, 403 без роли.
+func (k *KeycloakJWT) Require(a auth.Access) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		abortUnlessRole(c, roles)
+		abortUnlessAllowed(c, a)
 	}
 }
 
-// RequireRolesForWrites — гейт «порог правок»: чтение (GET/HEAD/OPTIONS)
+// RequireForWrites — гейт «порог правок»: чтение (GET/HEAD/OPTIONS)
 // пропускается как есть (аутентификацию уже проверил Middleware), любая
-// мутация (POST/PUT/PATCH/DELETE) требует роль из набора. Вешается на всю
+// мутация (POST/PUT/PATCH/DELETE) требует доступ из набора. Вешается на всю
 // группу /api/v1: новые мутирующие ручки закрыты автоматически.
-func (k *KeycloakJWT) RequireRolesForWrites(roles ...auth.Role) gin.HandlerFunc {
+func (k *KeycloakJWT) RequireForWrites(a auth.Access) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch c.Request.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 			c.Next()
 			return
 		}
-		abortUnlessRole(c, roles)
+		abortUnlessAllowed(c, a)
 	}
 }
 
-func abortUnlessRole(c *gin.Context, roles []auth.Role) {
+func abortUnlessAllowed(c *gin.Context, a auth.Access) {
 	cl := auth.ClaimsFromContext(c.Request.Context())
 	if cl == nil {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
-	if !cl.HasRole(roles...) {
+	if !cl.Allows(a) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
@@ -140,7 +140,7 @@ func (k *KeycloakJWT) validate(ctx context.Context, raw string) (*auth.Claims, e
 		return nil, errors.New("invalid claims")
 	}
 
-	return extractClaims(mapClaims, k.cfg.StrictRoles)
+	return extractClaims(mapClaims, k.cfg.ClientID, k.cfg.StrictRoles)
 }
 
 func (k *KeycloakJWT) keyFunc(ctx context.Context) jwt.Keyfunc {
@@ -245,29 +245,48 @@ func jwkToRSA(j jwk) (*rsa.PublicKey, error) {
 	return &rsa.PublicKey{N: new(big.Int).SetBytes(nb), E: e}, nil
 }
 
-func extractClaims(m jwt.MapClaims, strict bool) (*auth.Claims, error) {
+func extractClaims(m jwt.MapClaims, clientID string, strict bool) (*auth.Claims, error) {
 	sub, _ := m["sub"].(string)
 	email, _ := m["email"].(string)
 	username, _ := m["preferred_username"].(string)
 
-	// Роли приводятся к внутреннему виду сразу при разборе токена (auth.TokenRoles):
-	// в strict-режиме (общий realm) — дословно, иначе легаси-имена нормализуются.
-	var roles []auth.Role
-	if ra, ok := m["realm_access"].(map[string]any); ok {
-		if rawRoles, ok := ra["roles"].([]any); ok {
-			for _, r := range rawRoles {
-				if s, ok := r.(string); ok {
-					roles = append(roles, auth.Role(s))
-				}
-			}
+	// Две схемы ролей кладутся в РАЗНЫЕ поля и не смешиваются (auth.Access):
+	// client-роли своего клиента — resource_access[<clientId>].roles, дословно;
+	// realm-роли — realm_access.roles, через auth.TokenRoles (в strict-режиме
+	// общего realm'а — дословно, иначе легаси-имена нормализуются).
+	var clientRoles []auth.Role
+	if ra, ok := m["resource_access"].(map[string]any); ok {
+		if client, ok := ra[clientID].(map[string]any); ok {
+			clientRoles = rolesOf(client["roles"])
 		}
 	}
-	roles = auth.TokenRoles(roles, strict)
+	var realmRaw any
+	if ra, ok := m["realm_access"].(map[string]any); ok {
+		realmRaw = ra["roles"]
+	}
+	roles := auth.TokenRoles(rolesOf(realmRaw), strict)
 
 	return &auth.Claims{
 		Subject:  sub,
 		Email:    email,
 		Username: username,
-		Roles:    roles,
+		Roles:       roles,
+		ClientRoles: clientRoles,
 	}, nil
+}
+
+// rolesOf — []any из JSON-claim'а в []auth.Role; не-строки и чужие типы молча
+// пропускаются (битый claim — не наш токен, упадёт на проверке доступа).
+func rolesOf(v any) []auth.Role {
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]auth.Role, 0, len(raw))
+	for _, r := range raw {
+		if s, ok := r.(string); ok {
+			out = append(out, auth.Role(s))
+		}
+	}
+	return out
 }

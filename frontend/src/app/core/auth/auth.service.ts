@@ -1,7 +1,8 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import Keycloak from 'keycloak-js';
 import { KEYCLOAK_EVENT_SIGNAL } from 'keycloak-angular';
-import { OPER, normalizeRole } from './roles';
+import { environment } from '../../../environments/environment';
+import { OPER, RoleSet, normalizeRole } from './roles';
 
 /**
  * Фасад над keycloak-js (инициализируется через provideKeycloak в app.config).
@@ -26,6 +27,7 @@ interface JwtPayload {
   preferred_username?: string;
   name?: string;
   realm_access?: { roles?: string[] };
+  resource_access?: Record<string, { roles?: string[] }>;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -34,6 +36,8 @@ export class AuthService {
   // Сигнал событий keycloak-angular — дёргается на Ready/AuthSuccess/Refresh/Logout/…
   private readonly kcEvent = inject(KEYCLOAK_EVENT_SIGNAL);
   private readonly payload = signal<JwtPayload | null>(this.currentPayload());
+  // Наш клиент Keycloak — тот же, которым логинимся (provideKeycloak).
+  private readonly clientId = environment.keycloak.clientId;
 
   /** Реактивные геттеры для навбара/гвардов/страниц. */
   readonly authenticated = computed(() => this.payload() !== null);
@@ -41,13 +45,15 @@ export class AuthService {
     const p = this.payload();
     return p?.name || p?.preferred_username || 'user';
   });
-  /** Роли из токена, нормализованные к нынешним именам *_dpport (см. roles.ts). */
+  /** REALM-роли из токена (старая схема), нормализованные к именам *_dpport. */
   readonly roles = computed(() =>
     (this.payload()?.realm_access?.roles ?? []).map(normalizeRole),
   );
-  /** Порог правок: набор OPER (operator_dpport или admin_dpport — иерархии нет).
-   *  Клиентские роли видят экраны без кнопок действий. */
-  readonly canEdit = computed(() => this.hasAnyRole(OPER));
+  /** CLIENT-роли нашего клиента (новая схема), дословно. Два списка, а не один
+   *  — см. «Главную ловушку» в roles.ts. */
+  readonly clientRoles = computed(() => this.clientRolesOf(this.clientId));
+  /** Порог правок: набор OPER. Клиентские роли видят экраны без кнопок действий. */
+  readonly canEdit = computed(() => this.allows(OPER));
 
   constructor() {
     // На любое событие Keycloak пересобираем payload из актуального токена.
@@ -62,15 +68,33 @@ export class AuthService {
   }
 
   /**
-   * Есть ли хотя бы одна из требуемых ролей. Нормализуются ОБЕ стороны (как
-   * auth.Claims.HasRole на бэкенде): тогда старое имя, оставшееся в route data
-   * или в конфиге (modules.config.ts), продолжает совпадать с нынешней ролью
-   * из токена. Пустой список требуемых ролей = «доступно любому залогиненному».
+   * Пускает ли набор доступа (пара списков — см. roles.ts): есть нужная
+   * CLIENT-роль ИЛИ нужная REALM-роль, каждый список сверяется со своей полкой
+   * токена — зеркало auth.Claims.Allows на бэкенде. Пустой набор (оба списка
+   * пусты) = «доступно любому залогиненному».
+   */
+  allows(set: RoleSet): boolean {
+    if (!set.client.length && !set.realm.length) return true;
+    const mineClient = this.clientRoles();
+    return set.client.some((r) => mineClient.includes(r)) || this.hasAnyRole(set.realm);
+  }
+
+  /**
+   * REALM-сторона проверки: есть ли хотя бы одна из требуемых realm-ролей.
+   * Нормализуются ОБЕ стороны (как auth.Claims.HasRole на бэкенде): старое имя
+   * из конфига (modules.config.ts) продолжает совпадать с нынешней ролью из
+   * токена. ⚠️ Пустой список здесь = отказ («разрешено никому»), правило
+   * «пусто = всем» живёт в allows.
    */
   hasAnyRole(roles: string[]): boolean {
-    if (!roles.length) return true;
     const mine = this.roles();
     return roles.some((r) => mine.includes(normalizeRole(r)));
+  }
+
+  /** CLIENT-роли произвольного клиента каталога (для module-switcher: чужие
+   *  полки resource_access тоже приходят в токене, пока Full scope включён). */
+  clientRolesOf(clientId: string): string[] {
+    return this.payload()?.resource_access?.[clientId]?.roles ?? [];
   }
 
   /** Редирект на hosted-вход Keycloak (Auth Code + PKCE). */

@@ -424,28 +424,43 @@ Keycloak, без них браузер зарубит запрос по CORS; re
 бэкенд-контейнер уходит в crash-loop (падать громко — так и задумано): в логе
 `password authentication failed for user "gtport_app"`.
 
-Ролевая модель (решение владельца 31.07.2026, справка — `docs/ROLES.md`; общий
-realm стенда описан в `docs/KEYCLOAK.md`): realm-роли Keycloak с суффиксом
-модуля — `admin_dpport`, `operator_dpport`, `client_dispatcher_dpport`,
-`client_dpport` (суффикс разводит наш модуль от соседних в общем realm'е).
-⚠️ **Роли НЕЗАВИСИМЫ**: иерархии с весами больше нет, старшая не включает права
-младших — доступ есть членство в НАБОРЕ (`auth.Writers` = operator+admin,
-`auth.Admins` = admin; наборы в `internal/auth/claims.go` — единственное место,
-где записано «кому что можно»). Чтение — любому залогиненному, любая мутация —
-`RequireRolesForWrites(Writers)` на всей группе `/api/v1`, `/admin/tables*` —
-`RequireAnyRole(Admins)`. Прежние имена (admin/operator/administrator/
-dispatcher/client…) нормализует `auth.TokenRoles` при разборе токена — боевые
-токены работают до перевода realm'а (шаги миграции — в ROLES.md); значение
-`reject_older_role_exempt` из БД матчит админа через want-нормализацию в
-`HasRole`. ⚠️ **`keycloak.strict_roles: true` (стендовый `config.yaml`)
-выключает легаси-нормализацию токена**: в ОБЩЕМ realm'е голые admin/operator/
-dispatcher — легаси-роли контура и могут принадлежать пользователям чужих
-приложений (см. KEYCLOAK.md §3.4), превращать их в наши — дыра; принимаются
-только точные `*_dpport`. Фронт: `core/auth/roles.ts` (OPER/ADMIN — имена
-`*_dpport` + нормализация прежних, UI-уровень), `AuthService.canEdit()`
-скрывает кнопки действий на главной для клиентских ролей; рабочие разделы
-меню — OPER, «Главная» — всем (просмотр). Фронт правится вместе с бэком:
-после перевода Keycloak сервер пустит, а интерфейс спрячет кнопки.
+Ролевая модель — **переведена на client-роли Keycloak** (решения владельца
+31.07 и 06.08.2026, справка — `docs/ROLES.md`; инструкция платформы — файл
+module-client-roles-howto у владельца; общий realm стенда — `docs/KEYCLOAK.md`).
+Основная схема — client-роли клиента `iqport-dpport`
+(`resource_access["iqport-dpport"].roles`): `admin` / `senior-operator` /
+`operator` / `client-dispatcher` / `client`; realm-роли `*_dpport`
+(`realm_access`) остаются рабочей второй схемой до выключения платформой
+Full scope allowed (наш VPS и локальный Keycloak живут на ней + нормализация
+прежних имён admin/operator/dispatcher…, `auth.TokenRoles`). ⚠️ **Схемы НЕ
+смешивать**: одно слово значит разное (client `operator` — наш оператор,
+realm `operator` — чужое легаси на `demo`); проверка — ПАРА списков
+`auth.Access{Client,Realm}`, каждый со своей полкой токена (`Claims.Allows`);
+сторожат `TestAllowsSchemasNotMixed` и раундтрип «чужая полка resource_access».
+⚠️ Роли НЕЗАВИСИМЫ (иерархии нет): матрица (06.08.2026) — operator правит в
+пределах смены (сегодня/вчера); **senior-operator** = operator + правки за
+пределами смены (`AccessCrossShift`: прибытия, «Грузовая работа») + словари
+`marka`/`stations`/`naznach_station` (станции перестановок, включая drag&drop
+панель «Перестановок»)/`sf` (`AccessDicts`); admin — всё + полная админка
+(`AccessAdmin`). «Подтвердить прибытие» пропавших — осознанно operator+
+(смысл функции — старые даты). Наборы — `internal/auth/claims.go`,
+единственное место «кому что можно»; гейты: мутации —
+`RequireForWrites(AccessWrite)` на `/api/v1`, `/admin/tables*` —
+`Require(AccessDicts)` + внутри сервис отдаёт senior'у только его 4 словаря
+(`seniorEditableTables`, чужая таблица 403, новая таблица реестра по умолчанию
+admin-only). `reject_older_role_exempt` из БД матчит обе схемы через
+`auth.AccessFor`. `keycloak.client_id` — чей resource_access читать (пусто →
+audience, конфиги стендов не менялись). ⚠️ `strict_roles: true` (стенд)
+по-прежнему выключает нормализацию REALM-имён; client-ролей не касается.
+Фронт — зеркало: `core/auth/roles.ts` (`RoleSet` пары: OPER/DICTS/ADMIN/ANY),
+`AuthService.allows()`/`clientRoles`, guard понимает RoleSet; меню и маршрут
+«Админ» — DICTS (senior входит, таблицы фильтрует сервер); каталог
+`modules.config.ts` несёт `roles`+`clientRoles` раздельно, switcher смотрит
+полку `iqport-<id>`. ⚠️ До выключения Full scope: платформе — раздать client-роли
+группам `/profiles/dpport-admin` (`admin`, заводят) и `/profiles/client`
+(`client`), каталог ПОРТАЛА (репо iqport/portal) должен получить те же
+`clientRoles` dpport, что наша копия; перед выключением — сверка
+`audit-module-access.py dpport` (доступ только в плюс, `demo` без правки).
 
 Жизненный цикл статусов (PR #88, отход от gtport по решению владельца): заморозки
 на 10 нет — прибывший обновляется и переходит 10→12 (веха выгрузки в историю);

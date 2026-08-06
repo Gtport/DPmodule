@@ -50,13 +50,13 @@ var ErrCargoWorkAccess = fmt.Errorf("правка запрещена")
 // Чтение не ограничиваем: смотреть прошлые сутки может кто угодно.
 func checkCargoWorkAccess(ctx context.Context, day time.Time) error {
 	cl := auth.ClaimsFromContext(ctx)
-	if cl == nil || cl.HasRole(auth.RoleAdmin) {
+	if cl == nil || cl.Allows(auth.AccessCrossShift) {
 		return nil
 	}
 	yesterday := clock.Now().Time().Truncate(24*time.Hour).AddDate(0, 0, -1)
 	if !dayStart(day).Equal(yesterday) {
 		return fmt.Errorf("%w: менять можно только учёт за вчера (%s) — "+
-			"обратитесь к администратору", ErrCargoWorkAccess, yesterday.Format("2006-01-02"))
+			"обратитесь к старшему оператору", ErrCargoWorkAccess, yesterday.Format("2006-01-02"))
 	}
 	return nil
 }

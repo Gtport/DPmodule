@@ -97,13 +97,16 @@ func oldestFormation(files []LKFileInfo) time.Time {
 	return oldest
 }
 
-// exemptRole — есть ли у актора (из JWT) роль-исключение (пусто → нет исключения).
+// exemptRole — есть ли у актора (из JWT) роль-исключение (пусто → нет
+// исключения). Значение в настройке записано одним именем (исторически
+// "administrator") — auth.AccessFor разворачивает его в пару списков, чтобы
+// матчить пользователей и старой realm-схемы, и client-ролей.
 func exemptRole(ctx context.Context, role string) bool {
 	if role == "" {
 		return false
 	}
 	c := auth.ClaimsFromContext(ctx)
-	return c != nil && c.HasRole(auth.Role(role))
+	return c != nil && c.Allows(auth.AccessFor(auth.Role(role)))
 }
 
 // LKProcessResult — итог обработки.

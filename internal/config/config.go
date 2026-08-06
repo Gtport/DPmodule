@@ -176,6 +176,12 @@ type Keycloak struct {
 	// локальный Keycloak): старые токены нормализуются и продолжают работать.
 	StrictRoles bool `yaml:"strict_roles"`
 
+	// ClientID — идентификатор НАШЕГО клиента Keycloak: по нему из токена
+	// берутся client-роли модуля (resource_access[<client_id>].roles). Пусто →
+	// подставляется Audience (у нас это одно и то же имя iqport-dpport), так что
+	// конфиги стендов менять не пришлось.
+	ClientID string `yaml:"client_id"`
+
 	// ClientSecret — секрет (только для confidential-клиентов; пусто = не требуется).
 	// Шаблон Vault в файле, значение подставляет CI/CD; пусто → env KEYCLOAK_CLIENT_SECRET.
 	ClientSecret string `yaml:"client_secret"`
@@ -318,6 +324,9 @@ func loadSecrets(cfg *Config) error {
 func setDefaults(cfg *Config) {
 	if cfg.App.Name == "" {
 		cfg.App.Name = "iqport-service"
+	}
+	if cfg.Keycloak.ClientID == "" {
+		cfg.Keycloak.ClientID = cfg.Keycloak.Audience
 	}
 	if cfg.App.Env == "" {
 		cfg.App.Env = "dev"

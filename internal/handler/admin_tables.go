@@ -97,5 +97,8 @@ func statusForAdminError(err error) int {
 	if errors.Is(err, service.ErrTableNotEditable) {
 		return http.StatusBadRequest
 	}
+	if errors.Is(err, service.ErrTableForbidden) {
+		return http.StatusForbidden
+	}
 	return http.StatusInternalServerError
 }

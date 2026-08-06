@@ -125,6 +125,8 @@ func writeRearrangeError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrBadRearrange):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrDictAccess):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrNotReady):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	default:

@@ -15,7 +15,7 @@ import (
 // серверными пагинацией и сортировкой, данные панели фильтров, Excel по всему
 // фильтру. Поиск и экспорт — POST: списки вагонов вставляются из Excel сотнями
 // номеров, query string упёрся бы в лимиты URL (так же работал и gtport).
-// Побочно POST попадает под RequireRolesForWrites (operator+) — приемлемо,
+// Побочно POST попадает под RequireForWrites (operator+) — приемлемо,
 // страница и так закрыта ролью OPER.
 type historySearchHandler struct {
 	svc *service.HistorySearchService

@@ -9,11 +9,14 @@
  * Разъезжаются списки — правится и там, и тут (docs/PORTAL_INTEGRATION.md).
  *
  * url — поддомен модуля (отдельные SPA + SSO, один realm iqport).
- * roles — realm-роли, дающие доступ к модулю: достаточно ЛЮБОЙ из списка.
- *   Обычно это view_<id>/edit_<id>, но шкала у модуля может быть своя — у dpport
- *   четыре уровня (admin/operator/client_dispatcher/client), и перечислены все,
- *   потому что доступ к модулю даёт каждый из них.
- *   ВАЖНО: пустой список = доступ ВСЕМ вошедшим.
+ * roles — REALM-роли (старая схема), дающие доступ к модулю: достаточно ЛЮБОЙ
+ *   из списка. Обычно это view_<id>/edit_<id>, но шкала у модуля может быть
+ *   своя — у dpport перечислены все его уровни.
+ * clientRoles — CLIENT-роли клиента модуля (iqport-<id>, новая схема): доступ
+ *   даёт любая из них НА СВОЕЙ полке resource_access. Схемы проверяются
+ *   раздельно (см. «Главную ловушку» в core/auth/roles.ts) — доступ есть при
+ *   совпадении в ЛЮБОЙ из двух.
+ *   ВАЖНО: оба списка пусты = доступ ВСЕМ вошедшим.
  * available — модуль реально развёрнут. false => в свитчере пункта нет вовсе
  *   (в портале — серая плитка «Недоступно»), независимо от ролей.
  */
@@ -25,6 +28,7 @@ export interface PlatformModule {
   url: string;
   icon: string;
   roles: string[];
+  clientRoles?: string[];
   available: boolean;
 }
 
@@ -48,9 +52,11 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Ведёт вагон от оформления до подачи',
     url: 'https://dpport.iqport.ru',
     icon: 'schedule',
-    // Наша ролевая модель (roles.ts, решение владельца 31.07.2026): четыре
-    // независимых уровня с суффиксом модуля, доступ в модуль даёт любой из них.
+    // Наша ролевая модель (roles.ts, решения владельца 31.07 и 06.08.2026):
+    // независимые уровни, доступ в модуль даёт любой из них. realm-имена —
+    // старая схема, clientRoles — новая (client-роли клиента iqport-dpport).
     roles: ['admin_dpport', 'operator_dpport', 'client_dispatcher_dpport', 'client_dpport'],
+    clientRoles: ['admin', 'senior-operator', 'operator', 'client-dispatcher', 'client'],
     available: true,
   },
   {
@@ -60,7 +66,9 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Статус вагонов, схема путей, маневры в реальном времени',
     url: 'https://rtport.iqport.ru',
     icon: 'deployment-unit',
+    // rtport уже переведён на client-роли (единая шкала платформы).
     roles: ['view_rtport', 'edit_rtport'],
+    clientRoles: ['client', 'operator', 'senior-operator'],
     available: true,
   },
   {

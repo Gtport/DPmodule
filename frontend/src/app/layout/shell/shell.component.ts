@@ -116,8 +116,8 @@ export class ShellComponent {
   readonly collapsedWidth = 60;
 
   // Пункты меню из реестра, отфильтрованные по ролям текущего пользователя
-  // (реактивно — auth.roles() внутри hasAnyRole является сигналом).
+  // (реактивно — сигналы ролей внутри auth.allows).
   readonly navItems = computed(() =>
-    DISPATCHER_NAV.filter((i) => this.auth.hasAnyRole(i.roles)),
+    DISPATCHER_NAV.filter((i) => this.auth.allows(i.roles)),
   );
 }

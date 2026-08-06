@@ -4,7 +4,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzDropDownModule } from 'ng-zorro-antd/dropdown';
 import { NzMenuModule } from 'ng-zorro-antd/menu';
 import { AuthService } from '../../core/auth/auth.service';
-import { PLATFORM_MODULES } from '../../core/config/modules.config';
+import { PLATFORM_MODULES, PlatformModule } from '../../core/config/modules.config';
 import { environment } from '../../../environments/environment';
 
 /**
@@ -64,7 +64,17 @@ export class ModuleSwitcherComponent {
 
   readonly available = computed(() =>
     PLATFORM_MODULES.filter(
-      (m) => m.available && m.id !== environment.moduleId && this.auth.hasAnyRole(m.roles),
+      (m) => m.available && m.id !== environment.moduleId && this.allowsModule(m),
     ),
   );
+
+  /** Доступ к модулю каталога: его realm-роли ИЛИ client-роли его клиента
+   *  (полка iqport-<id> в resource_access — конвенция портала moduleClientId).
+   *  Схемы проверяются раздельно; оба списка пусты = доступ всем вошедшим. */
+  private allowsModule(m: PlatformModule): boolean {
+    const clientRoles = m.clientRoles ?? [];
+    if (!m.roles.length && !clientRoles.length) return true;
+    const mine = this.auth.clientRolesOf(`iqport-${m.id}`);
+    return clientRoles.some((r) => mine.includes(r)) || this.auth.hasAnyRole(m.roles);
+  }
 }
