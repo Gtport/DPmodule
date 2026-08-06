@@ -9,12 +9,14 @@ import (
 type CarryOverStats struct {
 	Matched int // вагонов найдено в актуальной (перенос из снимка)
 	New     int // новых вагонов (первичная установка index/invoice)
+	NewTrip int // вагон найден, но уехал НОВЫМ рейсом: наследования нет
 	Sticky  int // статус удержан (4/5/10 на той же станции операции)
 }
 
-// applyCarryOver — Stage 2 (S2-2): для вагонов, найденных в актуальном снимке,
-// переносит поля из прошлого снимка (§ enrichFromActual gtport); для новых —
-// первичная установка index_main/index_last/invoice_main. Мутирует kept на месте.
+// applyCarryOver — Stage 2 (S2-2): для вагонов, найденных в актуальном снимке
+// С ТЕМ ЖЕ рейсом, переносит поля из прошлого снимка (§ enrichFromActual gtport);
+// для новых вагонов и вагонов, уехавших новым рейсом, — первичная установка
+// index_main/index_last/invoice_main. Мутирует kept на месте.
 // Идёт ПОСЛЕ Stage 1 и ДО reconcileCandidates (может держать статус 4/5/10). Marka —
 // отдельный шаг S2-3 (новые вагоны + оставшиеся пустые груз-поля).
 func applyCarryOver(kept []domain.Dislocation, actual *ActualCache) CarryOverStats {
@@ -25,17 +27,42 @@ func applyCarryOver(kept []domain.Dislocation, actual *ActualCache) CarryOverSta
 		if r.Vagon == "" {
 			continue
 		}
-		if ex, ok := actual.FindVagonInActual(r.Vagon); ok {
-			if enrichFromActual(r, &ex, now) {
-				st.Sticky++
-			}
-			st.Matched++
-		} else {
+		ex, ok := actual.FindVagonInActual(r.Vagon)
+		if !ok {
 			initNewVagon(r)
 			st.New++
+			continue
 		}
+		if !sameTrip(r, &ex) {
+			// Вагон уехал новым рейсом (долго висел в снимке — типично донор
+			// статуса 6 — и погружен заново): id и багаж старого рейса (naznach/
+			// план/переадресация/пометка) ему не принадлежат. Унаследованный id
+			// ронял вставку vagon_history на PK (вагон 63499578, 06.08.2026).
+			initNewVagon(r)
+			st.NewTrip++
+			continue
+		}
+		if enrichFromActual(r, &ex, now) {
+			st.Sticky++
+		}
+		st.Matched++
 	}
 	return st
+}
+
+// sameTrip — тот же ли рейс у новой записи и записи прошлого снимка. Граница —
+// как у trip_key в vagon_history: вагон + ДАТА начала рейса. По id сравнивать
+// нельзя: в него входит ещё станция отправления, которая может появиться при
+// том же рейсе (15 вагонов НМТП, 03.08.2026) — им carry-over положен.
+// Нет даты у одной из сторон — считаем рейс тем же (прежнее поведение;
+// applyHistory записи без trip_key всё равно не сверяет).
+func sameTrip(newRec, ex *domain.Dislocation) bool {
+	if newRec.DateNach == nil || newRec.DateNach.IsZero() ||
+		ex.DateNach == nil || ex.DateNach.IsZero() {
+		return true
+	}
+	a, b := newRec.DateNach.Time(), ex.DateNach.Time()
+	return a.Year() == b.Year() && a.Month() == b.Month() && a.Day() == b.Day()
 }
 
 // enrichFromActual переносит данные из актуальной записи ex в новую newRec. Возвращает

@@ -338,6 +338,39 @@ func TestApplyUnloadOnLeave_PorozhInboundSkipped(t *testing.T) {
 	assert.Equal(t, 12, repo.batch["B"]["status"])
 }
 
+// Расщеплённый рейс: строка истории лежит под СТАРЫМ id (станции отправления
+// тогда не знали — id временный), а снимок держит полный. Веха выгрузки ищется
+// по trip_key, как в applyHistory, — поиск по id снимка молча терял бы её
+// (тот же класс ошибки, что 23505 от 06.08.2026, только тихий).
+func TestApplyUnloadOnLeave_RowFoundByTripKey(t *testing.T) {
+	restore := clock.SetForTest(time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC))
+	defer restore()
+
+	st10 := 10
+	actual := &ActualCache{byVagon: map[string]domain.Dislocation{
+		"63499578": {ID: "63499578/872504/12.07.2026", Vagon: "63499578",
+			DateNach: ld(2026, 7, 12), Status: &st10, Naznach: "АЭ"},
+	}}
+	repo := newHistStub()
+	key, ok := historyTripKey(&domain.Dislocation{Vagon: "63499578", DateNach: ld(2026, 7, 12)})
+	require.True(t, ok)
+	repo.trips[key] = "temp_1785714108003612443"
+	repo.rows = map[string]domain.VagonHistory{
+		"temp_1785714108003612443": {ID: "temp_1785714108003612443", Vagon: "63499578"},
+	}
+
+	n, err := applyUnloadOnLeave(context.Background(), nil, actual, repo, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	f := repo.batch["temp_1785714108003612443"]
+	require.NotNil(t, f, "веха ушла в строку с её настоящим id")
+	assert.Equal(t, 12, f["status"])
+	assert.Equal(t, "АЭ", f["place_vigr"])
+	_, wrongRow := repo.batch["63499578/872504/12.07.2026"]
+	assert.False(t, wrongRow, "по id снимка ничего не пишется")
+}
+
 // tripKeyFromTestID собирает trip_key из id вида «вагон/станция/ДД.ММ.ГГГГ» —
 // той же формулой, что генерируемая колонка в БД.
 func tripKeyFromTestID(id string) (int64, bool) {

@@ -124,6 +124,7 @@ type LKProcessResult struct {
 	Status8Purged    int            `json:"status8_purged"`     // автоочистка: снято пропавших старше TTL (S2-1c)
 	CarryMatched     int            `json:"carry_matched"`      // вагонов с carry-over из актуальной (S2-2)
 	CarryNew         int            `json:"carry_new"`          // новых вагонов (S2-2)
+	CarryNewTrip     int            `json:"carry_new_trip"`     // вагон был в снимке, но уехал новым рейсом — без наследования (S2-2)
 	CarrySticky      int            `json:"carry_sticky"`       // статус удержан 4/5 (S2-2)
 	Status6Donors    int            `json:"status6_donors"`     // переходов на статус 6 → доноры перегруза (§3.16)
 	Status6Matched   int            `json:"status6_matched"`    // приёмников, добравших груз у донора (S2-3c)
@@ -471,7 +472,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		OperExcluded:    enr.OperExcluded,
 		Status9Inserted: s9.Inserted, Status9Removed: s9.Removed, Status8Missing: s9.Missing8,
 		Status8Purged: s8purged,
-		CarryMatched:  co.Matched, CarryNew: co.New, CarrySticky: co.Sticky,
+		CarryMatched:  co.Matched, CarryNew: co.New, CarryNewTrip: co.NewTrip, CarrySticky: co.Sticky,
 		Status6Donors: donors, Status6Matched: donorMatched,
 		MarkaCandidates: mk.Candidates, MarkaFilled: mk.FilledFull,
 		MarkaTrainFilled: mk.FilledByTrain,

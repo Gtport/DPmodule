@@ -110,8 +110,10 @@ func applyUnloadOnLeave(ctx context.Context, kept []domain.Dislocation, actual *
 			seen[kept[i].Vagon] = struct{}{}
 		}
 	}
+	naznachByKey := map[int64]string{}
+	var keys []int64
 	naznachByID := map[string]string{}
-	var ids []string
+	var ids []string // фолбэк: рейс без trip_key (нет даты начала) ищем по id, как раньше
 	for _, v := range actual.All() {
 		if v.Vagon == "" || v.ID == "" || v.Status == nil || *v.Status != 10 {
 			continue
@@ -122,11 +124,29 @@ func applyUnloadOnLeave(ctx context.Context, kept []domain.Dislocation, actual *
 		if porozhInbound != nil && porozhInbound(&v) {
 			continue // порожний под погрузку: выбытие — погрузка, вехи выгрузки нет
 		}
+		if key, hasKey := historyTripKey(&v); hasKey {
+			keys = append(keys, key)
+			naznachByKey[key] = v.Naznach
+			continue
+		}
 		naznachByID[v.ID] = v.Naznach
 		ids = append(ids, v.ID)
 	}
-	if len(ids) == 0 {
+	if len(keys) == 0 && len(ids) == 0 {
 		return 0, nil
+	}
+	// Строка рейса ищется по trip_key, как в applyHistory: её id мог разойтись
+	// с id снимка (появилась станция отправления, временный id) — поиск по id
+	// снимка молча писал бы веху в чужую строку либо терял её.
+	if len(keys) > 0 {
+		existing, err := repo.ExistingTrips(ctx, keys)
+		if err != nil {
+			return 0, fmt.Errorf("рейсы выбывших: %w", err)
+		}
+		for key, rowID := range existing {
+			naznachByID[rowID] = naznachByKey[key]
+			ids = append(ids, rowID)
+		}
 	}
 	rows, err := repo.RowsByIDs(ctx, ids)
 	if err != nil {

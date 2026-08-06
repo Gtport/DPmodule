@@ -200,6 +200,73 @@ func TestCarryOver_FixZeroRasst(t *testing.T) {
 	assert.Equal(t, 0, *nw2.RasstStanNazn)
 }
 
+// Регрессия 06.08.2026 (вагон 63499578): вагон долго висел в снимке (статус 6,
+// рейс от 12.07) и уехал НОВЫМ рейсом с той же станции (погружен заново 05.08).
+// Carry-over не должен наследовать id и багаж старого рейса — унаследованный id
+// ронял вставку vagon_history на PK (23505) и обрывал весь пересбор снимка,
+// а naznach/план/переадресация разошлись бы по прогнозам молча.
+func TestCarryOver_NewTripNotInherited(t *testing.T) {
+	st6, st2 := 6, 2
+	actual := &ActualCache{byVagon: map[string]domain.Dislocation{
+		"63499578": {
+			Vagon: "63499578", ID: "63499578/872504/12.07.2026", DateNach: ld(2026, 7, 12),
+			Status: &st6, Naznach: "ГУТ-2", PlanMsk: ltm(2026, 7, 20, 8, 0),
+			PereadrType: "ext", PereadrPort: "ВАНИНО",
+			InvoiceMain: "СТАРАЯ", IndexMain: "OLD-IDX", Info1: "пометка", Info2: "#fa8c16",
+		},
+	}}
+	kept := []domain.Dislocation{{
+		Vagon: "63499578", ID: "63499578/872504/05.08.2026", DateNach: ld(2026, 8, 5),
+		Status: &st2, Index: "NEWIDX", Invoice: "ЭТ555",
+	}}
+
+	st := applyCarryOver(kept, actual)
+	assert.Equal(t, 1, st.NewTrip)
+	assert.Equal(t, 0, st.Matched)
+	assert.Equal(t, 0, st.New)
+
+	r := kept[0]
+	assert.Equal(t, "63499578/872504/05.08.2026", r.ID, "id старого рейса не наследуется")
+	assert.Equal(t, "", r.Naznach)
+	assert.Nil(t, r.PlanMsk)
+	assert.Equal(t, "", r.PereadrType)
+	assert.Equal(t, "", r.Info1)
+	assert.Equal(t, 2, *r.Status, "sticky старого рейса не действует")
+	// первичная установка — как у нового вагона
+	assert.Equal(t, "ЭТ555", r.InvoiceMain)
+	assert.Equal(t, "NEWIDX", r.IndexMain)
+}
+
+// Граница рейса — trip_key (вагон + дата начала), НЕ id: у вагона появился код
+// станции отправления при той же дате (15 вагонов НМТП, 03.08.2026) → рейс тот
+// же, carry-over положен, id снимка остаётся прежним (рейс в истории опознаёт
+// applyHistory по trip_key).
+func TestCarryOver_SameTripIDChanged(t *testing.T) {
+	st2 := 2
+	actual := &ActualCache{byVagon: map[string]domain.Dislocation{
+		"44463065": {
+			Vagon: "44463065", ID: "temp_1785714108003612443", DateNach: ld(2026, 7, 28),
+			Status: &st2, Naznach: "АЭ", Gruzotpr: "ОТПР",
+		},
+	}}
+	kept := []domain.Dislocation{{
+		Vagon: "44463065", ID: "44463065/033004/28.07.2026", DateNach: ld(2026, 7, 28),
+		Status: &st2,
+	}}
+
+	st := applyCarryOver(kept, actual)
+	assert.Equal(t, 1, st.Matched)
+	assert.Equal(t, 0, st.NewTrip)
+	assert.Equal(t, "temp_1785714108003612443", kept[0].ID, "прежнее поведение: id из снимка")
+	assert.Equal(t, "АЭ", kept[0].Naznach)
+
+	// дата начала потеряна у одной из сторон → различить рейсы нечем, переносим
+	kept2 := []domain.Dislocation{{Vagon: "44463065", ID: "x", Status: &st2}}
+	st = applyCarryOver(kept2, actual)
+	assert.Equal(t, 1, st.Matched)
+	assert.Equal(t, "АЭ", kept2[0].Naznach)
+}
+
 // computeOwner: приоритет оператор (trusted) → арендатор (tenant) → собственник;
 // имя вперёд ОКПО, при пустом имени — ОКПО.
 func TestComputeOwner_Priority(t *testing.T) {
