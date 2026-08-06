@@ -28,8 +28,9 @@ export interface MapGroup {
   plan_jd: string | null;
   prog_jd: string | null; // непустой = «ходовой», пустой = «отцепка»
   rasst: number | null;
-  naznach: string; // терминал-большинство → цвет маркера
+  naznach: string; // терминал-большинство (фильтры/попап)
   naznach_list: string[]; // все терминалы группы → фильтр чипами
+  color: string; // marka.color, если единогласна по вагонам; пусто → красим по статусу
   mark_text: string; // пометка диспетчера (info_1)
   mark_color: string; // пометка диспетчера (info_2)
 }

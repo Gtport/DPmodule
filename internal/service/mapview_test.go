@@ -37,6 +37,7 @@ func TestMapData(t *testing.T) {
 	x1.Latitude, x1.Longitude = "46.800000", "134.250000"
 	x1.Info1, x1.Info2 = "контроль подвода", "#fa8c16"
 	x1.RasstStanNazn = ip(500)
+	x1.Color = "#13c2c2" // marka.color — у обоих вагонов один → цвет группы
 
 	x2 := mk("X2", "62000002", "9370-101-9857", "БИКИН", 5)
 	x2.IndexPp = "9379-786-9857"
@@ -45,24 +46,29 @@ func TestMapData(t *testing.T) {
 	x2.Naznach = "УТ-1"
 	x2.ProgJd = lt(10, 20)
 	x2.TimeOp, x2.OperS = lt(6, 8), "ПРИБ"
+	x2.Color = "#13c2c2"
 
 	// Отцепка Y: тот же нормализованный индекс на другой станции, координат нет
 	// (станции нет в справочнике) → отдельная группа в no_coords.
 	y1 := mk("Y1", "62000003", "9370-101-9857", "ШУШАРЫ", 4)
 	y1.IndexPp = "9379-786-9857"
 
-	// Группа Z: «нулевые» координаты Stage 1 = координат нет.
+	// Группа Z: «нулевые» координаты Stage 1 = координат нет; второй вагон с
+	// ДРУГИМ цветом marka — цвет группы гаснет (правило gtport: только единогласие).
 	z1 := mk("Z1", "62000004", "8631-880-9847", "ЕРУНАКОВО", 2)
 	z1.Latitude, z1.Longitude = "0.000000", "0.000000"
+	z1.Color = "#f5222d"
+	z2 := mk("Z2", "62000005", "8631-880-9847", "ЕРУНАКОВО", 2)
+	z2.Color = "#52c41a"
 
-	repo := &fakeDislRepo{current: []domain.Dislocation{x1, x2, y1, z1}}
+	repo := &fakeDislRepo{current: []domain.Dislocation{x1, x2, y1, z1, z2}}
 	actual := service.NewActualCache(repo)
 	require.NoError(t, actual.Load(context.Background()))
 
 	out := service.NewMapService(actual, nil, nil).Data(context.Background())
 
 	assert.Equal(t, 3, out.Total)
-	assert.Equal(t, 4, out.Vagons)
+	assert.Equal(t, 5, out.Vagons)
 	require.Len(t, out.Groups, 1)
 	require.Len(t, out.NoCoords, 2)
 
@@ -84,6 +90,7 @@ func TestMapData(t *testing.T) {
 	assert.Equal(t, "АЭ", x.Naznach) // большинство; при равенстве — меньшее имя
 	assert.Equal(t, "контроль подвода", x.MarkText)
 	assert.Equal(t, "#fa8c16", x.MarkColor)
+	assert.Equal(t, "#13c2c2", x.Color) // marka.color единогласен по группе
 	require.NotNil(t, x.Rasst)
 	assert.Equal(t, 500, *x.Rasst)
 
@@ -95,10 +102,14 @@ func TestMapData(t *testing.T) {
 		assert.Nil(t, g.Lat)
 		assert.Nil(t, g.Lon)
 	}
-	// Отцепка Y без прогноза — «отцепка» и в терминах режима карты.
+	// Отцепка Y без прогноза — «отцепка» и в терминах режима карты; у Z цвета
+	// marka разошлись по вагонам → группа без цвета клиента (красится статусом).
 	for _, g := range out.NoCoords {
 		if g.Key == "9379-786-9857|ШУШАРЫ" {
 			assert.Nil(t, g.ProgJd)
+		}
+		if g.Key == "8631-880-9847|ЕРУНАКОВО" {
+			assert.Equal(t, "", g.Color)
 		}
 	}
 }

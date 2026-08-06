@@ -27,6 +27,12 @@ const STATUS_LABELS: Record<number, string> = {
   4: 'долгий простой', 5: 'брошен', 6: 'порожний в пути',
   9: 'кандидат в прибывшие', 10: 'прибыл', 12: 'выгружен',
 };
+/** Цвет маркера по статусу — запасной, когда marka.color по группе не единогласен. */
+const STATUS_COLORS: Record<number, string> = {
+  0: '#1890ff', 1: '#1890ff', 2: '#1890ff',
+  4: '#faad14', 5: '#ff4d4f', 6: '#8c8c8c',
+  9: '#73d13d', 10: '#52c41a', 12: '#52c41a',
+};
 
 /** Палитра пометок диспетчера (info_2) — 8 узнаваемых цветов ant design. */
 const MARK_PALETTE = ['#f5222d', '#fa8c16', '#fadb14', '#52c41a', '#13c2c2', '#1677ff', '#722ed1', '#eb2f96'];
@@ -297,6 +303,17 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
     }).addTo(this.map);
     L.control.attribution({ prefix: false }).addAttribution('© OpenStreetMap').addTo(this.map);
 
+    // Собственный слой gtport поверх тайлов: сеть ж/д линий + фоновые полигоны
+    // (map.geojson из public, ~3 МБ, грузится отдельно от бандла). Стили — как
+    // в оригинале: магистрали жирнее, прочие линии тоньше.
+    void fetch('map.geojson')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !this.map) return;
+        L.geoJSON(data, { style: geoJsonStyle, interactive: false }).addTo(this.map);
+      })
+      .catch(() => {}); // слой декоративный: нет файла — карта живёт без него
+
     this.cluster = L.markerClusterGroup({
       maxClusterRadius: 40,
       spiderfyOnMaxZoom: true,
@@ -384,13 +401,14 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   // ── Маркеры ───────────────────────────────────────────────────────────────
   private render(list: MapGroup[]): void {
     if (!this.cluster) return;
-    const colorByTerminal = new Map(this.targets().map((t) => [t.name, t.color]));
     const sel = this.selected();
 
     this.cluster.clearLayers();
     const markers = list.map((g) => {
+      // Цвет — правило gtport: единогласный marka.color группы, иначе по статусу.
+      const color = g.color || (g.status != null ? STATUS_COLORS[g.status] : '') || '#8c8c8c';
       const m = L.marker([g.lat!, g.lon!], {
-        icon: this.markerIcon(g, colorByTerminal.get(g.naznach) || '#8c8c8c', sel.has(g.key)),
+        icon: this.markerIcon(g, color, sel.has(g.key)),
       }) as MarkerWithMeta;
       m.dpBroshen = g.broshen;
       m.on('click', (e: L.LeafletMouseEvent) => {
@@ -410,8 +428,8 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   }
 
   private markerIcon(g: MapGroup, color: string, isSelected: boolean): L.DivIcon {
-    // Размер круга растёт с числом вагонов: 22px (одиночные отцепки) … 40px.
-    const size = Math.max(22, Math.min(40, 20 + g.vagon_count / 4));
+    // Размер круга растёт с числом вагонов — формула gtport: 20 + count/5, 20…40px.
+    const size = Math.max(20, Math.min(40, 20 + g.vagon_count / 5));
     const border = g.broshen ? '#ff4d4f' : '#ffffff';
     const rings: string[] = [];
     if (g.mark_color) rings.push(`0 0 0 3px ${g.mark_color}`); // кольцо пометки
@@ -422,7 +440,7 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       html: `<div style="width:${size}px;height:${size}px;border-radius:50%;
         background:${color};border:2px solid ${border};box-shadow:${rings.join(',')};
         color:#fff;display:flex;align-items:center;justify-content:center;
-        font:600 ${size < 28 ? 10 : 12}px/1 sans-serif;">${g.vagon_count}</div>`,
+        font:600 ${size < 28 ? 10 : 12}px/1 sans-serif;">${trainLabel(g.index)}</div>`,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
@@ -514,3 +532,43 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
 
 /** Маркер с нашей меткой «в группе есть брошенный» — для иконки кластера. */
 type MarkerWithMeta = L.Marker & { dpBroshen?: boolean };
+
+/**
+ * Подпись маркера — середина индекса (номер поезда), правило gtport
+ * getNameFromIndex: «Б…» → Б/И, «С…» → С/Ф, иначе символы 6–8 («9370-101-9857»
+ * → «101»); короткий индекс — как есть.
+ */
+function trainLabel(index: string): string {
+  if (!index) return '';
+  const first = index.charAt(0).toUpperCase();
+  if (first === 'Б') return 'Б/И';
+  if (first === 'С') return 'С/Ф';
+  if (index.length >= 8) return index.substring(5, 8);
+  return index;
+}
+
+/** Стили собственного слоя (map.geojson) — дословно из gtport GeoJsonLayer. */
+function geoJsonStyle(feature?: GeoJSON.Feature): L.PathOptions {
+  const props = (feature?.properties ?? {}) as Record<string, unknown>;
+  const type = feature?.geometry?.type;
+  if (type === 'LineString' || type === 'MultiLineString') {
+    return {
+      color: '#1B1B1C',
+      weight: props['class'] === 'mainlines' ? 1 : 0.7,
+      opacity: 0.8,
+      lineCap: 'round',
+      lineJoin: 'round',
+      fill: false,
+    };
+  }
+  if (type === 'Polygon' || type === 'MultiPolygon') {
+    return {
+      fillColor: (props['fill'] as string) || '#f2efe9',
+      weight: (props['stroke-width'] as number) ?? 0,
+      opacity: (props['stroke-opacity'] as number) ?? 1,
+      color: (props['stroke'] as string) || (props['fill'] as string) || '#f2efe9',
+      fillOpacity: (props['fill-opacity'] as number) ?? 1,
+    };
+  }
+  return { fillColor: '#f2efe9', weight: 0, opacity: 1, color: '#f2efe9', fillOpacity: 1 };
+}

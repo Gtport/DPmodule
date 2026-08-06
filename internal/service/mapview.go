@@ -51,8 +51,9 @@ type MapGroupDTO struct {
 	PlanJd      *domain.LocalTime `json:"plan_jd"`
 	ProgJd      *domain.LocalTime `json:"prog_jd"` // непустой = «ходовой», пустой = «отцепка»
 	Rasst       *int              `json:"rasst"`   // остаток до станции назначения, км
-	Naznach     string            `json:"naznach"` // терминал-большинство → цвет маркера
+	Naznach     string            `json:"naznach"`      // терминал-большинство (фильтры/попап)
 	NaznachList []string          `json:"naznach_list"` // все терминалы группы → фильтр чипами
+	Color       string            `json:"color"`        // marka.color, если ЕДИНОГЛАСНА по вагонам (правило gtport); пусто → фронт красит по статусу
 	MarkText    string            `json:"mark_text"`    // пометка диспетчера: info_1
 	MarkColor   string            `json:"mark_color"`   // пометка диспетчера: info_2
 }
@@ -76,6 +77,7 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 	statusVotes := map[string]map[int]int{}
 	naznachVotes := map[string]map[string]int{}
 	notArrived := map[string]bool{}
+	colorMixed := map[string]bool{} // цвет маркера — только при единогласии (gtport determineMarkerColor)
 	var order []string
 
 	for i := range records {
@@ -115,6 +117,13 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 		}
 		if r.Naznach != "" {
 			naznachVotes[key][r.Naznach]++
+		}
+		// Цвет marka: у первого вагона запоминаем, дальше сверяем — разошёлся
+		// хоть один (или пустой), группа остаётся без цвета клиента.
+		if g.VagonCount == 1 {
+			g.Color = r.Color
+		} else if g.Color != r.Color {
+			colorMixed[key] = true
 		}
 		// Поля группы — первое непустое по порядку натурного листа (как «Поезда»).
 		if g.TimeOp == nil {
@@ -161,6 +170,9 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 		}
 		sort.Strings(g.NaznachList)
 		g.Naznach = bestNz
+		if colorMixed[key] {
+			g.Color = ""
+		}
 
 		if g.Lat != nil {
 			out = append(out, *g)
