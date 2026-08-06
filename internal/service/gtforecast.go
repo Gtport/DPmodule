@@ -347,7 +347,7 @@ func (s *GtForecastService) Simulate(ctx context.Context, req GtSimulateRequest)
 		return gtCalcTime(trains[i]).Before(gtCalcTime(trains[j]))
 	})
 
-	free, err := s.freeSlots(ctx, req.Station, terminals)
+	free, err := s.freeSlots(ctx, req.Station, terminals, start, req.Days)
 	if err != nil {
 		return GtSimulateDTO{}, err
 	}
@@ -811,11 +811,10 @@ func (s *GtForecastService) recomputeArrival(trains []GtTrainDTO, station string
 // суткам, на которые есть нитки свежего плана станции, — слоты расписания
 // (nitka_schedule), не занятые нитками плана. Показывают резерв закреплённого
 // расписания, а не «пустые дни» горизонта. Плана нет — ниток нет (не ошибка).
-func (s *GtForecastService) freeSlots(ctx context.Context, station string, terminals []string) ([]GtFreeSlotDTO, error) {
-	out := []GtFreeSlotDTO{}
+func (s *GtForecastService) freeSlots(ctx context.Context, station string, terminals []string, start time.Time, days int) ([]GtFreeSlotDTO, error) {
 	slots := s.cfg.NitkaSchedule()[station]
 	if len(slots) == 0 || s.plans == nil {
-		return out, nil
+		return []GtFreeSlotDTO{}, nil
 	}
 	planCode := ""
 	for _, term := range terminals {
@@ -825,21 +824,35 @@ func (s *GtForecastService) freeSlots(ctx context.Context, station string, termi
 		}
 	}
 	if planCode == "" {
-		return out, nil
+		return []GtFreeSlotDTO{}, nil
 	}
 	_, nitki, err := s.plans.GetLatestPlan(ctx, planCode)
 	if err != nil {
 		return nil, fmt.Errorf("план подвода %s: %w", planCode, err)
 	}
+	return freeSlotsInHorizon(slots, nitki, start, days), nil
+}
 
-	// Занятые слоты по МСК-суткам плана: дата → «Ч:М» ниток.
+// freeSlotsInHorizon — слоты расписания минус нитки плана, по ЖД-СУТКАМ плана
+// и в пределах горизонта прогноза. План подвода живёт в ЖД-шкале: дата PlanJd
+// нитки — это ЖД-сутки её листа, слоты nitka_schedule — ЖД-времена тех же
+// суток; сравниваем прямо в ней. Прежняя сетка шла по календарным МСК-дням
+// ниток (PlanMsk), а ЖД-сутки 18:00→18:00 лежат на двух календарных днях —
+// свежий план на ЖД 07.08 выдавал слоты и за утро 06.08 («нитки за вчера»,
+// замечание владельца 07.08.2026), и за вечер 07.08 (ЖД 08.08, плана нет).
+// Отсечка горизонтом дополнительно гасит слоты залежавшегося плана; расчётные
+// ЖД-сутки D физически: (D−1) 18:00 … D 18:00.
+func freeSlotsInHorizon(slots []domain.NitkaSlot, nitki []domain.PlanNitka, start time.Time, days int) []GtFreeSlotDTO {
+	out := []GtFreeSlotDTO{}
+
+	// Занятые слоты по ЖД-суткам плана: дата PlanJd → «Ч:М» ниток.
 	type hm struct{ h, m int }
 	occupied := map[time.Time]map[hm]bool{}
 	for _, n := range nitki {
-		if n.IsOstatok || n.PlanMsk == nil {
+		if n.IsOstatok || n.PlanJd == nil {
 			continue
 		}
-		t := time.Time(*n.PlanMsk)
+		t := time.Time(*n.PlanJd)
 		day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 		if occupied[day] == nil {
 			occupied[day] = map[hm]bool{}
@@ -847,21 +860,31 @@ func (s *GtForecastService) freeSlots(ctx context.Context, station string, termi
 		occupied[day][hm{t.Hour(), t.Minute()}] = true
 	}
 
-	var days []time.Time
-	for day := range occupied {
-		days = append(days, day)
-	}
-	sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
-	for _, day := range days {
+	horFrom := start.AddDate(0, 0, -1).Add(18 * time.Hour)
+	horTo := start.AddDate(0, 0, days-1).Add(18 * time.Hour)
+
+	for jdDay, busy := range occupied {
 		for _, sl := range slots {
-			if occupied[day][hm{sl.Hour, sl.Minute}] {
+			if busy[hm{sl.Hour, sl.Minute}] {
 				continue
 			}
-			msk := time.Date(day.Year(), day.Month(), day.Day(), sl.Hour, sl.Minute, 0, 0, day.Location())
+			// Физическое время слота: ЖД-вечер (час ≥ 18) — предыдущий
+			// календарный день (обратная сторона правила jd18).
+			physDay := jdDay
+			if sl.Hour >= 18 {
+				physDay = jdDay.AddDate(0, 0, -1)
+			}
+			msk := time.Date(physDay.Year(), physDay.Month(), physDay.Day(), sl.Hour, sl.Minute, 0, 0, physDay.Location())
+			if msk.Before(horFrom) || !msk.Before(horTo) {
+				continue
+			}
 			out = append(out, GtFreeSlotDTO{Msk: domain.LocalTime(msk), Jd: domain.LocalTime(jd18(msk))})
 		}
 	}
-	return out, nil
+	sort.Slice(out, func(i, j int) bool {
+		return time.Time(out[i].Msk).Before(time.Time(out[j].Msk))
+	})
+	return out
 }
 
 // gtDaysDTO — результат симуляции → DTO диаграммы.
