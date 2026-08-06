@@ -56,6 +56,25 @@ type MapGroupDTO struct {
 	Color       string            `json:"color"`        // marka.color, если ЕДИНОГЛАСНА по вагонам (правило gtport); пусто → фронт красит по статусу
 	MarkText    string            `json:"mark_text"`    // пометка диспетчера: info_1
 	MarkColor   string            `json:"mark_color"`   // пометка диспетчера: info_2
+	SubGroups   []MapSubgroupDTO  `json:"sub_groups"`   // состав поезда для попапа (без вагонов)
+}
+
+// MapSubgroupDTO — подгруппа отправки в попапе маркера («Состав (N)» gtport):
+// ключ тот же, что у «Поездов» (index_main×station_nach×gruzpol_s×naznach×
+// cargo_group), вагоны НЕ входят — за ними отдельная ручка.
+type MapSubgroupDTO struct {
+	Key         string  `json:"key"`
+	IndexMain   string  `json:"index_main"`
+	StationNach string  `json:"station_nach"`
+	Gruzotpr    string  `json:"gruzotpr"`
+	GruzpolS    string  `json:"gruzpol_s"`
+	Naznach     string  `json:"naznach"`
+	CargoS      string  `json:"cargo_s"`
+	CargoGroup  string  `json:"cargo_group"`
+	Client      string  `json:"client,omitempty"`
+	VagonCount  int     `json:"vagon_count"`
+	Ves         float64 `json:"ves"`
+	Color       string  `json:"color"` // marka.color первого вагона подгруппы — цветная полоса в списке состава
 }
 
 // MapDataDTO — ответ основной ручки карты.
@@ -73,11 +92,14 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 	records := s.actual.All()
 	sortNaturalList(records)
 
+	type subKey struct{ im, sn, gp, nz, cg string }
 	groups := map[string]*MapGroupDTO{}
 	statusVotes := map[string]map[int]int{}
 	naznachVotes := map[string]map[string]int{}
 	notArrived := map[string]bool{}
 	colorMixed := map[string]bool{} // цвет маркера — только при единогласии (gtport determineMarkerColor)
+	subs := map[string]map[subKey]*MapSubgroupDTO{}
+	subOrder := map[string][]subKey{}
 	var order []string
 
 	for i := range records {
@@ -94,6 +116,7 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 			groups[key] = g
 			statusVotes[key] = map[int]int{}
 			naznachVotes[key] = map[string]int{}
+			subs[key] = map[subKey]*MapSubgroupDTO{}
 			order = append(order, key)
 		}
 		g.VagonCount++
@@ -142,6 +165,25 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 		if g.MarkText == "" && g.MarkColor == "" && (r.Info1 != "" || r.Info2 != "") {
 			g.MarkText, g.MarkColor = r.Info1, r.Info2
 		}
+
+		// Состав поезда — подгруппы тем же ключом, что «Поезда» (без вагонов).
+		sk := subKey{r.IndexMain, r.StationNach, r.GruzpolS, r.Naznach, r.CargoGroup}
+		sg, ok := subs[key][sk]
+		if !ok {
+			sg = &MapSubgroupDTO{
+				Key:       r.IndexMain + "|" + r.StationNach + "|" + r.GruzpolS + "|" + r.Naznach + "|" + r.CargoGroup,
+				IndexMain: r.IndexMain, StationNach: r.StationNach,
+				Gruzotpr: r.Gruzotpr, GruzpolS: r.GruzpolS, Naznach: r.Naznach,
+				CargoS: r.CargoS, CargoGroup: r.CargoGroup, Client: r.Client,
+				Color: r.Color,
+			}
+			subs[key][sk] = sg
+			subOrder[key] = append(subOrder[key], sk)
+		}
+		sg.VagonCount++
+		if r.Ves != nil {
+			sg.Ves += *r.Ves
+		}
 	}
 
 	var out, noCoords []MapGroupDTO
@@ -173,6 +215,12 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 		if colorMixed[key] {
 			g.Color = ""
 		}
+		for _, sk := range subOrder[key] {
+			g.SubGroups = append(g.SubGroups, *subs[key][sk])
+		}
+		sort.SliceStable(g.SubGroups, func(i, j int) bool {
+			return g.SubGroups[i].Key < g.SubGroups[j].Key
+		})
 
 		if g.Lat != nil {
 			out = append(out, *g)

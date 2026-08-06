@@ -26,6 +26,8 @@ func TestMapData(t *testing.T) {
 		return domain.Dislocation{
 			ID: id, Vagon: vagon, Index: index, StationOper: stationOper,
 			Naznach: "АЭ", StanNazn: "МЫС АСТАФЬЕВА", Status: ip(status),
+			IndexMain: "9370-101-0001", StationNach: "ЕРУНАКОВО",
+			GruzpolS: "АЭ", CargoGroup: "УГОЛЬ", CargoS: "УГОЛЬ КАМЕННЫЙ",
 		}
 	}
 
@@ -91,6 +93,19 @@ func TestMapData(t *testing.T) {
 	assert.Equal(t, "контроль подвода", x.MarkText)
 	assert.Equal(t, "#fa8c16", x.MarkColor)
 	assert.Equal(t, "#13c2c2", x.Color) // marka.color единогласен по группе
+
+	// Состав в попапе: у x2 другой терминал → две подгруппы, вагоны не отдаются.
+	require.Len(t, x.SubGroups, 2)
+	var coal *service.MapSubgroupDTO
+	for i := range x.SubGroups {
+		if x.SubGroups[i].Naznach == "АЭ" {
+			coal = &x.SubGroups[i]
+		}
+	}
+	require.NotNil(t, coal)
+	assert.Equal(t, "ЕРУНАКОВО", coal.StationNach)
+	assert.Equal(t, 1, coal.VagonCount)
+	assert.Equal(t, "#13c2c2", coal.Color)
 	require.NotNil(t, x.Rasst)
 	assert.Equal(t, 500, *x.Rasst)
 

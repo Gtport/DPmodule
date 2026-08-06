@@ -16,7 +16,7 @@ import * as L from 'leaflet';
 import 'leaflet.markercluster';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { environment } from '../../../environments/environment';
-import { MapGroup, MapTarget, MapWagon, MapsApiService } from './maps-api.service';
+import { MapGroup, MapSubgroup, MapTarget, MapWagon, MapsApiService } from './maps-api.service';
 
 /** Режим показа: все / ходовые (есть прогноз) / отцепки (нет прогноза). */
 type RunMode = 'all' | 'running' | 'detached';
@@ -77,10 +77,17 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
                     (click)="toggleNaznach(t.name)">{{ t.name }}</nz-tag>
           }
         </span>
+        <nz-tag [class.on]="broshenOnly()" class="warn" (click)="broshenOnly.set(!broshenOnly())">Брош</nz-tag>
         <nz-tag [class.on]="hideArrived()" (click)="hideArrived.set(!hideArrived())"
                 nz-tooltip="Прибывшие стоят на станции назначения и загромождают карту">
           Скрыть прибывшие
         </nz-tag>
+        <input nz-input nzSize="small" class="w-search" placeholder="поезд: 101 или Б"
+               [ngModel]="indexSearch()" (ngModelChange)="onSearch($event)" />
+        <button nz-button nzSize="small" (click)="stationsOpen.set(!stationsOpen())"
+                [class.st-on]="selStations().size">
+          Станции погрузки @if (selStations().size) { ({{ selStations().size }}) }
+        </button>
         <span class="spacer"></span>
         <span class="mut">
           показано: <b>{{ shown().length }}</b> из {{ groups().length + noCoords().length }} групп,
@@ -105,6 +112,23 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
       <div class="hint mut">
         клик по маркеру — карточка группы · Ctrl+клик — выбор нескольких для пометки
       </div>
+
+      <!-- ── Панель станций погрузки (как в gtport: поиск + чекбоксы) ──── -->
+      @if (stationsOpen()) {
+        <div class="st-panel">
+          <input nz-input nzSize="small" class="w-search" placeholder="найти станцию…"
+                 [ngModel]="stationQuery()" (ngModelChange)="stationQuery.set($event)" />
+          <button nz-button nzSize="small" nzType="text" (click)="clearStations()"
+                  [disabled]="!selStations().size">сбросить</button>
+          <div class="st-list">
+            @for (s of stationOptions(); track s) {
+              <nz-tag [class.on]="selStations().has(s)" (click)="toggleStation(s)">{{ s }}</nz-tag>
+            } @empty {
+              <span class="mut">ничего не нашлось</span>
+            }
+          </div>
+        </div>
+      }
 
       <!-- ── Карта ─────────────────────────────────────────────────────── -->
       <div #mapEl class="map"></div>
@@ -235,6 +259,15 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
       border-radius: 4px; padding: 2px 8px; font-size: 12px;
     }
     :host ::ng-deep .dp-pop button:hover { border-color: #1677ff; color: #1677ff; }
+    :host ::ng-deep .dp-pop .cargo-list { max-height: 180px; overflow-y: auto; margin-top: 4px; }
+    :host ::ng-deep .dp-pop .cargo { background: #fafafa; border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; }
+    :host ::ng-deep .dp-pop .mut2 { color: #999; }
+    .w-search { width: 170px; }
+    nz-tag.warn.on { background: #fff1f0; border-color: #ff4d4f; }
+    .st-on { border-color: var(--brand); color: var(--brand); }
+    .st-panel { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px;
+                border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary, #fafafa); }
+    .st-list { display: flex; flex-wrap: wrap; gap: 2px; max-height: 96px; overflow-y: auto; flex: 1; }
   `],
 })
 export class MapsComponent implements AfterViewInit, OnDestroy {
@@ -255,6 +288,14 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   readonly runMode = signal<RunMode>('all');
   readonly selNaznach = signal<Set<string>>(new Set());
   readonly hideArrived = signal(true);
+  readonly broshenOnly = signal(false);
+
+  // Поиск по коду поезда (правило gtport: середина индекса, режим поиска
+  // переопределяет прочие фильтры) и фильтр по станциям погрузки.
+  readonly indexSearch = signal('');
+  readonly stationsOpen = signal(false);
+  readonly stationQuery = signal('');
+  readonly selStations = signal<Set<string>>(new Set());
 
   // Выбор групп Ctrl+кликом — для пометки нескольких за раз.
   readonly selected = signal<Set<string>>(new Set());
@@ -289,9 +330,9 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     this.map = L.map(this.mapEl.nativeElement, {
-      center: [51.76, 110.62], // как в gtport: обзор сети РЖД целиком
-      zoom: 4,
-      minZoom: 3,
+      center: [51.7558, 110.6173], // центр и зум — дословно из gtport Maps.tsx
+      zoom: 5,
+      minZoom: 4,
       maxZoom: 8, // сплошное покрытие кэша тайлов — зумы 4–8 (docs/MAP_TILES.md)
       maxBounds: L.latLngBounds([[35, 15], [78, 180]]),
       maxBoundsViscosity: 1.0,
@@ -315,9 +356,10 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       .catch(() => {}); // слой декоративный: нет файла — карта живёт без него
 
     this.cluster = L.markerClusterGroup({
-      maxClusterRadius: 40,
+      // Радиус 1 — как в gtport: поезда НЕ схлопываются, пока маркеры реально
+      // не легли друг на друга (одна станция); там кластер раскрывается spiderfy.
+      maxClusterRadius: 1,
       spiderfyOnMaxZoom: true,
-      disableClusteringAtZoom: 8,
       iconCreateFunction: (cl) => {
         const broshen = cl.getAllChildMarkers().some((m) => (m as MarkerWithMeta).dpBroshen);
         return L.divIcon({
@@ -375,15 +417,65 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
 
   // ── Фильтры ───────────────────────────────────────────────────────────────
   private applyFilters(list: MapGroup[]): MapGroup[] {
+    // Режим поиска переопределяет все прочие фильтры (правило gtport).
+    const q = this.indexSearch().trim().toUpperCase();
+    if (q) return list.filter((g) => trainLabel(g.index).toUpperCase().startsWith(q));
+
     if (this.runMode() === 'running') list = list.filter((g) => !!g.prog_jd);
     else if (this.runMode() === 'detached') list = list.filter((g) => !g.prog_jd);
     if (this.hideArrived()) list = list.filter((g) => !g.arrived);
+    if (this.broshenOnly()) list = list.filter((g) => g.broshen);
     const all = this.targets().length;
     const nz = this.selNaznach();
     if (all && nz.size < all) {
       list = list.filter((g) => g.naznach_list.some((n) => nz.has(n)) || !g.naznach_list.length);
     }
+    const st = this.selStations();
+    if (st.size) {
+      list = list.filter((g) => g.sub_groups.some((sg) => st.has(sg.station_nach)));
+    }
     return list;
+  }
+
+  /** Словарь станций погрузки — из состава всех групп (как в gtport). */
+  readonly stationOptions = computed(() => {
+    const q = this.stationQuery().trim().toUpperCase();
+    const set = new Set<string>();
+    for (const g of [...this.groups(), ...this.noCoords()]) {
+      for (const sg of g.sub_groups) {
+        if (sg.station_nach && (!q || sg.station_nach.toUpperCase().includes(q))) {
+          set.add(sg.station_nach);
+        }
+      }
+    }
+    return [...set].sort();
+  });
+
+  clearStations(): void {
+    this.selStations.set(new Set());
+  }
+
+  toggleStation(name: string): void {
+    this.selStations.update((s) => {
+      const next = new Set(s);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }
+
+  /** Поиск: одно совпадение — подлёт к нему (зум 7, как gtport), несколько —
+   *  подлёт к средней точке; пустой ввод возвращает обычные фильтры. */
+  onSearch(value: string): void {
+    this.indexSearch.set(value);
+    const found = this.shown().filter((g) => g.lat != null);
+    if (!value.trim() || !found.length || !this.map) return;
+    if (found.length === 1) {
+      this.map.flyTo([found[0].lat!, found[0].lon!], 7);
+    } else {
+      const lat = found.reduce((s, g) => s + g.lat!, 0) / found.length;
+      const lon = found.reduce((s, g) => s + g.lon!, 0) / found.length;
+      this.map.flyTo([lat, lon], this.map.getZoom());
+    }
   }
 
   toggleNaznach(name: string): void {
@@ -464,6 +556,18 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       rows.push(`<div style="margin-top:4px">${g.mark_color
         ? `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${g.mark_color};margin-right:4px"></span>`
         : ''}${esc(g.mark_text)}</div>`);
+    }
+    // «Состав (N)» — скроллируемый список подгрупп с цветной полосой marka
+    // (перенос gtport CargoItem, без вагонов — они по кнопке).
+    if (g.sub_groups?.length) {
+      const items = g.sub_groups.map((sg: MapSubgroup) => `
+        <div class="cargo" style="border-left:3px solid ${sg.color || '#d9d9d9'}">
+          <div><b>${esc(sg.index_main || '—')}</b> · ${esc(sg.station_nach)}</div>
+          <div>${esc(sg.cargo_s || sg.cargo_group)} · ${sg.vagon_count} ваг.${sg.ves ? ' / ' + sg.ves.toFixed(1) + ' т' : ''}</div>
+          <div class="mut2">${esc(sg.gruzpol_s)}${sg.naznach && sg.naznach !== sg.gruzpol_s ? ' → ' + esc(sg.naznach) : ''}${sg.client ? ' · ' + esc(sg.client) : ''}</div>
+        </div>`).join('');
+      rows.push(`<div style="margin-top:6px"><b>Состав (${g.sub_groups.length})</b></div>
+        <div class="cargo-list">${items}</div>`);
     }
     rows.push(`<div class="btns">
       <button data-act="wagons" data-key="${esc(g.key)}">Вагоны</button>

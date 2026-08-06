@@ -33,6 +33,23 @@ export interface MapGroup {
   color: string; // marka.color, если единогласна по вагонам; пусто → красим по статусу
   mark_text: string; // пометка диспетчера (info_1)
   mark_color: string; // пометка диспетчера (info_2)
+  sub_groups: MapSubgroup[]; // состав поезда для попапа (без вагонов)
+}
+
+/** Подгруппа отправки в попапе («Состав (N)» gtport). */
+export interface MapSubgroup {
+  key: string;
+  index_main: string;
+  station_nach: string;
+  gruzotpr: string;
+  gruzpol_s: string;
+  naznach: string;
+  cargo_s: string;
+  cargo_group: string;
+  client?: string;
+  vagon_count: number;
+  ves: number;
+  color: string; // marka.color — цветная полоса строки состава
 }
 
 /** Терминал реестра портов — чип фильтра с цветом (ports.color). */
