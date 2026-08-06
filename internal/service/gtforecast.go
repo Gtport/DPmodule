@@ -836,38 +836,40 @@ func (s *GtForecastService) freeSlots(ctx context.Context, station string, termi
 // freeSlotsInHorizon — слоты расписания минус нитки плана, по ЖД-СУТКАМ плана
 // и в пределах горизонта прогноза. План подвода живёт в ЖД-шкале: дата PlanJd
 // нитки — это ЖД-сутки её листа, слоты nitka_schedule — ЖД-времена тех же
-// суток; сравниваем прямо в ней. Прежняя сетка шла по календарным МСК-дням
-// ниток (PlanMsk), а ЖД-сутки 18:00→18:00 лежат на двух календарных днях —
-// свежий план на ЖД 07.08 выдавал слоты и за утро 06.08 («нитки за вчера»,
-// замечание владельца 07.08.2026), и за вечер 07.08 (ЖД 08.08, плана нет).
+// суток. Занятость — НЕ точным совпадением времени, а нормализацией эталона
+// (gtport findUnusedSlotsForDateWithNormalization, plan_ma/nk_analytics.go):
+// план верстают руками и времена ниток отклоняются от канона расписания, поезд
+// «21:42» занимает слот 21:00 — каждая нитка потребляет БЛИЖАЙШИЙ ещё
+// свободный слот (расстояние циклическое через полночь), свободные — остаток.
 // Отсечка горизонтом дополнительно гасит слоты залежавшегося плана; расчётные
 // ЖД-сутки D физически: (D−1) 18:00 … D 18:00.
 func freeSlotsInHorizon(slots []domain.NitkaSlot, nitki []domain.PlanNitka, start time.Time, days int) []GtFreeSlotDTO {
 	out := []GtFreeSlotDTO{}
 
-	// Занятые слоты по ЖД-суткам плана: дата PlanJd → «Ч:М» ниток.
-	type hm struct{ h, m int }
-	occupied := map[time.Time]map[hm]bool{}
+	// Нитки по ЖД-суткам (дата PlanJd — ЖД-сутки листа), время минутами.
+	byDay := map[time.Time][]int{}
 	for _, n := range nitki {
 		if n.IsOstatok || n.PlanJd == nil {
 			continue
 		}
 		t := time.Time(*n.PlanJd)
 		day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
-		if occupied[day] == nil {
-			occupied[day] = map[hm]bool{}
-		}
-		occupied[day][hm{t.Hour(), t.Minute()}] = true
+		byDay[day] = append(byDay[day], t.Hour()*60+t.Minute())
 	}
 
 	horFrom := start.AddDate(0, 0, -1).Add(18 * time.Hour)
 	horTo := start.AddDate(0, 0, days-1).Add(18 * time.Hour)
 
-	for jdDay, busy := range occupied {
-		for _, sl := range slots {
-			if busy[hm{sl.Hour, sl.Minute}] {
-				continue
+	for jdDay, times := range byDay {
+		sort.Ints(times) // эталон: времена по возрастанию
+		free := make([]domain.NitkaSlot, len(slots))
+		copy(free, slots)
+		for _, tm := range times {
+			if i := closestSlotIdx(tm, free); i >= 0 {
+				free = append(free[:i], free[i+1:]...)
 			}
+		}
+		for _, sl := range free {
 			// Физическое время слота: ЖД-вечер (час ≥ 18) — предыдущий
 			// календарный день (обратная сторона правила jd18).
 			physDay := jdDay
@@ -885,6 +887,27 @@ func freeSlotsInHorizon(slots []domain.NitkaSlot, nitki []domain.PlanNitka, star
 		return time.Time(out[i].Msk).Before(time.Time(out[j].Msk))
 	})
 	return out
+}
+
+// closestSlotIdx — индекс ближайшего к времени нитки слота (минуты ЖД-суток),
+// расстояние циклическое через полночь (эталон findClosestAvailableSlotMa/Nk:
+// diff > 12ч → 24ч − diff). Пустой список — −1.
+func closestSlotIdx(minutes int, avail []domain.NitkaSlot) int {
+	best, bestDiff := -1, 24*60
+	for i, sl := range avail {
+		diff := minutes - (sl.Hour*60 + sl.Minute)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > 12*60 {
+			diff = 24*60 - diff
+		}
+		if diff < bestDiff {
+			bestDiff = diff
+			best = i
+		}
+	}
+	return best
 }
 
 // gtDaysDTO — результат симуляции → DTO диаграммы.
