@@ -29,7 +29,7 @@ type HistoryStats struct {
 // появилась (перестали терять её код), id сменился, рейсы показались новыми — и
 // вставка упала на uq_vagon_history_trip_key, оборвав всю пересборку снимка.
 // Строку с уже существующим рейсом обновляем по её настоящему id, каким бы он ни был.
-func applyHistory(ctx context.Context, kept []domain.Dislocation, actual *ActualCache, repo port.HistoryRepository) (HistoryStats, error) {
+func applyHistory(ctx context.Context, kept []domain.Dislocation, actual *ActualCache, repo port.HistoryRepository, cutoff int) (HistoryStats, error) {
 	var st HistoryStats
 	keys := make([]int64, 0, len(kept))
 	for i := range kept {
@@ -64,14 +64,14 @@ func applyHistory(ctx context.Context, kept []domain.Dislocation, actual *Actual
 				}
 				seen[key] = struct{}{}
 			}
-			toInsert = append(toInsert, buildHistoryRow(r, now))
+			toInsert = append(toInsert, buildHistoryRow(r, now, cutoff))
 			continue
 		}
 		prev, ok := actual.FindVagonInActual(r.Vagon)
 		if !ok {
 			continue // нет прежнего состояния — переходов не детектируем
 		}
-		fields := historyUpdateFields(&prev, r)
+		fields := historyUpdateFields(&prev, r, cutoff)
 		if len(fields) == 0 {
 			continue
 		}
@@ -179,7 +179,7 @@ func applyUnloadOnLeave(ctx context.Context, kept []domain.Dislocation, actual *
 // historyUpdateFields — точечные обновления по переходам (actual → new): накладная,
 // статус, index_main (0→другой), выгрузка (→12), прибытие (→10). Пустая карта = нет
 // изменений.
-func historyUpdateFields(prev, r *domain.Dislocation) map[string]any {
+func historyUpdateFields(prev, r *domain.Dislocation, cutoff int) map[string]any {
 	fields := map[string]any{}
 	if prev.Invoice != r.Invoice {
 		fields["invoice"] = r.Invoice // текущая накладная; invoice_main не трогаем
@@ -201,10 +201,11 @@ func historyUpdateFields(prev, r *domain.Dislocation) map[string]any {
 		fields["place_vigr"] = r.Naznach
 	}
 	if ns == 10 {
-		fields["date_prib"] = r.DateKon
-		fields["date_prib_d"] = dateOnly(r.DateKon)
-		fields["delay"] = calculateHistoryDelay(dateOnly(r.DateKon), r.DateDostav)
-		fields["otkl"] = calculateOtkl(r.DateKon, r.PlanMsk)
+		prib := historyArrival(r, cutoff)
+		fields["date_prib"] = prib
+		fields["date_prib_d"] = dateOnly(prib)
+		fields["delay"] = calculateHistoryDelay(dateOnly(prib), r.DateDostav)
+		fields["otkl"] = calculateOtkl(prib, r.PlanMsk)
 		fields["plan_msk"] = r.PlanMsk
 		fields["plan_jd"] = r.PlanJd
 		fields["naznach"] = r.Naznach
@@ -221,7 +222,7 @@ func historyUpdateFields(prev, r *domain.Dislocation) map[string]any {
 
 // buildHistoryRow — полная строка истории для нового рейса. Поля прибытия/выгрузки
 // проставляются, если запись впервые появилась уже со статусом 10/12.
-func buildHistoryRow(r *domain.Dislocation, now domain.LocalTime) domain.VagonHistory {
+func buildHistoryRow(r *domain.Dislocation, now domain.LocalTime, cutoff int) domain.VagonHistory {
 	h := domain.VagonHistory{
 		ID: r.ID, Vagon: r.Vagon, InvoiceMain: r.InvoiceMain, Invoice: r.Invoice,
 		IndexMain: r.IndexMain, IndexPp: r.IndexPp, DateNachD: dateOnly(r.DateNach),
@@ -242,16 +243,59 @@ func buildHistoryRow(r *domain.Dislocation, now domain.LocalTime) domain.VagonHi
 	}
 	switch derefInt(r.Status) {
 	case 10:
-		h.DatePrib = r.DateKon
-		h.DatePribD = dateOnly(r.DateKon)
-		h.Delay = calculateHistoryDelay(dateOnly(r.DateKon), r.DateDostav)
-		h.Otkl = calculateOtkl(r.DateKon, r.PlanMsk)
+		prib := historyArrival(r, cutoff)
+		h.DatePrib = prib
+		h.DatePribD = dateOnly(prib)
+		h.Delay = calculateHistoryDelay(dateOnly(prib), r.DateDostav)
+		h.Otkl = calculateOtkl(prib, r.PlanMsk)
 	case 12:
 		h.DateVigr = r.TimeOp
 		h.DateVigrD = dateOnly(r.DateOpJd)
 		h.PlaceVigr = r.Naznach
 	}
 	return h
+}
+
+// historyArrival — что писать в vagon_history.date_prib при переходе в статус 10:
+// момент прибытия ИЗ ПОТОКА (тот самый, по которому computeStatus и поставил 10),
+// приведённый к ЖД-шкале хранения.
+//
+// Раньше сюда шёл date_kon (= date_op_jd = время ПОСЛЕДНЕЙ операции вагона, эталон
+// gtport). От этого состав рассыпался на экране «Прибывшие»: ключ группы —
+// index_pp + date_prib, а вагоны одного поезда переходят в статус 10 в разные
+// заборы крона и приносят каждый своё время операции. Провайдер же отдаёт единый
+// момент прибытия на весь поезд (сверено на боевом снимке 06.08.2026: 63 вагона —
+// один штамп date_prib и два разных date_kon), поэтому пишем его.
+//
+// ⚠️ Сдвиг обязателен: date_kon нёс ЖД-шкалу (date_op_jd), а поток отдаёт сырой
+// МСК-штамп. Инвариант «date_prib в истории — ЖД» держит грузовую работу
+// (cargowork_analytics.go) и calculateOtkl, который сам возвращает факт в МСК.
+// Правило то же, что у ручного ввода (jdFromFact) и deriveDates.
+//
+// Фолбэк на date_kon — страховка: статус 10 без даты прибытия невозможен по
+// построению (computeStatus), но веху терять нельзя, если инвариант где-то нарушат.
+func historyArrival(r *domain.Dislocation, cutoff int) *domain.LocalTime {
+	if prib := arrivalJd(r.DatePrib, cutoff); prib != nil {
+		return prib
+	}
+	return r.DateKon
+}
+
+// arrivalJd — момент прибытия в ЖД-шкалу: «час ≥ cutoff → +1 сутки». cutoff ≤ 0 → 18
+// (как EnrichConfig.CutoffHour).
+func arrivalJd(t *domain.LocalTime, cutoff int) *domain.LocalTime {
+	if t == nil || time.Time(*t).IsZero() {
+		return nil
+	}
+	if cutoff <= 0 {
+		cutoff = 18
+	}
+	tt := time.Time(*t)
+	if tt.Hour() >= cutoff {
+		tt = tt.AddDate(0, 0, 1)
+	}
+	lt := domain.LocalTime(tt)
+	return &lt
 }
 
 // calculateHistoryDelay — просрочка доставки в сутках: дата прибытия vs норматив.

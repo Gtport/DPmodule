@@ -369,7 +369,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	// UPDATE по переходам). ДО подмены снимка (actual = пред. снимок для сравнения).
 	var hist HistoryStats
 	if p.actual != nil && p.history != nil {
-		if hist, err = applyHistory(ctx, all, p.actual, p.history); err != nil {
+		if hist, err = applyHistory(ctx, all, p.actual, p.history, cutoff); err != nil {
 			return LKProcessResult{}, fmt.Errorf("vagon_history: %w", err)
 		}
 	}

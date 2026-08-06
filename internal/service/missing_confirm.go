@@ -119,7 +119,10 @@ func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissing
 	var toInsert []domain.VagonHistory
 	for i := range recs {
 		if _, ok := existing[recs[i].ID]; !ok {
-			toInsert = append(toInsert, buildHistoryRow(&recs[i], now))
+			// Веха прибытия пишется ниже своим UPDATE'ом (pribJd, уже ЖД) — здесь
+			// нужна только строка рейса из записи-8 (статус 8, ветка 10 не сработает),
+			// поэтому час отсечки не важен: 0 = дефолт.
+			toInsert = append(toInsert, buildHistoryRow(&recs[i], now, 0))
 		}
 	}
 	if err := s.repo.Insert(ctx, toInsert); err != nil {

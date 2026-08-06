@@ -80,28 +80,53 @@ func TestBuildHistoryRow(t *testing.T) {
 
 	t.Run("в пути (2) — без вех прибытия/выгрузки", func(t *testing.T) {
 		r := &domain.Dislocation{ID: "A", Vagon: "1", Status: ip(2), Invoice: "i", InvoiceMain: "im", CargoS: "уголь"}
-		h := buildHistoryRow(r, now)
+		h := buildHistoryRow(r, now, 18)
 		assert.Equal(t, "A", h.ID)
 		assert.Equal(t, "im", h.InvoiceMain)
 		assert.Nil(t, h.DatePrib)
 		assert.Nil(t, h.DateVigr)
 	})
 
-	t.Run("прибыл (10) — поля прибытия", func(t *testing.T) {
+	t.Run("прибыл (10) — поля прибытия из потока, не из date_kon", func(t *testing.T) {
 		r := &domain.Dislocation{ID: "A", Vagon: "1", Status: ip(10),
-			DateKon: ltm(2026, 7, 2, 10, 0), DateDostav: ld(2026, 7, 1)}
-		h := buildHistoryRow(r, now)
+			DatePrib:   ltm(2026, 7, 2, 10, 0),  // момент прибытия от провайдера
+			DateKon:    ltm(2026, 7, 3, 21, 40), // время последней операции — НЕ должно попасть
+			DateDostav: ld(2026, 7, 1)}
+		h := buildHistoryRow(r, now, 18)
 		require.NotNil(t, h.DatePrib)
+		assert.Equal(t, "2026-07-02T10:00:00", h.DatePrib.String())
 		require.NotNil(t, h.DatePribD)
+		assert.Equal(t, "2026-07-02T00:00:00", h.DatePribD.String())
 		require.NotNil(t, h.Delay)
 		assert.Equal(t, 1, *h.Delay) // прибыл 2-го, срок 1-го → 1 сутки
 		assert.Empty(t, h.Otkl)      // без плана
 	})
 
+	// Инвариант хранения: date_prib в истории — ЖД-штамп. Поток отдаёт сырой МСК,
+	// поэтому час ≥ отсечки уводит вехy в следующие ЖД-сутки (как было у date_op_jd).
+	t.Run("прибыл (10) — час ≥ отсечки → ЖД-сутки вперёд", func(t *testing.T) {
+		r := &domain.Dislocation{ID: "A", Vagon: "1", Status: ip(10),
+			DatePrib: ltm(2026, 7, 2, 19, 26)}
+		h := buildHistoryRow(r, now, 18)
+		require.NotNil(t, h.DatePrib)
+		assert.Equal(t, "2026-07-03T19:26:00", h.DatePrib.String())
+		assert.Equal(t, "2026-07-03T00:00:00", h.DatePribD.String())
+	})
+
+	// Страховка: статус 10 без даты прибытия невозможен по построению
+	// (computeStatus), но веху терять нельзя — падаем на прежний date_kon.
+	t.Run("прибыл (10) без даты потока — фолбэк на date_kon", func(t *testing.T) {
+		r := &domain.Dislocation{ID: "A", Vagon: "1", Status: ip(10),
+			DateKon: ltm(2026, 7, 2, 10, 0)}
+		h := buildHistoryRow(r, now, 18)
+		require.NotNil(t, h.DatePrib)
+		assert.Equal(t, "2026-07-02T10:00:00", h.DatePrib.String())
+	})
+
 	t.Run("выгружен в порту (12) — поля выгрузки", func(t *testing.T) {
 		r := &domain.Dislocation{ID: "A", Vagon: "1", Status: ip(12),
 			TimeOp: ltm(2026, 7, 2, 9, 0), DateOpJd: ltm(2026, 7, 2, 9, 0), Naznach: "ГУТ-2"}
-		h := buildHistoryRow(r, now)
+		h := buildHistoryRow(r, now, 18)
 		require.NotNil(t, h.DateVigr)
 		require.NotNil(t, h.DateVigrD)
 		assert.Equal(t, "ГУТ-2", h.PlaceVigr)
@@ -111,14 +136,14 @@ func TestBuildHistoryRow(t *testing.T) {
 func TestHistoryUpdateFields(t *testing.T) {
 	t.Run("накладная изменилась", func(t *testing.T) {
 		f := historyUpdateFields(&domain.Dislocation{Invoice: "a", Status: ip(2)},
-			&domain.Dislocation{Invoice: "b", Status: ip(2)})
+			&domain.Dislocation{Invoice: "b", Status: ip(2)}, 18)
 		assert.Equal(t, "b", f["invoice"])
 		_, hasStatus := f["status"]
 		assert.False(t, hasStatus)
 	})
 
 	t.Run("смена статуса 2→5 (без index_main)", func(t *testing.T) {
-		f := historyUpdateFields(&domain.Dislocation{Status: ip(2)}, &domain.Dislocation{Status: ip(5)})
+		f := historyUpdateFields(&domain.Dislocation{Status: ip(2)}, &domain.Dislocation{Status: ip(5)}, 18)
 		assert.Equal(t, 5, f["status"])
 		_, hasIdx := f["index_main"]
 		assert.False(t, hasIdx)
@@ -126,13 +151,13 @@ func TestHistoryUpdateFields(t *testing.T) {
 
 	t.Run("статус 0→другой → index_main", func(t *testing.T) {
 		f := historyUpdateFields(&domain.Dislocation{Status: ip(0)},
-			&domain.Dislocation{Status: ip(2), IndexMain: "IDX"})
+			&domain.Dislocation{Status: ip(2), IndexMain: "IDX"}, 18)
 		assert.Equal(t, "IDX", f["index_main"])
 	})
 
 	t.Run("переход в 12 → выгрузка", func(t *testing.T) {
 		f := historyUpdateFields(&domain.Dislocation{Status: ip(2)},
-			&domain.Dislocation{Status: ip(12), TimeOp: ltm(2026, 7, 2, 9, 0), DateOpJd: ltm(2026, 7, 2, 9, 0), Naznach: "АЭ"})
+			&domain.Dislocation{Status: ip(12), TimeOp: ltm(2026, 7, 2, 9, 0), DateOpJd: ltm(2026, 7, 2, 9, 0), Naznach: "АЭ"}, 18)
 		assert.NotNil(t, f["date_vigr"])
 		assert.NotNil(t, f["date_vigr_d"])
 		assert.Equal(t, "АЭ", f["place_vigr"])
@@ -140,7 +165,7 @@ func TestHistoryUpdateFields(t *testing.T) {
 
 	t.Run("переход в 10 → прибытие", func(t *testing.T) {
 		f := historyUpdateFields(&domain.Dislocation{Status: ip(9)},
-			&domain.Dislocation{Status: ip(10), DateKon: ltm(2026, 7, 2, 10, 0), DateDostav: ld(2026, 7, 3), Naznach: "УТ-1"})
+			&domain.Dislocation{Status: ip(10), DateKon: ltm(2026, 7, 2, 10, 0), DateDostav: ld(2026, 7, 3), Naznach: "УТ-1"}, 18)
 		assert.NotNil(t, f["date_prib"])
 		assert.NotNil(t, f["date_prib_d"])
 		assert.Equal(t, 0, *(f["delay"].(*int))) // прибыл раньше срока
@@ -149,7 +174,7 @@ func TestHistoryUpdateFields(t *testing.T) {
 
 	t.Run("нет изменений → пусто", func(t *testing.T) {
 		f := historyUpdateFields(&domain.Dislocation{Status: ip(2), Invoice: "a"},
-			&domain.Dislocation{Status: ip(2), Invoice: "a"})
+			&domain.Dislocation{Status: ip(2), Invoice: "a"}, 18)
 		assert.Empty(t, f)
 	})
 }
@@ -178,7 +203,7 @@ func TestApplyHistory(t *testing.T) {
 		{ID: idA, Vagon: "1", DateNach: ld(2026, 7, 1), Status: ip(5), Invoice: "x"},     // переход 2→5
 		{ID: "2/985702/01.07.2026", Vagon: "2", DateNach: ld(2026, 7, 1), Status: ip(2)}, // новый рейс
 	}
-	st, err := applyHistory(ctx, kept, actual, repo)
+	st, err := applyHistory(ctx, kept, actual, repo, 18)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, st.Inserted)
@@ -208,7 +233,7 @@ func TestApplyHistory_TripFoundWhenIDChanged(t *testing.T) {
 		ID: "44463065/033004/28.07.2026", Vagon: "44463065",
 		DateNach: ld(2026, 7, 28), Status: ip(5), Invoice: "x",
 	}}
-	st, err := applyHistory(ctx, kept, actual, repo)
+	st, err := applyHistory(ctx, kept, actual, repo, 18)
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, st.Inserted, "рейс уже есть — вставлять нельзя")
@@ -316,7 +341,7 @@ func TestApplyUnloadOnLeave_PorozhInboundSkipped(t *testing.T) {
 
 	st10 := 10
 	actual := &ActualCache{byVagon: map[string]domain.Dislocation{
-		"111": {ID: "A", Vagon: "111", Status: &st10, Naznach: "АЭ", PorozhPriznak: "1"},               // порожний под погрузку → без вехи
+		"111": {ID: "A", Vagon: "111", Status: &st10, Naznach: "АЭ", PorozhPriznak: "1"},              // порожний под погрузку → без вехи
 		"222": {ID: "B", Vagon: "222", Status: &st10, Naznach: "АЭ", PorozhPriznak: "1", Ves: fp(70)}, // опустевший (вес есть) → веха
 	}}
 	repo := newHistStub()
