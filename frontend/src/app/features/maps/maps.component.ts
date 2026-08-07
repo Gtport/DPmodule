@@ -89,6 +89,7 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
             <span class="fblock">
               @for (t of targets(); track t.name) {
                 <nz-tag [class.on]="selNaznach().has(t.name)"
+                        [style.background-color]="selNaznach().has(t.name) ? (t.color || undefined) : undefined"
                         (click)="toggleNaznach(t.name)">{{ t.name }}</nz-tag>
               }
             </span>
@@ -267,10 +268,12 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
     .map-wrap { position: relative; flex: 1; min-height: 320px; }
     .map { position: absolute; inset: 0; border: 1px solid var(--border); border-radius: 6px; background: #f6f6f4; }
     /* Панель поверх карты: контейнер не ловит клики (карта под ним живёт),
-       ловят только сами панели. z-index 1000 — уровень контролов Leaflet. */
-    .ovl { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 1000;
+       ловят только сами панели. z-index 1000 — уровень контролов Leaflet.
+       Ширина — по содержимому (align-items), а не на всю карту. */
+    .ovl { position: absolute; top: 8px; left: 8px; z-index: 1000;
+           max-width: calc(100% - 16px); align-items: flex-start;
            display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
-    .ovl > * { pointer-events: auto; }
+    .ovl > * { pointer-events: auto; max-width: 100%; }
     .bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
            background: rgba(255,255,255,.95); border: 1px solid var(--border);
            border-radius: 8px; padding: 6px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
@@ -280,18 +283,26 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
           display: inline-flex; align-items: center; justify-content: center;
           color: var(--text-tertiary); cursor: help; font-size: 12px; flex: none; }
     .fblock { display: inline-flex; gap: 0; }
-    /* Единое поведение всех кнопок панели (решение владельца 07.08.2026):
-       hover — голубые рамка и текст; активная — то же + жирный текст.
-       Кнопки nz-button синеют на hover сами (тема ant), им добавлен .on. */
-    nz-tag { cursor: pointer; user-select: none; }
-    nz-tag:hover { border-color: var(--brand); color: var(--brand); }
-    nz-tag.on, .bar button.on { border-color: var(--brand); color: var(--brand); font-weight: 600; }
-    /* «Приб» скрыт — диагональное перечёркивание; клик снимает. */
+    /* Единое поведение всех кнопок и фильтров панели (уточнение владельца
+       07.08.2026): hover — ТОНКАЯ голубая рамка и голубой текст; активная —
+       рамка ЖИРНЕЕ (второй слой рамки — inset-тенью, чтобы размер не прыгал)
+       и голубой жирный текст. Терминалы при этом несут фирменную заливку
+       (ports.color) через [style.background-color]. Шрифт чипов = шрифту
+       кнопок (14px), иначе «Дороги» рядом с кнопками выглядел мельче. */
+    nz-tag { cursor: pointer; user-select: none; font-size: 14px; line-height: 22px; }
+    .bar nz-tag:hover, .bar button:hover {
+      border-color: var(--color-primary); color: var(--color-primary);
+    }
+    .bar nz-tag.on, .bar button.on {
+      border-color: var(--color-primary); box-shadow: inset 0 0 0 1px var(--color-primary);
+      color: var(--color-primary); font-weight: 600;
+    }
+    /* «Приб» скрыт — тонкое диагональное перечёркивание; клик снимает. */
     nz-tag.strike { position: relative; }
     nz-tag.strike::after {
       content: ''; position: absolute; inset: 0; pointer-events: none;
-      background: linear-gradient(to top right,
-        transparent 45%, currentColor 47%, currentColor 53%, transparent 55%);
+      background: linear-gradient(to bottom right,
+        transparent 48.5%, currentColor 49.5%, currentColor 50.5%, transparent 51.5%);
     }
     .nc-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
     .run { color: #52c41a; } .det { color: #fa8c16; }
