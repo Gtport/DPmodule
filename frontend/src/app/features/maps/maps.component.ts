@@ -106,6 +106,8 @@ const MAP_ZOOM = 5;
               <nz-tag [class.on]="runMode() === 'detached'" (click)="runMode.set('detached')">Отцепки</nz-tag>
               <nz-tag [class.on]="runMode() === 'all'" (click)="runMode.set('all')">Все</nz-tag>
             </span>
+            <nz-tag [class.on]="planOnly()" (click)="planOnly.set(!planOnly())"
+                    nz-tooltip="Только поезда с планом подвода">План</nz-tag>
             <nz-tag [class.on]="broshenOnly()" (click)="broshenOnly.set(!broshenOnly())">Брош</nz-tag>
             <nz-tag [class.on]="markedOnly()" (click)="markedOnly.set(!markedOnly())"
                     nz-tooltip="Только группы с пометкой диспетчера">!</nz-tag>
@@ -370,6 +372,7 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   readonly hideArrived = signal(true);
   readonly broshenOnly = signal(false);
   readonly markedOnly = signal(false);
+  readonly planOnly = signal(false); // только поезда с планом подвода
   /** Слой полигонов ж/д дорог (roads.geojson) — вкл/выкл чипом «Дороги». */
   readonly roadsOn = signal(true);
   /** «Развернуть»: наложенные маркеры раскладываются веером, без кластеров. */
@@ -545,6 +548,7 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
     if (this.runMode() === 'running') list = list.filter((g) => !!g.prog_jd);
     else if (this.runMode() === 'detached') list = list.filter((g) => !g.prog_jd);
     if (this.hideArrived()) list = list.filter((g) => !g.arrived);
+    if (this.planOnly()) list = list.filter((g) => !!g.plan_jd);
     if (this.broshenOnly()) list = list.filter((g) => g.broshen);
     if (this.markedOnly()) list = list.filter((g) => !!g.mark_color || !!g.mark_text);
     const all = this.targets().length;
@@ -583,6 +587,7 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   resetFilters(): void {
     this.runMode.set('running');
     this.hideArrived.set(true);
+    this.planOnly.set(false);
     this.broshenOnly.set(false);
     this.markedOnly.set(false);
     this.indexSearch.set('');
@@ -716,12 +721,20 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
           color:${g.mark_color};font:900 11px/11px sans-serif;display:flex;
           align-items:center;justify-content:center;">!</span>`
       : '';
+    // Красная точка — у поездов с предупреждением об опоздании/опережении
+    // нитки (решение владельца 07.08.2026); срыв по бросанию точкой не
+    // дублируем — у брошенных и так красная обводка.
+    const risk = riskComment(g, '');
+    const dot = risk && risk.kind !== 'bros'
+      ? `<span style="position:absolute;top:-4px;left:-4px;width:11px;height:11px;
+          border-radius:50%;background:#f5222d;border:1.5px solid #fff;"></span>`
+      : '';
     return L.divIcon({
       className: '', // пустой — без дефолтного белого квадрата leaflet-div-icon
       html: `<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;
         background:${color};border:2px solid ${border};box-shadow:${rings.join(',')};
         color:#fff;display:flex;align-items:center;justify-content:center;
-        font:600 ${size < 28 ? 10 : 12}px/1 sans-serif;">${trainLabel(g.index)}${badge}</div>`,
+        font:600 ${size < 28 ? 10 : 12}px/1 sans-serif;">${trainLabel(g.index)}${badge}${dot}</div>`,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
@@ -879,32 +892,32 @@ function trainLabel(index: string): string {
  * отформатированным в шкале профиля). Б/И и сборные не оцениваются (индекс
  * не 4-3-4), прибывшим комментарий не нужен.
  */
-function riskComment(g: MapGroup, rasch: string): { text: string; color: string } | null {
+function riskComment(g: MapGroup, rasch: string): { text: string; color: string; kind: 'bros' | 'late' | 'ahead' } | null {
   if (g.arrived) return null;
   if (!/^\d{4}-\d{3}-\d{4}$/.test(g.index)) return null;
   const inPlan = !!g.plan_jd;
   const mistake = g.mistake ?? 0;
   const togo = g.to_go ?? 0;
   const CRIT = '#c62828', WARN = '#e65100', WATCH = '#b58b00';
-  if (inPlan && g.broshen) return { text: 'Нитка под угрозой срыва: поезд брошен', color: WARN };
+  if (inPlan && g.broshen) return { text: 'Нитка под угрозой срыва: поезд брошен', color: WARN, kind: 'bros' };
   if (inPlan) {
     if (mistake <= -1) {
-      return { text: `ПЛАН СЛЕТИТ: опаздывает на ${fmtDays(-mistake)} — ${rasch}`, color: CRIT };
+      return { text: `ПЛАН СЛЕТИТ: опаздывает на ${fmtDays(-mistake)} — ${rasch}`, color: CRIT, kind: 'late' };
     }
     if (mistake < -0.3) {
-      return { text: `Опаздывает на ${fmtDays(-mistake)} — ${rasch}`, color: WARN };
+      return { text: `Опаздывает на ${fmtDays(-mistake)} — ${rasch}`, color: WARN, kind: 'late' };
     }
     return null;
   }
   if (mistake > 1) {
     if (togo <= 24) {
-      return { text: `Опережает нитку на ${fmtDays(mistake)} у порта — придержат или бросят`, color: CRIT };
+      return { text: `Опережает нитку на ${fmtDays(mistake)} у порта — придержат или бросят`, color: CRIT, kind: 'ahead' };
     }
     const ratio = togo > 0 ? mistake / (togo / 24) : Infinity;
     if (ratio > 0.5) {
-      return { text: `Опережает нитку на ${fmtDays(mistake)} — вероятно бросание в пути`, color: WARN };
+      return { text: `Опережает нитку на ${fmtDays(mistake)} — вероятно бросание в пути`, color: WARN, kind: 'ahead' };
     }
-    return { text: `Опережает нитку на ${fmtDays(mistake)}`, color: WATCH };
+    return { text: `Опережает нитку на ${fmtDays(mistake)}`, color: WATCH, kind: 'ahead' };
   }
   return null;
 }
