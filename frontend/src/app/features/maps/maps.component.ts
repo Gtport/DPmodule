@@ -64,7 +64,14 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
  *   geojson перепутаны и не используются), отключается чипом;
  * - «Развернуть» — все наложенные маркеры раскладываются веером вокруг
  *   станции (аналог spiderfy, но для всех кластеров сразу; кластеризация
- *   в этом режиме выключена, позиции пересчитываются при смене зума).
+ *   в этом режиме выключена, позиции пересчитываются при смене зума);
+ * - у всех кнопок панели единое поведение (hover — голубые рамка и текст,
+ *   активная — жирный), без цветных заливок; «Приб» перечёркнут по
+ *   диагонали, пока прибывшие скрыты; кнопок масштаба нет (зум колесом);
+ * - вагоны группы: + станция отправления, отправитель, дата отправления,
+ *   срок доставки, выгрузка в Excel на клиенте;
+ * - экран целиком выключается конфигом бэка (map.enabled: false) — роутов
+ *   и пункта меню нет (флаг map_enabled в GET /settings/ui).
  */
 @Component({
   selector: 'app-maps',
@@ -80,39 +87,39 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
         <div class="ovl">
           <div class="bar">
             <span class="fblock">
-              <nz-tag [class.on]="runMode() === 'all'" (click)="runMode.set('all')">Все</nz-tag>
-              <nz-tag [class.on]="runMode() === 'running'" (click)="runMode.set('running')">Ходовые</nz-tag>
-              <nz-tag [class.on]="runMode() === 'detached'" (click)="runMode.set('detached')">Отцепки</nz-tag>
-            </span>
-            <span class="fblock">
               @for (t of targets(); track t.name) {
                 <nz-tag [class.on]="selNaznach().has(t.name)"
-                        [style.background-color]="selNaznach().has(t.name) ? (t.color || undefined) : undefined"
                         (click)="toggleNaznach(t.name)">{{ t.name }}</nz-tag>
               }
             </span>
-            <nz-tag [class.on]="broshenOnly()" class="warn" (click)="broshenOnly.set(!broshenOnly())">Брош</nz-tag>
-            <nz-tag [class.on]="markedOnly()" class="mark" (click)="markedOnly.set(!markedOnly())"
+            <span class="fblock">
+              <nz-tag [class.on]="runMode() === 'running'" (click)="runMode.set('running')">Ходовые</nz-tag>
+              <nz-tag [class.on]="runMode() === 'detached'" (click)="runMode.set('detached')">Отцепки</nz-tag>
+              <nz-tag [class.on]="runMode() === 'all'" (click)="runMode.set('all')">Все</nz-tag>
+            </span>
+            <nz-tag [class.on]="broshenOnly()" (click)="broshenOnly.set(!broshenOnly())">Брош</nz-tag>
+            <nz-tag [class.on]="markedOnly()" (click)="markedOnly.set(!markedOnly())"
                     nz-tooltip="Только группы с пометкой диспетчера">!</nz-tag>
-            <nz-tag [class.on]="hideArrived()" (click)="hideArrived.set(!hideArrived())"
-                    nz-tooltip="Прибывшие стоят на станции назначения и загромождают карту">
-              Скрыть прибывшие
+            <nz-tag [class.strike]="hideArrived()" [class.on]="!hideArrived()"
+                    (click)="hideArrived.set(!hideArrived())"
+                    nz-tooltip="Прибывшие: по умолчанию скрыты (стоят на станции назначения и загромождают карту), клик — показать">
+              Приб
             </nz-tag>
-            <nz-tag [class.on]="roadsOn()" (click)="roadsOn.set(!roadsOn())"
-                    nz-tooltip="Полигоны железных дорог">Дороги</nz-tag>
             <input nz-input nzSize="small" class="w-index" placeholder="индекс"
                    [ngModel]="indexSearch()" (ngModelChange)="onSearch($event)" />
             <button nz-button nzSize="small" (click)="stationsOpen.set(!stationsOpen())"
-                    [class.st-on]="selStations().size">
+                    [class.on]="selStations().size">
               Станции @if (selStations().size) { ({{ selStations().size }}) }
             </button>
-            <button nz-button nzSize="small" (click)="resetFilters()"
-                    nz-tooltip="Вернуть фильтры и поиск к исходным">Сброс</button>
-            <button nz-button nzSize="small" [nzType]="expandAll() ? 'primary' : 'default'"
+            <button nz-button nzSize="small" [class.on]="expandAll()"
                     (click)="expandAll.set(!expandAll())"
                     nz-tooltip="Разложить наложенные друг на друга поезда вокруг станций">
               {{ expandAll() ? 'Свернуть' : 'Развернуть' }}
             </button>
+            <nz-tag [class.on]="roadsOn()" (click)="roadsOn.set(!roadsOn())"
+                    nz-tooltip="Полигоны железных дорог">Дороги</nz-tag>
+            <button nz-button nzSize="small" (click)="resetFilters()"
+                    nz-tooltip="Вернуть фильтры и поиск к исходным">Сброс</button>
             <span class="mut cnt">
               <b>{{ shown().length }}</b>/{{ groups().length + noCoords().length }} гр. · {{ vagonsTotal() }} ваг.
             </span>
@@ -176,18 +183,24 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
       </nz-drawer>
 
       <!-- ── Вагоны группы (drill-down по требованию) ──────────────────── -->
-      <nz-drawer [nzVisible]="wagonsKey() !== null" nzPlacement="right" [nzWidth]="640"
+      <nz-drawer [nzVisible]="wagonsKey() !== null" nzPlacement="right" [nzWidth]="1050"
                  [nzTitle]="'Вагоны группы ' + (wagonsKey() ?? '')" (nzOnClose)="wagonsKey.set(null)">
         <ng-container *nzDrawerContent>
           @if (wagonsLoading()) {
             <div class="mut">загрузка…</div>
           } @else {
+            <div style="margin-bottom:8px">
+              <button nz-button nzSize="small" [disabled]="!wagons().length" (click)="exportWagons()">
+                <span nz-icon nzType="download"></span> Excel
+              </button>
+            </div>
             <div class="dp-tbl-wrap">
               <table class="dp-tbl">
                 <thead>
                   <tr>
                     <th>№</th><th>Вагон</th><th>Накладная</th><th>Марка груза</th>
                     <th>Вес, т</th><th>Собственник</th><th>Статус</th><th>Получ.</th><th>Назн.</th>
+                    <th>Ст. отправления</th><th>Отправитель</th><th>Отправление</th><th>Срок дост.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -202,6 +215,10 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
                       <td>{{ statusLabel(v.status) }}</td>
                       <td>{{ v.gruzpol_s }}</td>
                       <td>{{ v.naznach }}</td>
+                      <td>{{ v.station_nach }}</td>
+                      <td>{{ v.gruzotpr }}</td>
+                      <td>{{ fmtDT(v.date_otpr) }}</td>
+                      <td>{{ fmtDT(v.date_dostav) }}</td>
                     </tr>
                   }
                 </tbody>
@@ -263,9 +280,19 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
           display: inline-flex; align-items: center; justify-content: center;
           color: var(--text-tertiary); cursor: help; font-size: 12px; flex: none; }
     .fblock { display: inline-flex; gap: 0; }
+    /* Единое поведение всех кнопок панели (решение владельца 07.08.2026):
+       hover — голубые рамка и текст; активная — то же + жирный текст.
+       Кнопки nz-button синеют на hover сами (тема ant), им добавлен .on. */
     nz-tag { cursor: pointer; user-select: none; }
-    nz-tag.on { border-color: var(--brand); font-weight: 600; }
-    nz-tag.mark.on { background: #fff1f0; border-color: #f5222d; color: #f5222d; font-weight: 700; }
+    nz-tag:hover { border-color: var(--brand); color: var(--brand); }
+    nz-tag.on, .bar button.on { border-color: var(--brand); color: var(--brand); font-weight: 600; }
+    /* «Приб» скрыт — диагональное перечёркивание; клик снимает. */
+    nz-tag.strike { position: relative; }
+    nz-tag.strike::after {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(to top right,
+        transparent 45%, currentColor 47%, currentColor 53%, transparent 55%);
+    }
     .nc-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
     .run { color: #52c41a; } .det { color: #fa8c16; }
     .pal { display: flex; gap: 8px; margin-bottom: 10px; }
@@ -295,8 +322,6 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
     :host ::ng-deep .dp-pop .mut2 { color: #999; }
     .w-search { width: 170px; }
     .w-index { width: 84px; }
-    nz-tag.warn.on { background: #fff1f0; border-color: #ff4d4f; }
-    .st-on { border-color: var(--brand); color: var(--brand); }
     .st-panel { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px;
                 border: 1px solid var(--border); border-radius: 8px;
                 background: rgba(255,255,255,.97); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
@@ -386,9 +411,9 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       maxBounds: L.latLngBounds([[35, 15], [78, 180]]),
       maxBoundsViscosity: 1.0,
       attributionControl: false,
-      zoomControl: false, // дефолтный сверху-слева накрыла бы наша панель
+      zoomControl: false, // без кнопок масштаба (решение владельца 07.08.2026):
+      // зум колесом/жестами, а панель фильтров всё равно накрыла бы контрол
     });
-    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
     L.tileLayer(`${environment.apiBaseUrl}/v1/map/tiles/{z}/{x}/{y}`, {
       maxZoom: 8,
       errorTileUrl: BLANK_TILE, // 404 промаха кэша → прозрачный квадрат
@@ -719,6 +744,23 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
     } finally {
       this.wagonsLoading.set(false);
     }
+  }
+
+  /** Excel вагонов группы — на клиенте, как прочие выгрузки (xlsx-js-style). */
+  async exportWagons(): Promise<void> {
+    const XLSX = await import('xlsx-js-style');
+    const header = ['№', 'Вагон', 'Накладная', 'Марка груза', 'Вес, т', 'Собственник',
+      'Статус', 'Получ.', 'Назн.', 'Ст. отправления', 'Отправитель', 'Отправление', 'Срок доставки'];
+    const rows = this.wagons().map((v) => [
+      v.npp_vag ?? '', v.vagon, v.invoice, v.freight, v.ves ?? '', v.owner,
+      this.statusLabel(v.status), v.gruzpol_s, v.naznach,
+      v.station_nach, v.gruzotpr, this.fmtDT(v.date_otpr), this.fmtDT(v.date_dostav),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws['!cols'] = [4, 10, 10, 22, 7, 16, 18, 8, 8, 18, 22, 12, 12].map((wch) => ({ wch }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Вагоны');
+    XLSX.writeFile(wb, `Вагоны_${(this.wagonsKey() ?? '').replace(/[^\wА-Яа-я-]+/g, '_')}.xlsx`);
   }
 
   // ── Пометка ───────────────────────────────────────────────────────────────

@@ -80,6 +80,10 @@ export interface MapWagon {
   status: number | null;
   gruzpol_s: string;
   naznach: string;
+  station_nach: string; // станция отправления
+  gruzotpr: string; // отправитель
+  date_otpr: string | null; // дата отправления
+  date_dostav: string | null; // нормативный срок доставки
 }
 
 export interface MapWagonsResponse {

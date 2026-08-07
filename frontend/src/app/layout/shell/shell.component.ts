@@ -10,6 +10,7 @@ import { NzDropDownModule } from 'ng-zorro-antd/dropdown';
 import { AuthService } from '../../core/auth/auth.service';
 import { ModuleSwitcherComponent } from '../module-switcher/module-switcher.component';
 import { DISPATCHER_NAV } from './nav.config';
+import { TimeBaseService } from '../../shared/time-base.service';
 import { environment } from '../../../environments/environment';
 
 /**
@@ -109,15 +110,23 @@ import { environment } from '../../../environments/environment';
 })
 export class ShellComponent {
   readonly auth = inject(AuthService);
+  private readonly uiSettings = inject(TimeBaseService);
   readonly collapsed = signal(true); // по умолчанию компактный
   readonly moduleId = environment.moduleId;
   // Ширины берём из токенов (§8: только переменные, не числа).
   readonly sidebarWidth = 'var(--layout-sidebar-width)';
   readonly collapsedWidth = 60;
 
+  constructor() {
+    // Флаги интерфейса с бэка (map_enabled и шкала времени) — один раз на старте.
+    void this.uiSettings.init();
+  }
+
   // Пункты меню из реестра, отфильтрованные по ролям текущего пользователя
-  // (реактивно — сигналы ролей внутри auth.allows).
+  // (реактивно — сигналы ролей внутри auth.allows) и флагам бэка: карта,
+  // выключенная конфигом (map.enabled: false), в меню не показывается.
   readonly navItems = computed(() =>
-    DISPATCHER_NAV.filter((i) => this.auth.allows(i.roles)),
+    DISPATCHER_NAV.filter((i) => this.auth.allows(i.roles))
+      .filter((i) => i.path !== 'maps' || this.uiSettings.mapEnabled()),
   );
 }

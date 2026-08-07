@@ -9,13 +9,15 @@ import (
 )
 
 // settingsHandler — клиентские настройки интерфейса для фронта
-// (client_settings.extra.ui через ConfigCache).
+// (client_settings.extra.ui через ConfigCache) + флаги функций из файла
+// конфига (map.enabled), которые фронт читает один раз на старте.
 type settingsHandler struct {
-	cfg *service.ConfigCache
+	cfg        *service.ConfigCache
+	mapEnabled bool
 }
 
-func NewSettingsHandler(cfg *service.ConfigCache) *settingsHandler {
-	return &settingsHandler{cfg: cfg}
+func NewSettingsHandler(cfg *service.ConfigCache, mapEnabled bool) *settingsHandler {
+	return &settingsHandler{cfg: cfg, mapEnabled: mapEnabled}
 }
 
 func (h *settingsHandler) RegisterRoutes(g *gin.RouterGroup) {
@@ -27,6 +29,8 @@ type uiSettingsDTO struct {
 	// Шкала ручного ввода времени прибытия/выгрузки: "jd" | "msk"
 	// (дефолт переключателя в диалогах; диспетчер может сменить на сессию).
 	TimeBase string `json:"time_base"`
+	// Экран «Карта» включён конфигом (map.enabled) — false прячет пункт меню.
+	MapEnabled bool `json:"map_enabled"`
 }
 
 // ui godoc
@@ -37,6 +41,7 @@ type uiSettingsDTO struct {
 // @Router   /api/v1/settings/ui [get]
 func (h *settingsHandler) ui(c *gin.Context) {
 	c.JSON(http.StatusOK, uiSettingsDTO{
-		TimeBase: h.cfg.Settings().UI.TimeBaseOrDefault(),
+		TimeBase:   h.cfg.Settings().UI.TimeBaseOrDefault(),
+		MapEnabled: h.mapEnabled,
 	})
 }

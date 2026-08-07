@@ -13,11 +13,18 @@ export type TimeBase = 'jd' | 'msk';
  * в любом диалоге — выбор действует на сессию во всех диалогах сразу.
  * Пересчёт «час ≥ 18 → ±сутки» при записи делает СЕРВЕР по переданной шкале;
  * здесь только состояние переключателя и сдвиг подставляемых дефолтов.
+ *
+ * Сервис — клиент `GET /settings/ui` целиком, поэтому здесь же живут и прочие
+ * флаги интерфейса из того же ответа: map_enabled (решение владельца
+ * 07.08.2026 — карту можно выключить конфигом бэка, тогда пункт меню «Карты»
+ * не показывается; init зовёт shell на старте).
  */
 @Injectable({ providedIn: 'root' })
 export class TimeBaseService {
   private readonly http = inject(HttpClient);
   readonly base = signal<TimeBase>('jd');
+  /** Экран «Карта» включён на бэке (map.enabled) — иначе прячем пункт меню. */
+  readonly mapEnabled = signal(true);
   private loaded = false;
 
   /** Подтянуть дефолт из настроек клиента (один раз; ошибка — остаёмся на ЖД). */
@@ -26,10 +33,12 @@ export class TimeBaseService {
     this.loaded = true;
     try {
       const s = await firstValueFrom(
-        this.http.get<{ time_base: string }>(`${environment.apiBaseUrl}/v1/settings/ui`));
+        this.http.get<{ time_base: string; map_enabled?: boolean }>(
+          `${environment.apiBaseUrl}/v1/settings/ui`));
       if (s.time_base === 'msk' || s.time_base === 'jd') this.base.set(s.time_base);
+      if (s.map_enabled === false) this.mapEnabled.set(false);
     } catch {
-      /* настройка не критична — дефолт ЖД */
+      /* настройка не критична — дефолт ЖД, карта видна */
     }
   }
 

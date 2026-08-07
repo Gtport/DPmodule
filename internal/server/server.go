@@ -237,8 +237,9 @@ func Build(
 		lkIntake := service.NewLKIntake(cfgCache, dirCache, cfg.Storage.BaseDir)
 		handler.NewLKUploadHandler(lkIntake).RegisterRoutes(api)
 
-		// Клиентские настройки интерфейса (шкала ввода времени и т.п.).
-		handler.NewSettingsHandler(cfgCache).RegisterRoutes(api)
+		// Клиентские настройки интерфейса (шкала ввода времени и т.п.)
+		// + флаг «карта включена» — по нему фронт прячет пункт меню «Карты».
+		handler.NewSettingsHandler(cfgCache, cfg.MapView.EnabledOrDefault()).RegisterRoutes(api)
 
 		// Робот ЛК: сам ходит в личный кабинет РЖД вместо ручной выгрузки
 		// диспетчером, кладёт файл в тот же приём и следом обновляет дислокацию.
@@ -359,7 +360,10 @@ func Build(
 			// Экран «Карта»: группы поездов с координатами (ключ = trainKey, как
 			// у «Поездов»), вагоны группы по требованию, пометка диспетчера
 			// (info_1/info_2) через конвейер proc. Подложка — публичные тайлы выше.
-			handler.NewMapHandler(service.NewMapService(actualCache, dirCache, proc)).RegisterRoutes(api)
+			// Карта выключена конфигом (map.enabled: false) → роутов нет вовсе.
+			if cfg.MapView.EnabledOrDefault() {
+				handler.NewMapHandler(service.NewMapService(actualCache, dirCache, proc)).RegisterRoutes(api)
+			}
 
 			// Экран «Работа с историческими данными» (Инструменты оператора):
 			// поиск по vagon_history с серверными пагинацией/сортировкой и

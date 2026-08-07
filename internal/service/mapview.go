@@ -253,16 +253,20 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 
 // MapWagonDTO — вагон группы (drill-down по требованию).
 type MapWagonDTO struct {
-	ID       string   `json:"id"` // id рейса — для «Истории движения вагона» по ПКМ
-	Vagon    string   `json:"vagon"`
-	NppVag   *int     `json:"npp_vag"`
-	Invoice  string   `json:"invoice"`
-	Freight  string   `json:"freight"` // freight_exact_name, пусто — cargo_s
-	Ves      *float64 `json:"ves"`
-	Owner    string   `json:"owner"`
-	Status   *int     `json:"status"`
-	GruzpolS string   `json:"gruzpol_s"`
-	Naznach  string   `json:"naznach"`
+	ID          string            `json:"id"` // id рейса — для «Истории движения вагона» по ПКМ
+	Vagon       string            `json:"vagon"`
+	NppVag      *int              `json:"npp_vag"`
+	Invoice     string            `json:"invoice"`
+	Freight     string            `json:"freight"` // freight_exact_name, пусто — cargo_s
+	Ves         *float64          `json:"ves"`
+	Owner       string            `json:"owner"`
+	Status      *int              `json:"status"`
+	GruzpolS    string            `json:"gruzpol_s"`
+	Naznach     string            `json:"naznach"`
+	StationNach string            `json:"station_nach"` // станция отправления
+	Gruzotpr    string            `json:"gruzotpr"`     // отправитель
+	DateOtpr    *domain.LocalTime `json:"date_otpr"`    // дата отправления
+	DateDostav  *domain.LocalTime `json:"date_dostav"`  // нормативный срок доставки
 }
 
 // MapWagonsDTO — ответ ручки вагонов группы.
@@ -291,6 +295,8 @@ func (s *MapService) Wagons(key string) MapWagonsDTO {
 			ID: r.ID, Vagon: r.Vagon, NppVag: r.NppVag, Invoice: r.Invoice,
 			Freight: freight, Ves: r.Ves, Owner: r.Owner, Status: r.Status,
 			GruzpolS: r.GruzpolS, Naznach: r.Naznach,
+			StationNach: r.StationNach, Gruzotpr: r.Gruzotpr,
+			DateOtpr: r.DateOtpr, DateDostav: r.DateDostav,
 		})
 	}
 	return out

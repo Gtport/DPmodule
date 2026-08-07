@@ -209,7 +209,10 @@ func run() error {
 	// данные дислокации. БД недоступна → карта работает без подложки (маркеры на
 	// пустом фоне), ровно как при tiles.enabled: false в WSL.
 	var tilesRepo port.TileRepository
-	if cfg.Tiles.Enabled {
+	if !cfg.MapView.EnabledOrDefault() {
+		log.Info("map disabled — экран «Карта» и БД тайлов выключены конфигом")
+	}
+	if cfg.Tiles.Enabled && cfg.MapView.EnabledOrDefault() {
 		tdb, terr := gormrepo.Open(cfg.Tiles)
 		if terr == nil {
 			var tsql *sql.DB
