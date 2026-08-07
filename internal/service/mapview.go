@@ -50,7 +50,16 @@ type MapGroupDTO struct {
 	OperS       string            `json:"oper_s"`
 	PlanJd      *domain.LocalTime `json:"plan_jd"`
 	ProgJd      *domain.LocalTime `json:"prog_jd"` // непустой = «ходовой», пустой = «отцепка»
-	Rasst       *int              `json:"rasst"`   // остаток до станции назначения, км
+	// Обе шкалы времён + расчёт (решение владельца 07.08.2026): попап карты
+	// показывает план ИЛИ прогноз ИЛИ «ход+расчёт» в шкале профиля (ЖД/МСК),
+	// комментарий строится по mistake — как в «Прогнозе прибытия/выгрузки».
+	PlanMsk  *domain.LocalTime `json:"plan_msk"`
+	ProgMsk  *domain.LocalTime `json:"prog_msk"`
+	RaschJd  *domain.LocalTime `json:"rasch_jd"`
+	RaschMsk *domain.LocalTime `json:"rasch_msk"`
+	ToGo     *float64          `json:"to_go"`   // расчётное время хода до порта, часы
+	Mistake  *float64          `json:"mistake"` // «необъяснённый простой», дни (Stage 4)
+	Rasst    *int              `json:"rasst"`   // остаток до станции назначения, км
 	Naznach     string            `json:"naznach"`      // терминал-большинство (фильтры/попап)
 	NaznachList []string          `json:"naznach_list"` // все терминалы группы → фильтр чипами
 	Color       string            `json:"color"`        // marka.color, если ЕДИНОГЛАСНА по вагонам (правило gtport); пусто → фронт красит по статусу
@@ -160,6 +169,24 @@ func (s *MapService) Data(_ context.Context) MapDataDTO {
 		}
 		if g.ProgJd == nil {
 			g.ProgJd = firstLT(r.ProgJd, r.ProgMsk)
+		}
+		if g.PlanMsk == nil {
+			g.PlanMsk = r.PlanMsk
+		}
+		if g.ProgMsk == nil {
+			g.ProgMsk = r.ProgMsk
+		}
+		if g.RaschJd == nil {
+			g.RaschJd = r.RaschJd
+		}
+		if g.RaschMsk == nil {
+			g.RaschMsk = r.RaschMsk
+		}
+		if g.ToGo == nil {
+			g.ToGo = r.ToGo
+		}
+		if g.Mistake == nil {
+			g.Mistake = r.Mistake
 		}
 		// Пометка — парой с первого помеченного вагона (текст и цвет ставятся вместе).
 		if g.MarkText == "" && g.MarkColor == "" && (r.Info1 != "" || r.Info2 != "") {

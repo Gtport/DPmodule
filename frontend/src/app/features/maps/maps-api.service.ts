@@ -27,6 +27,12 @@ export interface MapGroup {
   oper_s: string;
   plan_jd: string | null;
   prog_jd: string | null; // непустой = «ходовой», пустой = «отцепка»
+  plan_msk: string | null;
+  prog_msk: string | null;
+  rasch_jd: string | null; // расчёт по времени хода (не прогноз)
+  rasch_msk: string | null;
+  to_go: number | null; // расчётное время хода до порта, часы
+  mistake: number | null; // «необъяснённый простой», дни — база комментария риска
   rasst: number | null;
   naznach: string; // терминал-большинство (фильтры/попап)
   naznach_list: string[]; // все терминалы группы → фильтр чипами

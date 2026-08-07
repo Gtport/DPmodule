@@ -16,6 +16,7 @@ import * as L from 'leaflet';
 import 'leaflet.markercluster';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { environment } from '../../../environments/environment';
+import { TimeBaseService } from '../../shared/time-base.service';
 import { MapGroup, MapSubgroup, MapTarget, MapWagon, MapsApiService } from './maps-api.service';
 
 /** Режим показа: все / ходовые (есть прогноз) / отцепки (нет прогноза). */
@@ -40,6 +41,10 @@ const MARK_PALETTE = ['#f5222d', '#fa8c16', '#fadb14', '#52c41a', '#13c2c2', '#1
 /** Прозрачный PNG: промах кэша тайлов (404) рисуется пустым квадратом. */
 const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
+/** Стартовые центр и зум — дословно из gtport Maps.tsx; «Сброс» возвращает к ним. */
+const MAP_CENTER: L.LatLngExpression = [51.7558, 110.6173];
+const MAP_ZOOM = 5;
+
 /**
  * Экран «Карта» — дислокация на карте (перенос концепции gtport Maps.tsx).
  * Маркер = группа «поезд на станции» (ключ trainKey — как у «Поездов в
@@ -57,7 +62,10 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
  *
  * Решения владельца 07.08.2026:
  * - панель фильтров лежит ПОВЕРХ карты (как в gtport) — всегда в видимой
- *   области; кнопка «Сброс» возвращает фильтры и поиск к дефолту;
+ *   области; кнопка «Сброс» возвращает фильтры, поиск и вид карты
+ *   (зум/центр) к дефолту, НО сохраняет выбор терминалов;
+ * - время прибытия в попапе: план ИЛИ прогноз ИЛИ «ход+расчёт» (см.
+ *   popupHtml), шкала ЖД/МСК из профиля, комментарий риска по mistake;
  * - дефолт: режим «Ходовые» + выбран только первый терминал;
  * - слой «Дороги» — полигоны ж/д дорог (roads.geojson из public, файлы дал
  *   смежный проект; подписи/цвета — из их map_config, описания ВНУТРИ
@@ -342,6 +350,7 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
 export class MapsComponent implements AfterViewInit, OnDestroy {
   private readonly api = inject(MapsApiService);
   private readonly msg = inject(NzMessageService);
+  private readonly timeBase = inject(TimeBaseService);
 
   @ViewChild('mapEl', { static: true }) mapEl!: ElementRef<HTMLDivElement>;
   @ViewChild('ovlEl', { static: true }) ovlEl!: ElementRef<HTMLDivElement>;
@@ -416,8 +425,8 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     this.map = L.map(this.mapEl.nativeElement, {
-      center: [51.7558, 110.6173], // центр и зум — дословно из gtport Maps.tsx
-      zoom: 5,
+      center: MAP_CENTER,
+      zoom: MAP_ZOOM,
       minZoom: 4,
       maxZoom: 8, // сплошное покрытие кэша тайлов — зумы 4–8 (docs/MAP_TILES.md)
       maxBounds: L.latLngBounds([[35, 15], [78, 180]]),
@@ -568,19 +577,18 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
     this.selStations.set(new Set());
   }
 
-  /** «Сброс» — фильтры и поиск к исходному состоянию экрана
-   *  (ходовые, первый терминал, прибывшие скрыты). Слой дорог и режим
-   *  «Развернуть» — не фильтры, их сброс не трогает. */
+  /** «Сброс» (уточнение владельца 07.08.2026) — фильтры и поиск к исходным
+   *  + зум/центр карты к стартовым, НО выбор терминалов сохраняется.
+   *  Слой дорог и режим «Развернуть» — не фильтры, их сброс не трогает. */
   resetFilters(): void {
     this.runMode.set('running');
-    const first = this.targets()[0];
-    this.selNaznach.set(new Set(first ? [first.name] : []));
     this.hideArrived.set(true);
     this.broshenOnly.set(false);
     this.markedOnly.set(false);
     this.indexSearch.set('');
     this.stationQuery.set('');
     this.selStations.set(new Set());
+    this.map?.setView(MAP_CENTER, MAP_ZOOM);
   }
 
   toggleStation(name: string): void {
@@ -728,10 +736,22 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
     rows.push(`<div>${esc(g.station_oper)}${g.doroga_oper ? ' (' + esc(g.doroga_oper) + ')' : ''}</div>`);
     if (g.oper_s) rows.push(`<div>${esc(g.oper_s)}${g.time_op ? ' · ' + this.fmtDT(g.time_op) : ''}</div>`);
     if (g.stan_nazn) rows.push(`<div>→ ${esc(g.stan_nazn)}${g.rasst != null ? ` · осталось ${g.rasst} км` : ''}</div>`);
-    if (g.plan_jd) rows.push(`<div>📅 план: ${this.fmtDT(g.plan_jd)}</div>`);
-    rows.push(g.prog_jd
-      ? `<div>🔮 прогноз: ${this.fmtDT(g.prog_jd)} (ходовой)</div>`
-      : `<div style="color:#fa8c16">отцепка — прогноза нет</div>`);
+    // Время прибытия (решение владельца 07.08.2026): есть план — ТОЛЬКО план;
+    // нет плана — прогноз; отцепка без прогноза — время хода и расчёт с
+    // предупреждением. Шкала — из профиля предприятия (как диалоги прибытия).
+    const inJd = this.timeBase.base() !== 'msk';
+    const pick = (jd: string | null, msk: string | null) => (inJd ? jd ?? msk : msk ?? jd);
+    const scale = inJd ? 'ЖД' : 'МСК';
+    if (g.plan_jd) {
+      rows.push(`<div>📅 план (${scale}): ${this.fmtDT(pick(g.plan_jd, g.plan_msk))}</div>`);
+    } else if (g.prog_jd) {
+      rows.push(`<div>🔮 прогноз (${scale}): ${this.fmtDT(pick(g.prog_jd, g.prog_msk))}</div>`);
+    } else {
+      rows.push(`<div>⏱ ход: ${fmtHours(g.to_go)} · расчёт (${scale}): ${this.fmtDT(pick(g.rasch_jd, g.rasch_msk))}</div>`);
+      rows.push(`<div style="color:#fa8c16">⚠ это только расчёт по времени хода — прогноза нет (отцепка)</div>`);
+    }
+    const risk = riskComment(g);
+    if (risk) rows.push(`<div style="color:${risk.color};font-weight:600">${esc(risk.text)}</div>`);
     if (g.status != null) rows.push(`<div>статус: ${esc(this.statusLabel(g.status))}</div>`);
     if (g.mark_text || g.mark_color) {
       rows.push(`<div style="margin-top:4px">${g.mark_color
@@ -847,6 +867,42 @@ function trainLabel(index: string): string {
   if (first === 'С') return 'С/Ф';
   if (index.length >= 8) return index.substring(5, 8);
   return index;
+}
+
+/**
+ * Комментарий к времени прибытия по mistake — перенос risk() вкладки «Прогноз
+ * прибытия/выгрузки» (gtport getRiskIndicator): для поезда в плане mistake < 0
+ * значит «не успевает на нитку», без плана mistake > 0 — «опережает нитку».
+ * Б/И и сборные не оцениваются (индекс не 4-3-4), прибывшим комментарий не нужен.
+ */
+function riskComment(g: MapGroup): { text: string; color: string } | null {
+  if (g.arrived) return null;
+  if (!/^\d{4}-\d{3}-\d{4}$/.test(g.index)) return null;
+  const inPlan = !!g.plan_jd;
+  const mistake = g.mistake ?? 0;
+  const togo = g.to_go ?? 0;
+  const CRIT = '#c62828', WARN = '#e65100', WATCH = '#b58b00';
+  if (inPlan && g.broshen) return { text: 'Нитка под угрозой срыва: поезд брошен', color: WARN };
+  if (inPlan) {
+    if (mistake <= -1) {
+      return { text: `ПЛАН СЛЕТИТ: не успевает на нитку на ${(-mistake).toFixed(1)} сут`, color: CRIT };
+    }
+    if (mistake < -0.3) return { text: 'План оптимистичен: расчёт позже нитки', color: WARN };
+    return null;
+  }
+  if (mistake > 1) {
+    if (togo <= 24) return { text: 'Опережает нитку у порта — придержат или бросят', color: CRIT };
+    const ratio = togo > 0 ? mistake / (togo / 24) : Infinity;
+    if (ratio > 0.5) return { text: 'Опережение велико — вероятно бросание в пути', color: WARN };
+    return { text: 'Опережает нитку — следить', color: WATCH };
+  }
+  return null;
+}
+
+/** Часы хода человеку: до суток — часами, дальше — сутками с десятыми. */
+function fmtHours(h: number | null): string {
+  if (h == null) return '—';
+  return h < 24 ? `${Math.round(h)} ч` : `${(h / 24).toFixed(1)} сут`;
 }
 
 /** Стили собственного слоя (map.geojson) — дословно из gtport GeoJsonLayer. */
