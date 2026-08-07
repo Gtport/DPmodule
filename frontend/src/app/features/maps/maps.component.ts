@@ -750,7 +750,8 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       rows.push(`<div>⏱ ход: ${fmtHours(g.to_go)} · расчёт (${scale}): ${this.fmtDT(pick(g.rasch_jd, g.rasch_msk))}</div>`);
       rows.push(`<div style="color:#fa8c16">⚠ это только расчёт по времени хода — прогноза нет (отцепка)</div>`);
     }
-    const risk = riskComment(g);
+    const rasch = `расчёт (${scale}): ${this.fmtDT(pick(g.rasch_jd, g.rasch_msk))}`;
+    const risk = riskComment(g, rasch);
     if (risk) rows.push(`<div style="color:${risk.color};font-weight:600">${esc(risk.text)}</div>`);
     if (g.status != null) rows.push(`<div>статус: ${esc(this.statusLabel(g.status))}</div>`);
     if (g.mark_text || g.mark_color) {
@@ -870,12 +871,15 @@ function trainLabel(index: string): string {
 }
 
 /**
- * Комментарий к времени прибытия по mistake — перенос risk() вкладки «Прогноз
+ * Комментарий к времени прибытия по mistake — логика risk() вкладки «Прогноз
  * прибытия/выгрузки» (gtport getRiskIndicator): для поезда в плане mistake < 0
  * значит «не успевает на нитку», без плана mistake > 0 — «опережает нитку».
- * Б/И и сборные не оцениваются (индекс не 4-3-4), прибывшим комментарий не нужен.
+ * Тексты конкретные (уточнение владельца 07.08.2026): «опаздывает/опережает
+ * на СКОЛЬКО», для опозданий — с расчётным временем (rasch передаётся уже
+ * отформатированным в шкале профиля). Б/И и сборные не оцениваются (индекс
+ * не 4-3-4), прибывшим комментарий не нужен.
  */
-function riskComment(g: MapGroup): { text: string; color: string } | null {
+function riskComment(g: MapGroup, rasch: string): { text: string; color: string } | null {
   if (g.arrived) return null;
   if (!/^\d{4}-\d{3}-\d{4}$/.test(g.index)) return null;
   const inPlan = !!g.plan_jd;
@@ -885,18 +889,29 @@ function riskComment(g: MapGroup): { text: string; color: string } | null {
   if (inPlan && g.broshen) return { text: 'Нитка под угрозой срыва: поезд брошен', color: WARN };
   if (inPlan) {
     if (mistake <= -1) {
-      return { text: `ПЛАН СЛЕТИТ: не успевает на нитку на ${(-mistake).toFixed(1)} сут`, color: CRIT };
+      return { text: `ПЛАН СЛЕТИТ: опаздывает на ${fmtDays(-mistake)} — ${rasch}`, color: CRIT };
     }
-    if (mistake < -0.3) return { text: 'План оптимистичен: расчёт позже нитки', color: WARN };
+    if (mistake < -0.3) {
+      return { text: `Опаздывает на ${fmtDays(-mistake)} — ${rasch}`, color: WARN };
+    }
     return null;
   }
   if (mistake > 1) {
-    if (togo <= 24) return { text: 'Опережает нитку у порта — придержат или бросят', color: CRIT };
+    if (togo <= 24) {
+      return { text: `Опережает нитку на ${fmtDays(mistake)} у порта — придержат или бросят`, color: CRIT };
+    }
     const ratio = togo > 0 ? mistake / (togo / 24) : Infinity;
-    if (ratio > 0.5) return { text: 'Опережение велико — вероятно бросание в пути', color: WARN };
-    return { text: 'Опережает нитку — следить', color: WATCH };
+    if (ratio > 0.5) {
+      return { text: `Опережает нитку на ${fmtDays(mistake)} — вероятно бросание в пути`, color: WARN };
+    }
+    return { text: `Опережает нитку на ${fmtDays(mistake)}`, color: WATCH };
   }
   return null;
+}
+
+/** Длительность в сутках → человеку: до суток — часами, дальше — сутками. */
+function fmtDays(d: number): string {
+  return d < 1 ? `${Math.round(d * 24)} ч` : `${d.toFixed(1)} сут`;
 }
 
 /** Часы хода человеку: до суток — часами, дальше — сутками с десятыми. */
