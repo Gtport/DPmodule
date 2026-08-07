@@ -49,3 +49,7 @@ deploy/keycloak/
 # (тоже в git, секреты через env). Локальные отличия машины разработчика —
 # config.local.yaml (правило выше).
 /.env
+
+# Impeccable design hook: кэш и личные настройки — локальные, в git только config.json
+.impeccable/hook.cache.json
+.impeccable/config.local.json

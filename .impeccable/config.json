@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "frontend/src/app/features/maps/maps.component.ts"
+        ],
+        "createdAt": "2026-08-07T03:13:15.968Z",
+        "reason": "Цветная полоса — перенос gtport CargoItem: цвет = marka.color подгруппы (принадлежность груза клиенту), подтверждено владельцем 07.08.2026"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "frontend/src/app/features/reports/reports.component.ts"
+        ],
+        "createdAt": "2026-08-07T03:13:34.638Z",
+        "reason": "Цветная верхняя полоса карточек — перенос вида gtport Tools; владелец признал находку ложноположительной (29.07.2026)"
+      }
+    ]
+  }
+}

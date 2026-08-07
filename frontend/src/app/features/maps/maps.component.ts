@@ -84,7 +84,7 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
       <!-- ── Карта; панель фильтров лежит поверх неё (как в gtport) ────── -->
       <div class="map-wrap">
         <div #mapEl class="map"></div>
-        <div class="ovl">
+        <div #ovlEl class="ovl">
           <div class="bar">
             <span class="fblock">
               @for (t of targets(); track t.name) {
@@ -344,6 +344,7 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   private readonly msg = inject(NzMessageService);
 
   @ViewChild('mapEl', { static: true }) mapEl!: ElementRef<HTMLDivElement>;
+  @ViewChild('ovlEl', { static: true }) ovlEl!: ElementRef<HTMLDivElement>;
 
   readonly palette = MARK_PALETTE;
 
@@ -672,7 +673,21 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
           return next;
         });
       } else {
-        m.bindPopup(this.popupHtml(g), { maxWidth: 320 }).openPopup();
+        // Попап открываем сами, БЕЗ bindPopup: тот вешает на маркер свой
+        // click-переключатель, и со второго клика оба обработчика гасили
+        // друг друга — маркер выглядел некликабельным (жалоба 07.08.2026).
+        // Панель фильтров лежит над попапами (z-index против stacking-
+        // контекста карты бессилен), поэтому автосдвиг Leaflet просят
+        // отвезти попап НИЖЕ панели: отступ сверху = высота панели.
+        const pad = this.ovlEl.nativeElement.offsetHeight + 16;
+        L.popup({
+          maxWidth: 320, offset: L.point(0, -8),
+          autoPanPaddingTopLeft: L.point(12, pad),
+          autoPanPaddingBottomRight: L.point(12, 12),
+        })
+          .setLatLng(m.getLatLng())
+          .setContent(this.popupHtml(g))
+          .openOn(this.map!);
       }
     });
     return m;
