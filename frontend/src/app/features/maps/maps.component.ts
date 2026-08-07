@@ -52,7 +52,19 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
  * - терминалы чипов — из реестра ports (унификация), не хардкод;
  * - вагоны группы грузятся по требованию (drawer), не в основном ответе;
  * - пометка диспетчера: цвет + текст → info_1/info_2 снимка, переживает
- *   пересборку (carry-over), кольцо на маркере + текст в попапе.
+ *   пересборку (carry-over), значок «!» цветом пометки на маркере + текст
+ *   в попапе; фильтр «!» показывает только помеченные группы.
+ *
+ * Решения владельца 07.08.2026:
+ * - панель фильтров лежит ПОВЕРХ карты (как в gtport) — всегда в видимой
+ *   области; кнопка «Сброс» возвращает фильтры и поиск к дефолту;
+ * - дефолт: режим «Ходовые» + выбран только первый терминал;
+ * - слой «Дороги» — полигоны ж/д дорог (roads.geojson из public, файлы дал
+ *   смежный проект; подписи/цвета — из их map_config, описания ВНУТРИ
+ *   geojson перепутаны и не используются), отключается чипом;
+ * - «Развернуть» — все наложенные маркеры раскладываются веером вокруг
+ *   станции (аналог spiderfy, но для всех кластеров сразу; кластеризация
+ *   в этом режиме выключена, позиции пересчитываются при смене зума).
  */
 @Component({
   selector: 'app-maps',
@@ -62,76 +74,84 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
   ],
   template: `
     <div class="page">
-      <!-- ── Панель фильтров ───────────────────────────────────────────── -->
-      <div class="bar">
-        <b>Карта</b>
-        <span class="fblock">
-          <nz-tag [class.on]="runMode() === 'all'" (click)="runMode.set('all')">Все</nz-tag>
-          <nz-tag [class.on]="runMode() === 'running'" (click)="runMode.set('running')">Ходовые</nz-tag>
-          <nz-tag [class.on]="runMode() === 'detached'" (click)="runMode.set('detached')">Отцепки</nz-tag>
-        </span>
-        <span class="fblock">
-          @for (t of targets(); track t.name) {
-            <nz-tag [class.on]="selNaznach().has(t.name)"
-                    [style.background-color]="selNaznach().has(t.name) ? (t.color || undefined) : undefined"
-                    (click)="toggleNaznach(t.name)">{{ t.name }}</nz-tag>
-          }
-        </span>
-        <nz-tag [class.on]="broshenOnly()" class="warn" (click)="broshenOnly.set(!broshenOnly())">Брош</nz-tag>
-        <nz-tag [class.on]="hideArrived()" (click)="hideArrived.set(!hideArrived())"
-                nz-tooltip="Прибывшие стоят на станции назначения и загромождают карту">
-          Скрыть прибывшие
-        </nz-tag>
-        <input nz-input nzSize="small" class="w-search" placeholder="поезд: 101 или Б"
-               [ngModel]="indexSearch()" (ngModelChange)="onSearch($event)" />
-        <button nz-button nzSize="small" (click)="stationsOpen.set(!stationsOpen())"
-                [class.st-on]="selStations().size">
-          Станции погрузки @if (selStations().size) { ({{ selStations().size }}) }
-        </button>
-        <span class="spacer"></span>
-        <span class="mut">
-          показано: <b>{{ shown().length }}</b> из {{ groups().length + noCoords().length }} групп,
-          {{ vagonsTotal() }} ваг.
-        </span>
-        @if (selected().size) {
-          <button nz-button nzSize="small" nzType="primary" (click)="openMark([...selected()])">
-            <span nz-icon nzType="bg-colors"></span> Пометка выбранным ({{ selected().size }})
-          </button>
-          <button nz-button nzSize="small" (click)="clearSelection()">снять выбор</button>
-        }
-        @if (noCoords().length) {
-          <button nz-button nzSize="small" (click)="noCoordsOpen.set(true)"
-                  nz-tooltip="Станция не имеет координат в справочнике — группы не видны на карте">
-            <span nz-icon nzType="environment"></span> Не на карте: {{ noCoords().length }}
-          </button>
-        }
-        <button nz-button nzSize="small" (click)="load()" [nzLoading]="loading()" nz-tooltip="Обновить (авто — раз в 5 минут)">
-          <span nz-icon nzType="sync"></span>
-        </button>
-      </div>
-      <div class="hint mut">
-        клик по маркеру — карточка группы · Ctrl+клик — выбор нескольких для пометки
-      </div>
-
-      <!-- ── Панель станций погрузки (как в gtport: поиск + чекбоксы) ──── -->
-      @if (stationsOpen()) {
-        <div class="st-panel">
-          <input nz-input nzSize="small" class="w-search" placeholder="найти станцию…"
-                 [ngModel]="stationQuery()" (ngModelChange)="stationQuery.set($event)" />
-          <button nz-button nzSize="small" nzType="text" (click)="clearStations()"
-                  [disabled]="!selStations().size">сбросить</button>
-          <div class="st-list">
-            @for (s of stationOptions(); track s) {
-              <nz-tag [class.on]="selStations().has(s)" (click)="toggleStation(s)">{{ s }}</nz-tag>
-            } @empty {
-              <span class="mut">ничего не нашлось</span>
+      <!-- ── Карта; панель фильтров лежит поверх неё (как в gtport) ────── -->
+      <div class="map-wrap">
+        <div #mapEl class="map"></div>
+        <div class="ovl">
+          <div class="bar">
+            <span class="fblock">
+              <nz-tag [class.on]="runMode() === 'all'" (click)="runMode.set('all')">Все</nz-tag>
+              <nz-tag [class.on]="runMode() === 'running'" (click)="runMode.set('running')">Ходовые</nz-tag>
+              <nz-tag [class.on]="runMode() === 'detached'" (click)="runMode.set('detached')">Отцепки</nz-tag>
+            </span>
+            <span class="fblock">
+              @for (t of targets(); track t.name) {
+                <nz-tag [class.on]="selNaznach().has(t.name)"
+                        [style.background-color]="selNaznach().has(t.name) ? (t.color || undefined) : undefined"
+                        (click)="toggleNaznach(t.name)">{{ t.name }}</nz-tag>
+              }
+            </span>
+            <nz-tag [class.on]="broshenOnly()" class="warn" (click)="broshenOnly.set(!broshenOnly())">Брош</nz-tag>
+            <nz-tag [class.on]="markedOnly()" class="mark" (click)="markedOnly.set(!markedOnly())"
+                    nz-tooltip="Только группы с пометкой диспетчера">!</nz-tag>
+            <nz-tag [class.on]="hideArrived()" (click)="hideArrived.set(!hideArrived())"
+                    nz-tooltip="Прибывшие стоят на станции назначения и загромождают карту">
+              Скрыть прибывшие
+            </nz-tag>
+            <nz-tag [class.on]="roadsOn()" (click)="roadsOn.set(!roadsOn())"
+                    nz-tooltip="Полигоны железных дорог">Дороги</nz-tag>
+            <input nz-input nzSize="small" class="w-index" placeholder="индекс"
+                   [ngModel]="indexSearch()" (ngModelChange)="onSearch($event)" />
+            <button nz-button nzSize="small" (click)="stationsOpen.set(!stationsOpen())"
+                    [class.st-on]="selStations().size">
+              Станции @if (selStations().size) { ({{ selStations().size }}) }
+            </button>
+            <button nz-button nzSize="small" (click)="resetFilters()"
+                    nz-tooltip="Вернуть фильтры и поиск к исходным">Сброс</button>
+            <button nz-button nzSize="small" [nzType]="expandAll() ? 'primary' : 'default'"
+                    (click)="expandAll.set(!expandAll())"
+                    nz-tooltip="Разложить наложенные друг на друга поезда вокруг станций">
+              {{ expandAll() ? 'Свернуть' : 'Развернуть' }}
+            </button>
+            <span class="mut cnt">
+              <b>{{ shown().length }}</b>/{{ groups().length + noCoords().length }} гр. · {{ vagonsTotal() }} ваг.
+            </span>
+            @if (selected().size) {
+              <button nz-button nzSize="small" nzType="primary" (click)="openMark([...selected()])">
+                <span nz-icon nzType="bg-colors"></span> Пометка ({{ selected().size }})
+              </button>
+              <button nz-button nzSize="small" (click)="clearSelection()">снять выбор</button>
             }
+            @if (noCoords().length) {
+              <button nz-button nzSize="small" (click)="noCoordsOpen.set(true)"
+                      nz-tooltip="Станция не имеет координат в справочнике — группы не видны на карте">
+                <span nz-icon nzType="environment"></span> Не на карте: {{ noCoords().length }}
+              </button>
+            }
+            <button nz-button nzSize="small" (click)="load()" [nzLoading]="loading()" nz-tooltip="Обновить (авто — раз в 5 минут)">
+              <span nz-icon nzType="sync"></span>
+            </button>
+            <span class="qm" nz-tooltip="клик по маркеру — карточка группы · Ctrl+клик — выбор нескольких для пометки">?</span>
           </div>
-        </div>
-      }
 
-      <!-- ── Карта ─────────────────────────────────────────────────────── -->
-      <div #mapEl class="map"></div>
+          <!-- ── Панель станций погрузки (как в gtport: поиск + чекбоксы) ── -->
+          @if (stationsOpen()) {
+            <div class="st-panel">
+              <input nz-input nzSize="small" class="w-search" placeholder="найти станцию…"
+                     [ngModel]="stationQuery()" (ngModelChange)="stationQuery.set($event)" />
+              <button nz-button nzSize="small" nzType="text" (click)="clearStations()"
+                      [disabled]="!selStations().size">сбросить</button>
+              <div class="st-list">
+                @for (s of stationOptions(); track s) {
+                  <nz-tag [class.on]="selStations().has(s)" (click)="toggleStation(s)">{{ s }}</nz-tag>
+                } @empty {
+                  <span class="mut">ничего не нашлось</span>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </div>
 
       <!-- ── «Не на карте»: группы без координат станции ───────────────── -->
       <nz-drawer [nzVisible]="noCoordsOpen()" nzPlacement="right" [nzWidth]="420"
@@ -226,15 +246,26 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
     </div>
   `,
   styles: [`
-    .page { display: flex; flex-direction: column; height: calc(100vh - 96px); gap: 6px; }
-    .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .hint { font-size: var(--font-size-sm); }
-    .spacer { flex: 1; }
+    .page { display: flex; flex-direction: column; height: calc(100vh - 96px); }
+    .map-wrap { position: relative; flex: 1; min-height: 320px; }
+    .map { position: absolute; inset: 0; border: 1px solid var(--border); border-radius: 6px; background: #f6f6f4; }
+    /* Панель поверх карты: контейнер не ловит клики (карта под ним живёт),
+       ловят только сами панели. z-index 1000 — уровень контролов Leaflet. */
+    .ovl { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 1000;
+           display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+    .ovl > * { pointer-events: auto; }
+    .bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+           background: rgba(255,255,255,.95); border: 1px solid var(--border);
+           border-radius: 8px; padding: 6px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
     .mut { color: var(--text-tertiary); }
+    .cnt { white-space: nowrap; }
+    .qm { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border);
+          display: inline-flex; align-items: center; justify-content: center;
+          color: var(--text-tertiary); cursor: help; font-size: 12px; flex: none; }
     .fblock { display: inline-flex; gap: 0; }
     nz-tag { cursor: pointer; user-select: none; }
     nz-tag.on { border-color: var(--brand); font-weight: 600; }
-    .map { flex: 1; min-height: 320px; border: 1px solid var(--border); border-radius: 6px; background: #f6f6f4; }
+    nz-tag.mark.on { background: #fff1f0; border-color: #f5222d; color: #f5222d; font-weight: 700; }
     .nc-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
     .run { color: #52c41a; } .det { color: #fa8c16; }
     .pal { display: flex; gap: 8px; margin-bottom: 10px; }
@@ -263,10 +294,12 @@ const BLANK_TILE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAA
     :host ::ng-deep .dp-pop .cargo { background: #fafafa; border-radius: 4px; padding: 3px 6px; margin-bottom: 4px; }
     :host ::ng-deep .dp-pop .mut2 { color: #999; }
     .w-search { width: 170px; }
+    .w-index { width: 84px; }
     nz-tag.warn.on { background: #fff1f0; border-color: #ff4d4f; }
     .st-on { border-color: var(--brand); color: var(--brand); }
     .st-panel { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px;
-                border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary, #fafafa); }
+                border: 1px solid var(--border); border-radius: 8px;
+                background: rgba(255,255,255,.97); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
     .st-list { display: flex; flex-wrap: wrap; gap: 2px; max-height: 96px; overflow-y: auto; flex: 1; }
   `],
 })
@@ -284,11 +317,17 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   readonly targets = signal<MapTarget[]>([]);
   readonly vagonsTotal = signal(0);
 
-  // Фильтры — клиентские (как «Поезда в движении»).
-  readonly runMode = signal<RunMode>('all');
+  // Фильтры — клиентские (как «Поезда в движении»). Дефолты (решение
+  // владельца 07.08.2026): «Ходовые» + только первый терминал.
+  readonly runMode = signal<RunMode>('running');
   readonly selNaznach = signal<Set<string>>(new Set());
   readonly hideArrived = signal(true);
   readonly broshenOnly = signal(false);
+  readonly markedOnly = signal(false);
+  /** Слой полигонов ж/д дорог (roads.geojson) — вкл/выкл чипом «Дороги». */
+  readonly roadsOn = signal(true);
+  /** «Развернуть»: наложенные маркеры раскладываются веером, без кластеров. */
+  readonly expandAll = signal(false);
 
   // Поиск по коду поезда (правило gtport: середина индекса, режим поиска
   // переопределяет прочие фильтры) и фильтр по станциям погрузки.
@@ -312,6 +351,9 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
 
   private map?: L.Map;
   private cluster?: L.MarkerClusterGroup;
+  private spread?: L.LayerGroup;   // маркеры режима «Развернуть»
+  private roadsLayer?: L.GeoJSON;  // полигоны дорог
+  private naznachInited = false;   // дефолт терминалов ставится один раз
   private timer?: ReturnType<typeof setInterval>;
 
   /** Группы под текущие фильтры — на карту. */
@@ -323,8 +365,15 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
     // Данные/фильтры изменились → перерисовать маркеры (карта уже может жить).
     effect(() => {
       const list = this.shown();
-      this.selected(); // подсветка выбора — тоже повод перерисовать
+      this.selected();  // подсветка выбора — тоже повод перерисовать
+      this.expandAll(); // смена режима «Развернуть» — тоже
       this.render(list);
+    });
+    // Чип «Дороги»: слой добавляется/убирается без перерисовки маркеров.
+    effect(() => {
+      const on = this.roadsOn();
+      if (!this.map || !this.roadsLayer) return;
+      if (on) this.roadsLayer.addTo(this.map); else this.roadsLayer.remove();
     });
   }
 
@@ -337,7 +386,9 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       maxBounds: L.latLngBounds([[35, 15], [78, 180]]),
       maxBoundsViscosity: 1.0,
       attributionControl: false,
+      zoomControl: false, // дефолтный сверху-слева накрыла бы наша панель
     });
+    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
     L.tileLayer(`${environment.apiBaseUrl}/v1/map/tiles/{z}/{x}/{y}`, {
       maxZoom: 8,
       errorTileUrl: BLANK_TILE, // 404 промаха кэша → прозрачный квадрат
@@ -355,6 +406,19 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       })
       .catch(() => {}); // слой декоративный: нет файла — карта живёт без него
 
+    // Полигоны ж/д дорог — отдельная панель НАД фоновым map.geojson (иначе
+    // его непрозрачные полигоны суши закрасили бы дороги: порядок отрисовки
+    // SVG = порядок добавления, а грузятся файлы вразнобой) и ПОД маркерами.
+    this.map.createPane('roads').style.zIndex = '450';
+    void fetch('roads.geojson')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !this.map) return;
+        this.roadsLayer = L.geoJSON(data, { style: geoJsonStyle, interactive: false, pane: 'roads' });
+        if (this.roadsOn()) this.roadsLayer.addTo(this.map);
+      })
+      .catch(() => {}); // тоже декоративный
+
     this.cluster = L.markerClusterGroup({
       // Радиус 1 — как в gtport: поезда НЕ схлопываются, пока маркеры реально
       // не легли друг на друга (одна станция); там кластер раскрывается spiderfy.
@@ -370,6 +434,12 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       },
     });
     this.map.addLayer(this.cluster);
+    // Группа маркеров режима «Развернуть» (кластеры в нём не участвуют).
+    this.spread = L.layerGroup().addTo(this.map);
+    // Раскладка веера считается в пикселях — при смене зума пересчитать.
+    this.map.on('zoomend', () => {
+      if (this.expandAll()) this.render(this.shown());
+    });
 
     // Кнопки внутри попапа рендерятся вне Angular — вешаем обработчики при
     // открытии попапа (делегирование по data-атрибутам).
@@ -403,8 +473,13 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       this.noCoords.set(data.no_coords ?? []);
       this.targets.set(data.targets ?? []);
       this.vagonsTotal.set(data.vagons ?? 0);
-      // По умолчанию выбраны все терминалы (= фильтр выключен) — канон trains.
-      if (!this.selNaznach().size) this.selNaznach.set(new Set(this.targets().map((t) => t.name)));
+      // По умолчанию выбран ТОЛЬКО ПЕРВЫЙ терминал (решение владельца
+      // 07.08.2026, отход от канона trains «выбраны все»). Ставится один раз:
+      // дальше выбор пользователя не трогаем, даже если он снял все чипы.
+      if (!this.naznachInited && this.targets().length) {
+        this.selNaznach.set(new Set([this.targets()[0].name]));
+        this.naznachInited = true;
+      }
       // Выбор чистим от исчезнувших групп (поезд уехал/переформирован).
       const alive = new Set([...this.groups(), ...this.noCoords()].map((g) => g.key));
       this.selected.update((s) => new Set([...s].filter((k) => alive.has(k))));
@@ -425,6 +500,7 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
     else if (this.runMode() === 'detached') list = list.filter((g) => !g.prog_jd);
     if (this.hideArrived()) list = list.filter((g) => !g.arrived);
     if (this.broshenOnly()) list = list.filter((g) => g.broshen);
+    if (this.markedOnly()) list = list.filter((g) => !!g.mark_color || !!g.mark_text);
     const all = this.targets().length;
     const nz = this.selNaznach();
     if (all && nz.size < all) {
@@ -452,6 +528,21 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   });
 
   clearStations(): void {
+    this.selStations.set(new Set());
+  }
+
+  /** «Сброс» — фильтры и поиск к исходному состоянию экрана
+   *  (ходовые, первый терминал, прибывшие скрыты). Слой дорог и режим
+   *  «Развернуть» — не фильтры, их сброс не трогает. */
+  resetFilters(): void {
+    this.runMode.set('running');
+    const first = this.targets()[0];
+    this.selNaznach.set(new Set(first ? [first.name] : []));
+    this.hideArrived.set(true);
+    this.broshenOnly.set(false);
+    this.markedOnly.set(false);
+    this.indexSearch.set('');
+    this.stationQuery.set('');
     this.selStations.set(new Set());
   }
 
@@ -492,31 +583,63 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
 
   // ── Маркеры ───────────────────────────────────────────────────────────────
   private render(list: MapGroup[]): void {
-    if (!this.cluster) return;
+    if (!this.cluster || !this.spread) return;
     const sel = this.selected();
-
     this.cluster.clearLayers();
-    const markers = list.map((g) => {
-      // Цвет — правило gtport: единогласный marka.color группы, иначе по статусу.
-      const color = g.color || (g.status != null ? STATUS_COLORS[g.status] : '') || '#8c8c8c';
-      const m = L.marker([g.lat!, g.lon!], {
-        icon: this.markerIcon(g, color, sel.has(g.key)),
-      }) as MarkerWithMeta;
-      m.dpBroshen = g.broshen;
-      m.on('click', (e: L.LeafletMouseEvent) => {
-        if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
-          this.selected.update((s) => {
-            const next = new Set(s);
-            if (next.has(g.key)) next.delete(g.key); else next.add(g.key);
-            return next;
-          });
-        } else {
-          m.bindPopup(this.popupHtml(g), { maxWidth: 320 }).openPopup();
-        }
+    this.spread.clearLayers();
+
+    if (!this.expandAll()) {
+      this.cluster.addLayers(list.map((g) => this.makeMarker(g, sel)));
+      return;
+    }
+
+    // «Развернуть»: как spiderfy, но для ВСЕХ станций сразу — стоящие на
+    // одной точке маркеры раскладываются веером с «ножками» к станции.
+    // Радиус в пикселях, поэтому на смену зума render дёргается заново.
+    const byPos = new Map<string, MapGroup[]>();
+    for (const g of list) {
+      const k = `${g.lat},${g.lon}`;
+      const arr = byPos.get(k);
+      if (arr) arr.push(g); else byPos.set(k, [g]);
+    }
+    for (const gs of byPos.values()) {
+      if (gs.length === 1) {
+        this.spread.addLayer(this.makeMarker(gs[0], sel));
+        continue;
+      }
+      const center = L.latLng(gs[0].lat!, gs[0].lon!);
+      const cp = this.map!.latLngToLayerPoint(center);
+      const r = 26 + gs.length * 2;
+      gs.forEach((g, i) => {
+        const a = (2 * Math.PI * i) / gs.length - Math.PI / 2;
+        const ll = this.map!.layerPointToLatLng(
+          L.point(cp.x + r * Math.cos(a), cp.y + r * Math.sin(a)));
+        this.spread!.addLayer(L.polyline([center, ll],
+          { color: '#8c8c8c', weight: 1, opacity: 0.7, interactive: false }));
+        this.spread!.addLayer(this.makeMarker(g, sel, ll));
       });
-      return m;
+    }
+  }
+
+  private makeMarker(g: MapGroup, sel: Set<string>, pos?: L.LatLng): L.Marker {
+    // Цвет — правило gtport: единогласный marka.color группы, иначе по статусу.
+    const color = g.color || (g.status != null ? STATUS_COLORS[g.status] : '') || '#8c8c8c';
+    const m = L.marker(pos ?? [g.lat!, g.lon!], {
+      icon: this.markerIcon(g, color, sel.has(g.key)),
+    }) as MarkerWithMeta;
+    m.dpBroshen = g.broshen;
+    m.on('click', (e: L.LeafletMouseEvent) => {
+      if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
+        this.selected.update((s) => {
+          const next = new Set(s);
+          if (next.has(g.key)) next.delete(g.key); else next.add(g.key);
+          return next;
+        });
+      } else {
+        m.bindPopup(this.popupHtml(g), { maxWidth: 320 }).openPopup();
+      }
     });
-    this.cluster.addLayers(markers);
+    return m;
   }
 
   private markerIcon(g: MapGroup, color: string, isSelected: boolean): L.DivIcon {
@@ -524,15 +647,22 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
     const size = Math.max(20, Math.min(40, 20 + g.vagon_count / 5));
     const border = g.broshen ? '#ff4d4f' : '#ffffff';
     const rings: string[] = [];
-    if (g.mark_color) rings.push(`0 0 0 3px ${g.mark_color}`); // кольцо пометки
     if (isSelected) rings.push('0 0 0 6px rgba(22,119,255,.45)'); // выбор Ctrl+кликом
     rings.push('0 1px 4px rgba(0,0,0,.4)');
+    // Пометка диспетчера — значок «!» цветом пометки на белом кружке
+    // (решение владельца 07.08.2026: кольцо было плохо различимо).
+    const badge = g.mark_color
+      ? `<span style="position:absolute;top:-7px;right:-7px;width:15px;height:15px;
+          border-radius:50%;background:#fff;border:2px solid ${g.mark_color};
+          color:${g.mark_color};font:900 11px/11px sans-serif;display:flex;
+          align-items:center;justify-content:center;">!</span>`
+      : '';
     return L.divIcon({
       className: '', // пустой — без дефолтного белого квадрата leaflet-div-icon
-      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;
+      html: `<div style="position:relative;width:${size}px;height:${size}px;border-radius:50%;
         background:${color};border:2px solid ${border};box-shadow:${rings.join(',')};
         color:#fff;display:flex;align-items:center;justify-content:center;
-        font:600 ${size < 28 ? 10 : 12}px/1 sans-serif;">${trainLabel(g.index)}</div>`,
+        font:600 ${size < 28 ? 10 : 12}px/1 sans-serif;">${trainLabel(g.index)}${badge}</div>`,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
