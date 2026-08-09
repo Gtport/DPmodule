@@ -45,13 +45,6 @@ export const routes: Routes = [
         data: { roles: OPER },
       },
       {
-        path: 'missing',
-        loadComponent: () =>
-          import('./features/missing/missing.component').then((m) => m.MissingComponent),
-        canActivate: [authGuard],
-        data: { roles: OPER },
-      },
-      {
         path: 'rearrangement',
         loadComponent: () =>
           import('./features/rearrangement/rearrangement.component').then((m) => m.RearrangementComponent),

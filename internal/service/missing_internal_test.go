@@ -67,3 +67,23 @@ func TestGroupMissing(t *testing.T) {
 	assert.Equal(t, 5, b.DaysMissing) // 28.07 10:00 → 02.08 12:00
 	assert.Equal(t, 5, b.SubGroups[0].Vagons[0].DaysMissing)
 }
+
+// Фильтр по терминалам назначения: станционная карточка «Кандидаты на
+// прибытие» видит только пропавших своей станции; пустой список = все.
+func TestFilterByNaznach(t *testing.T) {
+	rows := []domain.Dislocation{
+		{Vagon: "1", Naznach: "АЭ"},
+		{Vagon: "2", Naznach: "ГУТ-2"},
+		{Vagon: "3", Naznach: "УТ-1"},
+		{Vagon: "4", Naznach: ""}, // назначение не определилось — ни к одной станции
+	}
+
+	assert.Equal(t, rows, filterByNaznach(rows, nil), "без фильтра — как есть")
+
+	mys := filterByNaznach(rows, []string{"АЭ", "ГУТ-2"})
+	require.Len(t, mys, 2)
+	assert.Equal(t, "1", mys[0].Vagon)
+	assert.Equal(t, "2", mys[1].Vagon)
+
+	assert.Empty(t, filterByNaznach(rows, []string{"НЕТ-ТАКОГО"}))
+}

@@ -20,6 +20,21 @@ func NewArrivalsHandler(svc *service.ArrivalsService) *arrivalsHandler {
 	return &arrivalsHandler{svc: svc}
 }
 
+// naznachParam — фильтр по терминалам из query `?naznach=АЭ,ГУТ-2` (CSV,
+// пробелы и пустые элементы отбрасываются; nil — фильтра нет). Общий для
+// ручек прибывших, кандидатов и пропавших.
+func naznachParam(c *gin.Context) []string {
+	var naznach []string
+	if raw := strings.TrimSpace(c.Query("naznach")); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				naznach = append(naznach, s)
+			}
+		}
+	}
+	return naznach
+}
+
 func (h *arrivalsHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/arrivals", h.groups)
 	g.GET("/dislocation/terminals", h.terminals)
@@ -41,15 +56,7 @@ func (h *arrivalsHandler) RegisterRoutes(g *gin.RouterGroup) {
 // @Success  200 {object} service.ArrivalsDTO
 // @Router   /api/v1/dislocation/arrivals [get]
 func (h *arrivalsHandler) groups(c *gin.Context) {
-	var naznach []string
-	if raw := strings.TrimSpace(c.Query("naznach")); raw != "" {
-		for _, s := range strings.Split(raw, ",") {
-			if s = strings.TrimSpace(s); s != "" {
-				naznach = append(naznach, s)
-			}
-		}
-	}
-	res, err := h.svc.Groups(c.Request.Context(), c.Query("from"), c.Query("to"), naznach)
+	res, err := h.svc.Groups(c.Request.Context(), c.Query("from"), c.Query("to"), naznachParam(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -75,15 +82,7 @@ func (h *arrivalsHandler) terminals(c *gin.Context) {
 // @Success  200 {array} service.CandidateGroupDTO
 // @Router   /api/v1/dislocation/arrivals/candidates [get]
 func (h *arrivalsHandler) candidates(c *gin.Context) {
-	var naznach []string
-	if raw := strings.TrimSpace(c.Query("naznach")); raw != "" {
-		for _, s := range strings.Split(raw, ",") {
-			if s = strings.TrimSpace(s); s != "" {
-				naznach = append(naznach, s)
-			}
-		}
-	}
-	res, err := h.svc.Candidates(c.Request.Context(), naznach)
+	res, err := h.svc.Candidates(c.Request.Context(), naznachParam(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

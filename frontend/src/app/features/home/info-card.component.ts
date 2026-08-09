@@ -3,8 +3,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { MissingApiService, MissingVagon, Status6Vagon } from '../missing/missing-api.service';
-import { MissingModalComponent } from '../missing/missing-modal.component';
+import { MissingApiService, Status6Vagon } from './missing-api.service';
 import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.component';
 import { CargoWorkModalComponent } from './cargo-work-modal.component';
 import { BrosModalComponent } from './bros-modal.component';
@@ -13,24 +12,19 @@ import { DelaysModalComponent } from './delays-modal.component';
 
 /**
  * Карточка «Информация» рядом со «Статусом системы» (правая половина верхней
- * строки колонки «Оперативка»): счётчики списков «сбоку от снимка» — пропавшие
- * (статус 8) и доноры перегруза (статус 6). Клик по счётчику открывает
+ * строки колонки «Оперативка»): счётчики списков «сбоку от снимка» — доноры
+ * перегруза (статус 6), брошенные, задержанные. Клик по счётчику открывает
  * перемещаемую модалку с таблицей, где ПКМ по строке даёт историю движения
- * вагона. Автообновление раз в минуту, как у соседних карточек.
+ * вагона. Автообновление раз в минуту, как у соседних карточек. Пропавшие
+ * (статус 8) отсюда переехали в станционные карточки «Кандидаты на прибытие»
+ * (решение владельца 10.08.2026).
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, MissingModalComponent, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Информация</b></div>
-
-      <button class="row" type="button" (click)="openMissing()"
-              nz-tooltip nzTooltipTitle="Исчезли из выгрузки в незавершённом рейсе — открыть список">
-        <span class="lbl">Пропавшие</span>
-        <span class="cnt" [class.warn]="missing().length > 0">{{ missing().length }}</span>
-        <span nz-icon nzType="right" class="go"></span>
-      </button>
 
       <button class="row" type="button" (click)="openDonors()"
               nz-tooltip nzTooltipTitle="Доноры перегруза (статус 6): у них приёмники забирают груз — открыть список">
@@ -59,9 +53,6 @@ import { DelaysModalComponent } from './delays-modal.component';
       </button>
     </div>
 
-    @if (showMissing()) {
-      <app-missing-modal (changed)="load()" (closed)="showMissing.set(false); load()" />
-    }
     @if (showCargoWork()) {
       <app-cargo-work-modal (closed)="showCargoWork.set(false)" />
     }
@@ -100,10 +91,8 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   private readonly bros = inject(BrosApiService);
   private readonly msg = inject(NzMessageService);
 
-  readonly missing = signal<MissingVagon[]>([]);
   readonly donors = signal<Status6Vagon[]>([]);
   readonly brosCount = signal(0);
-  readonly showMissing = signal(false);
   readonly showDonors = signal(false);
   readonly showCargoWork = signal(false);
   readonly showBros = signal(false);
@@ -120,13 +109,12 @@ export class InfoCardComponent implements OnInit, OnDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** Списки короткие (TTL-очистка и снятие доноров) — тянем целиком, счётчик = длина. */
+  /** Списки короткие (снятие доноров) — тянем целиком, счётчик = длина. */
   async load(initial = false): Promise<void> {
     try {
-      const [missing, donors, bros] = await Promise.all([
-        this.api.getMissing(), this.api.getStatus6(), this.bros.getActive(),
+      const [donors, bros] = await Promise.all([
+        this.api.getStatus6(), this.bros.getActive(),
       ]);
-      this.missing.set(missing ?? []);
       this.donors.set(donors ?? []);
       this.brosCount.set(bros?.length ?? 0);
     } catch (err) {
@@ -134,14 +122,12 @@ export class InfoCardComponent implements OnInit, OnDestroy {
     }
   }
 
-  openMissing(): void { this.showMissing.set(true); }
   openDonors(): void { this.showDonors.set(true); }
   openCargoWork(): void { this.showCargoWork.set(true); }
   openBros(): void { this.showBros.set(true); }
   openDelays(): void { this.showDelays.set(true); }
 
-  /** Доноры перегруза → общая форма строки таблицы (пропавшие ушли в свою
-   *  агрегированную модалку с «Подтвердить прибытие»). */
+  /** Доноры перегруза → общая форма строки таблицы. */
   donorRows(): VagonListRow[] {
     return this.donors().map((r) => ({
       id: r.id, vagon: r.vagon, index: r.index,

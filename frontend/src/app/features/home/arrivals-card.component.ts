@@ -11,7 +11,8 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
 /**
  * Компактный блок «Прибывшие» половины станции (перенос gtport HistoryTableM):
  * последние прибывшие поезда за вчера/сегодня (Прибытие · Индекс), кнопка
- * разворота открывает перемещаемую модалку «История прибывших» с полной таблицей.
+ * разворота открывает перемещаемую модалку «История прибывших» с полной
+ * таблицей. Кандидаты (статусы 9/8) — в отдельной карточке над этой.
  */
 @Component({
   selector: 'app-arrivals-card',
@@ -23,11 +24,6 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
         @if (stale.stale()) {
           <span class="dp-stale" nz-tooltip
                 nzTooltipTitle="Автообновление не проходит — показаны последние полученные данные">{{ stale.label() }}</span>
-        }
-        @if (candidatesCount()) {
-          <span class="cand-badge" nz-tooltip
-                nzTooltipTitle="Кандидаты на прибытие — АСУ не дала дату, требуется подтверждение (открыть историю)"
-                (click)="expanded.set(true)">кандидаты: {{ candidatesCount() }}</span>
         }
         <span class="spacer"></span>
         <button nz-button nzType="text" nzSize="small" nz-tooltip
@@ -63,10 +59,6 @@ import { ArrivalsHistoryComponent } from './arrivals-history.component';
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-md); }
     .head { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); }
     .spacer { flex: 1 1 auto; }
-    /* Чип-предупреждение (канон: без заливки, контур и текст в цвете). */
-    .cand-badge { border: 1px solid var(--color-warning); color: var(--color-warning-text);
-                  border-radius: 10px; padding: 0 8px; font-size: var(--font-size-sm);
-                  font-weight: 600; cursor: pointer; white-space: nowrap; }
     .mini { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
     .mini th { background: var(--color-bg-subtle); font-weight: 600; padding: 3px 8px;
                border: 1px solid var(--color-border-light); }
@@ -93,8 +85,6 @@ export class ArrivalsCardComponent implements OnInit, OnDestroy {
   readonly stale = new StaleTracker();
   readonly groups = signal<ArrivalGroup[]>([]);
   readonly expanded = signal(false);
-  /** Вагонов-кандидатов на прибытие (статус 9, ждут подтверждения). */
-  readonly candidatesCount = signal(0);
 
   /** Автообновление раз в минуту (фоновое, «умное»: без спиннера/перерисовки —
    *  строки трекаются по ключу, DOM меняется только у изменившихся). */
@@ -119,12 +109,8 @@ export class ArrivalsCardComponent implements OnInit, OnDestroy {
     if (initial) this.loading.set(true);
     try {
       const names = this.terminals().map((t) => t.name);
-      const [res, cands] = await Promise.all([
-        this.api.getArrivals(names),
-        this.api.getCandidates(names),
-      ]);
+      const res = await this.api.getArrivals(names);
       this.groups.set(res.groups);
-      this.candidatesCount.set((cands ?? []).reduce((n, c) => n + c.vagon_count, 0));
       this.stale.ok();
     } catch (err) {
       this.stale.fail();

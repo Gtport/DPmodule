@@ -48,31 +48,6 @@ type MissingVagonDTO struct {
 	DaysMissing  int               `json:"days_missing"`  // полных суток с пропажи (от «сейчас» МСК)
 }
 
-// List — все пропавшие, свежие первыми (порядок — из репозитория).
-func (s *MissingService) List(ctx context.Context) ([]MissingVagonDTO, error) {
-	rows, err := s.status9.MissingRows(ctx)
-	if err != nil {
-		return nil, err
-	}
-	now := time.Time(clock.Now())
-	out := make([]MissingVagonDTO, 0, len(rows))
-	for _, r := range rows {
-		d := MissingVagonDTO{
-			ID: r.ID, Vagon: r.Vagon, Index: r.Index,
-			StationOper: r.StationOper, DorogaOper: r.DorogaOper,
-			OperS: r.OperS, TimeOp: r.TimeOp,
-			Naznach: r.Naznach, GruzpolS: r.GruzpolS, StanNazn: r.StanNazn,
-			CargoS: r.CargoS, Ves: r.Ves, DateDostav: r.DateDostav,
-			MissingSince: r.UpdatedAt,
-		}
-		if !r.UpdatedAt.IsZero() {
-			d.DaysMissing = int(now.Sub(time.Time(r.UpdatedAt)).Hours() / 24)
-		}
-		out = append(out, d)
-	}
-	return out, nil
-}
-
 // MissingSubgroupDTO — подгруппа пропавшего поезда (одно назначение/получатель),
 // раскрывается до вагонов. Display — тот же формат, что у подгрупп прибывших.
 type MissingSubgroupDTO struct {
@@ -103,14 +78,33 @@ type MissingGroupDTO struct {
 	SubGroups    []MissingSubgroupDTO `json:"sub_groups"`
 }
 
-// Groups — пропавшие агрегированно: поезд → подгруппа → вагоны (модалка
-// «Пропавшие вагоны» с действием «Подтвердить прибытие»).
-func (s *MissingService) Groups(ctx context.Context) ([]MissingGroupDTO, error) {
+// Groups — пропавшие агрегированно: поезд → подгруппа → вагоны, с фильтром по
+// терминалам naznach (пусто — все): станционные карточки «Кандидаты на
+// прибытие» показывают каждой станции только её пропавших.
+func (s *MissingService) Groups(ctx context.Context, naznach []string) ([]MissingGroupDTO, error) {
 	rows, err := s.status9.MissingRows(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return groupMissing(rows, time.Time(clock.Now())), nil
+	return groupMissing(filterByNaznach(rows, naznach), time.Time(clock.Now())), nil
+}
+
+// filterByNaznach — только записи с назначением из списка (пусто — как есть).
+func filterByNaznach(rows []domain.Dislocation, naznach []string) []domain.Dislocation {
+	if len(naznach) == 0 {
+		return rows
+	}
+	nz := make(map[string]struct{}, len(naznach))
+	for _, n := range naznach {
+		nz[n] = struct{}{}
+	}
+	out := make([]domain.Dislocation, 0, len(rows))
+	for _, r := range rows {
+		if _, ok := nz[r.Naznach]; ok {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // groupMissing — группировка записей-8 (образец — Candidates): группа =

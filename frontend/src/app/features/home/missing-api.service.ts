@@ -88,13 +88,12 @@ export class MissingApiService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiBaseUrl}/v1/dislocation`;
 
-  getMissing(): Promise<MissingVagon[]> {
-    return firstValueFrom(this.http.get<MissingVagon[]>(`${this.base}/missing`));
-  }
-
-  /** Пропавшие агрегированно: поезд → подгруппа → вагоны (модалка с действиями). */
-  getMissingGroups(): Promise<MissingGroup[]> {
-    return firstValueFrom(this.http.get<MissingGroup[]>(`${this.base}/missing/groups`));
+  /** Пропавшие агрегированно: поезд → подгруппа → вагоны, с фильтром по
+   *  терминалам станции (карточка «Кандидаты на прибытие»; пусто — все). */
+  getMissingGroups(naznach: string[] = []): Promise<MissingGroup[]> {
+    const params: Record<string, string> = {};
+    if (naznach.length) params['naznach'] = naznach.join(',');
+    return firstValueFrom(this.http.get<MissingGroup[]>(`${this.base}/missing/groups`, { params }));
   }
 
   /**

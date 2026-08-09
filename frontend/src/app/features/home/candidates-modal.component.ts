@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -15,25 +15,26 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { AuthService } from '../../core/auth/auth.service';
 import { todayMsk } from '../../shared/msk-date';
 import { TimeBase, TimeBaseService, mskDateInBase, shiftDateIfEvening } from '../../shared/time-base.service';
-import { ArrivalsApiService } from '../home/arrivals-api.service';
-import { VagonTrailModalComponent } from '../home/vagon-trail-modal.component';
+import { ArrivalsApiService, CandidateGroup, TerminalTarget } from './arrivals-api.service';
+import { VagonTrailModalComponent } from './vagon-trail-modal.component';
 import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from './missing-api.service';
 
 /**
- * Перемещаемая модалка «Пропавшие вагоны» (записи-8): агрегированный вид
- * поезд → подгруппа → вагоны по образцу «Истории прибывших» и действие
- * «Подтвердить прибытие» — из-за дискретности выгрузок дислокации вагон мог
- * прибыть, выгрузиться и выпасть из потока без статусов; диспетчер
- * восстанавливает факты руками (прибытие обязательно, выгрузка — опционально
- * той же формой). Подтверждённый вагон уходит из пропавших и появляется в
- * «Истории прибывших» за указанную дату.
+ * Перемещаемая модалка «Кандидаты на прибытие — <станция>» (разворот одноимённой
+ * карточки): всё, что вот-вот станет «прибывшим» у терминалов станции, в двух
+ * секциях. Сверху — живые кандидаты (статус 9: на станции назначения, АСУ не
+ * дала дату) с «Подтвердить…»/«Скрыть»; ниже — пропавшие из дислокации (статус
+ * 8: исчезли из выгрузки в незавершённом рейсе — из-за дискретности выгрузок
+ * вагон мог прибыть, выгрузиться и выпасть из потока; диспетчер восстанавливает
+ * факты руками: прибытие обязательно, выгрузка — опционально той же формой).
  *
- * Выбор целей — как в истории прибывших: клик по чипу вагона, ПКМ по
- * поезду/составу/вагону автовыделяет состав; «Подтвердить…» есть и кнопкой на
- * строке поезда. Доноры перегруза (статус 6) остаются в старой общей модалке.
+ * Выбор целей у пропавших — как в «Истории прибывших»: клик по чипу вагона,
+ * ПКМ по поезду/составу/вагону автовыделяет состав. Подтверждённые вагоны
+ * уходят из кандидатов и появляются в «Истории прибывших» за указанную дату;
+ * вернувшийся в дислокацию вагон снимается из пропавших автоматически.
  */
 @Component({
-  selector: 'app-missing-modal',
+  selector: 'app-candidates-modal',
   imports: [
     FormsModule, DragDropModule, NzButtonModule, NzCheckboxModule, NzIconModule,
     NzInputModule, NzModalModule, NzRadioModule, NzSpinModule, NzTooltipModule,
@@ -44,12 +45,12 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
               [nzMask]="false" (nzOnCancel)="closed.emit()">
       <ng-template #ttl>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
-          Пропавшие вагоны ({{ total() }})
+          Кандидаты на прибытие — {{ station() }} ({{ total() }})
         </div>
       </ng-template>
       <ng-container *nzModalContent>
         <div class="bar">
-          <span class="mut">Исчезли из выгрузки до завершения рейса; показана последняя известная позиция.</span>
+          <span class="mut">Терминалы: {{ terminalNames().join(', ') }}</span>
           @if (selected().size) {
             <span class="sel-cnt">выбрано: {{ selected().size }}</span>
             @if (canEdit()) {
@@ -72,6 +73,38 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
         </div>
 
         <nz-spin [nzSpinning]="loading()">
+          <!-- Живые кандидаты (статус 9): подтверждение/отклонение оператором -->
+          @if (cands().length) {
+            <div class="cands">
+              <div class="cands-title">
+                <span nz-icon nzType="question-circle"></span>
+                <b>Ждут подтверждения ({{ cands().length }})</b>
+                <span class="mut">на станции назначения, АСУ не дала дату — подтвердите или скройте</span>
+              </div>
+              @for (c of cands(); track c.key) {
+                <div class="cand">
+                  <span class="num b">{{ c.index || '—' }}</span>
+                  <span class="mut">{{ c.station_nach }}</span>
+                  <span class="mut">({{ c.vagon_count }})</span>
+                  <span class="cand-sost ell" [title]="candSostav(c)">{{ candSostav(c) }}</span>
+                  <span class="mut nowrap">оп. {{ fmt(c.time_op) }}</span>
+                  <span class="spacer"></span>
+                  @if (canEdit()) {
+                    <button nz-button nzType="primary" nzSize="small" (click)="openConfirmCand(c)">Подтвердить…</button>
+                    <button nz-button nzSize="small" nz-tooltip
+                            nzTooltipTitle="Скрыть до новых данных (вагоны остаются кандидатами)"
+                            (click)="dismiss(c)">Скрыть</button>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Пропавшие из дислокации (статус 8): последняя известная позиция -->
+          <div class="miss-title">
+            <b>Пропавшие из дислокации ({{ missingCount() }})</b>
+            <span class="mut">исчезли из выгрузки в незавершённом рейсе; вероятно, прибыли — подтвердите факт</span>
+          </div>
           <div class="dp-tbl-wrap">
             <table class="dp-tbl">
               <thead>
@@ -90,7 +123,7 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
                 @for (g of filteredGroups(); track g.key) {
                   <tr [class.stale]="g.days_missing >= 3" (contextmenu)="openGroupMenu($event, g, menu)">
                     <td class="num idx" [title]="g.index">{{ g.index || '—' }}</td>
-                    <td class="ell" [title]="station(g)">{{ station(g) }}</td>
+                    <td class="ell" [title]="stationOper(g)">{{ stationOper(g) }}</td>
                     <td class="ell" [title]="g.oper_s">{{ g.oper_s || '—' }}</td>
                     <td class="c">{{ fmt(g.time_op) }}</td>
                     <td class="c">{{ fmt(g.missing_since) }}</td>
@@ -126,7 +159,7 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
                     }
                   </tr>
                 } @empty {
-                  <tr><td [attr.colspan]="canEdit() ? 8 : 7" class="empty">Список пуст</td></tr>
+                  <tr><td [attr.colspan]="canEdit() ? 8 : 7" class="empty">Пропавших нет</td></tr>
                 }
               </tbody>
             </table>
@@ -135,14 +168,15 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
 
         @if (canEdit()) {
           <p class="hint">Клик по вагону — выбор; «Подтвердить прибытие» — кнопкой на поезде или ПКМ
-            по поезду/составу/вагону. ПКМ по вагону также даёт историю движения. Времена — московские.</p>
+            по поезду/составу/вагону. ПКМ по вагону также даёт историю движения. Вернувшийся в
+            дислокацию вагон уходит из пропавших автоматически.</p>
         } @else {
           <p class="hint">Клик по вагону — история движения. Времена — московские.</p>
         }
       </ng-container>
     </nz-modal>
 
-    <!-- ПКМ: операции по выбранным вагонам -->
+    <!-- ПКМ: операции по выбранным вагонам (секция пропавших) -->
     <nz-dropdown-menu #menu="nzDropdownMenu">
       <ul nz-menu>
         @if (ctxVagon(); as v) {
@@ -159,13 +193,14 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
       <app-vagon-trail-modal [vagonId]="tv.id" [vagon]="tv.vagon" (closed)="trailVagon.set(null)" />
     }
 
-    <!-- Диалог «Подтвердить прибытие» (прибытие обязательно, выгрузка опционально) -->
+    <!-- Диалог «Подтвердить прибытие»: общий для кандидатов-9 (без выгрузки)
+         и пропавших-8 (прибытие обязательно, выгрузка опционально) -->
     <nz-modal [nzVisible]="confirmOpen()" [nzTitle]="cfTtl" nzWidth="440px"
               (nzOnCancel)="confirmOpen.set(false)" (nzOnOk)="saveConfirm()"
               nzOkText="Подтвердить" [nzOkDisabled]="!confirmValid()" [nzOkLoading]="applying()">
       <ng-template #cfTtl>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
-          Подтвердить прибытие — {{ ctxGroup()?.index || 'выбранные вагоны' }}
+          Подтвердить прибытие — {{ confirmTitle() }}
         </div>
       </ng-template>
       <ng-container *nzModalContent>
@@ -189,30 +224,31 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
               <input class="date" type="time" [ngModel]="cfT()" (ngModelChange)="cfT.set($event)" />
             </span>
           </label>
-          <label nz-checkbox [ngModel]="cfUnload()" (ngModelChange)="cfUnload.set($event)">
-            Выгружен (указать выгрузку сразу)
-          </label>
-          @if (cfUnload()) {
-            <label>Дата и время выгрузки
-              <span class="dt">
-                <input class="date" type="date" [ngModel]="unD()" (ngModelChange)="unD.set($event)" />
-                <input class="date" type="time" [ngModel]="unT()" (ngModelChange)="unT.set($event)" />
-              </span>
+          @if (cfMode() === 'missing') {
+            <label nz-checkbox [ngModel]="cfUnload()" (ngModelChange)="cfUnload.set($event)">
+              Выгружен (указать выгрузку сразу)
             </label>
-            <label>Место выгрузки
-              <input nz-input list="missing-terminals" [ngModel]="unPlace()" (ngModelChange)="unPlace.set($event)"
-                     placeholder="пусто — терминал назначения" />
-              <datalist id="missing-terminals">
-                @for (t of terminalNames(); track t) { <option [value]="t"></option> }
-              </datalist>
-            </label>
+            @if (cfUnload()) {
+              <label>Дата и время выгрузки
+                <span class="dt">
+                  <input class="date" type="date" [ngModel]="unD()" (ngModelChange)="unD.set($event)" />
+                  <input class="date" type="time" [ngModel]="unT()" (ngModelChange)="unT.set($event)" />
+                </span>
+              </label>
+              <label>Место выгрузки
+                <input nz-input list="cand-terminals" [ngModel]="unPlace()" (ngModelChange)="unPlace.set($event)"
+                       placeholder="пусто — терминал назначения" />
+                <datalist id="cand-terminals">
+                  @for (t of terminalNames(); track t) { <option [value]="t"></option> }
+                </datalist>
+              </label>
+            }
           }
-          <p class="mut">Вагонов: {{ selectedVagons().length }}. Времена — в шкале
+          <p class="mut">Вагонов: {{ confirmVagons().length }}. Времена — в шкале
             {{ tb.base() === 'jd' ? 'ЖД' : 'МСК' }} (пересчёт сделает сервер). Вагоны уйдут из
-            пропавших и появятся в «Истории прибывших» за указанную дату{{ cfUnload() ? ' как выгруженные' : '' }}.
-            Если вагон вернётся в дислокацию, свежие данные АСУ будут вернее ручных.</p>
+            кандидатов и появятся в «Истории прибывших» за указанную дату{{ cfUnload() ? ' как выгруженные' : '' }}.</p>
           <div class="sel-chips">
-            @for (v of selectedVagons(); track v) { <span class="chip">{{ v }}</span> }
+            @for (v of confirmVagons(); track v) { <span class="chip">{{ v }}</span> }
           </div>
         </div>
       </ng-container>
@@ -226,6 +262,18 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
     .sel-cnt { color: var(--color-primary); font-weight: 600; }
     .search { width: 140px; }
     .mut { color: var(--color-text-muted); }
+    /* Живые кандидаты — жёлтая секция (перенос вида из «Истории прибывших»). */
+    .cands { background: var(--color-warning-bg); border: 1px solid var(--color-warning);
+             border-radius: var(--radius-md); padding: var(--space-xs) var(--space-sm);
+             margin-bottom: var(--space-sm); display: flex; flex-direction: column; gap: 2px; }
+    .cands-title { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--font-size-sm); }
+    .cand { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--font-size-sm);
+            padding: 2px 0; min-width: 0; }
+    .cand .b { font-weight: 600; }
+    .cand-sost { flex: 1 1 auto; min-width: 0; }
+    .nowrap { white-space: nowrap; }
+    .miss-title { display: flex; align-items: baseline; gap: var(--space-sm);
+                  font-size: var(--font-size-sm); margin-bottom: var(--space-xs); }
     .dp-tbl td { vertical-align: top; }
     .c-idx { width: 130px; } .c-op { width: 130px; } .c-dt { width: 100px; }
     .c-days { width: 52px; } .c-act { width: 118px; }
@@ -267,7 +315,7 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
                  font-size: var(--font-size-sm); }
   `],
 })
-export class MissingModalComponent implements OnInit {
+export class CandidatesModalComponent implements OnInit {
   private readonly api = inject(MissingApiService);
   private readonly arrivalsApi = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
@@ -277,26 +325,33 @@ export class MissingModalComponent implements OnInit {
   /** Шкала ввода времени (ЖД/МСК) — общая для всех диалогов правок. */
   readonly tb = inject(TimeBaseService);
 
+  /** Станция (заголовок окна) и её терминалы (фильтр naznach обеих секций). */
+  readonly station = input.required<string>();
+  readonly terminals = input.required<TerminalTarget[]>();
+
   readonly closed = output<void>();
-  /** Списки изменились (подтверждение) — карточке «Информация» пора обновить счётчики. */
+  /** Списки изменились (подтверждение/скрытие) — карточке пора обновиться. */
   readonly changed = output<void>();
 
   readonly loading = signal(false);
   readonly applying = signal(false);
+  /** Живые кандидаты (статус 9) — верхняя жёлтая секция. */
+  readonly cands = signal<CandidateGroup[]>([]);
+  /** Пропавшие (статус 8) — таблица. */
   readonly groups = signal<MissingGroup[]>([]);
   readonly search = signal('');
   /** Развёрнутые подгруппы: ключ `group.key::sub.key`. */
   readonly open = signal<Set<string>>(new Set());
-  /** Выбранные вагоны (id рейсов) — цель подтверждения. */
+  /** Выбранные пропавшие вагоны (id рейсов) — цель подтверждения. */
   readonly selected = signal<Set<string>>(new Set());
   readonly ctxGroup = signal<MissingGroup | null>(null);
   readonly ctxVagon = signal<MissingVagon | null>(null);
   readonly trailVagon = signal<MissingVagon | null>(null);
-  /** Подсказки терминалов для места выгрузки (реестр ports). */
-  readonly terminalNames = signal<string[]>([]);
 
-  // Диалог «Подтвердить прибытие».
+  // Диалог «Подтвердить прибытие»: режим — живой кандидат (9) или пропавший (8).
   readonly confirmOpen = signal(false);
+  readonly cfMode = signal<'cand' | 'missing'>('missing');
+  readonly cfCand = signal<CandidateGroup | null>(null);
   readonly cfIndex = signal('');
   readonly cfD = signal('');
   readonly cfT = signal('');
@@ -305,9 +360,14 @@ export class MissingModalComponent implements OnInit {
   readonly unT = signal('');
   readonly unPlace = signal('');
 
-  readonly total = computed(() => this.groups().reduce((n, g) => n + g.vagon_count, 0));
+  readonly terminalNames = computed(() => this.terminals().map((t) => t.name));
+  readonly missingCount = computed(() => this.groups().reduce((n, g) => n + g.vagon_count, 0));
+  readonly total = computed(() =>
+    this.missingCount() + this.cands().reduce((n, c) => n + c.vagon_count, 0));
   readonly confirmValid = computed(() =>
     !!this.cfD() && !!this.cfT() && (!this.cfUnload() || (!!this.unD() && !!this.unT())));
+  readonly confirmTitle = computed(() =>
+    this.cfMode() === 'cand' ? (this.cfCand()?.index || '—') : (this.ctxGroup()?.index || 'выбранные вагоны'));
   /** Номера выбранных вагонов — предпросмотр в диалоге. */
   readonly selectedVagons = computed(() => {
     const sel = this.selected();
@@ -317,19 +377,30 @@ export class MissingModalComponent implements OnInit {
         for (const v of sg.vagons) if (sel.has(v.id)) out.push(v.vagon);
     return out;
   });
+  /** Цели открытого диалога: состав кандидата (9) либо выбранные пропавшие (8). */
+  readonly confirmVagons = computed(() => {
+    const c = this.cfCand();
+    if (this.cfMode() === 'cand' && c) {
+      return c.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.vagon));
+    }
+    return this.selectedVagons();
+  });
 
   ngOnInit(): void {
     void this.load();
     void this.tb.init();
-    void this.arrivalsApi.getTerminals()
-      .then((ts) => this.terminalNames.set((ts ?? []).map((t) => t.name)))
-      .catch(() => undefined); // подсказки не критичны — поле останется свободным вводом
   }
 
   async load(): Promise<void> {
     this.loading.set(true);
     try {
-      this.groups.set(await this.api.getMissingGroups() ?? []);
+      const names = this.terminalNames();
+      const [cands, groups] = await Promise.all([
+        this.arrivalsApi.getCandidates(names),
+        this.api.getMissingGroups(names),
+      ]);
+      this.cands.set(cands ?? []);
+      this.groups.set(groups ?? []);
       this.selected.set(new Set());
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
@@ -435,7 +506,33 @@ export class MissingModalComponent implements OnInit {
     this.trailVagon.set(v);
   }
 
-  // ── Подтверждение прибытия ────────────────────────────────────────────────
+  // ── Живые кандидаты (статус 9): подтверждение / отклонение ───────────────
+  candSostav(c: CandidateGroup): string {
+    return c.sub_groups.map((sg) => sg.display).join(' · ') || '—';
+  }
+
+  private candVagonIds(c: CandidateGroup): string[] {
+    return c.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id));
+  }
+
+  openConfirmCand(c: CandidateGroup): void {
+    this.cfMode.set('cand');
+    this.cfCand.set(c);
+    this.openConfirmDialog(c.index, c.time_op);
+  }
+
+  async dismiss(c: CandidateGroup): Promise<void> {
+    try {
+      const res = await this.arrivalsApi.dismissCandidates(this.candVagonIds(c));
+      this.msg.info(`Скрыто кандидатов: ${res.updated} ваг. (до новых данных АСУ).`);
+      await this.load();
+      this.changed.emit();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    }
+  }
+
+  // ── Пропавшие (статус 8): подтверждение прибытия ─────────────────────────
   openConfirmGroup(g: MissingGroup): void {
     this.ctxGroup.set(g);
     this.selected.set(new Set(g.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id))));
@@ -447,11 +544,18 @@ export class MissingModalComponent implements OnInit {
       this.msg.info('Сначала выберите вагоны (клик по вагону или ПКМ по поезду/составу).');
       return;
     }
+    this.cfMode.set('missing');
+    this.cfCand.set(null);
     const g = this.ctxGroup();
-    this.cfIndex.set(g?.index ?? '');
-    // Дефолт — время последней операции (МСК-штамп): показываем в текущей шкале.
-    const d = this.datePart(g?.time_op) || todayMsk();
-    const t = this.timePart(g?.time_op) || '00:00';
+    this.openConfirmDialog(g?.index ?? '', g?.time_op ?? null);
+  }
+
+  /** Общий дефолт диалога: индекс поезда и время последней операции (МСК-штамп
+   *  показываем в текущей шкале), поля выгрузки чистые. */
+  private openConfirmDialog(index: string, timeOp: string | null): void {
+    this.cfIndex.set(index);
+    const d = this.datePart(timeOp) || todayMsk();
+    const t = this.timePart(timeOp) || '00:00';
     this.cfD.set(mskDateInBase(d, t, this.tb.base()));
     this.cfT.set(t);
     this.cfUnload.set(false);
@@ -471,16 +575,24 @@ export class MissingModalComponent implements OnInit {
   }
 
   async saveConfirm(): Promise<void> {
-    // Дефолт выгрузки — момент прибытия (вагон пропал уже после него).
-    const dateVigr = this.cfUnload() ?
-      `${this.unD() || this.cfD()}T${this.unT() || this.cfT()}:00` : '';
     this.applying.set(true);
     try {
-      const res = await this.api.confirmMissing(
-        [...this.selected()], `${this.cfD()}T${this.cfT()}:00`,
-        dateVigr, this.cfUnload() ? this.unPlace().trim() : '',
-        this.cfIndex().trim(), this.tb.base());
-      this.msg.success(`Прибытие подтверждено: ${res.updated} ваг. — смотрите «Историю прибывших».`);
+      const dt = `${this.cfD()}T${this.cfT()}:00`;
+      const c = this.cfCand();
+      if (this.cfMode() === 'cand' && c) {
+        const res = await this.arrivalsApi.confirmArrival(
+          this.candVagonIds(c), dt, this.cfIndex().trim(), this.tb.base());
+        this.msg.success(`Прибытие подтверждено: ${res.updated} ваг. Поезд ушёл в прибывшие.`);
+      } else {
+        // Дефолт выгрузки — момент прибытия (вагон пропал уже после него).
+        const dateVigr = this.cfUnload() ?
+          `${this.unD() || this.cfD()}T${this.unT() || this.cfT()}:00` : '';
+        const res = await this.api.confirmMissing(
+          [...this.selected()], dt,
+          dateVigr, this.cfUnload() ? this.unPlace().trim() : '',
+          this.cfIndex().trim(), this.tb.base());
+        this.msg.success(`Прибытие подтверждено: ${res.updated} ваг. — смотрите «Историю прибывших».`);
+      }
       this.confirmOpen.set(false);
       await this.load();
       this.changed.emit();
@@ -492,7 +604,7 @@ export class MissingModalComponent implements OnInit {
   }
 
   /** «Станция (дорога)» последней известной позиции группы. */
-  station(g: MissingGroup): string {
+  stationOper(g: MissingGroup): string {
     if (!g.station_oper) return '—';
     return g.doroga_oper ? `${g.station_oper} (${g.doroga_oper})` : g.station_oper;
   }

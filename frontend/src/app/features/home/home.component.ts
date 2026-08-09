@@ -3,6 +3,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
 import { ArrivalsCardComponent } from './arrivals-card.component';
+import { CandidatesCardComponent } from './candidates-card.component';
 import { NearestCardComponent } from './nearest-card.component';
 import { OperativkaApiService } from './operativka-api.service';
 import { OperativkaCardComponent } from './operativka-card.component';
@@ -21,9 +22,10 @@ interface StationHalf {
  * Домашняя страница — рабочая зона диспетчера: три колонки равной ширины
  * (решение владельца): «Оперативка» + по колонке на каждую станцию предприятия
  * (раскладка из реестра терминалов, не хардкод; порядок станций — по коду,
- * Мыс перед Находкой). В станционных колонках — блок «Прибывшие» (компактный,
- * автообновляемый, с разворотом в перемещаемую модалку) и «Ближайшие поезда»;
- * блок «Информация» — следующая итерация.
+ * Мыс перед Находкой). В станционных колонках — блок «Кандидаты на прибытие»
+ * (статусы 9 и 8 своей станции, решение владельца 10.08.2026), под ним
+ * «Прибывшие» (компактный, автообновляемый, с разворотом в перемещаемую
+ * модалку) и «Ближайшие поезда».
  *
  * Колонка «Оперативка» начинается со «Статуса системы» — туда перенесён весь
  * функционал бывшей страницы «Дислокация» (решение владельца): актуальность
@@ -34,8 +36,8 @@ interface StationHalf {
  */
 @Component({
   selector: 'app-home',
-  imports: [ArrivalsCardComponent, NearestCardComponent, OperativkaCardComponent, SystemStatusCardComponent,
-            InfoCardComponent, UnplannedCardComponent],
+  imports: [ArrivalsCardComponent, CandidatesCardComponent, NearestCardComponent, OperativkaCardComponent,
+            SystemStatusCardComponent, InfoCardComponent, UnplannedCardComponent],
   template: `
     <!-- Тревога — над колонками, во всю ширину: сигнал «поезд едет без плана»
          нельзя терять под сгибом (раньше карточка стояла последней в левой
@@ -58,6 +60,7 @@ interface StationHalf {
       @for (st of stations(); track st.code) {
         <section class="col">
           <h2 class="st-title">{{ title(st.name) }}</h2>
+          <app-candidates-card [station]="title(st.name)" [terminals]="st.terminals" />
           <app-arrivals-card [station]="title(st.name)" [terminals]="st.terminals" />
           <app-nearest-card [station]="title(st.name)" [terminals]="st.terminals" />
         </section>
