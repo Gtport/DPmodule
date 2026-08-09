@@ -196,6 +196,9 @@ function todayMsk(): string {
       >
         <div *nzModalContent>
           @if (sfPrepare(); as prep) {
+            @if (prep.sf?.length || prep.problems?.length) {
+              <div class="scale-note">Дата и время строк — как в файле плана (ЖД).</div>
+            }
             <!-- Сборные формирования: выбрать группы ИЛИ вписать реальный индекс -->
             @if (prep.sf?.length) {
               <div class="sec-title">Сборные формирования (с.ф.)</div>
@@ -203,7 +206,7 @@ function todayMsk(): string {
             @for (row of prep.sf ?? []; track row.ord) {
               <div class="sf-block">
                 <div class="sf-head">
-                  <span>{{ row.index_pp }} · {{ dmDate(row.plan_msk) }} {{ hm(row.plan_msk) }}</span>
+                  <span>{{ row.index_pp }} · {{ dmDate(row.plan_jd) }} {{ hm(row.plan_jd) }}</span>
                   @if (sfPlanPorts(row); as terms) {
                     <span class="sf-terms">{{ terms }}</span>
                   }
@@ -265,7 +268,7 @@ function todayMsk(): string {
               <div class="sf-block">
                 <div class="sf-head">
                   <span class="idx">{{ row.index_pp || '—' }}</span>
-                  <span>· {{ dmDate(row.plan_msk) }} {{ hm(row.plan_msk) }}</span>
+                  <span>· {{ dmDate(row.plan_jd) }} {{ hm(row.plan_jd) }}</span>
                   <span class="sf-terms">план {{ row.activ }} ваг</span>
                   <span class="sf-cnt">вагоны не найдены</span>
                 </div>
@@ -396,6 +399,8 @@ function todayMsk(): string {
     /* Заголовок секции диалога (с.ф. / нитки без вагонов). */
     .sec-title { font-weight: 600; margin: var(--space-sm) 0 var(--space-xs); color: var(--color-text-secondary); }
     .sub-title { font-size: var(--font-size-sm); font-weight: 500; margin: var(--space-xs) 0 2px; color: var(--color-text-secondary); }
+    /* Пояснение шкалы: строки диалога подписаны ЖД-временем, как в книге плана. */
+    .scale-note { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: var(--space-xs); }
     /* Строка ручного ввода индекса (переопределение с.ф./исправление опечатки). */
     .ovr { display: flex; align-items: center; gap: var(--space-sm); margin: var(--space-xs) 0; flex-wrap: wrap; }
     .ovr-lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }

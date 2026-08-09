@@ -47,6 +47,7 @@ type SFRowDTO struct {
 	Ord        int               `json:"ord"`
 	IndexPp    string            `json:"index_pp"`
 	PlanMsk    *domain.LocalTime `json:"plan_msk"`
+	PlanJd     *domain.LocalTime `json:"plan_jd"` // дата/время как в файле (ЖД) — по ним диспетчер ищет строку
 	Ports      []domain.PortCell `json:"ports"`
 	Candidates []SFCandidateDTO  `json:"candidates"`
 }
@@ -59,6 +60,7 @@ type ProblemRowDTO struct {
 	Ord     int               `json:"ord"`
 	IndexPp string            `json:"index_pp"`
 	PlanMsk *domain.LocalTime `json:"plan_msk"`
+	PlanJd  *domain.LocalTime `json:"plan_jd"` // дата/время как в файле (ЖД) — по ним диспетчер ищет строку
 	Activ   int               `json:"activ"`
 	Ports   []domain.PortCell `json:"ports"`
 	// Поезда-кандидаты ручной привязки (агрегации с тем же базовым индексом,
@@ -298,6 +300,7 @@ func (p *PlanProcessor) buildPreview(ctx context.Context, nitki []plan.PlanNitka
 			Ord:        i,
 			IndexPp:    n.IndexPp,
 			PlanMsk:    localPtr(n.PlanMsk),
+			PlanJd:     localPtr(n.PlanJd),
 			Ports:      toDomainPorts(n.Ports), // столбцы терминалов из строки плана
 			Candidates: toCandidateDTO(cands),
 		})
@@ -347,7 +350,7 @@ func problemRows(nitki []plan.PlanNitka, matches []planmatch.NitkaMatch, agg pla
 			continue
 		}
 		out = append(out, ProblemRowDTO{
-			Ord: i, IndexPp: n.IndexPp, PlanMsk: localPtr(n.PlanMsk),
+			Ord: i, IndexPp: n.IndexPp, PlanMsk: localPtr(n.PlanMsk), PlanJd: localPtr(n.PlanJd),
 			Activ: n.Activ, Ports: toDomainPorts(n.Ports),
 			// Поезда-кандидаты для ручной привязки (в т.ч. не прошедшие
 			// количественный фильтр — «нитка ждёт 17, приехало 9»).

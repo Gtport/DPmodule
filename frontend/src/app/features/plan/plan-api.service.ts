@@ -82,6 +82,8 @@ export interface SFRow {
   ord: number;
   index_pp: string;
   plan_msk: string | null;
+  /** Время нитки как в файле плана (ЖД) — по нему диспетчер ищет строку в книге. */
+  plan_jd: string | null;
   ports: PortCell[] | null;
   candidates: SFCandidate[];
 }
@@ -92,6 +94,8 @@ export interface ProblemRow {
   ord: number;
   index_pp: string;
   plan_msk: string | null;
+  /** Время нитки как в файле плана (ЖД) — по нему диспетчер ищет строку в книге. */
+  plan_jd: string | null;
   activ: number;
   ports: PortCell[] | null;
   /** Поезда-кандидаты для ручной привязки (в т.ч. не прошедшие количественный фильтр). */

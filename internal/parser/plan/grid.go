@@ -919,8 +919,47 @@ func isSfRow(index string) bool {
 	if u == "0000-000-0000" {
 		return true
 	}
-	collapsed := strings.ReplaceAll(strings.ReplaceAll(u, ".", ""), " ", "")
-	return strings.HasPrefix(collapsed, "СФ")
+	_, ok := cutSfMarker(u)
+	return ok
+}
+
+// isSfSeparator — знак, которым диспетчер отбивает маркер «с.ф.» от имени станции.
+// Ячейку набирают руками, и разделитель каждый раз свой: «с.ф.БИКИН», «СФ ХАБАРОВСК II»,
+// «С.Ф. - ХАБАРОВСК II». Внутри имени станции такие знаки значащие («НАХОДКА-ВОСТОЧНАЯ»),
+// поэтому режем их только по краям синонима, а не всюду.
+func isSfSeparator(r rune) bool {
+	switch r {
+	case '.', ',', ':', ';', '-', '–', '—', '/', '\\', ' ', '\t', ' ':
+		return true
+	}
+	return false
+}
+
+// cutSfMarker снимает маркер «с.ф.» с начала метки (ВЕРХНИЙ регистр) и возвращает
+// остаток — имя станции формирования без обрамляющих разделителей и с одиночными
+// пробелами внутри. ok=false — метка маркером не начинается.
+func cutSfMarker(label string) (string, bool) {
+	r := []rune(label)
+	i := 0
+	skipSep := func() {
+		for i < len(r) && isSfSeparator(r[i]) {
+			i++
+		}
+	}
+	skipSep()
+	if i >= len(r) || r[i] != 'С' {
+		return "", false
+	}
+	i++
+	skipSep()
+	if i >= len(r) || r[i] != 'Ф' {
+		return "", false
+	}
+	i++
+	skipSep()
+	// Хвост — имя станции: сжимаем внутренние пробелы (в справочнике sf они одиночные)
+	// и снимаем разделители справа.
+	return strings.TrimRightFunc(strings.Join(strings.Fields(string(r[i:])), " "), isSfSeparator), true
 }
 
 // sfSynonym извлекает синоним станции формирования (ВЕРХНИЙ регистр): из суффикса
@@ -929,7 +968,7 @@ func isSfRow(index string) bool {
 func sfSynonym(index, station string) string {
 	u := strings.ToUpper(strings.TrimSpace(index))
 	if u != "0000-000-0000" {
-		if suf := strings.TrimSpace(strings.TrimPrefix(strings.ReplaceAll(u, ".", ""), "СФ")); suf != "" {
+		if suf, ok := cutSfMarker(u); ok && suf != "" {
 			return suf
 		}
 	}
