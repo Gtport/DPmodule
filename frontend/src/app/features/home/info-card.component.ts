@@ -8,6 +8,7 @@ import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.compon
 import { CargoWorkModalComponent } from './cargo-work-modal.component';
 import { BrosModalComponent } from './bros-modal.component';
 import { BrosApiService } from './bros-api.service';
+import { DelaysApiService } from './delays-api.service';
 import { DelaysModalComponent } from './delays-modal.component';
 import { UnmatchedApiService } from './unmatched-api.service';
 import { UnmatchedModalComponent } from './unmatched-modal.component';
@@ -49,7 +50,8 @@ import { UnmatchedModalComponent } from './unmatched-modal.component';
       <button class="row" type="button" (click)="openDelays()"
               nz-tooltip nzTooltipTitle="Вагоны, задержанные в пути прямо сейчас (простои и бросания); отчёт за период — внутри">
         <span class="lbl">Задержанные вагоны</span>
-        <span nz-icon nzType="right" class="go ml"></span>
+        <span class="cnt">{{ delaysCount() }}</span>
+        <span nz-icon nzType="right" class="go"></span>
       </button>
 
       <button class="row" type="button" (click)="openCargoWork()"
@@ -105,11 +107,14 @@ import { UnmatchedModalComponent } from './unmatched-modal.component';
 export class InfoCardComponent implements OnInit, OnDestroy {
   private readonly api = inject(MissingApiService);
   private readonly bros = inject(BrosApiService);
+  private readonly delays = inject(DelaysApiService);
   private readonly unmatched = inject(UnmatchedApiService);
   private readonly msg = inject(NzMessageService);
 
   readonly donors = signal<Status6Vagon[]>([]);
   readonly brosCount = signal(0);
+  /** Открытые эпизоды задержек; без warn — задержанные есть почти всегда, красный тут не сигнал. */
+  readonly delaysCount = signal(0);
   readonly unmatchedCount = signal(0);
   readonly showDonors = signal(false);
   readonly showCargoWork = signal(false);
@@ -131,12 +136,13 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   /** Списки короткие (снятие доноров) — тянем целиком, счётчик = длина. */
   async load(initial = false): Promise<void> {
     try {
-      const [donors, bros, unm] = await Promise.all([
-        this.api.getStatus6(), this.bros.getActive(), this.unmatched.getGroups(),
+      const [donors, bros, unm, delays] = await Promise.all([
+        this.api.getStatus6(), this.bros.getActive(), this.unmatched.getGroups(), this.delays.current(),
       ]);
       this.donors.set(donors ?? []);
       this.brosCount.set(bros?.length ?? 0);
       this.unmatchedCount.set((unm ?? []).reduce((s, g) => s + g.vagon_count, 0));
+      this.delaysCount.set(delays?.length ?? 0);
     } catch (err) {
       if (initial) this.msg.error(apiErrorMessage(err));
     }

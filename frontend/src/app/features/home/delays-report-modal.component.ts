@@ -17,12 +17,14 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
 /**
  * Перемещаемая модалка «Отчёт по простоям» — исторический разрез памяти о
  * задержках (vagon_delay, статусы 4/5) за период, по аналогии с отчётом
- * «Брошенных»: выбор терминала, периода и вида (все / простой / брошенные).
- * Таблица эпизодов: «В периоде» — длительность, обрезанная границами периода
- * (открытый эпизод — до «сейчас»); клик по вагону открывает «Историю движения
- * вагона»; экспорт в Excel. Аналитики (плитки, агрегат по станциям, «стоят
- * сейчас») здесь нет — решение владельца: оперативный список живёт в
- * «Задержанных вагонах». Аналога в gtport не было — подсистема новая.
+ * «Брошенных»: выбор терминала и периода. Два вида (решение владельца
+ * 10.08.2026, отменяет прежнее «аналитики не показывать»): «Сводка» —
+ * плитки итогов + агрегат по станциям (вагоно-часы с разбивкой по виду,
+ * «стоят сейчас»; данные сервер считал и раньше, теперь они на экране) и
+ * «Эпизоды» — плоская таблица с фильтром по виду (все / простой / брошенные).
+ * «В периоде» — длительность, обрезанная границами периода (открытый эпизод —
+ * до «сейчас»); клик по вагону открывает «Историю движения вагона»; экспорт
+ * в Excel двумя листами. Аналога в gtport не было — подсистема новая.
  */
 @Component({
   selector: 'app-delays-report-modal',
@@ -46,11 +48,13 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
             <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
             @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
           </nz-select>
-          <nz-select class="kind" nzSize="small" [ngModel]="kindFilter()" (ngModelChange)="kindFilter.set($event)">
-            <nz-option nzValue="" nzLabel="Все задержки"></nz-option>
-            <nz-option nzValue="4" nzLabel="Долгий простой"></nz-option>
-            <nz-option nzValue="5" nzLabel="Брошенные"></nz-option>
-          </nz-select>
+          @if (view() === 'records') {
+            <nz-select class="kind" nzSize="small" [ngModel]="kindFilter()" (ngModelChange)="kindFilter.set($event)">
+              <nz-option nzValue="" nzLabel="Все задержки"></nz-option>
+              <nz-option nzValue="4" nzLabel="Долгий простой"></nz-option>
+              <nz-option nzValue="5" nzLabel="Брошенные"></nz-option>
+            </nz-select>
+          }
           <label class="fl">Начало <input type="date" class="date" [ngModel]="start()" (ngModelChange)="start.set($event)" /></label>
           <label class="fl">Конец <input type="date" class="date" [ngModel]="end()" (ngModelChange)="end.set($event)" /></label>
           <button nz-button nzType="primary" nzSize="small" [nzLoading]="loading()" (click)="load()">
@@ -59,15 +63,51 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
           <button nz-button nzSize="small" (click)="lastDays(7)">7 дней</button>
           <button nz-button nzSize="small" (click)="lastDays(30)">30 дней</button>
           <span class="spacer"></span>
-          <button nz-button nzType="text" nzSize="small" (click)="exportExcel()" [disabled]="!filteredRecords().length"
-                  nz-tooltip nzTooltipTitle="Экспорт в Excel">
+          <button nz-button nzSize="small" [nzType]="view() === 'agg' ? 'primary' : 'default'" (click)="view.set('agg')">Сводка</button>
+          <button nz-button nzSize="small" [nzType]="view() === 'records' ? 'primary' : 'default'" (click)="view.set('records')">Эпизоды</button>
+          <button nz-button nzType="text" nzSize="small" (click)="exportExcel()" [disabled]="!report()?.records?.length"
+                  nz-tooltip nzTooltipTitle="Экспорт в Excel (сводка по станциям + эпизоды)">
             <span nz-icon nzType="download"></span>
           </button>
         </div>
 
         @if (loading()) {
           <div class="center"><nz-spin nzSimple></nz-spin></div>
-        } @else if (report()) {
+        } @else if (report(); as r) {
+          @if (view() === 'agg') {
+            <div class="tiles">
+              <div class="tile"><div class="tv">{{ r.total_vagons }}</div><div class="tl">вагонов задерживалось</div></div>
+              <div class="tile"><div class="tv">{{ r.total_episodes }}</div><div class="tl">эпизодов задержки</div></div>
+              <div class="tile"><div class="tv">{{ fmtDur(r.total_hours) }}</div><div class="tl">суммарная стоянка</div></div>
+              <div class="tile"><div class="tv" [class.warn]="r.open_now > 0">{{ r.open_now }}</div><div class="tl">стоят сейчас</div></div>
+            </div>
+            <div class="dp-tbl-wrap" style="max-height: 54vh">
+              <table class="dp-tbl">
+                <thead><tr>
+                  <th>Станция</th><th class="c-dor">Дорога</th>
+                  <th class="c-h">Эпизодов</th><th class="c-h">Вагонов</th><th class="c-h">Стоят сейчас</th>
+                  <th class="c-h">Простой</th><th class="c-h">Брошенные</th><th class="c-h">Всего</th>
+                </tr></thead>
+                <tbody>
+                  @for (s of r.stations; track s.station_code) {
+                    <tr>
+                      <td class="ell" [title]="s.station_name">{{ s.station_name || ('код ' + s.station_code) }}</td>
+                      <td class="c">{{ s.doroga || '—' }}</td>
+                      <td class="c num">{{ s.episodes }}</td>
+                      <td class="c num">{{ s.vagons }}</td>
+                      <td class="c num" [class.warn]="s.open_now > 0">{{ s.open_now }}</td>
+                      <td class="c num">{{ fmtDur(s.hours4) }}</td>
+                      <td class="c num">{{ fmtDur(s.hours5) }}</td>
+                      <td class="c num"><b>{{ fmtDur(s.hours) }}</b></td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="8" class="empty">Задержек за период нет</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <p class="hint">Стоянка — вагоно-часы внутри периода; «Простой»/«Брошенные» — разбивка по виду задержки. Станции отсортированы по суммарной стоянке, «стоят сейчас» — открытые эпизоды.</p>
+          } @else {
           <div class="dp-tbl-wrap" style="max-height: 62vh">
             <table class="dp-tbl">
               <thead><tr>
@@ -101,6 +141,7 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
             </table>
           </div>
           <p class="hint">«В периоде» — часть простоя внутри выбранных дат; открытые эпизоды считаются до текущего момента. Клик по вагону — история движения.</p>
+          }
         }
       </ng-container>
     </nz-modal>
@@ -120,6 +161,11 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .spacer { flex: 1 1 auto; }
     .center { display: flex; justify-content: center; padding: var(--space-lg); }
     .kind { width: 150px; }
+    .tiles { display: flex; gap: var(--space-sm); margin-bottom: var(--space-sm); }
+    .tile { flex: 1 1 0; background: var(--color-bg-subtle); border-radius: var(--radius-sm);
+            padding: var(--space-xs) var(--space-sm); text-align: center; }
+    .tv { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tl { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
     .dp-tbl-wrap { max-height: none; margin-bottom: var(--space-sm); }
     .dp-tbl th { white-space: nowrap; }
     .c { text-align: center; white-space: nowrap; }
@@ -149,6 +195,8 @@ export class DelaysReportModalComponent implements OnInit {
   readonly terminal = signal('');
   readonly terminals = signal<string[]>([]);
   readonly kindFilter = signal('');
+  /** Вид отчёта: сводка-агрегация по станциям (по умолчанию) или плоские эпизоды. */
+  readonly view = signal<'agg' | 'records'>('agg');
   readonly loading = signal(false);
   readonly report = signal<DelayReport | null>(null);
   readonly trailFor = signal<{ trip_id: string; vagon: string } | null>(null);
@@ -219,14 +267,27 @@ export class DelaysReportModalComponent implements OnInit {
     return `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}`;
   }
 
-  /** Экспорт эпизодов периода (с учётом фильтров терминала и вида). */
+  /** Экспорт двумя листами: сводка по станциям (весь период) + эпизоды (с учётом фильтра по виду). */
   async exportExcel(): Promise<void> {
+    const rep = this.report();
     const recs = this.filteredRecords();
-    if (!recs.length) return;
+    if (!rep?.records?.length) return;
     try {
       const XLSX = await import('xlsx-js-style');
       const wb = XLSX.utils.book_new();
       const durD = (h: number) => (h ? Math.round((h / 24) * 100) / 100 : 0); // сутки, сотые
+
+      const agg = [
+        ['Станция', 'Дорога', 'Эпизоды', 'Вагоны', 'Стоят сейчас', 'Простой, сут', 'Брошенные, сут', 'Всего, сут'],
+        ...rep.stations.map((s) => [
+          s.station_name || s.station_code, s.doroga, s.episodes, s.vagons, s.open_now,
+          durD(s.hours4), durD(s.hours5), durD(s.hours),
+        ]),
+        ['ИТОГО', '', rep.total_episodes, rep.total_vagons, rep.open_now, '', '', durD(rep.total_hours)],
+      ];
+      const wsAgg = XLSX.utils.aoa_to_sheet(agg);
+      wsAgg['!cols'] = [26, 10, 9, 9, 13, 13, 14, 11].map((wch) => ({ wch }));
+      XLSX.utils.book_append_sheet(wb, wsAgg, 'Сводка по станциям');
 
       const sh = [
         ['Вагон', 'Индекс', 'Родит. индекс', 'Терминал', 'Станция', 'Дорога', 'Вид', 'Стоит с', 'По', 'Длит., сут', 'В периоде, сут'],
