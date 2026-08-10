@@ -138,6 +138,9 @@ export interface DislTermStatus {
   terminals: string[];
   formation_ts: string | null;
   age_minutes: number;
+  /** Готовая подпись ветки (короткое имя организации из реестра: АТТИС/НМТП);
+   *  пусто — сервер ветку не узнал, подписываем терминалами/organisation. */
+  label: string;
 }
 
 /** Актуальность снимка дислокации в целом. */

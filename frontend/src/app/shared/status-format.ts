@@ -10,7 +10,9 @@
 export const PLAN_LABELS: Record<string, string> = { ma: 'ПП Мыс', nk: 'ПП Находка' };
 
 /** Способ обновления дислокации: как он называется для пользователя. */
-export const SOURCE_LABELS: Record<string, string> = { lk: 'ЛК', json: 'АСУ', asu: 'АСУ' };
+export const SOURCE_LABELS: Record<string, string> = {
+  lk: 'ЛК', json: 'АСУ', asu: 'АСУ', lk_robot: 'ЛК авто',
+};
 
 /** Пороги свежести (мин): дислокация — часы, планы — сутки (эталон gtport). */
 export const DISL_AGE = { warn: 60, danger: 180 };

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+	"strings"
 
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -27,6 +29,13 @@ type DislTermStatusDTO struct {
 	Terminals    []string          `json:"terminals"`
 	FormationTS  *domain.LocalTime `json:"formation_ts"`
 	AgeMinutes   int               `json:"age_minutes"`
+	// Label — готовая подпись ветки для панели: короткое имя организации из
+	// реестра ports (org_short, 000060). Источники пишут ветку в журнал
+	// по-разному (ЛК/робот — ОКПО и терминалы, АСУ — код клиента провайдера),
+	// поэтому подпись сводится к одному виду здесь, при чтении, — старые
+	// записи журнала показываются так же, как новые. Пусто — реестр ветку не
+	// узнал, фронт подписывает по-старому (терминалы либо organisation).
+	Label string `json:"label"`
 }
 
 // DislStatusDTO — актуальность снимка дислокации в целом.
@@ -63,7 +72,7 @@ func (s *StatusService) Status(ctx context.Context) StatusDTO {
 	out := StatusDTO{Now: now, Plans: []PlanStatusDTO{}}
 
 	if ev, ok := s.journal.LatestDislUpdate(ctx); ok {
-		out.Dislocation = dislStatusFrom(ev, now)
+		out.Dislocation = s.dislStatusFrom(ev, now)
 	}
 	for _, code := range s.dir.PlanCodes() {
 		ps := PlanStatusDTO{PlanCode: code}
@@ -84,7 +93,7 @@ func (s *StatusService) Status(ctx context.Context) StatusDTO {
 	return out
 }
 
-func dislStatusFrom(ev domain.JournalEvent, now domain.LocalTime) *DislStatusDTO {
+func (s *StatusService) dislStatusFrom(ev domain.JournalEvent, now domain.LocalTime) *DislStatusDTO {
 	ua := ev.CreatedAt
 	d := &DislStatusDTO{
 		Source: ev.Source, DocTS: ev.DocTS, UpdatedAt: &ua, Actor: ev.Actor,
@@ -100,10 +109,27 @@ func dislStatusFrom(ev domain.JournalEvent, now domain.LocalTime) *DislStatusDTO
 			d.Terminals = append(d.Terminals, DislTermStatusDTO{
 				Organisation: tm.Organisation, Terminals: tm.Terminals,
 				FormationTS: &ft, AgeMinutes: minutesSince(ft, now),
+				Label: s.termLabel(tm),
 			})
 		}
 	}
 	return d
+}
+
+// termLabel сводит подпись ветки к короткому имени организации из реестра
+// (ports.org_short): ЛК и робот пишут в журнал ОКПО грузополучателя, АСУ —
+// код клиента провайдера в поле organisation. Не узнали — пустая строка,
+// фронт подпишет по-старому.
+func (s *StatusService) termLabel(tm dislTermJournal) string {
+	if okpo, err := strconv.ParseInt(strings.TrimSpace(tm.Okpo), 10, 64); err == nil {
+		if ports, ok := s.dir.PortsByOkpo(okpo); ok && len(ports) > 0 && ports[0].OrgShort != "" {
+			return ports[0].OrgShort
+		}
+	}
+	if p, ok := s.dir.PortByProviderClient(tm.Organisation); ok && p.OrgShort != "" {
+		return p.OrgShort
+	}
+	return ""
 }
 
 // DislJournalEntry — одна запись журнала обновлений дислокации (обновление снимка

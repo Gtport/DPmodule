@@ -425,6 +425,25 @@ func (c *DirectoryCache) PortsByOkpo(okpo int64) ([]domain.Ports, bool) {
 	return p, ok
 }
 
+// PortByProviderClient возвращает терминал по коду клиента провайдера АСУ
+// (attis/nmtp). Для статус-панели: АСУ-ветки в журнале подписаны этим кодом,
+// а показать надо организацию из реестра. Код общий у терминалов юр.лица —
+// достаточно любого.
+func (c *DirectoryCache) PortByProviderClient(client string) (domain.Ports, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	client = strings.TrimSpace(client)
+	if client == "" {
+		return domain.Ports{}, false
+	}
+	for _, p := range c.portsByNameS {
+		if strings.EqualFold(strings.TrimSpace(p.ProviderClient), client) {
+			return p, true
+		}
+	}
+	return domain.Ports{}, false
+}
+
 // PortByNameS возвращает терминал по краткому имени причала (NameS: АЭ/ГУТ-2/УТ-1).
 // Для Stage 4: по Naznach записи находим станцию (StationCode — пул слотов) и
 // перерабатывающую способность pc_* (интервал). NameS уникален (одна площадка).

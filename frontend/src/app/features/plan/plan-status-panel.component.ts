@@ -119,8 +119,10 @@ export class PlanStatusPanelComponent implements OnInit, OnDestroy {
   planLabel(code: string): string { return planLabel(code); }
   fmt(ts: string | null): string { return fmtStamp(ts); }
 
+  /** Подпись ветки: короткое имя организации из реестра (АТТИС/НМТП) — одно
+   *  для всех источников; фолбэк по-старому, если сервер ветку не узнал. */
   termLabel(t: DislTermStatus): string {
-    return t.terminals?.length ? t.terminals.join('\u00b7') : t.organisation;
+    return t.label || (t.terminals?.length ? t.terminals.join('\u00b7') : t.organisation);
   }
 
   planTip(p: PlanStatus): string {
