@@ -294,17 +294,18 @@ const MAP_ZOOM = 5;
           color: var(--text-tertiary); cursor: help; font-size: 12px; flex: none; }
     .fblock { display: inline-flex; gap: 0; }
     /* Единое поведение всех кнопок и фильтров панели (уточнение владельца
-       07.08.2026): hover — ТОНКАЯ голубая рамка и голубой текст; активная —
-       рамка ЖИРНЕЕ (второй слой рамки — inset-тенью, чтобы размер не прыгал)
-       и голубой жирный текст. Терминалы при этом несут фирменную заливку
-       (ports.color) через [style.background-color]. Шрифт чипов = шрифту
-       кнопок (14px), иначе «Дороги» рядом с кнопками выглядел мельче. */
+       10.08.2026): hover — тонкая голубая рамка и голубой текст; активная —
+       та же тонкая рамка, но текст ЖИРНЫЙ (второго слоя рамки нет). Правила
+       охватывают и чипы станций в .st-list — панель станций живёт вне .bar.
+       Терминалы при этом несут фирменную заливку (ports.color) через
+       [style.background-color]. Шрифт чипов = шрифту кнопок (14px), иначе
+       «Дороги» рядом с кнопками выглядел мельче. */
     nz-tag { cursor: pointer; user-select: none; font-size: 14px; line-height: 22px; }
-    .bar nz-tag:hover, .bar button:hover {
+    .bar nz-tag:hover, .bar button:hover, .st-list nz-tag:hover {
       border-color: var(--color-primary); color: var(--color-primary);
     }
-    .bar nz-tag.on, .bar button.on {
-      border-color: var(--color-primary); box-shadow: inset 0 0 0 1px var(--color-primary);
+    .bar nz-tag.on, .bar button.on, .st-list nz-tag.on {
+      border-color: var(--color-primary);
       color: var(--color-primary); font-weight: 600;
     }
     /* «Приб» скрыт — тонкое диагональное перечёркивание; клик снимает. */
