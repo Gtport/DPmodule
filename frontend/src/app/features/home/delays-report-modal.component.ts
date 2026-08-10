@@ -11,20 +11,37 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { addDaysIso, todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
-import { DelayEpisode, DelayReport, DelaysApiService } from './delays-api.service';
+import { DelayEpisode, DelaysApiService } from './delays-api.service';
 import { VagonTrailModalComponent } from './vagon-trail-modal.component';
+
+/** Поезд-группа эпизодов периода — та же агрегация, что в «Задержанных вагонах». */
+interface ReportGroup {
+  key: string;
+  index: string;
+  terminal: string;
+  station: string;
+  doroga: string;
+  kind: number; // 5, если в группе есть брошенные (бросают весь поезд)
+  vagons: DelayEpisode[];
+  minFrom: string | null;
+  /** Самое позднее окончание; показывается, только если открытых эпизодов в группе нет. */
+  maxTo: string | null;
+  openNow: boolean;
+  maxDur: number;
+  maxHours: number;
+}
 
 /**
  * Перемещаемая модалка «Отчёт по простоям» — исторический разрез памяти о
  * задержках (vagon_delay, статусы 4/5) за период, по аналогии с отчётом
- * «Брошенных»: выбор терминала и периода. Два вида (решение владельца
- * 10.08.2026, отменяет прежнее «аналитики не показывать»): «Сводка» —
- * плитки итогов + агрегат по станциям (вагоно-часы с разбивкой по виду,
- * «стоят сейчас»; данные сервер считал и раньше, теперь они на экране) и
- * «Эпизоды» — плоская таблица с фильтром по виду (все / простой / брошенные).
- * «В периоде» — длительность, обрезанная границами периода (открытый эпизод —
- * до «сейчас»); клик по вагону открывает «Историю движения вагона»; экспорт
- * в Excel двумя листами. Аналога в gtport не было — подсистема новая.
+ * «Брошенных»: выбор терминала, периода и вида (все / простой / брошенные).
+ * Эпизоды агрегированы по поездам, как в модалке «Задержанные вагоны»
+ * (решение владельца 10.08.2026): строка = поезд (индекс + станция), разворот
+ * до вагонов, клик по вагону открывает «Историю движения вагона». «В периоде»
+ * — длительность, обрезанная границами периода (открытый эпизод — до
+ * «сейчас»); экспорт в Excel — плоские эпизоды. Сводки по станциям на экране
+ * нет (решение владельца 10.08.2026 — «пока убрать»), хотя сервер её отдаёт
+ * (DelayReport.stations/total_*). Аналога в gtport не было — подсистема новая.
  */
 @Component({
   selector: 'app-delays-report-modal',
@@ -39,6 +56,7 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
           Отчёт по простоям — {{ terminal() || 'все терминалы' }}
           &nbsp;<span class="sub">{{ fmtDate(start()) }} – {{ fmtDate(end()) }}</span>
+          @if (filteredRecords().length) { <span class="sub">· {{ filteredRecords().length }} ваг. / {{ groups().length }} поездов</span> }
         </div>
       </ng-template>
 
@@ -48,13 +66,11 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
             <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
             @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
           </nz-select>
-          @if (view() === 'records') {
-            <nz-select class="kind" nzSize="small" [ngModel]="kindFilter()" (ngModelChange)="kindFilter.set($event)">
-              <nz-option nzValue="" nzLabel="Все задержки"></nz-option>
-              <nz-option nzValue="4" nzLabel="Долгий простой"></nz-option>
-              <nz-option nzValue="5" nzLabel="Брошенные"></nz-option>
-            </nz-select>
-          }
+          <nz-select class="kind" nzSize="small" [ngModel]="kindFilter()" (ngModelChange)="kindFilter.set($event)">
+            <nz-option nzValue="" nzLabel="Все задержки"></nz-option>
+            <nz-option nzValue="4" nzLabel="Долгий простой"></nz-option>
+            <nz-option nzValue="5" nzLabel="Брошенные"></nz-option>
+          </nz-select>
           <label class="fl">Начало <input type="date" class="date" [ngModel]="start()" (ngModelChange)="start.set($event)" /></label>
           <label class="fl">Конец <input type="date" class="date" [ngModel]="end()" (ngModelChange)="end.set($event)" /></label>
           <button nz-button nzType="primary" nzSize="small" [nzLoading]="loading()" (click)="load()">
@@ -63,85 +79,65 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
           <button nz-button nzSize="small" (click)="lastDays(7)">7 дней</button>
           <button nz-button nzSize="small" (click)="lastDays(30)">30 дней</button>
           <span class="spacer"></span>
-          <button nz-button nzSize="small" [nzType]="view() === 'agg' ? 'primary' : 'default'" (click)="view.set('agg')">Сводка</button>
-          <button nz-button nzSize="small" [nzType]="view() === 'records' ? 'primary' : 'default'" (click)="view.set('records')">Эпизоды</button>
-          <button nz-button nzType="text" nzSize="small" (click)="exportExcel()" [disabled]="!report()?.records?.length"
-                  nz-tooltip nzTooltipTitle="Экспорт в Excel (сводка по станциям + эпизоды)">
+          <button nz-button nzType="text" nzSize="small" (click)="exportExcel()" [disabled]="!filteredRecords().length"
+                  nz-tooltip nzTooltipTitle="Экспорт в Excel">
             <span nz-icon nzType="download"></span>
           </button>
         </div>
 
         @if (loading()) {
           <div class="center"><nz-spin nzSimple></nz-spin></div>
-        } @else if (report(); as r) {
-          @if (view() === 'agg') {
-            <div class="tiles">
-              <div class="tile"><div class="tv">{{ r.total_vagons }}</div><div class="tl">вагонов задерживалось</div></div>
-              <div class="tile"><div class="tv">{{ r.total_episodes }}</div><div class="tl">эпизодов задержки</div></div>
-              <div class="tile"><div class="tv">{{ fmtDur(r.total_hours) }}</div><div class="tl">суммарная стоянка</div></div>
-              <div class="tile"><div class="tv" [class.warn]="r.open_now > 0">{{ r.open_now }}</div><div class="tl">стоят сейчас</div></div>
-            </div>
-            <div class="dp-tbl-wrap" style="max-height: 54vh">
-              <table class="dp-tbl">
-                <thead><tr>
-                  <th>Станция</th><th class="c-dor">Дорога</th>
-                  <th class="c-h">Эпизодов</th><th class="c-h">Вагонов</th><th class="c-h">Стоят сейчас</th>
-                  <th class="c-h">Простой</th><th class="c-h">Брошенные</th><th class="c-h">Всего</th>
-                </tr></thead>
-                <tbody>
-                  @for (s of r.stations; track s.station_code) {
-                    <tr>
-                      <td class="ell" [title]="s.station_name">{{ s.station_name || ('код ' + s.station_code) }}</td>
-                      <td class="c">{{ s.doroga || '—' }}</td>
-                      <td class="c num">{{ s.episodes }}</td>
-                      <td class="c num">{{ s.vagons }}</td>
-                      <td class="c num" [class.warn]="s.open_now > 0">{{ s.open_now }}</td>
-                      <td class="c num">{{ fmtDur(s.hours4) }}</td>
-                      <td class="c num">{{ fmtDur(s.hours5) }}</td>
-                      <td class="c num"><b>{{ fmtDur(s.hours) }}</b></td>
-                    </tr>
-                  } @empty {
-                    <tr><td colspan="8" class="empty">Задержек за период нет</td></tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            <p class="hint">Стоянка — вагоно-часы внутри периода; «Простой»/«Брошенные» — разбивка по виду задержки. Станции отсортированы по суммарной стоянке, «стоят сейчас» — открытые эпизоды.</p>
-          } @else {
+        } @else if (report()) {
           <div class="dp-tbl-wrap" style="max-height: 62vh">
             <table class="dp-tbl">
               <thead><tr>
-                <th class="c-vag">Вагон</th><th class="c-idx">Индекс</th><th class="c-term">Терминал</th>
+                <th class="c-idx">Индекс</th><th class="c-n">Вагонов</th><th class="c-term">Терминал</th>
                 <th>Станция</th><th class="c-dor">Дорога</th><th class="c-kind">Вид</th>
                 <th class="c-dt">Стоит с</th><th class="c-dt">По</th>
                 <th class="c-h">Длит.</th><th class="c-h">В периоде</th>
               </tr></thead>
               <tbody>
-                @for (e of filteredRecords(); track e.id) {
-                  <tr>
-                    <td class="c num">
-                      @if (e.trip_id) {
-                        <a class="idx" (click)="openTrail(e)" nz-tooltip nzTooltipTitle="История движения вагона">{{ e.vagon }}</a>
-                      } @else { {{ e.vagon }} }
+                @for (g of groups(); track g.key) {
+                  <tr class="grp" [class.g5]="g.kind === 5" (click)="toggle(g.key)">
+                    <td class="c-idx num">
+                      <span nz-icon [nzType]="isOpen(g.key) ? 'down' : 'right'" class="tw"></span>
+                      {{ g.index || '—' }}
                     </td>
-                    <td class="c num">{{ e.index || '—' }}</td>
-                    <td class="c">{{ e.gruzpol_s || '—' }}</td>
-                    <td class="ell" [title]="e.station_name">{{ e.station_name || ('код ' + e.station_code) }}</td>
-                    <td class="c">{{ e.doroga || '—' }}</td>
-                    <td class="c"><span class="dtag" [class.dtag5]="e.kind === 5">{{ e.kind === 5 ? 'брошен' : 'простой' }}</span></td>
-                    <td class="c">{{ fmtDT(e.date_from) }}</td>
-                    <td class="c">{{ e.date_to ? fmtDT(e.date_to) : 'стоит' }}</td>
-                    <td class="c num">{{ fmtDur(fullHours(e)) }}</td>
-                    <td class="c num">{{ fmtDur(e.hours_in_period) }}</td>
+                    <td class="c num">{{ g.vagons.length }}</td>
+                    <td class="c">{{ g.terminal || '—' }}</td>
+                    <td class="ell" [title]="g.station">{{ g.station }}</td>
+                    <td class="c">{{ g.doroga || '—' }}</td>
+                    <td class="c"><span class="dtag" [class.dtag5]="g.kind === 5">{{ g.kind === 5 ? 'брошен' : 'простой' }}</span></td>
+                    <td class="c">{{ fmtDT(g.minFrom) }}</td>
+                    <td class="c">{{ g.openNow ? 'стоит' : fmtDT(g.maxTo) }}</td>
+                    <td class="c num">{{ fmtDur(g.maxDur) }}</td>
+                    <td class="c num"><b>{{ fmtDur(g.maxHours) }}</b></td>
                   </tr>
+                  @if (isOpen(g.key)) {
+                    @for (e of g.vagons; track e.id) {
+                      <tr class="vag">
+                        <td class="c-idx"></td>
+                        <td class="c num" colspan="2">
+                          @if (e.trip_id) {
+                            <a class="lnk" (click)="openTrail(e)" nz-tooltip nzTooltipTitle="История движения вагона">{{ e.vagon }}</a>
+                          } @else { {{ e.vagon }} }
+                        </td>
+                        <td class="ell" colspan="2">{{ e.station_name || ('код ' + e.station_code) }}</td>
+                        <td class="c"><span class="dtag" [class.dtag5]="e.kind === 5">{{ e.kind === 5 ? 'брошен' : 'простой' }}</span></td>
+                        <td class="c">{{ fmtDT(e.date_from) }}</td>
+                        <td class="c">{{ e.date_to ? fmtDT(e.date_to) : 'стоит' }}</td>
+                        <td class="c num">{{ fmtDur(fullHours(e)) }}</td>
+                        <td class="c num">{{ fmtDur(e.hours_in_period) }}</td>
+                      </tr>
+                    }
+                  }
                 } @empty {
                   <tr><td colspan="10" class="empty">Задержек за период нет</td></tr>
                 }
               </tbody>
             </table>
           </div>
-          <p class="hint">«В периоде» — часть простоя внутри выбранных дат; открытые эпизоды считаются до текущего момента. Клик по вагону — история движения.</p>
-          }
+          <p class="hint">Строка = поезд (эпизоды периода по индексу), клик — вагоны. «В периоде» — часть простоя внутри выбранных дат; открытые эпизоды считаются до текущего момента, «Стоит с»/«По» и длительности поезда — по самому раннему/позднему/долгому вагону.</p>
         }
       </ng-container>
     </nz-modal>
@@ -161,24 +157,24 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
     .spacer { flex: 1 1 auto; }
     .center { display: flex; justify-content: center; padding: var(--space-lg); }
     .kind { width: 150px; }
-    .tiles { display: flex; gap: var(--space-sm); margin-bottom: var(--space-sm); }
-    .tile { flex: 1 1 0; background: var(--color-bg-subtle); border-radius: var(--radius-sm);
-            padding: var(--space-xs) var(--space-sm); text-align: center; }
-    .tv { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .tl { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
     .dp-tbl-wrap { max-height: none; margin-bottom: var(--space-sm); }
     .dp-tbl th { white-space: nowrap; }
+    .grp { cursor: pointer; }
+    .grp:hover td { background: var(--color-bg-hover); }
+    /* Заливки строк нет (решение владельца): брошенные — красным индексом и бейджем. */
+    .grp.g5 .c-idx { color: var(--color-danger-text); font-weight: 600; }
+    .vag td { background: var(--color-bg-subtle); }
+    .tw { font-size: 10px; color: var(--color-text-muted); margin-right: 4px; }
     .c { text-align: center; white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; }
     .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
-    .c-dor { width: 62px; } .c-h { width: 84px; }
-    .c-vag { width: 92px; } .c-idx { width: 116px; } .c-kind { width: 84px; } .c-dt { width: 112px; }
+    .c-n { width: 70px; } .c-dor { width: 62px; } .c-h { width: 84px; }
+    .c-idx { width: 130px; } .c-kind { width: 84px; } .c-dt { width: 112px; }
     .warn { color: var(--color-danger-text); }
-    .idx { color: var(--color-primary-active); text-decoration: underline; cursor: pointer; }
+    .lnk { color: var(--color-primary-active); text-decoration: underline; cursor: pointer; }
     .dtag { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 11px;
             background: var(--color-warning-bg); border: 1px solid var(--color-warning); }
     .dtag5 { color: var(--color-danger-text); border-color: var(--color-danger); }
-    /* Заливки строк нет (решение владельца) — открытый эпизод виден по «стоит» в колонке «По». */
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
   `],
@@ -195,10 +191,9 @@ export class DelaysReportModalComponent implements OnInit {
   readonly terminal = signal('');
   readonly terminals = signal<string[]>([]);
   readonly kindFilter = signal('');
-  /** Вид отчёта: сводка-агрегация по станциям (по умолчанию) или плоские эпизоды. */
-  readonly view = signal<'agg' | 'records'>('agg');
   readonly loading = signal(false);
-  readonly report = signal<DelayReport | null>(null);
+  readonly report = signal<{ records: DelayEpisode[] } | null>(null);
+  readonly open = signal<Set<string>>(new Set());
   readonly trailFor = signal<{ trip_id: string; vagon: string } | null>(null);
 
   /** Эпизоды периода с учётом фильтра по виду (все / простой / брошенные). */
@@ -206,6 +201,33 @@ export class DelaysReportModalComponent implements OnInit {
     const kf = this.kindFilter();
     const recs = this.report()?.records ?? [];
     return kf ? recs.filter((e) => String(e.kind) === kf) : recs;
+  });
+
+  /** Группы-поезда (индекс + станция), как в «Задержанных вагонах»; вид группы — 5, если есть брошенные. */
+  readonly groups = computed<ReportGroup[]>(() => {
+    const map = new Map<string, ReportGroup>();
+    for (const e of this.filteredRecords()) {
+      const key = `${e.index}|${e.station_code}`;
+      let g = map.get(key);
+      if (!g) {
+        g = {
+          key, index: e.index, terminal: e.gruzpol_s,
+          station: e.station_name || ('код ' + e.station_code), doroga: e.doroga,
+          kind: e.kind, vagons: [], minFrom: e.date_from, maxTo: null, openNow: false,
+          maxDur: 0, maxHours: 0,
+        };
+        map.set(key, g);
+      }
+      g.vagons.push(e);
+      if (e.kind === 5) g.kind = 5;
+      if (!g.terminal && e.gruzpol_s) g.terminal = e.gruzpol_s;
+      if (e.date_from && (!g.minFrom || e.date_from < g.minFrom)) g.minFrom = e.date_from;
+      if (!e.date_to) g.openNow = true;
+      else if (!g.maxTo || e.date_to > g.maxTo) g.maxTo = e.date_to;
+      if (this.fullHours(e) > g.maxDur) g.maxDur = this.fullHours(e);
+      if (e.hours_in_period > g.maxHours) g.maxHours = e.hours_in_period;
+    }
+    return [...map.values()].sort((a, b) => b.maxHours - a.maxHours); // дольше всех — сверху
   });
 
   ngOnInit(): void {
@@ -239,6 +261,16 @@ export class DelaysReportModalComponent implements OnInit {
     void this.load();
   }
 
+  toggle(key: string): void {
+    const next = new Set(this.open());
+    next.has(key) ? next.delete(key) : next.add(key);
+    this.open.set(next);
+  }
+
+  isOpen(key: string): boolean {
+    return this.open().has(key);
+  }
+
   openTrail(e: DelayEpisode): void {
     this.trailFor.set({ trip_id: e.trip_id, vagon: e.vagon });
   }
@@ -267,27 +299,14 @@ export class DelaysReportModalComponent implements OnInit {
     return `${ts.slice(8, 10)}.${ts.slice(5, 7)} ${ts.slice(11, 16)}`;
   }
 
-  /** Экспорт двумя листами: сводка по станциям (весь период) + эпизоды (с учётом фильтра по виду). */
+  /** Экспорт эпизодов периода (с учётом фильтров терминала и вида). */
   async exportExcel(): Promise<void> {
-    const rep = this.report();
     const recs = this.filteredRecords();
-    if (!rep?.records?.length) return;
+    if (!recs.length) return;
     try {
       const XLSX = await import('xlsx-js-style');
       const wb = XLSX.utils.book_new();
       const durD = (h: number) => (h ? Math.round((h / 24) * 100) / 100 : 0); // сутки, сотые
-
-      const agg = [
-        ['Станция', 'Дорога', 'Эпизоды', 'Вагоны', 'Стоят сейчас', 'Простой, сут', 'Брошенные, сут', 'Всего, сут'],
-        ...rep.stations.map((s) => [
-          s.station_name || s.station_code, s.doroga, s.episodes, s.vagons, s.open_now,
-          durD(s.hours4), durD(s.hours5), durD(s.hours),
-        ]),
-        ['ИТОГО', '', rep.total_episodes, rep.total_vagons, rep.open_now, '', '', durD(rep.total_hours)],
-      ];
-      const wsAgg = XLSX.utils.aoa_to_sheet(agg);
-      wsAgg['!cols'] = [26, 10, 9, 9, 13, 13, 14, 11].map((wch) => ({ wch }));
-      XLSX.utils.book_append_sheet(wb, wsAgg, 'Сводка по станциям');
 
       const sh = [
         ['Вагон', 'Индекс', 'Родит. индекс', 'Терминал', 'Станция', 'Дорога', 'Вид', 'Стоит с', 'По', 'Длит., сут', 'В периоде, сут'],
