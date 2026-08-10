@@ -79,8 +79,8 @@ import { UnmatchedModalComponent } from './unmatched-modal.component';
       <app-unmatched-modal (reload)="load()" (closed)="showUnmatched.set(false)" />
     }
     @if (showDonors()) {
-      <app-vagon-list-modal title="Перегруз — доноры (статус 6)" sinceLabel="Донор с"
-                            hint="Вагоны, у которых приёмники забирают груз и назначение."
+      <app-vagon-list-modal title="Проблемные вагоны" sinceLabel="Донор с"
+                            hint="Доноры перегруза (статус 6): у них приёмники забирают груз и назначение."
                             [rows]="donorRows()" (reload)="load()" (closed)="showDonors.set(false)" />
     }
   `,
@@ -153,7 +153,9 @@ export class InfoCardComponent implements OnInit, OnDestroy {
     return this.donors().map((r) => ({
       id: r.id, vagon: r.vagon, index: r.index,
       station_oper: r.station_oper, doroga_oper: r.doroga_oper, oper_s: r.oper_s,
-      time_op: r.time_op, naznach: r.naznach, cargo_s: r.cargo_s, ves: r.ves,
+      time_op: r.time_op, naznach: r.naznach,
+      station_nach: r.station_nach, gruzotpr: r.gruzotpr,
+      cargo_s: r.cargo_s, ves: r.ves,
       since: r.since, days: r.days_donor,
     }));
   }

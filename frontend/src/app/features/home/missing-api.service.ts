@@ -76,6 +76,10 @@ export interface Status6Vagon {
   naznach: string;
   gruzpol_s: string;
   stan_nazn: string;
+  /** Станция погрузки (отправления). */
+  station_nach: string;
+  /** Грузоотправитель. */
+  gruzotpr: string;
   cargo_s: string;
   ves: number | null;
   date_dostav: string | null;

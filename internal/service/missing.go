@@ -198,6 +198,8 @@ type Status6VagonDTO struct {
 	Naznach     string            `json:"naznach"`
 	GruzpolS    string            `json:"gruzpol_s"`
 	StanNazn    string            `json:"stan_nazn"`
+	StationNach string            `json:"station_nach"` // станция погрузки (отправления)
+	Gruzotpr    string            `json:"gruzotpr"`     // грузоотправитель
 	CargoS      string            `json:"cargo_s"`
 	Ves         *float64          `json:"ves"`
 	DateDostav  *domain.LocalTime `json:"date_dostav"`
@@ -219,6 +221,7 @@ func (s *MissingService) Donors() []Status6VagonDTO {
 			StationOper: r.StationOper, DorogaOper: r.DorogaOper,
 			OperS: r.OperS, TimeOp: r.TimeOp,
 			Naznach: r.Naznach, GruzpolS: r.GruzpolS, StanNazn: r.StanNazn,
+			StationNach: r.StationNach, Gruzotpr: r.Gruzotpr,
 			CargoS: r.CargoS, Ves: r.Ves, DateDostav: r.DateDostav,
 			Since: r.UpdatedAt,
 		}
