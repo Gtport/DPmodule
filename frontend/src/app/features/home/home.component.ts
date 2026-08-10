@@ -39,15 +39,14 @@ interface StationHalf {
   imports: [ArrivalsCardComponent, CandidatesCardComponent, NearestCardComponent, OperativkaCardComponent,
             SystemStatusCardComponent, InfoCardComponent, UnplannedCardComponent],
   template: `
-    <!-- Тревога — над колонками, во всю ширину: сигнал «поезд едет без плана»
-         нельзя терять под сгибом (раньше карточка стояла последней в левой
-         колонке и при однокол. раскладке уезжала вниз). Пустой список карточка
-         не рендерит — полоса появляется только когда тревога есть. -->
-    <app-unplanned-card />
-
     <div class="cols">
       <section class="col">
         <h2 class="st-title">Оперативка</h2>
+        <!-- Сигнал «поезд едет без плана» — в ширину колонки, над карточками
+             (решение владельца 11.08.2026; прежде полоса шла над всеми тремя
+             колонками). Пустой список карточка не рендерит — появляется только
+             когда тревога есть. -->
+        <app-unplanned-card />
         <div class="duo">
           <app-system-status-card (refreshed)="onSnapshotRebuilt()" />
           <div class="stack">

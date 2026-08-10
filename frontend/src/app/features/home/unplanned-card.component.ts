@@ -7,11 +7,13 @@ import { AuthService } from '../../core/auth/auth.service';
 import { OperativkaApiService, UnplannedTrain } from './operativka-api.service';
 
 /**
- * Карточка «Без плана в подходе» — жёлтая секция-сигнал во всю ширину колонки
- * «Оперативка» (решение владельца: отдельная карточка, а не хвост таблицы
- * прибытия/выгрузки). Поезд попадает сюда, если на сравнении снимков сменил
- * станцию, плана нет, а до терминала ближе порога unplanned_move_km. Живёт до
- * «Скрыть» — или пока не получит план / не прибудет.
+ * Карточка «Движение вагонов без ПП» — жёлтая секция-сигнал в ширину колонки
+ * «Оперативка», над её карточками (решение владельца 11.08.2026; прежние имя —
+ * «Без плана в подходе» — и место над всеми колонками упразднены). Поезд
+ * попадает сюда, если на сравнении снимков сменил станцию, плана нет, а до
+ * терминала ближе порога unplanned_move_km. Живёт до «Скрыть» — или пока не
+ * получит план / не прибудет. Строка: индекс, (кол-во), станция, расстояние,
+ * состав.
  *
  * Данные — из общего OperativkaApiService (один запрос на две карточки).
  */
@@ -21,14 +23,14 @@ import { OperativkaApiService, UnplannedTrain } from './operativka-api.service';
   template: `
     @if (trains().length) {
       <div class="card unpl">
-        <div class="unpl-title"><b>Без плана в подходе ({{ trains().length }})</b>
-          <span class="hint">двигаются, плана нет</span></div>
+        <div class="unpl-title"><b>Движение вагонов без ПП ({{ trains().length }})</b></div>
         @for (u of trains(); track u.index) {
           <div class="unpl-row">
             <span class="num b">{{ u.index || '—' }}</span>
             <span class="mut">({{ u.vagon_count }})</span>
+            <span class="nowrap">{{ u.station_oper }}</span>
+            @if (u.rasst != null) { <span class="mut nowrap">{{ u.rasst }} км</span> }
             <span class="unpl-sost ell" [title]="u.sostav.join(' · ')">{{ u.sostav.join(' · ') }}</span>
-            <span class="mut nowrap">{{ u.station_oper }}@if (u.rasst != null) { · {{ u.rasst }} км }</span>
             @if (canEdit()) {
               <button nz-button nzSize="small" nz-tooltip
                       nzTooltipTitle="Скрыть (появится снова при следующей смене станции без плана)"
@@ -51,7 +53,6 @@ import { OperativkaApiService, UnplannedTrain } from './operativka-api.service';
     .num { font-variant-numeric: tabular-nums; }
     /* Данные — основным цветом (как в «Прибывших»/«Ближайших»), серый только для пояснения. */
     .mut { color: inherit; }
-    .hint { color: var(--color-text-secondary); }
     .nowrap { white-space: nowrap; }
     .unpl-sost { flex: 1 1 auto; min-width: 0; }
     .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
