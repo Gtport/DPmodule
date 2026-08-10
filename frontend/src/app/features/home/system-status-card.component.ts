@@ -54,13 +54,13 @@ import {
       <div class="rows">
         <!-- Часы: московские и операционные ЖД-сутки (час ≥ 18 → дата +1) -->
         <div class="row">
-          <span class="lbl">МСК</span>
+          <span class="lbl">Время МСК</span>
           <span class="vals">
             <nz-tag class="chip clk" nzColor="default">{{ nowMsk() }}</nz-tag>
           </span>
         </div>
         <div class="row" nz-tooltip nzTooltipTitle="ЖД-сутки: с 18:00 МСК начинается следующая дата">
-          <span class="lbl">ЖД</span>
+          <span class="lbl">Время ЖД</span>
           <span class="vals">
             <nz-tag class="chip clk" nzColor="default">{{ nowJd() }}</nz-tag>
           </span>
@@ -82,10 +82,12 @@ import {
           </span>
         </div>
 
-        <!-- Ветки дислокации по грузополучателям (у gtport — Аттис/НМТП) -->
+        <!-- Ветки дислокации по грузополучателям (АТТИС/НМТП из реестра) —
+             без отступа, вровень с остальными метками (решение владельца
+             10.08.2026). -->
         @for (t of status()?.dislocation?.terminals ?? []; track t.organisation) {
           <div class="row">
-            <span class="lbl sub">{{ termLabel(t) }}</span>
+            <span class="lbl">{{ termLabel(t) }}</span>
             <span class="vals">
               <nz-tag class="chip" [nzColor]="ageColor(t.age_minutes, DISL_AGE.warn, DISL_AGE.danger)">{{ fmt(t.formation_ts) }}</nz-tag>
             </span>
@@ -148,7 +150,6 @@ import {
            font-size: var(--font-size-sm); }
     /* Текст — как в таблицах «Прибывшие»/«Ближайшие»: основной цвет, не серый. */
     .lbl { white-space: nowrap; }
-    .lbl.sub { padding-left: var(--space-sm); }
     .vals { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;
             justify-content: flex-end; }
     .chip { margin: 0; }

@@ -31,7 +31,7 @@ interface StationHalf {
  * функционал бывшей страницы «Дислокация» (решение владельца): актуальность
  * снимка и планов, «Обновить из АСУ» и «Приём ЛК» перемещаемой модалкой. После
  * пересборки снимка счётчики «Оперативки» перечитываются сразу, не дожидаясь
- * минутного автообновления. Справа от статуса — карточка «Информация»
+ * минутного автообновления. Справа от статуса — карточка «Работа»
  * (пропавшие и доноры перегруза со списками по клику).
  */
 @Component({
@@ -73,7 +73,7 @@ interface StationHalf {
     :host { display: flex; flex-direction: column; gap: var(--space-md); }
     .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); align-items: start; }
     .col { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
-    /* Верх «Оперативки»: слева статус системы, справа стопка «Информация» +
+    /* Верх «Оперативки»: слева статус системы, справа стопка «Работа» +
        «Прибытие/выгрузка» (обе карточки в половину ширины колонки). */
     .duo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); align-items: start; }
     .stack { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }

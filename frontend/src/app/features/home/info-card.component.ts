@@ -13,39 +13,36 @@ import { UnmatchedApiService } from './unmatched-api.service';
 import { UnmatchedModalComponent } from './unmatched-modal.component';
 
 /**
- * Карточка «Информация» рядом со «Статусом системы» (правая половина верхней
- * строки колонки «Оперативка»): счётчики списков «сбоку от снимка» — доноры
- * перегруза (статус 6), брошенные, задержанные. Клик по счётчику открывает
- * перемещаемую модалку с таблицей, где ПКМ по строке даёт историю движения
- * вагона. Автообновление раз в минуту, как у соседних карточек. Пропавшие
- * (статус 8) отсюда переехали в станционные карточки «Кандидаты на прибытие»
- * (решение владельца 10.08.2026).
+ * Карточка «Работа» (бывшая «Информация», решение владельца 10.08.2026) рядом
+ * со «Статусом системы» (правая половина верхней строки колонки «Оперативка»):
+ * счётчики списков «сбоку от снимка». Клик по строке открывает перемещаемую
+ * модалку с таблицей, где ПКМ по строке даёт историю движения вагона.
+ * Автообновление раз в минуту, как у соседних карточек. Пропавшие (статус 8)
+ * отсюда переехали в станционные карточки «Кандидаты на прибытие» (10.08.2026).
+ *
+ * Имена строк — решение владельца 10.08.2026, короче внутренних терминов:
+ * «Неопознанные» = без атрибуции marka, «Проблемные вагоны» = доноры перегруза
+ * (статус 6), «Ввод выгрузки» = грузовая работа (суточный учётный лист).
+ * Внутренние термины остались в подсказках и заголовках модалок.
  */
 @Component({
   selector: 'app-info-card',
   imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent, UnmatchedModalComponent],
   template: `
     <div class="card">
-      <div class="head"><b>Информация</b></div>
+      <div class="head"><b>Работа</b></div>
 
-      <button class="row" type="button" (click)="openDonors()"
-              nz-tooltip nzTooltipTitle="Доноры перегруза (статус 6): у них приёмники забирают груз — открыть список">
-        <span class="lbl">Перегруз (ст. 6)</span>
-        <span class="cnt">{{ donors().length }}</span>
+      <button class="row" type="button" (click)="openUnmatched()"
+              nz-tooltip nzTooltipTitle="Гружёные вагоны без атрибуции: не сматчены со справочником Marka (без грузоотправителя/клиента/СМС) — открыть список и заполнить">
+        <span class="lbl">Неопознанные</span>
+        <span class="cnt" [class.warn]="unmatchedCount() > 0">{{ unmatchedCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
       <button class="row" type="button" (click)="openBros()"
               nz-tooltip nzTooltipTitle="Брошенные поезда (статус 5): журнал и коды бросания — открыть">
-        <span class="lbl">Брошенные</span>
+        <span class="lbl">Брошенные поезда</span>
         <span class="cnt" [class.warn]="brosCount() > 0">{{ brosCount() }}</span>
-        <span nz-icon nzType="right" class="go"></span>
-      </button>
-
-      <button class="row" type="button" (click)="openUnmatched()"
-              nz-tooltip nzTooltipTitle="Гружёные вагоны, не сматченные со справочником Marka (без грузоотправителя/клиента/СМС) — открыть список и заполнить">
-        <span class="lbl">Без атрибуции</span>
-        <span class="cnt" [class.warn]="unmatchedCount() > 0">{{ unmatchedCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
@@ -56,9 +53,16 @@ import { UnmatchedModalComponent } from './unmatched-modal.component';
       </button>
 
       <button class="row" type="button" (click)="openCargoWork()"
-              nz-tooltip nzTooltipTitle="Суточный учёт выгрузки и погрузки по терминалам — открыть">
-        <span class="lbl">Грузовая работа</span>
+              nz-tooltip nzTooltipTitle="Грузовая работа: суточный учёт выгрузки и погрузки по терминалам — открыть">
+        <span class="lbl">Ввод выгрузки</span>
         <span nz-icon nzType="right" class="go ml"></span>
+      </button>
+
+      <button class="row" type="button" (click)="openDonors()"
+              nz-tooltip nzTooltipTitle="Доноры перегруза (статус 6): у них приёмники забирают груз — открыть список">
+        <span class="lbl">Проблемные вагоны</span>
+        <span class="cnt">{{ donors().length }}</span>
+        <span nz-icon nzType="right" class="go"></span>
       </button>
     </div>
 
