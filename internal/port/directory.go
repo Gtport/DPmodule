@@ -21,4 +21,8 @@ type DirectoryRepository interface {
 	// UpdateNaznachStationNaznach меняет дефолтное назначение пары станций
 	// (операторская панель перестановок; пустой naznach = «по назначению»).
 	UpdateNaznachStationNaznach(ctx context.Context, destStation, originStation, naznach string) error
+	// UpsertMarka добавляет строку словаря marka либо обновляет существующую по
+	// ключу (okpo, station_kod, cargo_group) — назначение атрибуции из модалки
+	// «Без атрибуции» с галкой «добавить в справочник».
+	UpsertMarka(ctx context.Context, m domain.Marka) error
 }

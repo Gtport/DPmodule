@@ -426,3 +426,7 @@ func lt2(s string) *domain.LocalTime {
 	}
 	return domain.NewLocalTime(t)
 }
+
+func (r *refHistStub) FillAttribution(context.Context, []domain.HistoryAttribution) (int, error) {
+	return 0, nil
+}

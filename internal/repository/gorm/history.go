@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
@@ -304,6 +305,38 @@ func (r *HistoryRepository) UpdateFieldsBatch(ctx context.Context, updates map[s
 		}
 		return nil
 	})
+}
+
+// FillAttribution — дозаполнение бизнес-атрибуции строк, у которых грузоотправитель
+// пуст (рейс вставлен несматченным с marka; historyUpdateFields атрибуцию не ведёт).
+// Guard gruzotpr = '' в WHERE: заполненные строки — в т.ч. вручную — не трогаются,
+// повторный вызов идемпотентен. Адресация по trip_key (уникальный индекс).
+func (r *HistoryRepository) FillAttribution(ctx context.Context, rows []domain.HistoryAttribution) (int, error) {
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	now := clock.Now()
+	filled := 0
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, a := range rows {
+			res := tx.Model(&vagonHistoryModel{}).
+				Where("trip_key = ? AND gruzotpr = ''", a.TripKey).
+				Updates(map[string]any{
+					"gruzotpr": a.Gruzotpr, "client": a.Client,
+					"sms_1": a.Sms1, "sms_2": a.Sms2, "sms_3": a.Sms3,
+					"color": a.Color, "updated_at": now,
+				})
+			if res.Error != nil {
+				return res.Error
+			}
+			filled += int(res.RowsAffected)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return filled, nil
 }
 
 // DailyTerminalCounts — агрегаты «Оперативки» (сырой SQL — канон для аналитики):

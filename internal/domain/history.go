@@ -141,6 +141,20 @@ type HistorySearchFilter struct {
 	StationNach   []string
 }
 
+// HistoryAttribution — бизнес-атрибуция для дозаполнения строки истории рейса
+// (HistoryRepository.FillAttribution): атрибуция пишется в vagon_history один раз
+// при INSERT, и рейс, попавший туда несматченным с marka, оставался без
+// грузоотправителя навсегда — даже после правки словаря. Адресация — по trip_key.
+type HistoryAttribution struct {
+	TripKey  int64
+	Gruzotpr string
+	Client   string
+	Sms1     string
+	Sms2     string
+	Sms3     string
+	Color    string
+}
+
 // TripKeyOf — детерминированный ключ рейса: vagon*100000 + дней_от_эпохи(date_nach_d).
 // ОБЯЗАН совпадать с GENERATED-колонкой vagon_history.trip_key
 // (vagon::bigint*100000 + (date_nach_d::date - DATE '1970-01-01')).

@@ -40,6 +40,11 @@ type HistoryRepository interface {
 	// UpdateFieldsBatch — точечные обновления НЕСКОЛЬКИХ строк одной транзакцией
 	// (ключ карты — id, значение — колонки как в UpdateFields).
 	UpdateFieldsBatch(ctx context.Context, updates map[string]map[string]any) error
+	// FillAttribution — дозаполнение бизнес-атрибуции строк истории, у которых
+	// грузоотправитель ещё пуст (рейс попал в историю несматченным с marka):
+	// обновляются ТОЛЬКО строки WHERE gruzotpr = '' — заполненная атрибуция,
+	// в т.ч. внесённая вручную, не перетирается. Возвращает число заполненных.
+	FillAttribution(ctx context.Context, rows []domain.HistoryAttribution) (int, error)
 	// DailyTerminalCounts — счётчики «Оперативки»: сколько вагонов прибыло
 	// (date_prib_d, по naznach) и выгружено (date_vigr_d, по place_vigr) за
 	// каждые ЖД-сутки диапазона [from; to]. Ключи карт: "yyyy-MM-dd|терминал".

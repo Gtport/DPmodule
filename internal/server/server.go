@@ -392,6 +392,19 @@ func Build(
 					actualCache, dirCache, nmtpRepo, brosRepo)).RegisterRoutes(api)
 			}
 
+			// «Без атрибуции» карточки «Информация»: гружёные вагоны снимка,
+			// не сматченные с marka, группами по ключу матчинга (чтение — всем);
+			// назначение атрибуции (+опц. запись комбинации в словарь) — гейт
+			// AccessDicts, та же граница, что у правки словарей в Админе.
+			unmatchedH := handler.NewMarkaUnmatchedHandler(
+				service.NewMarkaUnmatchedService(actualCache, dirCache, proc, historyRepo))
+			unmatchedH.RegisterRoutes(api)
+			unmatchedGrp := api.Group("")
+			if jwtMW != nil {
+				unmatchedGrp.Use(jwtMW.Require(auth.AccessDicts))
+			}
+			unmatchedH.RegisterAssignRoutes(unmatchedGrp)
+
 			// «Оперативка» домашней страницы: суточные счётчики по терминалам
 			// (вехи истории + статус 10 из снимка), только чтение.
 			opSvc := service.NewOperativkaService(historyRepo, actualCache, dirCache, unplannedRepo)

@@ -414,3 +414,7 @@ func tripKeyFromTestID(id string) (int64, bool) {
 	days := int64(d.Sub(time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)).Hours() / 24)
 	return v*100000 + days, true
 }
+
+func (r *histStubRepo) FillAttribution(context.Context, []domain.HistoryAttribution) (int, error) {
+	return 0, nil
+}

@@ -180,3 +180,5 @@ func TestDirectoryCache_LoadAndLookup(t *testing.T) {
 		assert.False(t, ok)
 	})
 }
+
+func (s *stubDirRepo) UpsertMarka(context.Context, domain.Marka) error { return nil }

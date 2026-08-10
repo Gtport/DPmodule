@@ -196,3 +196,5 @@ func TestAttachTrailDelays_TripEndsAtArrival(t *testing.T) {
 	assert.Zero(t, v.DelayHours)
 	assert.Empty(t, v.Delays)
 }
+
+func (trailDirRepo) UpsertMarka(context.Context, domain.Marka) error { return nil }

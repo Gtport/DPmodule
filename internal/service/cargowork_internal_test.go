@@ -421,3 +421,9 @@ func max1(v int) int {
 	}
 	return v
 }
+
+func (cwDir) UpsertMarka(context.Context, domain.Marka) error { return nil }
+
+func (cwHist) FillAttribution(context.Context, []domain.HistoryAttribution) (int, error) {
+	return 0, nil
+}

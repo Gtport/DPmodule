@@ -142,3 +142,5 @@ func (s *unplDirStub) LoadNaznachStation(context.Context) ([]domain.NaznachStati
 func (s *unplDirStub) UpdateNaznachStationNaznach(context.Context, string, string, string) error {
 	return nil
 }
+
+func (s *unplDirStub) UpsertMarka(context.Context, domain.Marka) error { return nil }

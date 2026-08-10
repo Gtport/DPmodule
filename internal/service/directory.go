@@ -348,6 +348,53 @@ func (c *DirectoryCache) GetMarkaByCompositeKey(okpo, stationKod int64, cargoGro
 	return m, ok
 }
 
+// MarkaKeyPresence — встречаются ли компоненты ключа marka в словаре ПО ОТДЕЛЬНОСТИ
+// (модалка «Без атрибуции»: подсказать, чего именно не хватает до полной комбинации —
+// как determineMarkaMissingComponents эталона gtlogic). Линейный проход — словарь
+// на десятки строк, вызывается на группу, не на вагон.
+func (c *DirectoryCache) MarkaKeyPresence(okpo, stationKod int64, cargoGroup string) (okpoIn, stationIn, groupIn bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, m := range c.marka {
+		if m.Okpo == okpo {
+			okpoIn = true
+		}
+		if m.StationKod == stationKod {
+			stationIn = true
+		}
+		if m.CargoGroup == cargoGroup {
+			groupIn = true
+		}
+	}
+	return okpoIn, stationIn, groupIn
+}
+
+// MarkaSampleByOkpo — пример атрибуции ТОГО ЖЕ отправителя с другой станции/группы
+// (подсказка предзаполнения формы назначения: имя и клиент у известного ОКПО обычно
+// одни). Детерминированность — строка с минимальным ключом. false — ОКПО в словаре нет.
+func (c *DirectoryCache) MarkaSampleByOkpo(okpo int64) (domain.Marka, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var best domain.Marka
+	bestKey, found := "", false
+	for k, m := range c.marka {
+		if m.Okpo != okpo {
+			continue
+		}
+		if !found || k < bestKey {
+			best, bestKey, found = m, k, true
+		}
+	}
+	return best, found
+}
+
+// SaveMarka — запись строки словаря marka (upsert по составному ключу) БЕЗ
+// перезагрузки кэша: вызывающий (назначение атрибуции) следом запускает
+// ReloadDirectories, который перечитывает все справочники и пересчитывает снимок.
+func (c *DirectoryCache) SaveMarka(ctx context.Context, m domain.Marka) error {
+	return c.repo.UpsertMarka(ctx, m)
+}
+
 // GetNaznach — площадка назначения по (станция назначения, станция отправления).
 // Возвращает только включённые перестановки с непустым naznach; иначе (false)
 // вызывающий откатывается к GruzpolS (§3.17).

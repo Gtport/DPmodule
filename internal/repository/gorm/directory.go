@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -231,6 +232,24 @@ func (r *DirectoryRepository) LoadRouteSpeed(ctx context.Context) ([]domain.Rout
 		}
 	}
 	return out, nil
+}
+
+// UpsertMarka — строка словаря marka по ключу (okpo, station_kod, cargo_group):
+// новая комбинация вставляется, существующая обновляется (назначение из модалки
+// «Без атрибуции» на уже заведённую комбинацию — осознанная правка справочника).
+// sprav_1 не трогаем: поле запасное, форма назначения его не ведёт.
+func (r *DirectoryRepository) UpsertMarka(ctx context.Context, m domain.Marka) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "okpo"}, {Name: "station_kod"}, {Name: "cargo_group"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"station", "shipper", "client", "sms_1", "sms_3", "color",
+		}),
+	}).Create(&markaModel{
+		Okpo: m.Okpo, StationKod: m.StationKod, Station: m.Station,
+		CargoGroup: m.CargoGroup,
+		Shipper:    m.Shipper, Client: m.Client, Sms1: m.Sms1, Sms3: m.Sms3,
+		Color: m.Color,
+	}).Error
 }
 
 // UpdateNaznachStationNaznach — смена дефолтного назначения пары станций

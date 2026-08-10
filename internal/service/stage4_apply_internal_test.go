@@ -117,3 +117,5 @@ func TestApplyStage4_Integration(t *testing.T) {
 	require.NotNil(t, recs[5].ProgMsk)
 	assert.Contains(t, []string{"06:00:00", "18:00:00"}, recs[5].ProgMsk.String()[11:], "беспланный на слот расписания")
 }
+
+func (s4Dir) UpsertMarka(context.Context, domain.Marka) error { return nil }

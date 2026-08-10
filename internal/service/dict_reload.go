@@ -12,6 +12,7 @@ type DictReloadResult struct {
 	Filled           int `json:"filled"`            // были без атрибуции — заполнены строгим матчем marka
 	FilledByTrain    int `json:"filled_by_train"`   // заполнены наследованием по составу
 	StillEmpty       int `json:"still_empty"`       // остались без атрибуции (нет ни marka, ни состава)
+	HistoryFilled    int `json:"history_filled"`    // строк vagon_history дозаполнено атрибуцией
 	ForecastComputed int `json:"forecast_computed"` // вагонов с пересчитанным ходом (Stage 3)
 	ProgComputed     int `json:"prog_computed"`     // вагонов с пересчитанным прогнозом порта (Stage 4)
 }
@@ -48,6 +49,21 @@ func (p *LKProcessor) ReloadDirectories(ctx context.Context) (DictReloadResult, 
 	refreshed := applyMarkaRefresh(all, p.intake.dir)
 	mk := applyMarkaEnrichment(all, p.intake.dir)
 
+	// Дозаполнение vagon_history активных рейсов (решение владельца 10.08.2026):
+	// атрибуция пишется в историю один раз при INSERT, и рейс, вставленный до
+	// матча с marka, оставался пустым навсегда — даже после правки словаря
+	// (искажался отчёт «Погрузка»). FillAttribution закрывает только строки с
+	// пустым gruzotpr — заполненные (в т.ч. вручную) не перетираются. Идёт ДО
+	// подмены снимка: отказ БД роняет всю операцию (падать громко), а сам вызов
+	// идемпотентен.
+	histFilled := 0
+	if p.history != nil {
+		var err error
+		if histFilled, err = p.history.FillAttribution(ctx, attributionRows(all)); err != nil {
+			return DictReloadResult{}, fmt.Errorf("дозаполнение атрибуции истории: %w", err)
+		}
+	}
+
 	var cutoff int
 	if ds, ok := p.intake.cfg.DataSource("lk"); ok {
 		cutoff = ds.Config.DateCutoffHour
@@ -65,6 +81,7 @@ func (p *LKProcessor) ReloadDirectories(ctx context.Context) (DictReloadResult, 
 	res := DictReloadResult{
 		Count: len(all), Refreshed: refreshed,
 		Filled: mk.FilledFull, FilledByTrain: mk.FilledByTrain, StillEmpty: mk.MissedMarka,
+		HistoryFilled:    histFilled,
 		ForecastComputed: forecastN, ProgComputed: progN,
 	}
 	if p.journal != nil {

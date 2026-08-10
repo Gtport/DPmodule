@@ -9,6 +9,8 @@ import { CargoWorkModalComponent } from './cargo-work-modal.component';
 import { BrosModalComponent } from './bros-modal.component';
 import { BrosApiService } from './bros-api.service';
 import { DelaysModalComponent } from './delays-modal.component';
+import { UnmatchedApiService } from './unmatched-api.service';
+import { UnmatchedModalComponent } from './unmatched-modal.component';
 
 /**
  * Карточка «Информация» рядом со «Статусом системы» (правая половина верхней
@@ -21,7 +23,7 @@ import { DelaysModalComponent } from './delays-modal.component';
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent, UnmatchedModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Информация</b></div>
@@ -37,6 +39,13 @@ import { DelaysModalComponent } from './delays-modal.component';
               nz-tooltip nzTooltipTitle="Брошенные поезда (статус 5): журнал и коды бросания — открыть">
         <span class="lbl">Брошенные</span>
         <span class="cnt" [class.warn]="brosCount() > 0">{{ brosCount() }}</span>
+        <span nz-icon nzType="right" class="go"></span>
+      </button>
+
+      <button class="row" type="button" (click)="openUnmatched()"
+              nz-tooltip nzTooltipTitle="Гружёные вагоны, не сматченные со справочником Marka (без грузоотправителя/клиента/СМС) — открыть список и заполнить">
+        <span class="lbl">Без атрибуции</span>
+        <span class="cnt" [class.warn]="unmatchedCount() > 0">{{ unmatchedCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
@@ -61,6 +70,9 @@ import { DelaysModalComponent } from './delays-modal.component';
     }
     @if (showDelays()) {
       <app-delays-modal (closed)="showDelays.set(false)" />
+    }
+    @if (showUnmatched()) {
+      <app-unmatched-modal (reload)="load()" (closed)="showUnmatched.set(false)" />
     }
     @if (showDonors()) {
       <app-vagon-list-modal title="Перегруз — доноры (статус 6)" sinceLabel="Донор с"
@@ -89,14 +101,17 @@ import { DelaysModalComponent } from './delays-modal.component';
 export class InfoCardComponent implements OnInit, OnDestroy {
   private readonly api = inject(MissingApiService);
   private readonly bros = inject(BrosApiService);
+  private readonly unmatched = inject(UnmatchedApiService);
   private readonly msg = inject(NzMessageService);
 
   readonly donors = signal<Status6Vagon[]>([]);
   readonly brosCount = signal(0);
+  readonly unmatchedCount = signal(0);
   readonly showDonors = signal(false);
   readonly showCargoWork = signal(false);
   readonly showBros = signal(false);
   readonly showDelays = signal(false);
+  readonly showUnmatched = signal(false);
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -112,11 +127,12 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   /** Списки короткие (снятие доноров) — тянем целиком, счётчик = длина. */
   async load(initial = false): Promise<void> {
     try {
-      const [donors, bros] = await Promise.all([
-        this.api.getStatus6(), this.bros.getActive(),
+      const [donors, bros, unm] = await Promise.all([
+        this.api.getStatus6(), this.bros.getActive(), this.unmatched.getGroups(),
       ]);
       this.donors.set(donors ?? []);
       this.brosCount.set(bros?.length ?? 0);
+      this.unmatchedCount.set((unm ?? []).reduce((s, g) => s + g.vagon_count, 0));
     } catch (err) {
       if (initial) this.msg.error(apiErrorMessage(err));
     }
@@ -126,6 +142,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   openCargoWork(): void { this.showCargoWork.set(true); }
   openBros(): void { this.showBros.set(true); }
   openDelays(): void { this.showDelays.set(true); }
+  openUnmatched(): void { this.showUnmatched.set(true); }
 
   /** Доноры перегруза → общая форма строки таблицы. */
   donorRows(): VagonListRow[] {

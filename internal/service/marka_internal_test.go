@@ -301,3 +301,5 @@ func TestApplyTrainInheritance(t *testing.T) {
 		assert.Empty(t, kept[2].Gruzotpr)
 	})
 }
+
+func (markaStubRepo) UpsertMarka(context.Context, domain.Marka) error { return nil }
