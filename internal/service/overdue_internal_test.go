@@ -32,10 +32,12 @@ func TestOverdueGroups(t *testing.T) {
 		// Без просрочки (delay nil и delay 0) — не попадают.
 		domain.Dislocation{Vagon: "1000", Invoice: "Н1"},
 		domain.Dislocation{Vagon: "1001", Invoice: "Н1", Delay: ovInt(0)},
-		// Прибывший и выгруженный — просрочка зафиксирована в истории, не показываем.
+		// Прибывший и выгруженный — просрочка зафиксирована в истории; порожний
+		// в пути (статус 6) — исключён решением владельца 11.08.2026.
 		domain.Dislocation{Vagon: "1002", Invoice: "Н1", Delay: ovInt(5), Status: &s10},
 		domain.Dislocation{Vagon: "1003", Invoice: "Н1", Delay: ovInt(5), Status: &s12},
-		// Накладная Н1: два вагона в пути, разные просрочки и нормативы.
+		domain.Dislocation{Vagon: "1004", Invoice: "Н9", Delay: ovInt(99), Status: &s6},
+		// Накладная Н1 (терминал АЭ): два вагона в пути, разные просрочки и нормативы.
 		domain.Dislocation{Vagon: "2002", ID: "2002/1/01.08.2026", Invoice: "Н1", InvoiceMain: "Н1",
 			StationNach: "ЕРУНАКОВО", Gruzotpr: "ОТПР", StanNazn: "НАХОДКА", GruzpolS: "АЭ",
 			CargoS: "УГОЛЬ Г", Delay: ovInt(3), Status: &s2,
@@ -43,24 +45,29 @@ func TestOverdueGroups(t *testing.T) {
 		domain.Dislocation{Vagon: "2001", ID: "2001/1/01.08.2026", Invoice: "Н1", InvoiceMain: "Н1",
 			StationNach: "ЕРУНАКОВО", Gruzotpr: "ОТПР", StanNazn: "НАХОДКА", GruzpolS: "АЭ",
 			CargoS: "УГОЛЬ Г", Delay: ovInt(1), Status: &s2, DateDostav: ovLT(2026, 8, 10)},
-		// Пустая invoice — фолбэк на invoice_main.
-		domain.Dislocation{Vagon: "3001", InvoiceMain: "Н2", Delay: ovInt(7), Status: &s6},
-		// Совсем без накладной — одна группа с пустым ключом.
+		// Пустая invoice — фолбэк на invoice_main; терминал АЭ, просрочка больше Н1.
+		domain.Dislocation{Vagon: "3001", InvoiceMain: "Н2", GruzpolS: "АЭ", Delay: ovInt(7), Status: &s2},
+		// Терминал ГУТ-2 — раньше АЭ по алфавиту.
+		domain.Dislocation{Vagon: "3500", Invoice: "Н3", GruzpolS: "ГУТ-2", Delay: ovInt(2), Status: &s2},
+		// Совсем без накладной и без терминала — группа с пустым ключом в конце.
 		domain.Dislocation{Vagon: "4001", Delay: ovInt(2), Status: &s2},
 		domain.Dislocation{Vagon: "4002", Delay: ovInt(4), Status: &s2},
 	)
 
 	svc := NewOverdueService(cache, nil)
 	groups := svc.Groups()
-	require.Len(t, groups, 3)
+	require.Len(t, groups, 4)
 
-	// Сортировка групп — по максимальной просрочке.
-	assert.Equal(t, "Н2", groups[0].Key)
+	// Порядок групп: терминалы по алфавиту (АЭ < ГУТ-2), внутри терминала — по
+	// max_delay убыванием, без терминала — в конце.
+	assert.Equal(t, "Н2", groups[0].Key) // АЭ, max delay 7
 	assert.Equal(t, 7, groups[0].MaxDelay)
-	assert.Equal(t, "", groups[1].Key) // «без накладной», max delay 4
-	assert.Equal(t, 4, groups[1].MaxDelay)
+	assert.Equal(t, "Н1", groups[1].Key) // АЭ, max delay 3
+	assert.Equal(t, "Н3", groups[2].Key) // ГУТ-2
+	assert.Equal(t, "", groups[3].Key)   // без накладной и терминала — в конце
+	assert.Equal(t, 4, groups[3].MaxDelay)
 
-	g := groups[2]
+	g := groups[1]
 	assert.Equal(t, "Н1", g.Key)
 	assert.Equal(t, 2, g.VagonCount)
 	assert.Equal(t, 3, g.MaxDelay)

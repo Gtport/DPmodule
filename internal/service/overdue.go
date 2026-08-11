@@ -18,8 +18,9 @@ import (
 // выгруженные (статусы 10/12) не показываются: их просрочка зафиксирована в
 // vagon_history при прибытии и попадает в отчёт для претензии (ClaimExcel), а
 // снимочный delay продолжает расти от «сегодня» и для них завышен (решение
-// владельца 11.08.2026). Порожние с просрочкой показываются: правила исчисления
-// сроков (приказ Минтранса № 245) распространяются и на порожние вагоны.
+// владельца 11.08.2026). Порожние В ПУТИ (статус 6) тоже исключены (решение
+// владельца 11.08.2026, вторая итерация); порожние ПОД ПОГРУЗКУ живут обычным
+// деревом статусов движения и в выборке остаются.
 type OverdueService struct {
 	actual  *ActualCache
 	history port.HistoryRepository
@@ -66,8 +67,10 @@ type OverdueGroupDTO struct {
 	Vagons      []OverdueVagonDTO `json:"vagons"`
 }
 
-// Groups — просроченные вагоны снимка группами по накладной, самые просроченные
-// первыми, вагоны внутри группы — по номеру.
+// Groups — просроченные вагоны снимка группами по накладной. Порядок групп:
+// по терминалу (gruzpol_s, пустой — в конце), внутри терминала — по максимальной
+// просрочке от большой к малой (решение владельца 11.08.2026); вагоны внутри
+// группы — по номеру.
 func (s *OverdueService) Groups() []OverdueGroupDTO {
 	rows := s.actual.All()
 	groups := map[string]*OverdueGroupDTO{}
@@ -77,8 +80,9 @@ func (s *OverdueService) Groups() []OverdueGroupDTO {
 		if r.Vagon == "" || r.Delay == nil || *r.Delay <= 0 {
 			continue
 		}
-		// 10/12 — уже на станции назначения: просрочка зафиксирована в истории.
-		if r.Status != nil && (*r.Status == 10 || *r.Status == 12) {
+		// 10/12 — уже на станции назначения (просрочка зафиксирована в
+		// истории), 6 — порожний в пути (решение владельца 11.08.2026).
+		if r.Status != nil && (*r.Status == 6 || *r.Status == 10 || *r.Status == 12) {
 			continue
 		}
 		key := r.Invoice
@@ -119,7 +123,16 @@ func (s *OverdueService) Groups() []OverdueGroupDTO {
 		sort.Slice(g.Vagons, func(i, j int) bool { return g.Vagons[i].Vagon < g.Vagons[j].Vagon })
 		out = append(out, *g)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].MaxDelay > out[j].MaxDelay })
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.GruzpolS != b.GruzpolS {
+			if a.GruzpolS == "" || b.GruzpolS == "" {
+				return b.GruzpolS == "" // без терминала — в конец
+			}
+			return a.GruzpolS < b.GruzpolS
+		}
+		return a.MaxDelay > b.MaxDelay
+	})
 	return out
 }
 

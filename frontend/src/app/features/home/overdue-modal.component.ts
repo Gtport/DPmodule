@@ -7,6 +7,7 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
+import { ArrivalsApiService } from './arrivals-api.service';
 import { OverdueApiService, OverdueGroup, OverdueVagon } from './overdue-api.service';
 import { OverdueReportModalComponent } from './overdue-report-modal.component';
 import { VagonTrailModalComponent } from './vagon-trail-modal.component';
@@ -19,6 +20,10 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
  * провозной платы по накладной), разворот до вагонов; клик по вагону — «История
  * движения вагона». Отчёт по СВЕРШИВШИМСЯ просрочкам (прибыл позже норматива,
  * из истории рейсов) — кнопкой «Отчёт для претензии».
+ *
+ * Порядок групп задаёт сервер: терминалы, внутри — просрочка по убыванию
+ * (решение владельца 11.08.2026); строки-накладные залиты фирменным цветом
+ * терминала из реестра ports, как в «Брошенных».
  */
 @Component({
   selector: 'app-overdue-modal',
@@ -64,7 +69,7 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
               </tr></thead>
               <tbody>
                 @for (g of groups(); track g.key) {
-                  <tr class="grp" (click)="toggle(g.key)">
+                  <tr class="grp" [style.background]="rowBg(g)" (click)="toggle(g.key)">
                     <td class="c-inv num">
                       <span nz-icon [nzType]="isOpen(g.key) ? 'down' : 'right'" class="tw"></span>
                       {{ g.key || 'Без накладной' }}
@@ -140,6 +145,7 @@ import { VagonTrailModalComponent } from './vagon-trail-modal.component';
 })
 export class OverdueModalComponent implements OnInit {
   private readonly api = inject(OverdueApiService);
+  private readonly arrivals = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
 
   readonly closed = output<void>();
@@ -149,12 +155,30 @@ export class OverdueModalComponent implements OnInit {
   readonly open = signal<Set<string>>(new Set());
   readonly showReport = signal(false);
   readonly trailFor = signal<{ id: string; vagon: string } | null>(null);
+  /** Фирменные цвета терминалов из реестра ports (имя → color). */
+  readonly termColor = signal<Record<string, string>>({});
 
   readonly vagonCount = computed(() =>
     this.groups().reduce((s, g) => s + g.vagon_count, 0));
 
   ngOnInit(): void {
     void this.load();
+    void this.loadTerminalColors();
+  }
+
+  private async loadTerminalColors(): Promise<void> {
+    try {
+      const cm: Record<string, string> = {};
+      for (const t of await this.arrivals.getTerminals()) cm[t.name] = t.color;
+      this.termColor.set(cm);
+    } catch {
+      /* справочник не критичен — строки останутся без заливки */
+    }
+  }
+
+  /** Светлый фон строки-накладной цветом терминала (по gruzpol_s), как в «Брошенных». */
+  rowBg(g: OverdueGroup): string | null {
+    return this.termColor()[g.gruzpol_s] ?? null;
   }
 
   async load(): Promise<void> {
