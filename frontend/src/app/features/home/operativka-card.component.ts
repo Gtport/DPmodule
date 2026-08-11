@@ -1,4 +1,8 @@
-import { Component, OnDestroy, OnInit, computed, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
+import { CargoWorkModalComponent } from './cargo-work-modal.component';
 import { OperativkaApiService, OperativkaRow } from './operativka-api.service';
 
 /** Итоговая строка по всем терминалам (суммы счётчиков). */
@@ -25,9 +29,14 @@ interface OperativkaTotals {
  * сегодняшние значения выделены жирнее вчерашних, внизу строка «Итого».
  * Данные и минутное автообновление — в общем OperativkaApiService (тот же
  * ответ кормит карточку «Без плана в подходе»).
+ *
+ * В шапке — кнопка «Грузовая работа» (решение владельца 12.08.2026): ввод
+ * суточного учётного листа переехал сюда из карточки «Работа», где стоял
+ * строкой «Ввод выгрузки» — цифры выгрузки и её ввод оказались рядом.
  */
 @Component({
   selector: 'app-operativka-card',
+  imports: [NzButtonModule, NzIconModule, NzTooltipModule, CargoWorkModalComponent],
   template: `
     <div class="card">
       <div class="head">
@@ -36,6 +45,11 @@ interface OperativkaTotals {
           <span class="dp-stale"
                 title="Автообновление не проходит — показаны последние полученные данные">{{ api.stale.label() }}</span>
         }
+        <span class="spacer"></span>
+        <button nz-button nzSize="small" (click)="showCargoWork.set(true)"
+                nz-tooltip nzTooltipTitle="Грузовая работа: суточный учётный лист терминала — ввод выгрузки и погрузки">
+          <span nz-icon nzType="edit"></span> Грузовая работа
+        </button>
       </div>
       <table class="mini">
         <thead>
@@ -86,11 +100,16 @@ interface OperativkaTotals {
         }
       </table>
     </div>
+
+    @if (showCargoWork()) {
+      <app-cargo-work-modal (closed)="showCargoWork.set(false)" />
+    }
   `,
   styles: [`
     .card { background: var(--color-bg-surface); border-radius: var(--radius-card);
             box-shadow: var(--shadow-card); padding: var(--space-sm) var(--space-md) var(--space-md); }
     .head { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); }
+    .spacer { flex: 1 1 auto; }
     .mini { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
     .mini th { background: var(--color-bg-subtle); font-weight: 600; padding: 3px 6px;
                border: 1px solid var(--color-border-light); text-align: center; }
@@ -111,6 +130,8 @@ interface OperativkaTotals {
 })
 export class OperativkaCardComponent implements OnInit, OnDestroy {
   readonly api = inject(OperativkaApiService);
+
+  readonly showCargoWork = signal(false);
 
   /** «Итого» по всем терминалам; при одном терминале строка лишняя — не показываем. */
   readonly totals = computed<OperativkaTotals | null>(() => {

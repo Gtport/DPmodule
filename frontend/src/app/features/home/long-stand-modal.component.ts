@@ -14,26 +14,17 @@ import { ArrivalsApiService } from './arrivals-api.service';
 import { LongStandApiService, LongStandVagon } from './long-stand-api.service';
 import { VagonTrailModalComponent } from './vagon-trail-modal.component';
 
-/** Терминал с вагонами: строка-заголовок группы + её вагоны. */
-interface TermGroup {
-  name: string;
-  color: string | null;
-  vagons: LongStandVagon[];
-  /** Самая долгая стоянка группы — ею подписан заголовок. */
-  maxHours: number;
-}
-
 /**
  * Перемещаемая модалка «Долгостой»: вагоны, стоящие на станции назначения
  * дольше порога (dest_stand_hours, дефолт 48 ч), статусы ≥ 10 — и ждущие
  * выгрузки, и уже выгруженные, но не убранные с путей.
  *
- * Раскладка — решение владельца 11.08.2026: группировка ПЕРВЫМ уровнем по
- * терминалу, ВТОРЫМ — по длительности стоянки (дольше стоящие сверху внутри
- * группы); заголовок группы залит фирменным цветом терминала из реестра
- * `ports`, как в «Брошенных» и «Просрочке доставки». Порядок задаёт сервер,
- * здесь он только режется на группы по смене терминала — поэтому сортировка
- * на сервере обязана быть устойчивой.
+ * Раскладка — решение владельца 12.08.2026: ПЛОСКИЙ список без группировки и
+ * сворачивания. Терминал — своя колонка, а принадлежность видна заливкой всей
+ * строки фирменным цветом терминала из реестра `ports` (как в «Брошенных» и
+ * «Просрочке доставки»). Отдельной подсветки самых долгих нет — порядок задаёт
+ * сервер (терминал → длительность стоянки убыванием), и дольше всех стоящие и
+ * так идут сверху своего терминала.
  *
  * Клик или ПКМ по вагону — «История движения вагона» (по id рейса).
  */
@@ -75,6 +66,7 @@ interface TermGroup {
           <table class="dp-tbl">
             <thead>
               <tr>
+                <th class="c-term">Терминал</th>
                 <th class="c-vag">Вагон</th>
                 <th class="c-state">Состояние</th>
                 <th class="c-idx">Индекс</th>
@@ -90,46 +82,35 @@ interface TermGroup {
               </tr>
             </thead>
             <tbody>
-              @for (g of groups(); track g.name) {
-                <tr class="grp" [style.background]="g.color" (click)="toggle(g.name)">
-                  <td colspan="12">
-                    <span nz-icon [nzType]="isOpen(g.name) ? 'down' : 'right'" class="tw"></span>
-                    <b>{{ g.name || 'Без терминала' }}</b>
-                    <span class="gm">{{ g.vagons.length }} ваг.</span>
-                    <span class="gm">дольше всех — {{ stood(g.maxHours) }}</span>
+              @for (r of rows(); track r.id) {
+                <tr class="rw" [style.background]="rowBg(r)" (click)="trailRow.set(r)">
+                  <td class="ell term" [title]="r.naznach">{{ r.naznach || 'Без терминала' }}</td>
+                  <td class="num">{{ r.vagon }}</td>
+                  <td class="c">
+                    <nz-tag class="chip" [nzColor]="r.state === 'гружён' ? 'red' : 'default'">
+                      {{ r.state || '—' }}
+                    </nz-tag>
                   </td>
+                  <td class="num idx" [title]="r.index">{{ r.index || '—' }}</td>
+                  <td class="ell" [title]="station(r)">{{ station(r) }}</td>
+                  <td class="ell" [title]="r.oper_s">{{ r.oper_s || '—' }}</td>
+                  <td class="c">{{ fmt(r.time_op) }}</td>
+                  <td class="ell" [title]="r.station_nach">{{ r.station_nach || '—' }}</td>
+                  <td class="ell" [title]="r.gruzotpr">{{ r.gruzotpr || '—' }}</td>
+                  <td class="ell" [title]="r.cargo_s">{{ r.cargo_s || 'порожний' }}</td>
+                  <td class="c">{{ r.ves ? r.ves.toFixed(1) : '—' }}</td>
+                  <td class="c">{{ fmt(r.since) }}</td>
+                  <td class="c stood">{{ stood(r.hours) }}</td>
                 </tr>
-                @if (isOpen(g.name)) {
-                  @for (r of g.vagons; track r.id) {
-                    <tr class="rw" [class.stale]="r.days >= 3" (click)="trailRow.set(r)">
-                      <td class="num">{{ r.vagon }}</td>
-                      <td class="c">
-                        <nz-tag class="chip" [nzColor]="r.state === 'гружён' ? 'red' : 'default'">
-                          {{ r.state || '—' }}
-                        </nz-tag>
-                      </td>
-                      <td class="num idx" [title]="r.index">{{ r.index || '—' }}</td>
-                      <td class="ell" [title]="station(r)">{{ station(r) }}</td>
-                      <td class="ell" [title]="r.oper_s">{{ r.oper_s || '—' }}</td>
-                      <td class="c">{{ fmt(r.time_op) }}</td>
-                      <td class="ell" [title]="r.station_nach">{{ r.station_nach || '—' }}</td>
-                      <td class="ell" [title]="r.gruzotpr">{{ r.gruzotpr || '—' }}</td>
-                      <td class="ell" [title]="r.cargo_s">{{ r.cargo_s || 'порожний' }}</td>
-                      <td class="c">{{ r.ves ? r.ves.toFixed(1) : '—' }}</td>
-                      <td class="c">{{ fmt(r.since) }}</td>
-                      <td class="c stood">{{ stood(r.hours) }}</td>
-                    </tr>
-                  }
-                }
               } @empty {
-                <tr><td colspan="12" class="empty">Долгостоя нет</td></tr>
+                <tr><td colspan="13" class="empty">Долгостоя нет</td></tr>
               }
             </tbody>
           </table>
         </div>
 
         <p class="hint">
-          Клик по терминалу сворачивает группу, клик по вагону — история движения.
+          Цвет строки — терминал, клик по вагону — история движения.
           Отсчёт от прибытия (не от простоя РЖД: подача его обнуляет). Времена — московские.
         </p>
       </ng-container>
@@ -147,25 +128,21 @@ interface TermGroup {
     .search { width: 140px; }
     .mut { color: var(--color-text-muted); }
     .dp-tbl { table-layout: fixed; }
-    /* Заголовок терминала — залит фирменным цветом (реестр ports), как в «Брошенных». */
-    .grp { cursor: pointer; }
-    .grp td { font-size: var(--font-size-sm); }
-    .tw { font-size: 10px; margin-right: var(--space-xs); }
-    .gm { margin-left: var(--space-md); color: var(--color-text-secondary); }
+    /* Строка залита фирменным цветом терминала (реестр ports), как в «Брошенных». */
     .rw { cursor: pointer; }
     .rw:hover td { background: var(--color-bg-hover); }
     /* Ширины фиксированные; станция дислокации — единственная резиновая колонка. */
-    .c-vag { width: 84px; } .c-state { width: 88px; } .c-idx { width: 108px; }
+    .c-term { width: 96px; } .c-vag { width: 84px; } .c-state { width: 88px; }
+    .c-idx { width: 108px; }
     .c-op { width: 104px; } .c-dt { width: 106px; } .c-nach { width: 136px; }
     .c-otpr { width: 148px; } .c-cargo { width: 112px; } .c-ves { width: 52px; }
     .c-stood { width: 74px; }
     .num { font-variant-numeric: tabular-nums; }
     .idx, .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .c { text-align: center; font-variant-numeric: tabular-nums; }
+    .term { font-weight: 600; }
     .stood { font-weight: 600; }
     .chip { margin: 0; }
-    /* Стоит 3+ суток — жёлтая подсветка строки (как в списке доноров). */
-    tr.stale > td { background: var(--color-warning-bg, #fffbe6); }
     .empty { text-align: center; color: var(--color-text-secondary); padding: var(--space-md); }
     .hint { margin: var(--space-xs) 0 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
   `],
@@ -181,35 +158,15 @@ export class LongStandModalComponent implements OnInit {
   readonly thresholdHours = signal(48);
   readonly search = signal('');
   readonly trailRow = signal<LongStandVagon | null>(null);
-  /** Свёрнутые группы (по умолчанию развёрнуты все — список короткий). */
-  private readonly collapsed = signal<Set<string>>(new Set());
   private readonly termColor = signal<Record<string, string>>({});
 
-  private readonly filtered = computed(() => {
+  /** Плоский список в порядке сервера: терминал → длительность стоянки убыванием. */
+  readonly rows = computed(() => {
     const q = this.search().trim();
     return q ? this.vagons().filter((r) => r.vagon.includes(q)) : this.vagons();
   });
 
-  readonly total = computed(() => this.filtered().length);
-
-  /**
-   * Группы-терминалы: режем УЖЕ отсортированный сервером список по смене
-   * терминала, поэтому внутри группы сохраняется порядок «дольше стоящие
-   * сверху», а сами группы идут в серверном порядке (алфавит, пустой в конец).
-   */
-  readonly groups = computed<TermGroup[]>(() => {
-    const out: TermGroup[] = [];
-    for (const r of this.filtered()) {
-      let g = out[out.length - 1];
-      if (!g || g.name !== r.naznach) {
-        g = { name: r.naznach, color: this.termColor()[r.naznach] ?? null, vagons: [], maxHours: 0 };
-        out.push(g);
-      }
-      g.vagons.push(r);
-      if (r.hours > g.maxHours) g.maxHours = r.hours;
-    }
-    return out;
-  });
+  readonly total = computed(() => this.rows().length);
 
   ngOnInit(): void {
     void this.load();
@@ -236,14 +193,9 @@ export class LongStandModalComponent implements OnInit {
     }
   }
 
-  isOpen(name: string): boolean {
-    return !this.collapsed().has(name);
-  }
-
-  toggle(name: string): void {
-    const next = new Set(this.collapsed());
-    if (!next.delete(name)) next.add(name);
-    this.collapsed.set(next);
+  /** Заливка строки фирменным цветом терминала; терминала нет — без заливки. */
+  rowBg(r: LongStandVagon): string | null {
+    return this.termColor()[r.naznach] ?? null;
   }
 
   /** «Станция (дорога)» из последней известной позиции. */
@@ -264,9 +216,9 @@ export class LongStandModalComponent implements OnInit {
     return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(2, 4)} ${ts.slice(11, 16)}`;
   }
 
-  /** Экспорт видимого списка в Excel: терминал отдельной колонкой (в плоском листе группы не нужны). */
+  /** Экспорт видимого списка в Excel — теми же колонками, что на экране. */
   async exportExcel(): Promise<void> {
-    const recs = this.filtered();
+    const recs = this.rows();
     if (!recs.length) return;
     try {
       const XLSX = await import('xlsx-js-style');

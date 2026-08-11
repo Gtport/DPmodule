@@ -5,7 +5,6 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { MissingApiService, Status6Vagon } from './missing-api.service';
 import { VagonListModalComponent, VagonListRow } from './vagon-list-modal.component';
-import { CargoWorkModalComponent } from './cargo-work-modal.component';
 import { BrosModalComponent } from './bros-modal.component';
 import { BrosApiService } from './bros-api.service';
 import { DelaysApiService } from './delays-api.service';
@@ -23,72 +22,66 @@ import { LongStandModalComponent } from './long-stand-modal.component';
  * счётчики списков «сбоку от снимка». Клик по строке открывает перемещаемую
  * модалку с таблицей, где ПКМ по строке даёт историю движения вагона.
  * Автообновление раз в минуту, как у соседних карточек. Пропавшие (статус 8)
- * отсюда переехали в станционные карточки «Кандидаты на прибытие» (10.08.2026).
+ * отсюда переехали в станционные карточки «Кандидаты на прибытие» (10.08.2026),
+ * «Ввод выгрузки» — кнопкой «Грузовая работа» в шапке карточки «Погрузка ·
+ * Прибытие · Выгрузка» (12.08.2026): здесь остались только счётчики списков.
  *
  * Имена строк — решение владельца 10.08.2026, короче внутренних терминов:
  * «Неопознанные» = без атрибуции marka, «Проблемные вагоны» = доноры перегруза
- * (статус 6), «Ввод выгрузки» = грузовая работа (суточный учётный лист).
- * Внутренние термины остались в подсказках и заголовках модалок.
+ * (статус 6). Внутренние термины остались в подсказках и заголовках модалок.
+ * Подсказки строк выводятся СПРАВА от карточки (решение владельца 12.08.2026) —
+ * над карточкой они перекрывали соседние строки.
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent, UnmatchedModalComponent, OverdueModalComponent, LongStandModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, BrosModalComponent, DelaysModalComponent, UnmatchedModalComponent, OverdueModalComponent, LongStandModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Работа</b></div>
 
       <button class="row" type="button" (click)="openUnmatched()"
-              nz-tooltip nzTooltipTitle="Гружёные вагоны без атрибуции: не сматчены со справочником Marka (без грузоотправителя/клиента/СМС) — открыть список и заполнить">
+              nz-tooltip nzTooltipPlacement="right" nzTooltipTitle="Гружёные вагоны без атрибуции: не сматчены со справочником Marka (без грузоотправителя/клиента/СМС) — открыть список и заполнить">
         <span class="lbl">Неопознанные</span>
         <span class="cnt" [class.warn]="unmatchedCount() > 0">{{ unmatchedCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
       <button class="row" type="button" (click)="openBros()"
-              nz-tooltip nzTooltipTitle="Брошенные поезда (статус 5): журнал и коды бросания — открыть">
+              nz-tooltip nzTooltipPlacement="right" nzTooltipTitle="Брошенные поезда (статус 5): журнал и коды бросания — открыть">
         <span class="lbl">Брошенные поезда</span>
         <span class="cnt" [class.warn]="brosCount() > 0">{{ brosCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
       <button class="row" type="button" (click)="openDelays()"
-              nz-tooltip nzTooltipTitle="Вагоны, задержанные в пути прямо сейчас (простои и бросания); отчёт за период — внутри">
+              nz-tooltip nzTooltipPlacement="right" nzTooltipTitle="Вагоны, задержанные в пути прямо сейчас (простои и бросания); отчёт за период — внутри">
         <span class="lbl">Задержанные вагоны</span>
         <span class="cnt">{{ delaysCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
       <button class="row" type="button" (click)="openOverdue()"
-              nz-tooltip nzTooltipTitle="Вагоны в пути с истекшим нормативным сроком доставки — по накладным; отчёт для претензионной работы (ст. 97 УЖТ) — внутри">
+              nz-tooltip nzTooltipPlacement="right" nzTooltipTitle="Вагоны в пути с истекшим нормативным сроком доставки — по накладным; отчёт для претензионной работы (ст. 97 УЖТ) — внутри">
         <span class="lbl">Просрочка доставки</span>
         <span class="cnt" [class.warn]="overdueCount() > 0">{{ overdueCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
       <button class="row" type="button" (click)="openLongStand()"
-              [nz-tooltip]="'Вагоны, стоящие на станции назначения дольше ' + longStandHours() + ' ч с прибытия: и ждущие выгрузки, и уже выгруженные, но не убранные — открыть список'">
+              nzTooltipPlacement="right" [nz-tooltip]="'Вагоны, стоящие на станции назначения дольше ' + longStandHours() + ' ч с прибытия: и ждущие выгрузки, и уже выгруженные, но не убранные — открыть список'">
         <span class="lbl">Долгостой</span>
         <span class="cnt" [class.warn]="longStandCount() > 0">{{ longStandCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
-      <button class="row" type="button" (click)="openCargoWork()"
-              nz-tooltip nzTooltipTitle="Грузовая работа: суточный учёт выгрузки и погрузки по терминалам — открыть">
-        <span class="lbl">Ввод выгрузки</span>
-        <span nz-icon nzType="right" class="go ml"></span>
-      </button>
-
       <button class="row" type="button" (click)="openDonors()"
-              nz-tooltip nzTooltipTitle="Доноры перегруза (статус 6): у них приёмники забирают груз — открыть список">
+              nz-tooltip nzTooltipPlacement="right" nzTooltipTitle="Доноры перегруза (статус 6): у них приёмники забирают груз — открыть список">
         <span class="lbl">Проблемные вагоны</span>
         <span class="cnt">{{ donors().length }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
     </div>
 
-    @if (showCargoWork()) {
-      <app-cargo-work-modal (closed)="showCargoWork.set(false)" />
-    }
     @if (showBros()) {
       <app-bros-modal (closed)="showBros.set(false)" />
     }
@@ -124,8 +117,6 @@ import { LongStandModalComponent } from './long-stand-modal.component';
     .cnt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
     .cnt.warn { color: var(--color-danger-text); }
     .go { font-size: 10px; color: var(--color-text-muted); }
-    /* У «Грузовой работы» нет счётчика — стрелку прижимаем сами. */
-    .go.ml { margin-left: auto; }
   `],
 })
 export class InfoCardComponent implements OnInit, OnDestroy {
@@ -150,7 +141,6 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   /** Порог с сервера (client_settings), чтобы подписи не разъезжались с настройкой. */
   readonly longStandHours = signal(48);
   readonly showDonors = signal(false);
-  readonly showCargoWork = signal(false);
   readonly showBros = signal(false);
   readonly showDelays = signal(false);
   readonly showUnmatched = signal(false);
@@ -201,7 +191,6 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   }
 
   openDonors(): void { this.showDonors.set(true); }
-  openCargoWork(): void { this.showCargoWork.set(true); }
   openBros(): void { this.showBros.set(true); }
   openDelays(): void { this.showDelays.set(true); }
   openUnmatched(): void { this.showUnmatched.set(true); }
