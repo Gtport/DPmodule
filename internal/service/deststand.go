@@ -61,7 +61,7 @@ type DestStandVagonDTO struct {
 	Days  int `json:"days"`
 }
 
-// List — вагоны в долгостое, дольше стоящие первыми.
+// List — вагоны в долгостое: терминалами, внутри терминала дольше стоящие первыми.
 func (s *DestStandService) List() []DestStandVagonDTO {
 	return s.list(time.Time(clock.Now()), s.cfg.Settings().Status.DestStandHoursOrDefault())
 }
@@ -105,13 +105,23 @@ func (s *DestStandService) list(now time.Time, hours int) []DestStandVagonDTO {
 			Days:  int(stood / (24 * time.Hour)),
 		})
 	}
-	// ActualCache.All() отдаёт вагоны в порядке мапы — сортируем для стабильного
-	// экрана: дольше стоящие сверху, при равной стоянке по номеру вагона.
+	// ActualCache.All() отдаёт вагоны в порядке мапы — порядок задаём здесь, как
+	// у «Просрочки доставки» (решение владельца 11.08.2026): сначала терминалы
+	// по алфавиту (без терминала — в конец), внутри терминала дольше стоящие
+	// сверху, при равной стоянке — по номеру вагона. Интерфейс режет этот
+	// порядок на группы-терминалы, поэтому сортировка обязана быть устойчивой.
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Hours != out[j].Hours {
-			return out[i].Hours > out[j].Hours
+		a, b := &out[i], &out[j]
+		if a.Naznach != b.Naznach {
+			if a.Naznach == "" || b.Naznach == "" {
+				return b.Naznach == "" // пустой терминал — в конец
+			}
+			return a.Naznach < b.Naznach
 		}
-		return out[i].Vagon < out[j].Vagon
+		if a.Hours != b.Hours {
+			return a.Hours > b.Hours
+		}
+		return a.Vagon < b.Vagon
 	})
 	return out
 }

@@ -14,7 +14,8 @@ import { UnmatchedApiService } from './unmatched-api.service';
 import { UnmatchedModalComponent } from './unmatched-modal.component';
 import { OverdueApiService } from './overdue-api.service';
 import { OverdueModalComponent } from './overdue-modal.component';
-import { LongStandApiService, LongStandVagon } from './long-stand-api.service';
+import { LongStandApiService } from './long-stand-api.service';
+import { LongStandModalComponent } from './long-stand-modal.component';
 
 /**
  * Карточка «Работа» (бывшая «Информация», решение владельца 10.08.2026) рядом
@@ -31,7 +32,7 @@ import { LongStandApiService, LongStandVagon } from './long-stand-api.service';
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent, UnmatchedModalComponent, OverdueModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent, UnmatchedModalComponent, OverdueModalComponent, LongStandModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Работа</b></div>
@@ -101,10 +102,7 @@ import { LongStandApiService, LongStandVagon } from './long-stand-api.service';
       <app-overdue-modal (closed)="showOverdue.set(false)" />
     }
     @if (showLongStand()) {
-      <app-vagon-list-modal [title]="'Долгостой (дольше ' + longStandHours() + ' ч)'"
-                            sinceLabel="Прибыл" stateLabel="Состояние"
-                            hint="Стоят на станции назначения дольше порога, считая с прибытия. «Гружён» — ждёт выгрузки, «выгружен» — не убран с путей."
-                            [rows]="longStandRows()" (reload)="load()" (closed)="showLongStand.set(false)" />
+      <app-long-stand-modal (closed)="showLongStand.set(false)" />
     }
     @if (showDonors()) {
       <app-vagon-list-modal title="Проблемные вагоны" sinceLabel="Донор с"
@@ -146,8 +144,8 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   readonly unmatchedCount = signal(0);
   /** Вагоны в пути с delay > 0 (прибывшие исключены на сервере). */
   readonly overdueCount = signal(0);
-  /** Долгостой: стоят на станции назначения дольше порога (статусы ≥ 10). */
-  readonly longStandVagons = signal<LongStandVagon[]>([]);
+  /** Долгостой: стоят на станции назначения дольше порога (статусы ≥ 10).
+   *  Здесь только счётчик — список со своей группировкой тянет сама модалка. */
   readonly longStandCount = signal(0);
   /** Порог с сервера (client_settings), чтобы подписи не разъезжались с настройкой. */
   readonly longStandHours = signal(48);
@@ -195,7 +193,6 @@ export class InfoCardComponent implements OnInit, OnDestroy {
       this.unmatchedCount.set((unm ?? []).reduce((s, g) => s + g.vagon_count, 0));
       this.delaysCount.set(delays?.length ?? 0);
       this.overdueCount.set((overdue ?? []).reduce((s, g) => s + g.vagon_count, 0));
-      this.longStandVagons.set(stand?.vagons ?? []);
       this.longStandCount.set(stand?.vagons?.length ?? 0);
       if (stand?.threshold_hours) this.longStandHours.set(stand.threshold_hours);
     } catch (err) {
@@ -210,18 +207,6 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   openUnmatched(): void { this.showUnmatched.set(true); }
   openOverdue(): void { this.showOverdue.set(true); }
   openLongStand(): void { this.showLongStand.set(true); }
-
-  /** Долгостой → общая форма строки таблицы (колонка «Дней» — сутки стоянки). */
-  longStandRows(): VagonListRow[] {
-    return this.longStandVagons().map((r) => ({
-      id: r.id, vagon: r.vagon, index: r.index,
-      station_oper: r.station_oper, doroga_oper: r.doroga_oper, oper_s: r.oper_s,
-      time_op: r.time_op, naznach: r.naznach,
-      station_nach: r.station_nach, gruzotpr: r.gruzotpr,
-      cargo_s: r.cargo_s, ves: r.ves,
-      since: r.since ?? '', days: r.days, state: r.state,
-    }));
-  }
 
   /** Доноры перегруза → общая форма строки таблицы. */
   donorRows(): VagonListRow[] {

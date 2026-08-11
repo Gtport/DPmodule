@@ -51,8 +51,12 @@ func TestDestStandList(t *testing.T) {
 	got := svc.list(now, 48)
 
 	require.Len(t, got, 3)
+	// Порядок: терминалы по алфавиту (АЭ → УТ-1 → без терминала в конец),
+	// внутри терминала — дольше стоящие сверху.
 	assert.Equal(t, []string{"5330", "6816", "2222"},
-		[]string{got[0].Vagon, got[1].Vagon, got[2].Vagon}, "дольше стоящие первыми")
+		[]string{got[0].Vagon, got[1].Vagon, got[2].Vagon})
+	assert.Equal(t, []string{"АЭ", "УТ-1", ""},
+		[]string{got[0].Naznach, got[1].Naznach, got[2].Naznach})
 
 	assert.Equal(t, "выгружен", got[0].State)
 	assert.Equal(t, 498, got[0].Hours)
@@ -61,6 +65,33 @@ func TestDestStandList(t *testing.T) {
 	assert.Equal(t, "гружён", got[1].State)
 	assert.Equal(t, 72, got[1].Hours)
 	assert.Equal(t, 3, got[1].Days)
+}
+
+// TestDestStandOrderTerminalThenHours — группировка экрана держится на порядке:
+// терминал первичен, длительность вторична (решение владельца 11.08.2026).
+// Вагон с самой долгой стоянкой НЕ обязан быть первым в списке — он первый
+// внутри своего терминала.
+func TestDestStandOrderTerminalThenHours(t *testing.T) {
+	now := time.Date(2026, time.August, 11, 9, 0, 0, 0, time.UTC)
+	s12 := 12
+	mk := func(vagon, term string, h int) domain.Dislocation {
+		return domain.Dislocation{Vagon: vagon, Naznach: term, Status: &s12,
+			DatePrib: dsLT(now.Add(-time.Duration(h) * time.Hour))}
+	}
+	cache := overdueCache(
+		mk("D", "УТ-1", 500), // дольше всех, но терминал последний по алфавиту
+		mk("B", "АЭ", 60),
+		mk("A", "АЭ", 100),
+		mk("E", "", 400), // без терминала — в самый конец
+		mk("C", "ГУТ-2", 70),
+	)
+
+	got := NewDestStandService(cache, nil).list(now, 48)
+	require.Len(t, got, 5)
+	assert.Equal(t, []string{"A", "B", "C", "D", "E"},
+		[]string{got[0].Vagon, got[1].Vagon, got[2].Vagon, got[3].Vagon, got[4].Vagon})
+	assert.Equal(t, []string{"АЭ", "АЭ", "ГУТ-2", "УТ-1", ""},
+		[]string{got[0].Naznach, got[1].Naznach, got[2].Naznach, got[3].Naznach, got[4].Naznach})
 }
 
 // TestDestStandThresholdFromSettings — порог берётся из настроек, 0 → дефолт 48.
