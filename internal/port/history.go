@@ -45,10 +45,12 @@ type HistoryRepository interface {
 	// обновляются ТОЛЬКО строки WHERE gruzotpr = '' — заполненная атрибуция,
 	// в т.ч. внесённая вручную, не перетирается. Возвращает число заполненных.
 	FillAttribution(ctx context.Context, rows []domain.HistoryAttribution) (int, error)
-	// DailyTerminalCounts — счётчики «Оперативки»: сколько вагонов прибыло
-	// (date_prib_d, по naznach) и выгружено (date_vigr_d, по place_vigr) за
-	// каждые ЖД-сутки диапазона [from; to]. Ключи карт: "yyyy-MM-dd|терминал".
-	DailyTerminalCounts(ctx context.Context, from, to domain.LocalTime) (prib, vigr map[string]int, err error)
+	// DailyTerminalCounts — счётчики «Оперативки»: сколько вагонов погружено
+	// в адрес терминала (date_nach_d, по gruzpol_s, без перегрузов — та же
+	// семантика, что у отчёта «Погрузка»), прибыло (date_prib_d, по naznach)
+	// и выгружено (date_vigr_d, по place_vigr) за каждые ЖД-сутки диапазона
+	// [from; to]. Ключи карт: "yyyy-MM-dd|терминал".
+	DailyTerminalCounts(ctx context.Context, from, to domain.LocalTime) (pogr, prib, vigr map[string]int, err error)
 	// DailyCargoUnloaded — то же «выгружено», но с разбивкой ПО ГРУППЕ ГРУЗА:
 	// «Грузовой работе» нужна отдельная цифра на каждую линию учёта терминала
 	// (уголь/металл/чугун), тогда как «Оперативке» достаточно суммы. Ключ карты:

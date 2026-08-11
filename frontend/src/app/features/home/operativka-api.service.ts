@@ -21,8 +21,10 @@ export interface OperativkaRow {
   terminal: string;
   station: string;
   station_code: string;
+  pogr_yesterday: number; // погружено в адрес терминала (без перегрузов)
   prib_yesterday: number;
   vigr_yesterday: number;
+  pogr_today: number;
   prib_today: number;
   vigr_today: number;
   not_unloaded: number;

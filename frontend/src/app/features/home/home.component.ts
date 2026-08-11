@@ -50,11 +50,11 @@ interface StationHalf {
         <app-unplanned-card />
         <div class="duo">
           <app-system-status-card (refreshed)="onSnapshotRebuilt()" />
-          <div class="stack">
-            <app-info-card [openModal]="deepLink()" />
-            <app-operativka-card />
-          </div>
+          <app-info-card [openModal]="deepLink()" />
         </div>
+        <!-- Суточные счётчики терминалов — во всю ширину колонки (решение
+             владельца 11.08.2026): показателям тесно в полширины. -->
+        <app-operativka-card />
       </section>
 
       @for (st of stations(); track st.code) {
@@ -73,10 +73,9 @@ interface StationHalf {
     :host { display: flex; flex-direction: column; gap: var(--space-md); }
     .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); align-items: start; }
     .col { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
-    /* Верх «Оперативки»: слева статус системы, справа стопка «Работа» +
-       «Прибытие/выгрузка» (обе карточки в половину ширины колонки). */
+    /* Верх «Оперативки»: слева статус системы, справа «Работа» (обе в половину
+       ширины колонки); суточные счётчики терминалов — ниже, во всю ширину. */
     .duo { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); align-items: start; }
-    .stack { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
     .st-title { margin: 0; font-size: var(--font-size-card-title); font-weight: 600; text-align: center; }
     .mut { color: var(--color-text-secondary); }
     @media (max-width: 1100px) { .cols { grid-template-columns: 1fr; } }

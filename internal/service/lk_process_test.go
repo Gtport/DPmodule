@@ -403,8 +403,8 @@ func (f *fakeStatus9Repo) DismissedVagons(context.Context) (map[string]struct{},
 	return nil, nil
 }
 
-func (f *fakeHistoryRepo) DailyTerminalCounts(_ context.Context, _, _ domain.LocalTime) (map[string]int, map[string]int, error) {
-	return nil, nil, nil
+func (f *fakeHistoryRepo) DailyTerminalCounts(_ context.Context, _, _ domain.LocalTime) (map[string]int, map[string]int, map[string]int, error) {
+	return nil, nil, nil, nil
 }
 
 func (f *fakeHistoryRepo) DailyCargoUnloaded(_ context.Context, _, _ domain.LocalTime) (map[string]int, error) {

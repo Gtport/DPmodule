@@ -11,9 +11,10 @@ import (
 )
 
 // OperativkaService — карточка «Оперативка» домашней страницы: суточные счётчики
-// по терминалам (реестр ports, не хардкод) — прибыло/выгружено за вчерашние и
-// текущие ЖД-сутки (вехи vagon_history: date_prib_d × naznach, date_vigr_d ×
-// place_vigr) плюс «не выгружено» — вагоны статуса 10 в текущем снимке.
+// по терминалам (реестр ports, не хардкод) — погружено в адрес терминала /
+// прибыло / выгружено за вчерашние и текущие ЖД-сутки (вехи vagon_history:
+// date_nach_d × gruzpol_s, date_prib_d × naznach, date_vigr_d × place_vigr)
+// плюс «не выгружено» — вагоны статуса 10 в текущем снимке.
 type OperativkaService struct {
 	repo      port.HistoryRepository
 	actual    *ActualCache
@@ -34,8 +35,10 @@ type OperativkaRowDTO struct {
 	Terminal      string `json:"terminal"`
 	Station       string `json:"station"`
 	StationCode   string `json:"station_code"`
+	PogrYesterday int    `json:"pogr_yesterday"` // погружено в адрес терминала (без перегрузов)
 	PribYesterday int    `json:"prib_yesterday"`
 	VigrYesterday int    `json:"vigr_yesterday"`
+	PogrToday     int    `json:"pogr_today"`
 	PribToday     int    `json:"prib_today"`
 	VigrToday     int    `json:"vigr_today"`
 	NotUnloaded   int    `json:"not_unloaded"` // сейчас в статусе 10 (прибыл, не выгружен)
@@ -68,7 +71,7 @@ func (s *OperativkaService) Snapshot(ctx context.Context) (OperativkaDTO, error)
 	yesterday := today.AddDate(0, 0, -1)
 	todayS, yestS := today.Format("2006-01-02"), yesterday.Format("2006-01-02")
 
-	prib, vigr, err := s.repo.DailyTerminalCounts(ctx,
+	pogr, prib, vigr, err := s.repo.DailyTerminalCounts(ctx,
 		domain.LocalTime(yesterday), domain.LocalTime(today))
 	if err != nil {
 		return OperativkaDTO{}, err
@@ -95,8 +98,10 @@ func (s *OperativkaService) Snapshot(ctx context.Context) (OperativkaDTO, error)
 	for _, t := range targets {
 		rows = append(rows, OperativkaRowDTO{
 			Terminal: t.Name, Station: t.Station, StationCode: t.StationCode,
+			PogrYesterday: pogr[yestS+"|"+t.Name],
 			PribYesterday: prib[yestS+"|"+t.Name],
 			VigrYesterday: vigr[yestS+"|"+t.Name],
+			PogrToday:     pogr[todayS+"|"+t.Name],
 			PribToday:     prib[todayS+"|"+t.Name],
 			VigrToday:     vigr[todayS+"|"+t.Name],
 			NotUnloaded:   notUnloaded[t.Name],
