@@ -17,6 +17,10 @@ type BrosStats struct {
 	Updated int // обновлённых активных (состав/план/индекс)
 	Stopped int // поднятых (status_br=false)
 	Active  int // активных после пересбора
+
+	// Events — события new/stop для уведомлений (см. NotifyBrosEvents):
+	// applyBros остаётся чистым, отправку делает вызывающий ProcessRecords.
+	Events []BrosEvent
 }
 
 // applyBros — reconcile снимка брошенных (перенос gtport dislocation_status5, но
@@ -82,12 +86,14 @@ func applyBros(ctx context.Context, kept []domain.Dislocation, actual *ActualCac
 				return BrosStats{}, fmt.Errorf("reopen bros %s: %w", key, err)
 			}
 			st.New++ // снова активный бросок
+			st.Events = append(st.Events, brosNewEvent(g))
 			continue
 		}
 		if err := repo.Insert(ctx, buildBrosRecord(g, now)); err != nil {
 			return BrosStats{}, fmt.Errorf("insert bros %s: %w", key, err)
 		}
 		st.New++
+		st.Events = append(st.Events, brosNewEvent(g))
 	}
 
 	// Подъёмы: активные в БД, которых больше нет среди статуса 5.
@@ -107,9 +113,42 @@ func applyBros(ctx context.Context, kept []domain.Dislocation, actual *ActualCac
 			return BrosStats{}, fmt.Errorf("stop bros %s: %w", cur.ID, err)
 		}
 		st.Stopped++
+		st.Events = append(st.Events, brosStopEvent(cur, sample, now))
 	}
 
 	return st, nil
+}
+
+// brosNewEvent — событие нового/повторного броска для уведомлений.
+func brosNewEvent(g *brosGroup) BrosEvent {
+	return BrosEvent{
+		Kind: brosEventNew, ID: g.Key, Index: g.Index,
+		Station: g.StationOper, Doroga: g.DorogaOper,
+		VagonCount: g.VagonCount, Sostav: brosSostav(g),
+		DateBr: dateOnly(g.DateKon),
+	}
+}
+
+// brosStopEvent — событие подъёма: реквизиты — из записи bros (как gtport
+// notifyStopBrosToOperators), дата подъёма — из нового состояния вагона либо
+// момент фиксации (ровно то, что ушло в date_pod_fact).
+func brosStopEvent(cur domain.Bros, sample *domain.Dislocation, now domain.LocalTime) BrosEvent {
+	datePod := dateOnly(&now)
+	index := cur.Index1
+	if sample != nil {
+		datePod = dateOnly(sample.DateKon)
+		if sample.Index != "" {
+			index = sample.Index
+		}
+	}
+	if index == "" {
+		index = cur.Index0
+	}
+	return BrosEvent{
+		Kind: brosEventStop, ID: cur.ID, Index: index,
+		Station: cur.StationBr, Doroga: cur.DorogaBr,
+		VagonCount: cur.VagonCount, DateBr: cur.DateBr, DatePod: datePod,
+	}
 }
 
 // brosGroup — агрегат вагонов одного брошенного поезда (ключ id_status5).

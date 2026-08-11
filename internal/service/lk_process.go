@@ -31,8 +31,9 @@ type LKProcessor struct {
 	delays    port.VagonDelayRepository    // память о задержках вагонов (nil — выключено/тесты)
 	vagonOps  *VagonOpService              // очередь запросов 601 (nil — выключено/тесты)
 	enricher  *Enricher
-	journal   *Journal   // единый журнал событий (может быть nil — cmd-утилиты)
-	mu        sync.Mutex // сериализует пересборку снимка (ручной ЛК vs cron-АСУ идут через один proc)
+	journal   *Journal             // единый журнал событий (может быть nil — cmd-утилиты)
+	notif     *NotificationService // уведомления конвейера (nil — выключено/тесты)
+	mu        sync.Mutex           // сериализует пересборку снимка (ручной ЛК vs cron-АСУ идут через один proc)
 }
 
 func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *ActualCache, status9 *Status9Cache, status6 *Status6Cache, history port.HistoryRepository) *LKProcessor {
@@ -314,6 +315,10 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		ExcludeOper: exclOper,
 	})
 
+	// Уведомление dicts-ролям о станциях вне справочника (дедуп по коду —
+	// каждый забор их приносит заново, а сигналить надо один раз).
+	p.notif.NotifyStationsMissing(ctx, enr.StationsNotFound)
+
 	// Контроль потери данных относительно текущего снимка (размер — из RAM ActualCache,
 	// в БД за этим не ходим).
 	prevSize := 0
@@ -337,6 +342,12 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	// Stage 2 (S2-3, §3.17): обогащение новых вагонов — груз из marka + перестановка
 	// назначения. ПОСЛЕ carry-over (новые/пустые) и ДО донорства status6.
 	mk := applyMarkaEnrichment(all, p.intake.dir)
+
+	// Уведомление dicts-ролям о дырах словаря marka (те же ключ и фильтры, что
+	// экран «Без атрибуции» — уведомление зовёт к нему, не дублируя).
+	if p.notif != nil {
+		p.notif.NotifyMarkaMissing(ctx, collectMarkaMissing(all, p.intake.dir))
+	}
 
 	// Stage 2 (§3.16): доноры перегруза — при переходе на статус 6 (после carry-over,
 	// у записи полные данные груза).
@@ -374,6 +385,13 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		}
 	}
 
+	// Уведомление операторам о прибывших поездах: переходы <10 → 10 против
+	// прежнего снимка, группировка по индексу + единому штампу прибытия
+	// (sticky-10 повторно не сигналит). ДО подмены снимка.
+	if p.notif != nil && p.actual != nil {
+		p.notif.NotifyArrivals(ctx, collectArrivalGroups(all, p.actual, cutoff))
+	}
+
 	// Выбытие без выгрузки: статус-10 исчез из батча (перехода 10→12 не застали) —
 	// авто-веха выгрузки в историю моментом выбытия. ДО подмены снимка.
 	var unloadLeft int
@@ -391,6 +409,9 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		if brosStats, err = applyBros(ctx, all, p.actual, p.bros); err != nil {
 			return LKProcessResult{}, fmt.Errorf("bros: %w", err)
 		}
+		// Уведомления операторам «Брошен поезд!» / «Поезд восстановлен в
+		// движении» — по событиям реконсиляции (дедуп на ключе + дате).
+		p.notif.NotifyBrosEvents(ctx, brosStats.Events)
 	}
 
 	// Автоочистка завершённых бросков старше порога (status.bros_cleanup_days; 0 →
@@ -527,3 +548,8 @@ func (p *LKProcessor) SetBros(repo port.BrosRepository) { p.bros = repo }
 // SetDelays подключает память о задержках вагонов (reconcile эпизодов статусов
 // 4/5 после Stage 4); nil — подсистема выключена (cmd-утилиты, тесты).
 func (p *LKProcessor) SetDelays(repo port.VagonDelayRepository) { p.delays = repo }
+
+// SetNotifications подключает уведомления конвейера (брошенные/прибытия/дыры
+// справочников); nil — подсистема выключена (cmd-утилиты, тесты). Эмиттеры
+// best-effort: сбой записи уведомления пересборку снимка не валит.
+func (p *LKProcessor) SetNotifications(svc *NotificationService) { p.notif = svc }

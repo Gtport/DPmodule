@@ -301,6 +301,10 @@ func Build(
 			if delayRepo != nil {
 				proc.SetDelays(delayRepo)
 			}
+			// Уведомления конвейера: брошенные/подъёмы/прибытия/дыры справочников.
+			if notifSvc != nil {
+				proc.SetNotifications(notifSvc)
+			}
 			handler.NewLKProcessHandler(proc).RegisterRoutes(api)
 
 			// Робот ЛК обновляет дислокацию сам, сразу за забором: диспетчеру
