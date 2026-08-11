@@ -14,6 +14,7 @@ import { UnmatchedApiService } from './unmatched-api.service';
 import { UnmatchedModalComponent } from './unmatched-modal.component';
 import { OverdueApiService } from './overdue-api.service';
 import { OverdueModalComponent } from './overdue-modal.component';
+import { LongStandApiService, LongStandVagon } from './long-stand-api.service';
 
 /**
  * Карточка «Работа» (бывшая «Информация», решение владельца 10.08.2026) рядом
@@ -63,6 +64,13 @@ import { OverdueModalComponent } from './overdue-modal.component';
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
+      <button class="row" type="button" (click)="openLongStand()"
+              [nz-tooltip]="'Вагоны, стоящие на станции назначения дольше ' + longStandHours() + ' ч с прибытия: и ждущие выгрузки, и уже выгруженные, но не убранные — открыть список'">
+        <span class="lbl">Долгостой</span>
+        <span class="cnt" [class.warn]="longStandCount() > 0">{{ longStandCount() }}</span>
+        <span nz-icon nzType="right" class="go"></span>
+      </button>
+
       <button class="row" type="button" (click)="openCargoWork()"
               nz-tooltip nzTooltipTitle="Грузовая работа: суточный учёт выгрузки и погрузки по терминалам — открыть">
         <span class="lbl">Ввод выгрузки</span>
@@ -91,6 +99,12 @@ import { OverdueModalComponent } from './overdue-modal.component';
     }
     @if (showOverdue()) {
       <app-overdue-modal (closed)="showOverdue.set(false)" />
+    }
+    @if (showLongStand()) {
+      <app-vagon-list-modal [title]="'Долгостой (дольше ' + longStandHours() + ' ч)'"
+                            sinceLabel="Прибыл" stateLabel="Состояние"
+                            hint="Стоят на станции назначения дольше порога, считая с прибытия. «Гружён» — ждёт выгрузки, «выгружен» — не убран с путей."
+                            [rows]="longStandRows()" (reload)="load()" (closed)="showLongStand.set(false)" />
     }
     @if (showDonors()) {
       <app-vagon-list-modal title="Проблемные вагоны" sinceLabel="Донор с"
@@ -122,6 +136,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   private readonly delays = inject(DelaysApiService);
   private readonly unmatched = inject(UnmatchedApiService);
   private readonly overdue = inject(OverdueApiService);
+  private readonly longStand = inject(LongStandApiService);
   private readonly msg = inject(NzMessageService);
 
   readonly donors = signal<Status6Vagon[]>([]);
@@ -131,12 +146,18 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   readonly unmatchedCount = signal(0);
   /** Вагоны в пути с delay > 0 (прибывшие исключены на сервере). */
   readonly overdueCount = signal(0);
+  /** Долгостой: стоят на станции назначения дольше порога (статусы ≥ 10). */
+  readonly longStandVagons = signal<LongStandVagon[]>([]);
+  readonly longStandCount = signal(0);
+  /** Порог с сервера (client_settings), чтобы подписи не разъезжались с настройкой. */
+  readonly longStandHours = signal(48);
   readonly showDonors = signal(false);
   readonly showCargoWork = signal(false);
   readonly showBros = signal(false);
   readonly showDelays = signal(false);
   readonly showUnmatched = signal(false);
   readonly showOverdue = signal(false);
+  readonly showLongStand = signal(false);
 
   /** Deep-link колокольчика (/home?open=…): открыть модалку. Объект, не строка —
    *  повторный переход тем же типом должен открыть модалку снова. */
@@ -165,15 +186,18 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   /** Списки короткие (снятие доноров) — тянем целиком, счётчик = длина. */
   async load(initial = false): Promise<void> {
     try {
-      const [donors, bros, unm, delays, overdue] = await Promise.all([
+      const [donors, bros, unm, delays, overdue, stand] = await Promise.all([
         this.api.getStatus6(), this.bros.getActive(), this.unmatched.getGroups(),
-        this.delays.current(), this.overdue.getGroups(),
+        this.delays.current(), this.overdue.getGroups(), this.longStand.getList(),
       ]);
       this.donors.set(donors ?? []);
       this.brosCount.set(bros?.length ?? 0);
       this.unmatchedCount.set((unm ?? []).reduce((s, g) => s + g.vagon_count, 0));
       this.delaysCount.set(delays?.length ?? 0);
       this.overdueCount.set((overdue ?? []).reduce((s, g) => s + g.vagon_count, 0));
+      this.longStandVagons.set(stand?.vagons ?? []);
+      this.longStandCount.set(stand?.vagons?.length ?? 0);
+      if (stand?.threshold_hours) this.longStandHours.set(stand.threshold_hours);
     } catch (err) {
       if (initial) this.msg.error(apiErrorMessage(err));
     }
@@ -185,6 +209,19 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   openDelays(): void { this.showDelays.set(true); }
   openUnmatched(): void { this.showUnmatched.set(true); }
   openOverdue(): void { this.showOverdue.set(true); }
+  openLongStand(): void { this.showLongStand.set(true); }
+
+  /** Долгостой → общая форма строки таблицы (колонка «Дней» — сутки стоянки). */
+  longStandRows(): VagonListRow[] {
+    return this.longStandVagons().map((r) => ({
+      id: r.id, vagon: r.vagon, index: r.index,
+      station_oper: r.station_oper, doroga_oper: r.doroga_oper, oper_s: r.oper_s,
+      time_op: r.time_op, naznach: r.naznach,
+      station_nach: r.station_nach, gruzotpr: r.gruzotpr,
+      cargo_s: r.cargo_s, ves: r.ves,
+      since: r.since ?? '', days: r.days, state: r.state,
+    }));
+  }
 
   /** Доноры перегруза → общая форма строки таблицы. */
   donorRows(): VagonListRow[] {

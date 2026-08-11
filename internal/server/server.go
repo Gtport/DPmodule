@@ -423,6 +423,12 @@ func Build(
 			// накладной + Excel «для претензии» из vagon_history. Только чтение.
 			handler.NewOverdueHandler(service.NewOverdueService(actualCache, historyRepo)).RegisterRoutes(api)
 
+			// «Долгостой» карточки «Работа»: вагоны на станции назначения дольше
+			// порога с прибытия (dest_stand_hours, дефолт 48 ч), статусы ≥ 10 —
+			// и ждущие выгрузки, и уже выгруженные, но не убранные. Чтение.
+			handler.NewDestStandHandler(
+				service.NewDestStandService(actualCache, cfgCache)).RegisterRoutes(api)
+
 			// «Без атрибуции» карточки «Информация»: гружёные вагоны снимка,
 			// не сматченные с marka, группами по ключу матчинга (чтение — всем);
 			// назначение атрибуции (+опц. запись комбинации в словарь) — гейт

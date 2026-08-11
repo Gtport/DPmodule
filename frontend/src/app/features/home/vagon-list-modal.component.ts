@@ -35,6 +35,9 @@ export interface VagonListRow {
   ves: number | null;
   since: string;
   days: number;
+  /** Состояние вагона («гружён»/«выгружен» у долгостоя). Колонка показывается
+   *  только когда задан вход `stateLabel` — у остальных списков её нет. */
+  state?: string;
 }
 
 /**
@@ -83,6 +86,7 @@ export interface VagonListRow {
             <thead>
               <tr>
                 <th class="c-vag">Вагон</th>
+                @if (stateLabel()) { <th class="c-state">{{ stateLabel() }}</th> }
                 <th class="c-idx">Индекс</th>
                 <th>Станция дислокации</th>
                 <th class="c-op">Операция</th>
@@ -101,6 +105,11 @@ export interface VagonListRow {
                 <tr class="rw" [class.stale]="r.days >= 3" (click)="trailRow.set(r)"
                     (contextmenu)="openMenu($event, r, menu)">
                   <td class="num">{{ r.vagon }}</td>
+                  @if (stateLabel()) {
+                    <td class="c">
+                      <nz-tag class="chip" [nzColor]="r.state === 'гружён' ? 'red' : 'default'">{{ r.state || '—' }}</nz-tag>
+                    </td>
+                  }
                   <td class="num idx" [title]="r.index">{{ r.index || '—' }}</td>
                   <td class="ell" [title]="station(r)">{{ station(r) }}</td>
                   <td class="ell" [title]="r.oper_s">{{ r.oper_s || '—' }}</td>
@@ -116,7 +125,7 @@ export interface VagonListRow {
                   <td class="c days">{{ r.days }}</td>
                 </tr>
               } @empty {
-                <tr><td colspan="12" class="empty">Список пуст</td></tr>
+                <tr><td [attr.colspan]="stateLabel() ? 13 : 12" class="empty">Список пуст</td></tr>
               }
             </tbody>
           </table>
@@ -152,6 +161,7 @@ export interface VagonListRow {
     /* Ширины фиксированные; станция дислокации — единственная резиновая
        колонка, забирает остаток (~210px при ширине модалки 1340). */
     .c-vag { width: 84px; } .c-idx { width: 108px; } .c-op { width: 104px; }
+    .c-state { width: 88px; }
     .c-dt { width: 106px; } .c-term { width: 78px; } .c-nach { width: 136px; }
     .c-otpr { width: 148px; } .c-cargo { width: 112px; }
     .c-ves { width: 52px; } .c-days { width: 48px; }
@@ -174,6 +184,8 @@ export class VagonListModalComponent {
   readonly rows = input.required<VagonListRow[]>();
   /** Подпись колонки давности: «Пропал» / «Донор с». */
   readonly sinceLabel = input('Пропал');
+  /** Подпись колонки состояния («Состояние» у долгостоя); пусто — колонки нет. */
+  readonly stateLabel = input('');
   readonly hint = input('');
   readonly closed = output<void>();
   readonly reload = output<void>();
@@ -212,17 +224,20 @@ export class VagonListModalComponent {
     try {
       const XLSX = await import('xlsx-js-style');
       const wb = XLSX.utils.book_new();
+      const st = this.stateLabel();
       const sh = [
-        ['Вагон', 'Индекс', 'Станция дислокации', 'Операция', 'Время оп.', 'Терминал',
-         'Ст. погрузки', 'Отправитель', 'Груз', 'Вес', this.sinceLabel(), 'Дней'],
+        ['Вагон', ...(st ? [st] : []), 'Индекс', 'Станция дислокации', 'Операция', 'Время оп.',
+         'Терминал', 'Ст. погрузки', 'Отправитель', 'Груз', 'Вес', this.sinceLabel(), 'Дней'],
         ...recs.map((r) => [
-          r.vagon, r.index, this.station(r), r.oper_s, this.fmt(r.time_op), r.naznach,
+          r.vagon, ...(st ? [r.state ?? ''] : []),
+          r.index, this.station(r), r.oper_s, this.fmt(r.time_op), r.naznach,
           r.station_nach, r.gruzotpr, r.cargo_s || 'порожний',
           r.ves ? Math.round(r.ves * 10) / 10 : '', this.fmt(r.since), r.days,
         ]),
       ];
       const ws = XLSX.utils.aoa_to_sheet(sh);
-      ws['!cols'] = [10, 14, 28, 14, 15, 9, 20, 22, 16, 7, 15, 6].map((wch) => ({ wch }));
+      ws['!cols'] = [10, ...(st ? [11] : []), 14, 28, 14, 15, 9, 20, 22, 16, 7, 15, 6]
+        .map((wch) => ({ wch }));
       XLSX.utils.book_append_sheet(wb, ws, 'Вагоны');
       const label = this.title().replace(/\s+/g, '_');
       XLSX.writeFile(wb, `${label}_${todayMsk()}.xlsx`);
