@@ -5,6 +5,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzDropDownModule } from 'ng-zorro-antd/dropdown';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
+import { NzMessageService } from 'ng-zorro-antd/message';
 import { AuthService } from '../../core/auth/auth.service';
 import { AppNotification, NotificationsApiService } from '../../core/notifications/notifications-api.service';
 
@@ -34,9 +35,17 @@ import { AppNotification, NotificationsApiService } from '../../core/notificatio
       <div class="panel">
         <div class="head">
           <span class="ttl">Уведомления</span>
-          @if (canMark && items().length > 0 && unread() > 0) {
-            <button nz-button nzType="link" nzSize="small" (click)="markAll($event)">Прочитать все</button>
-          }
+          <span class="head-actions">
+            @if (canMark && items().length > 0 && unread() > 0) {
+              <button nz-button nzType="link" nzSize="small" (click)="markAll($event)">Прочитать все</button>
+            }
+            @if (items().length > 0) {
+              <button nz-button nzType="text" nzSize="small" (click)="saveAll($event)"
+                      nz-tooltip nzTooltipTitle="Скачать все в TXT">
+                <span nz-icon nzType="download"></span>
+              </button>
+            }
+          </span>
         </div>
         <div class="body">
           @if (loading()) {
@@ -53,6 +62,9 @@ import { AppNotification, NotificationsApiService } from '../../core/notificatio
                   <span class="when">{{ when(n.created_at) }}</span>
                 </span>
                 @if (!n.is_read) { <span class="dot"></span> }
+                <span nz-icon nzType="download" class="save" role="button"
+                      nz-tooltip nzTooltipTitle="Скачать в TXT"
+                      (click)="saveOne($event, n)"></span>
               </button>
             }
           }
@@ -87,12 +99,18 @@ import { AppNotification, NotificationsApiService } from '../../core/notificatio
     .when { color: var(--color-text-muted); font-size: var(--font-size-sm); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary);
            flex: 0 0 auto; margin-top: 6px; }
+    .head-actions { display: inline-flex; align-items: center; gap: var(--space-xs); }
+    .save { flex: 0 0 auto; margin-top: 4px; color: var(--color-icon-default);
+            opacity: 0; transition: opacity .15s ease, color .15s ease; }
+    .item:hover .save { opacity: 1; }
+    .save:hover { color: var(--color-primary); }
   `],
 })
 export class NotificationBellComponent implements OnInit, OnDestroy {
   private readonly api = inject(NotificationsApiService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly msg = inject(NzMessageService);
 
   readonly unread = signal(0);
   readonly items = signal<AppNotification[]>([]);
@@ -179,5 +197,59 @@ export class NotificationBellComponent implements OnInit, OnDestroy {
   when(iso: string): string {
     if (!iso || iso.length < 16) return iso ?? '';
     return `${iso.slice(8, 10)}.${iso.slice(5, 7)} ${iso.slice(11, 16)}`;
+  }
+
+  // ─── выгрузка в TXT (перенос gtport saveNotificationToTxt/saveAllNotificationsToTxt) ───
+
+  /** Скачать одно уведомление (кнопка на строке; не трогает mark-read и переход). */
+  saveOne(ev: Event, n: AppNotification): void {
+    ev.stopPropagation();
+    this.downloadTxt(`уведомление_${n.id}_${Date.now()}.txt`, this.txtFor(n));
+    this.msg.success('Уведомление сохранено в файл');
+  }
+
+  /** Скачать весь показанный список одним файлом со сводкой (как gtport). */
+  saveAll(ev: Event): void {
+    ev.stopPropagation();
+    const list = this.items();
+    if (list.length === 0) {
+      this.msg.info('Нечего сохранять');
+      return;
+    }
+    let content = `СПИСОК УВЕДОМЛЕНИЙ\n`
+      + `Всего: ${list.length}\n`
+      + `Непрочитанных: ${list.filter((n) => !n.is_read).length}\n`
+      + `Дата экспорта: ${new Date().toLocaleString('ru-RU')}\n\n`;
+    list.forEach((n, i) => {
+      content += `=== Уведомление ${i + 1} ===\n${this.txtFor(n)}\n`;
+    });
+    this.downloadTxt(`все_уведомления_${Date.now()}.txt`, content);
+    this.msg.success(`Все уведомления (${list.length}) сохранены в файл`);
+  }
+
+  /** Текстовая карточка уведомления — формат gtport. */
+  private txtFor(n: AppNotification): string {
+    return `Уведомление #${n.id}\n`
+      + `Заголовок: ${n.title}\n`
+      + `Сообщение: ${n.message}\n`
+      + `Тип: ${n.type}\n`
+      + `Дата: ${this.whenFull(n.created_at)}\n`
+      + `Статус: ${n.is_read ? 'Прочитано' : 'Не прочитано'}\n`;
+  }
+
+  /** «10.08.2026 09:15» — полный штамп для файла (МСК naive, без конверсий зон). */
+  private whenFull(iso: string): string {
+    if (!iso || iso.length < 16) return iso ?? '';
+    return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)} ${iso.slice(11, 16)}`;
+  }
+
+  private downloadTxt(filename: string, content: string): void {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }
