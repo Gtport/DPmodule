@@ -151,7 +151,8 @@ func Build(
 	var notifSvc *service.NotificationService
 	if notifRepo != nil && cfg.Notifications.EnabledOrDefault() {
 		notifSvc = service.NewNotificationService(notifRepo,
-			time.Duration(cfg.Notifications.RetentionHours)*time.Hour, log)
+			time.Duration(cfg.Notifications.RetentionHours)*time.Hour,
+			cfg.Notifications.StaleAfter, log)
 		handler.NewNotificationsHandler(notifSvc).RegisterRoutes(api)
 	}
 
@@ -286,6 +287,10 @@ func Build(
 		if dislRepo != nil {
 			// Единый журнал событий (обновления дислокации, загрузки планов).
 			journal := service.NewJournal(journalRepo, log)
+			// Сторож устаревания снимка читает последний doc_ts из журнала.
+			if notifSvc != nil {
+				notifSvc.SetJournal(journal)
+			}
 
 			proc := service.NewLKProcessor(lkIntake, dislRepo, actualCache, status9Cache, status6Cache, historyRepo)
 			proc.SetJournal(journal)
@@ -335,6 +340,10 @@ func Build(
 			}
 			asuIngest = service.NewASUIngest(cfgCache, asuFactory, proc, log)
 			asuIngest.SetJournal(journal)
+			// Отклонённый забор (кроме штатного not_newer) — уведомление админам.
+			if notifSvc != nil {
+				asuIngest.SetNotifications(notifSvc)
+			}
 			handler.NewASUPullHandler(asuIngest).RegisterRoutes(api)
 
 			// История продвижения вагона (запрос 601, тот же провайдер): очередь

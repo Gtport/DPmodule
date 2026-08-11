@@ -38,6 +38,7 @@ type ASUIngest struct {
 	parser  *parser.JSONParser
 	proc    *LKProcessor
 	journal *Journal
+	notif   *NotificationService // уведомление админам об отклонённом заборе (nil — выключено)
 	log     *zap.Logger
 }
 
@@ -47,6 +48,9 @@ func NewASUIngest(cfg *ConfigCache, factory ASUClientFactory, proc *LKProcessor,
 
 // SetJournal подключает журнал событий (nil-safe: без него запись пропускается).
 func (a *ASUIngest) SetJournal(j *Journal) { a.journal = j }
+
+// SetNotifications подключает уведомления об отклонённых заборах (nil-safe).
+func (a *ASUIngest) SetNotifications(svc *NotificationService) { a.notif = svc }
 
 // pulledSource — результат забора одного клиента провайдера.
 type pulledSource struct {
@@ -71,9 +75,11 @@ func (a *ASUIngest) Pull(ctx context.Context, trigger string) (LKProcessResult, 
 	perFile := make(map[string]int, len(sources))
 	pulled := make([]pulledSource, 0, len(sources))
 
-	// reject фиксирует отклонённую попытку в журнале и возвращает ошибку вызывающему.
+	// reject фиксирует отклонённую попытку в журнале, сигналит админам
+	// (кроме штатного not_newer) и возвращает ошибку вызывающему.
 	reject := func(guard string, err error) (LKProcessResult, error) {
 		a.journal.RecordDislRejected(ctx, "asu", trigger, files, guard, err.Error())
+		a.notif.NotifyASURejected(ctx, guard, err.Error())
 		return LKProcessResult{}, err
 	}
 

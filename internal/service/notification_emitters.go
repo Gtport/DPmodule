@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -246,6 +247,45 @@ func (s *NotificationService) NotifyMarkaMissing(ctx context.Context, combos []M
 			DedupKey: fmt.Sprintf("marka_%s_%s_%s", c.Okpo, c.Station, c.CargoGroup),
 		})
 	}
+}
+
+// ───────────────────── системные сбои (аудитория admin) ─────────────────────
+
+// NotifyASURejected — отклонённый забор дислокации АСУ (OPTIMIZATION P1-4:
+// «сбой → оповещение владельцу»). Гард not_newer пропускается: «данные не
+// обновились» — штатный исход частого крона, а не сбой (затяжное молчание
+// провайдера ловит сторож устаревания). Дедуп «гард+дата»: крон 10-минутный,
+// без дедупа зальёт колокольчик.
+func (s *NotificationService) NotifyASURejected(ctx context.Context, guard, reason string) {
+	if s == nil || guard == "not_newer" {
+		return
+	}
+	s.Notify(ctx, domain.Notification{
+		Type: domain.NotifyTypeError, Audience: domain.AudienceAdmin,
+		Title: "Забор АСУ отклонён",
+		Message: fmt.Sprintf("Автозагрузка дислокации из АСУ отклонена (гард %s): %s. "+
+			"Снимок не обновлён — подробности в журнале событий.", guard, reason),
+		ActionParams: notifParams(map[string]any{"guard": guard}),
+		DedupKey:     fmt.Sprintf("asu_reject_%s_%s", guard, clock.Now().Time().Format("2006-01-02")),
+	})
+}
+
+// dislStaleNotification — уведомление сторожа устаревания снимка (чистая
+// функция для тестов): последний doc_ts старше порога → error админам.
+// Дедуп-ключ несёт штамп ЗАСТРЯВШЕГО обновления — одно уведомление на эпизод.
+func dislStaleNotification(last *domain.LocalTime, now domain.LocalTime, stale time.Duration) (domain.Notification, bool) {
+	age := now.Time().Sub(last.Time())
+	if age < stale {
+		return domain.Notification{}, false
+	}
+	return domain.Notification{
+		Type: domain.NotifyTypeError, Audience: domain.AudienceAdmin,
+		Title: "Дислокация не обновляется",
+		Message: fmt.Sprintf("Снимок дислокации не обновлялся %d ч (последнее обновление: %s). "+
+			"Проверьте забор АСУ/ЛК и журнал событий.", int(age.Hours()), last.Time().Format("02.01.06 15:04")),
+		ActionParams: notifParams(map[string]any{"last_update": last.String(), "age_hours": int(age.Hours())}),
+		DedupKey:     "disl_stale_" + notifMinute(last),
+	}, true
 }
 
 // brosDurationDays — длительность бросания в сутках (как gtport

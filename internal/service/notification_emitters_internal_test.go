@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
 	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -212,6 +213,75 @@ func TestCollectMarkaMissing(t *testing.T) {
 	assert.Equal(t, "УГОЛЬ", combos[0].CargoGroup)
 	assert.Equal(t, 2, combos[0].VagonCount)
 	assert.Equal(t, "778", combos[1].Station)
+}
+
+// ───────────────────────── системные сбои ─────────────────────────
+
+// fakeNotifRepo — in-memory NotificationRepository, копит вставки.
+type fakeNotifRepo struct {
+	inserts []domain.Notification
+	keys    map[string]bool
+}
+
+func (f *fakeNotifRepo) Insert(_ context.Context, n domain.Notification) (bool, error) {
+	if f.keys == nil {
+		f.keys = map[string]bool{}
+	}
+	if n.DedupKey != "" && f.keys[n.DedupKey] {
+		return false, nil
+	}
+	f.keys[n.DedupKey] = true
+	f.inserts = append(f.inserts, n)
+	return true, nil
+}
+func (f *fakeNotifRepo) ListForUser(context.Context, string, []string, bool, int) ([]domain.UserNotification, error) {
+	return nil, nil
+}
+func (f *fakeNotifRepo) UnreadCount(context.Context, string, []string) (int, error) { return 0, nil }
+func (f *fakeNotifRepo) MarkRead(context.Context, string, []string, int64) error    { return nil }
+func (f *fakeNotifRepo) MarkAllRead(context.Context, string, []string) (int, error) { return 0, nil }
+func (f *fakeNotifRepo) PurgeOlderThan(context.Context, domain.LocalTime) (int, error) {
+	return 0, nil
+}
+
+// Отклонённый забор АСУ сигналит админам; штатный not_newer — нет; повтор того
+// же гарда в тот же день гасится дедупом.
+func TestNotifyASURejected(t *testing.T) {
+	repo := &fakeNotifRepo{}
+	svc := NewNotificationService(repo, 72*time.Hour, 0, zap.NewNop())
+
+	svc.NotifyASURejected(context.Background(), "fetch", "connection refused")
+	svc.NotifyASURejected(context.Background(), "fetch", "connection refused (повтор)")
+	svc.NotifyASURejected(context.Background(), "not_newer", "данные не обновились")
+
+	require.Len(t, repo.inserts, 1)
+	n := repo.inserts[0]
+	assert.Equal(t, domain.NotifyTypeError, n.Type)
+	assert.Equal(t, domain.AudienceAdmin, n.Audience)
+	assert.Contains(t, n.Message, "fetch")
+}
+
+// Сторож устаревания: моложе порога — тишина; старше — error админам с
+// дедупом по штампу застрявшего обновления (один сигнал на эпизод).
+func TestDislStaleNotification(t *testing.T) {
+	last := domain.NewLocalTime(time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC))
+
+	_, stale := dislStaleNotification(last,
+		domain.LocalTime(time.Date(2026, 8, 10, 10, 30, 0, 0, time.UTC)), 2*time.Hour)
+	assert.False(t, stale, "1.5 ч < порога 2 ч — тишина")
+
+	n, stale := dislStaleNotification(last,
+		domain.LocalTime(time.Date(2026, 8, 10, 14, 0, 0, 0, time.UTC)), 2*time.Hour)
+	require.True(t, stale)
+	assert.Equal(t, domain.NotifyTypeError, n.Type)
+	assert.Equal(t, domain.AudienceAdmin, n.Audience)
+	assert.Contains(t, n.Message, "5 ч")
+	assert.Equal(t, "disl_stale_2026-08-10T09:00", n.DedupKey)
+
+	// Час спустя снимок всё ещё стоит — тот же dedup-ключ, второго сигнала нет.
+	n2, _ := dislStaleNotification(last,
+		domain.LocalTime(time.Date(2026, 8, 10, 15, 0, 0, 0, time.UTC)), 2*time.Hour)
+	assert.Equal(t, n.DedupKey, n2.DedupKey)
 }
 
 // ───────────────────────── помощники форматирования ─────────────────────────

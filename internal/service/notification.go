@@ -23,12 +23,18 @@ import (
 type NotificationService struct {
 	repo      port.NotificationRepository
 	retention time.Duration // срок хранения (notifications.retention_hours)
+	stale     time.Duration // порог сторожа устаревания снимка (notifications.stale_after; ≤0 — выключен)
+	journal   *Journal      // для сторожа устаревания (nil — сторож молчит)
 	log       *zap.Logger
 }
 
-func NewNotificationService(repo port.NotificationRepository, retention time.Duration, log *zap.Logger) *NotificationService {
-	return &NotificationService{repo: repo, retention: retention, log: log}
+func NewNotificationService(repo port.NotificationRepository, retention, staleAfter time.Duration, log *zap.Logger) *NotificationService {
+	return &NotificationService{repo: repo, retention: retention, stale: staleAfter, log: log}
 }
+
+// SetJournal подключает журнал событий для сторожа устаревания снимка
+// (nil-safe: без журнала сторож молчит).
+func (s *NotificationService) SetJournal(j *Journal) { s.journal = j }
 
 // AudiencesFor — аудитории уведомлений, видимые пользователю с такими claims.
 // Соответствие наборам доступа — единственное место этой привязки: oper →
@@ -89,7 +95,8 @@ func (s *NotificationService) MarkAllRead(ctx context.Context, c *auth.Claims) (
 
 // Cleanup — крон-обслуживание (notifications-cleanup): удаление уведомлений
 // старше retention (прочитанных и нет — решение владельца, 72 ч; dedup_key
-// освобождается, живущая проблема справочника напомнит о себе снова).
+// освобождается, живущая проблема справочника напомнит о себе снова) + сторож
+// устаревания снимка дислокации.
 func (s *NotificationService) Cleanup(ctx context.Context) error {
 	cutoff := domain.LocalTime(clock.Now().Time().Add(-s.retention))
 	n, err := s.repo.PurgeOlderThan(ctx, cutoff)
@@ -99,7 +106,26 @@ func (s *NotificationService) Cleanup(ctx context.Context) error {
 	if n > 0 {
 		s.log.Info("notifications cleanup", zap.Int("purged", n))
 	}
+	s.checkDislStale(ctx)
 	return nil
+}
+
+// checkDislStale — сторож «АСУ молча отдаёт старое»: возраст последнего
+// обновления дислокации (doc_ts журнала) против порога stale_after. Ловит
+// случай, который гарды забора не видят: заборы формально успешны, а срез не
+// движется. Дедуп — по штампу застрявшего обновления: одно уведомление на
+// эпизод, а не каждый тик крона.
+func (s *NotificationService) checkDislStale(ctx context.Context) {
+	if s.journal == nil || s.stale <= 0 {
+		return
+	}
+	last, ok := s.journal.LastDislDocTS(ctx)
+	if !ok || last == nil || last.IsZero() {
+		return // обновлений ещё не было (свежий стенд) — не сигналим
+	}
+	if n, stale := dislStaleNotification(last, clock.Now(), s.stale); stale {
+		s.Notify(ctx, n)
+	}
 }
 
 // username — имя пользователя из claims; nil (Keycloak выключен) → пусто.
