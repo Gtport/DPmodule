@@ -37,7 +37,25 @@ type Config struct {
 	// пункт меню (флаг уезжает через GET /settings/ui). Отсутствие блока =
 	// включено, поэтому конфиги существующих стендов не трогаем.
 	MapView MapView `yaml:"map"`
+
+	// Notifications — внутренние уведомления (колокольчик, перенос gtport).
+	// Подсистема без внешних вызовов, поэтому включена по умолчанию на всех
+	// стендах (в WSL события просто не рождаются без работающего ingest'а).
+	// Выключение прячет ручки и колокольчик фронта (через GET /settings/ui).
+	Notifications Notifications `yaml:"notifications"`
 }
+
+// Notifications — настройки внутренних уведомлений; указатель Enabled отличает
+// «не задано» (= вкл) от явного enabled: false.
+type Notifications struct {
+	Enabled         *bool         `yaml:"enabled"`
+	RetentionHours  int           `yaml:"retention_hours"`  // срок хранения; дефолт 72 (решение владельца)
+	CleanupInterval time.Duration `yaml:"cleanup_interval"` // тик крона очистки/сторожей; дефолт 1h
+	StaleAfter      time.Duration `yaml:"stale_after"`      // порог сторожа устаревания снимка; дефолт 2h, отрицательное = выключен
+}
+
+// EnabledOrDefault — уведомления включены, пока их явно не выключили.
+func (n Notifications) EnabledOrDefault() bool { return n.Enabled == nil || *n.Enabled }
 
 // MapView — вкл/выкл экрана «Карта»; указатель отличает «не задано» (= вкл)
 // от явного enabled: false.
@@ -441,6 +459,15 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Bros.JournalCron == "" {
 		cfg.Bros.JournalCron = "01:00"
+	}
+	if cfg.Notifications.RetentionHours == 0 {
+		cfg.Notifications.RetentionHours = 72
+	}
+	if cfg.Notifications.CleanupInterval == 0 {
+		cfg.Notifications.CleanupInterval = time.Hour
+	}
+	if cfg.Notifications.StaleAfter == 0 {
+		cfg.Notifications.StaleAfter = 2 * time.Hour
 	}
 	// Тайлы — вспомогательное чтение картинок: пул скромнее основного.
 	if cfg.Tiles.Port == 0 {

@@ -12,12 +12,13 @@ import (
 // (client_settings.extra.ui через ConfigCache) + флаги функций из файла
 // конфига (map.enabled), которые фронт читает один раз на старте.
 type settingsHandler struct {
-	cfg        *service.ConfigCache
-	mapEnabled bool
+	cfg          *service.ConfigCache
+	mapEnabled   bool
+	notifEnabled bool
 }
 
-func NewSettingsHandler(cfg *service.ConfigCache, mapEnabled bool) *settingsHandler {
-	return &settingsHandler{cfg: cfg, mapEnabled: mapEnabled}
+func NewSettingsHandler(cfg *service.ConfigCache, mapEnabled, notifEnabled bool) *settingsHandler {
+	return &settingsHandler{cfg: cfg, mapEnabled: mapEnabled, notifEnabled: notifEnabled}
 }
 
 func (h *settingsHandler) RegisterRoutes(g *gin.RouterGroup) {
@@ -31,6 +32,9 @@ type uiSettingsDTO struct {
 	TimeBase string `json:"time_base"`
 	// Экран «Карта» включён конфигом (map.enabled) — false прячет пункт меню.
 	MapEnabled bool `json:"map_enabled"`
+	// Уведомления (колокольчик) включены (notifications.enabled + есть БД) —
+	// false прячет колокольчик в шапке.
+	NotificationsEnabled bool `json:"notifications_enabled"`
 }
 
 // ui godoc
@@ -41,7 +45,8 @@ type uiSettingsDTO struct {
 // @Router   /api/v1/settings/ui [get]
 func (h *settingsHandler) ui(c *gin.Context) {
 	c.JSON(http.StatusOK, uiSettingsDTO{
-		TimeBase:   h.cfg.Settings().UI.TimeBaseOrDefault(),
-		MapEnabled: h.mapEnabled,
+		TimeBase:             h.cfg.Settings().UI.TimeBaseOrDefault(),
+		MapEnabled:           h.mapEnabled,
+		NotificationsEnabled: h.notifEnabled,
 	})
 }

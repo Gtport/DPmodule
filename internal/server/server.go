@@ -58,10 +58,11 @@ func Build(
 	nmtpRepo port.NmtpRepository,
 	gtSnapRepo port.GtSnapshotRepository,
 	tilesRepo port.TileRepository,
+	notifRepo port.NotificationRepository,
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
-) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.VagonOpService, *service.BrosJournalService) {
+) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.VagonOpService, *service.BrosJournalService, *service.NotificationService) {
 	// asuIngest и refSvc отдаём наружу: их фоновые крон-воркеры живут в main
 	// (жизненный цикл процесса), а ручки остаются здесь. asuIngest = nil, если нет
 	// БД/справочников (тогда воркер не запускается).
@@ -142,6 +143,17 @@ func Build(
 		api.Use(jwtMW.RequireForWrites(auth.AccessWrite))
 	}
 	handler.NewMeHandler().RegisterRoutes(api)
+
+	// Внутренние уведомления (колокольчик, перенос gtport): создаёт конвейер
+	// дислокации (эмиттеры цепляются ниже, proc.SetNotifications), читает фронт.
+	// Выключено конфигом или нет БД → сервис nil, роутов нет, фронт прячет
+	// колокольчик по флагу notifications_enabled из /settings/ui.
+	var notifSvc *service.NotificationService
+	if notifRepo != nil && cfg.Notifications.EnabledOrDefault() {
+		notifSvc = service.NewNotificationService(notifRepo,
+			time.Duration(cfg.Notifications.RetentionHours)*time.Hour, log)
+		handler.NewNotificationsHandler(notifSvc).RegisterRoutes(api)
+	}
 
 	// Админ-редактор справочников (реестр list_tables) — admin и senior-operator,
 	// включая чтение (это служебный редактор, не рабочий экран). Senior видит и
@@ -238,8 +250,9 @@ func Build(
 		handler.NewLKUploadHandler(lkIntake).RegisterRoutes(api)
 
 		// Клиентские настройки интерфейса (шкала ввода времени и т.п.)
-		// + флаг «карта включена» — по нему фронт прячет пункт меню «Карты».
-		handler.NewSettingsHandler(cfgCache, cfg.MapView.EnabledOrDefault()).RegisterRoutes(api)
+		// + флаг «карта включена» — по нему фронт прячет пункт меню «Карты»,
+		// + флаг «уведомления включены» — по нему фронт прячет колокольчик.
+		handler.NewSettingsHandler(cfgCache, cfg.MapView.EnabledOrDefault(), notifSvc != nil).RegisterRoutes(api)
 
 		// Робот ЛК: сам ходит в личный кабинет РЖД вместо ручной выгрузки
 		// диспетчером, кладёт файл в тот же приём и следом обновляет дислокацию.
@@ -447,7 +460,7 @@ func Build(
 		Handler:      router,
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
-	}, asuIngest, refSvc, vagonOps, brosJournal
+	}, asuIngest, refSvc, vagonOps, brosJournal, notifSvc
 }
 
 // lkFetcher — переходник адаптер → сервис: таблицу кабинета сервис знает своим

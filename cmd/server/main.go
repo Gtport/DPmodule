@@ -126,6 +126,7 @@ func run() error {
 		reportPresetRepo port.ReportPresetRepository
 		nmtpRepo         port.NmtpRepository
 		gtSnapRepo       port.GtSnapshotRepository
+		notifRepo        port.NotificationRepository
 		status9Cache     *service.Status9Cache
 		status6Cache     *service.Status6Cache
 	)
@@ -150,6 +151,7 @@ func run() error {
 		reportPresetRepo = gormrepo.NewReportPresetRepository(db)
 		nmtpRepo = gormrepo.NewNmtpRepository(db)
 		gtSnapRepo = gormrepo.NewGtSnapshotRepository(db)
+		notifRepo = gormrepo.NewNotificationRepository(db)
 		dirCache = service.NewDirectoryCache(gormrepo.NewDirectoryRepository(db))
 		if err := dirCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("directory cache: %w", err)
@@ -239,7 +241,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps, brosJournal := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, tilesRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, vagonOps, brosJournal, notifSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, tilesRepo, notifRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
@@ -299,6 +301,13 @@ func run() error {
 					return err
 				}))
 		}
+	}
+
+	// Обслуживание уведомлений: purge старше retention (72 ч) + сторожа.
+	// Тик и при старте — чистка не должна ждать час после каждого деплоя.
+	if notifSvc != nil {
+		workers = append(workers, worker.NewCronWorker("notifications-cleanup",
+			cfg.Notifications.CleanupInterval, log, notifSvc.Cleanup).WithRunAtStart())
 	}
 
 	if len(workers) > 0 {
