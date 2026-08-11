@@ -24,6 +24,7 @@ export interface HistoryFilter {
   naznach?: string[];
   place_vigr?: string[];
   not_unloaded?: boolean;
+  only_overdue?: boolean; // просрочка доставки: delay > 0 (зафиксирована при прибытии)
   vagons?: string[];
   invoices?: string[];
   station_nach?: string[];

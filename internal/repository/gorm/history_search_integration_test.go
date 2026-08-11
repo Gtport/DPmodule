@@ -40,15 +40,17 @@ func TestHistoryRepository_Search(t *testing.T) {
 		lt := domain.LocalTime(time.Date(2032, 3, d, 0, 0, 0, 0, time.UTC))
 		return &lt
 	}
+	dint := func(v int) *int { return &v }
 	repo := gormrepo.NewHistoryRepository(db)
 	ctx := context.Background()
 
 	// Сцена: 5 рейсов одной тестовой станции погрузки.
 	rows := []domain.VagonHistory{
-		// 0: выгружен на АЭ, погрузка 01.03, прибытие 05.03, выгрузка 06.03.
+		// 0: выгружен на АЭ, погрузка 01.03, прибытие 05.03, выгрузка 06.03,
+		// просрочка доставки 3 суток.
 		{ID: "t-hs-0", Vagon: vagBase + "0", StationNach: station, GruzpolS: "АЭ",
 			Naznach: "АЭ", PlaceVigr: "АЭ", Invoice: "ЭЛ100001",
-			DateNachD: day(1), DatePribD: day(5), DateVigrD: day(6)},
+			DateNachD: day(1), DatePribD: day(5), DateVigrD: day(6), Delay: dint(3)},
 		// 1: не выгружен — place_vigr пустая строка; погрузка 02.03.
 		{ID: "t-hs-1", Vagon: vagBase + "1", StationNach: station, GruzpolS: "АЭ",
 			Naznach: "ГУТ-2", PlaceVigr: "", Invoice: "ЭЛ100002",
@@ -56,10 +58,11 @@ func TestHistoryRepository_Search(t *testing.T) {
 		// 2: не выгружен — place_vigr не заполнялся (в базе DEFAULT ''); погрузка 03.03.
 		{ID: "t-hs-2", Vagon: vagBase + "2", StationNach: station, GruzpolS: "ГУТ-2",
 			Naznach: "ГУТ-2", Invoice: "ЭЛ100003", DateNachD: day(3)},
-		// 3: та же дата погрузки, что у 2 (стабильность сортировки), выгружен на ГУТ-2.
+		// 3: та же дата погрузки, что у 2 (стабильность сортировки), выгружен
+		// на ГУТ-2, прибыл В СРОК (delay 0 — в «просрочку» не попадает).
 		{ID: "t-hs-3", Vagon: vagBase + "3", StationNach: station, GruzpolS: "ГУТ-2",
 			Naznach: "ГУТ-2", PlaceVigr: "ГУТ-2", Invoice: "ЭЛ100004",
-			DateNachD: day(3), DatePribD: day(7), DateVigrD: day(8)},
+			DateNachD: day(3), DatePribD: day(7), DateVigrD: day(8), Delay: dint(0)},
 		// 4: дата погрузки NULL — при сортировке по date_nach_d всегда внизу.
 		{ID: "t-hs-4", Vagon: vagBase + "4", StationNach: station, GruzpolS: "УТ-1",
 			Naznach: "УТ-1", PlaceVigr: "УТ-1", Invoice: "ЭЛ100005"},
@@ -160,6 +163,16 @@ func TestHistoryRepository_Search(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Equal(t, 1, n)
+	})
+
+	t.Run("только просроченные: delay > 0, NULL и 0 отсекаются", func(t *testing.T) {
+		f := mine
+		f.OnlyOverdue = true
+		got, total, err := repo.SearchRows(ctx, f, "vagon", false, 100, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 1, total, "delay NULL (без прибытия) и delay 0 (в срок) не попадают")
+		require.Len(t, got, 1)
+		assert.Equal(t, "t-hs-0", got[0].ID)
 	})
 
 	t.Run("словарь станций погрузки содержит тестовую", func(t *testing.T) {

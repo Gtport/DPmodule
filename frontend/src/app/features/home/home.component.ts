@@ -92,8 +92,8 @@ export class HomeComponent implements OnInit {
   readonly loading = signal(false);
   readonly terminals = signal<TerminalTarget[]>([]);
 
-  /** Deep-link колокольчика: /home?open=bros|unmatched открывает модалку
-   *  «Информации». Подписка (не snapshot): клик по уведомлению, когда мы УЖЕ
+  /** Deep-link колокольчика: /home?open=bros|unmatched|overdue открывает
+   *  модалку «Работы». Подписка (не snapshot): клик по уведомлению, когда мы УЖЕ
    *  на главной, компонент не пересоздаёт. Значение — новый объект на каждый
    *  переход, иначе повторный клик по тому же типу не сработал бы (сигналы
    *  схлопывают равные значения). Параметр стирается из адреса, чтобы

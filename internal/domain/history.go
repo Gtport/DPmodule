@@ -139,6 +139,7 @@ type HistorySearchFilter struct {
 	Vagons        []string
 	Invoices      []string
 	StationNach   []string
+	OnlyOverdue   bool // delay > 0: факт просрочки доставки, зафиксированный при прибытии
 }
 
 // HistoryAttribution — бизнес-атрибуция для дозаполнения строки истории рейса

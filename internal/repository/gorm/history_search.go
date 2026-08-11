@@ -61,6 +61,11 @@ func (r *HistoryRepository) historySearchWhere(ctx context.Context, f domain.His
 	if len(f.StationNach) > 0 {
 		q = q.Where("station_nach IN ?", f.StationNach)
 	}
+	if f.OnlyOverdue {
+		// Просрочка доставки: delay пишется при вехе прибытия (в срок → 0,
+		// рейс без прибытия/норматива → NULL) — оба отсекаются сами.
+		q = q.Where("delay > 0")
+	}
 	return q
 }
 

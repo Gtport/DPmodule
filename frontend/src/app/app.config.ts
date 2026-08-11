@@ -33,6 +33,7 @@ import {
   CaretUpOutline, CaretDownOutline, // «История вагонов»: направление сортировки колонки
   BgColorsOutline, // «Прогноз прибытия/выгрузки»: скрыть окраску клиентов
   BellOutline, CloseCircleOutline, ToolOutline, // колокольчик уведомлений: сам колокольчик + типы error/service
+  FileExcelOutline, // «Просрочка доставки»: отчёт для претензии
   // Сплошные (fill) — как в GTport; сайдбар диспетчера использует именно их.
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill,
   SettingFill, // сайдбар: «Админ»
@@ -66,7 +67,7 @@ const icons = [
   SendOutline, PictureOutline, MessageOutline,
   SearchOutline, FileSearchOutline, FilterOutline, HistoryOutline, CameraOutline,
   ClearOutline, UpOutline, WarningOutline, CheckCircleOutline, CaretUpOutline, CaretDownOutline,
-  BgColorsOutline, BellOutline, CloseCircleOutline, ToolOutline,
+  BgColorsOutline, BellOutline, CloseCircleOutline, ToolOutline, FileExcelOutline,
   HomeFill, EnvironmentFill, EditFill, ClockCircleFill, ToolFill, SettingFill,
   ...CUSTOM_ICONS,
 ];

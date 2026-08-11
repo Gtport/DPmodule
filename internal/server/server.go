@@ -418,6 +418,11 @@ func Build(
 					actualCache, dirCache, nmtpRepo, brosRepo)).RegisterRoutes(api)
 			}
 
+			// «Просрочка доставки» карточки «Работа»: вагоны снимка с истекшим
+			// нормативным сроком (delay > 0, кроме прибывших 10/12) группами по
+			// накладной + Excel «для претензии» из vagon_history. Только чтение.
+			handler.NewOverdueHandler(service.NewOverdueService(actualCache, historyRepo)).RegisterRoutes(api)
+
 			// «Без атрибуции» карточки «Информация»: гружёные вагоны снимка,
 			// не сматченные с marka, группами по ключу матчинга (чтение — всем);
 			// назначение атрибуции (+опц. запись комбинации в словарь) — гейт

@@ -69,6 +69,7 @@ type HistorySearchFilterDTO struct {
 	Vagons        []string `json:"vagons"`
 	Invoices      []string `json:"invoices"`
 	StationNach   []string `json:"station_nach"`
+	OnlyOverdue   bool     `json:"only_overdue"`
 }
 
 type HistorySortDTO struct {
@@ -261,6 +262,7 @@ func buildHistoryFilter(dto HistorySearchFilterDTO) (domain.HistorySearchFilter,
 	if f.NotUnloaded && len(f.PlaceVigr) > 0 {
 		return f, fmt.Errorf("%w: «не выгруж.» несовместим со списком мест выгрузки", ErrHistorySearchInvalid)
 	}
+	f.OnlyOverdue = dto.OnlyOverdue
 	return f, nil
 }
 

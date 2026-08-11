@@ -52,6 +52,12 @@ func TestBuildHistoryFilter(t *testing.T) {
 		})
 		require.ErrorIs(t, err, ErrHistorySearchInvalid)
 	})
+
+	t.Run("only_overdue проходит в доменный фильтр", func(t *testing.T) {
+		f, err := buildHistoryFilter(HistorySearchFilterDTO{OnlyOverdue: true})
+		require.NoError(t, err)
+		assert.True(t, f.OnlyOverdue)
+	})
 }
 
 func TestHistorySortColumn(t *testing.T) {

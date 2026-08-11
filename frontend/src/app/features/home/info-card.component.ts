@@ -12,6 +12,8 @@ import { DelaysApiService } from './delays-api.service';
 import { DelaysModalComponent } from './delays-modal.component';
 import { UnmatchedApiService } from './unmatched-api.service';
 import { UnmatchedModalComponent } from './unmatched-modal.component';
+import { OverdueApiService } from './overdue-api.service';
+import { OverdueModalComponent } from './overdue-modal.component';
 
 /**
  * Карточка «Работа» (бывшая «Информация», решение владельца 10.08.2026) рядом
@@ -28,7 +30,7 @@ import { UnmatchedModalComponent } from './unmatched-modal.component';
  */
 @Component({
   selector: 'app-info-card',
-  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent, UnmatchedModalComponent],
+  imports: [NzIconModule, NzTooltipModule, VagonListModalComponent, CargoWorkModalComponent, BrosModalComponent, DelaysModalComponent, UnmatchedModalComponent, OverdueModalComponent],
   template: `
     <div class="card">
       <div class="head"><b>Работа</b></div>
@@ -51,6 +53,13 @@ import { UnmatchedModalComponent } from './unmatched-modal.component';
               nz-tooltip nzTooltipTitle="Вагоны, задержанные в пути прямо сейчас (простои и бросания); отчёт за период — внутри">
         <span class="lbl">Задержанные вагоны</span>
         <span class="cnt">{{ delaysCount() }}</span>
+        <span nz-icon nzType="right" class="go"></span>
+      </button>
+
+      <button class="row" type="button" (click)="openOverdue()"
+              nz-tooltip nzTooltipTitle="Вагоны в пути с истекшим нормативным сроком доставки — по накладным; отчёт для претензионной работы (ст. 97 УЖТ) — внутри">
+        <span class="lbl">Просрочка доставки</span>
+        <span class="cnt" [class.warn]="overdueCount() > 0">{{ overdueCount() }}</span>
         <span nz-icon nzType="right" class="go"></span>
       </button>
 
@@ -79,6 +88,9 @@ import { UnmatchedModalComponent } from './unmatched-modal.component';
     }
     @if (showUnmatched()) {
       <app-unmatched-modal (reload)="load()" (closed)="showUnmatched.set(false)" />
+    }
+    @if (showOverdue()) {
+      <app-overdue-modal (closed)="showOverdue.set(false)" />
     }
     @if (showDonors()) {
       <app-vagon-list-modal title="Проблемные вагоны" sinceLabel="Донор с"
@@ -109,6 +121,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   private readonly bros = inject(BrosApiService);
   private readonly delays = inject(DelaysApiService);
   private readonly unmatched = inject(UnmatchedApiService);
+  private readonly overdue = inject(OverdueApiService);
   private readonly msg = inject(NzMessageService);
 
   readonly donors = signal<Status6Vagon[]>([]);
@@ -116,11 +129,14 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   /** Открытые эпизоды задержек; без warn — задержанные есть почти всегда, красный тут не сигнал. */
   readonly delaysCount = signal(0);
   readonly unmatchedCount = signal(0);
+  /** Вагоны в пути с delay > 0 (прибывшие исключены на сервере). */
+  readonly overdueCount = signal(0);
   readonly showDonors = signal(false);
   readonly showCargoWork = signal(false);
   readonly showBros = signal(false);
   readonly showDelays = signal(false);
   readonly showUnmatched = signal(false);
+  readonly showOverdue = signal(false);
 
   /** Deep-link колокольчика (/home?open=…): открыть модалку. Объект, не строка —
    *  повторный переход тем же типом должен открыть модалку снова. */
@@ -133,6 +149,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
       const m = this.openModal();
       if (m?.kind === 'bros') this.showBros.set(true);
       else if (m?.kind === 'unmatched') this.showUnmatched.set(true);
+      else if (m?.kind === 'overdue') this.showOverdue.set(true);
     });
   }
 
@@ -148,13 +165,15 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   /** Списки короткие (снятие доноров) — тянем целиком, счётчик = длина. */
   async load(initial = false): Promise<void> {
     try {
-      const [donors, bros, unm, delays] = await Promise.all([
-        this.api.getStatus6(), this.bros.getActive(), this.unmatched.getGroups(), this.delays.current(),
+      const [donors, bros, unm, delays, overdue] = await Promise.all([
+        this.api.getStatus6(), this.bros.getActive(), this.unmatched.getGroups(),
+        this.delays.current(), this.overdue.getGroups(),
       ]);
       this.donors.set(donors ?? []);
       this.brosCount.set(bros?.length ?? 0);
       this.unmatchedCount.set((unm ?? []).reduce((s, g) => s + g.vagon_count, 0));
       this.delaysCount.set(delays?.length ?? 0);
+      this.overdueCount.set((overdue ?? []).reduce((s, g) => s + g.vagon_count, 0));
     } catch (err) {
       if (initial) this.msg.error(apiErrorMessage(err));
     }
@@ -165,6 +184,7 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   openBros(): void { this.showBros.set(true); }
   openDelays(): void { this.showDelays.set(true); }
   openUnmatched(): void { this.showUnmatched.set(true); }
+  openOverdue(): void { this.showOverdue.set(true); }
 
   /** Доноры перегруза → общая форма строки таблицы. */
   donorRows(): VagonListRow[] {

@@ -198,6 +198,8 @@ const COLS: HistCol[] = [
                         (click)="togglePlace(t.name)">{{ t.name }}</nz-tag>
               }
               <nz-tag [class.on]="notUnloaded()" class="gray" (click)="toggleNotUnloaded()">не выгруж.</nz-tag>
+              <nz-tag [class.on]="onlyOverdue()" class="gray" (click)="onlyOverdue.set(!onlyOverdue())"
+                      nz-tooltip nzTooltipTitle="Только рейсы с просрочкой доставки (прибыл позже нормативного срока)">просрочка</nz-tag>
             </div>
           </div>
         }
@@ -394,6 +396,7 @@ export class HistoryComponent implements OnInit {
   readonly selNaznach = signal<Set<string>>(new Set());
   readonly selPlace = signal<Set<string>>(new Set());
   readonly notUnloaded = signal(false);
+  readonly onlyOverdue = signal(false);
   readonly showFilters = signal(true);
 
   /** Распознанные номера — как в gtport: регулярка по любому тексту (можно
@@ -482,6 +485,7 @@ export class HistoryComponent implements OnInit {
     if (this.selNaznach().size) f.naznach = [...this.selNaznach()];
     if (this.selPlace().size) f.place_vigr = [...this.selPlace()];
     if (this.notUnloaded()) f.not_unloaded = true;
+    if (this.onlyOverdue()) f.only_overdue = true;
     if (this.vagonNums().length) f.vagons = this.vagonNums();
     if (this.invoiceNums().length) f.invoices = this.invoiceNums();
     if (this.selStations().length) f.station_nach = this.selStations();
@@ -505,6 +509,7 @@ export class HistoryComponent implements OnInit {
     this.selNaznach.set(new Set());
     this.selPlace.set(new Set());
     this.notUnloaded.set(false);
+    this.onlyOverdue.set(false);
     this.applied.set(null);
     this.rows.set([]);
     this.total.set(0);
