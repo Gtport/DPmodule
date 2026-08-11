@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { ArrivalsApiService, TerminalTarget } from './arrivals-api.service';
@@ -50,7 +51,7 @@ interface StationHalf {
         <div class="duo">
           <app-system-status-card (refreshed)="onSnapshotRebuilt()" />
           <div class="stack">
-            <app-info-card />
+            <app-info-card [openModal]="deepLink()" />
             <app-operativka-card />
           </div>
         </div>
@@ -92,6 +93,16 @@ export class HomeComponent implements OnInit {
   readonly loading = signal(false);
   readonly terminals = signal<TerminalTarget[]>([]);
 
+  /** Deep-link колокольчика: /home?open=bros|unmatched открывает модалку
+   *  «Информации». Подписка (не snapshot): клик по уведомлению, когда мы УЖЕ
+   *  на главной, компонент не пересоздаёт. Значение — новый объект на каждый
+   *  переход, иначе повторный клик по тому же типу не сработал бы (сигналы
+   *  схлопывают равные значения). Параметр стирается из адреса, чтобы
+   *  обновление страницы не открывало модалку заново. */
+  readonly deepLink = signal<{ kind: string } | null>(null);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
   /** Станции из реестра терминалов; порядок — по 4-значному коду станции по
    *  убыванию (9857 Мыс раньше 9847 Находка — раскладка трёх колонок по решению
    *  владельца: Оперативка · Мыс · Находка). */
@@ -108,6 +119,14 @@ export class HomeComponent implements OnInit {
 
   ngOnInit(): void {
     void this.load();
+    this.route.queryParamMap.subscribe((params) => {
+      const open = params.get('open');
+      if (!open) return;
+      this.deepLink.set({ kind: open });
+      void this.router.navigate([], {
+        queryParams: { open: null }, queryParamsHandling: 'merge', replaceUrl: true,
+      });
+    });
   }
 
   async load(): Promise<void> {

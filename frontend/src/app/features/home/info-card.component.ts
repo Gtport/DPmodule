@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, effect, inject, input, signal } from '@angular/core';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
@@ -122,7 +122,19 @@ export class InfoCardComponent implements OnInit, OnDestroy {
   readonly showDelays = signal(false);
   readonly showUnmatched = signal(false);
 
+  /** Deep-link колокольчика (/home?open=…): открыть модалку. Объект, не строка —
+   *  повторный переход тем же типом должен открыть модалку снова. */
+  readonly openModal = input<{ kind: string } | null>(null);
+
   private timer: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    effect(() => {
+      const m = this.openModal();
+      if (m?.kind === 'bros') this.showBros.set(true);
+      else if (m?.kind === 'unmatched') this.showUnmatched.set(true);
+    });
+  }
 
   ngOnInit(): void {
     void this.load(true);

@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -142,6 +143,7 @@ import { AdminApiService, AdminColumn, AdminRow, AdminTable } from './admin-api.
 })
 export class AdminComponent implements OnInit {
   private readonly api = inject(AdminApiService);
+  private readonly route = inject(ActivatedRoute);
   private readonly dislApi = inject(DislocationApiService);
   private readonly msg = inject(NzMessageService);
 
@@ -193,7 +195,12 @@ export class AdminComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     try {
       this.tables.set(await this.api.tables());
-      if (this.tables().length) void this.selectTable(this.tables()[0].name);
+      // Deep-link колокольчика (/admin?table=stations): открыть сразу нужный
+      // справочник, если он есть в реестре; иначе — первый, как раньше.
+      const wanted = this.route.snapshot.queryParamMap.get('table');
+      const initial = wanted && this.tables().some((t) => t.name === wanted)
+        ? wanted : this.tables()[0]?.name;
+      if (initial) void this.selectTable(initial);
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     }

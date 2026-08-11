@@ -9,6 +9,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzDropDownModule } from 'ng-zorro-antd/dropdown';
 import { AuthService } from '../../core/auth/auth.service';
 import { ModuleSwitcherComponent } from '../module-switcher/module-switcher.component';
+import { NotificationBellComponent } from './notification-bell.component';
 import { DISPATCHER_NAV } from './nav.config';
 import { TimeBaseService } from '../../shared/time-base.service';
 import { environment } from '../../../environments/environment';
@@ -26,7 +27,7 @@ import { environment } from '../../../environments/environment';
     UpperCasePipe,
     RouterOutlet, RouterLink, RouterLinkActive,
     NzLayoutModule, NzMenuModule, NzIconModule, NzButtonModule, NzTooltipModule, NzDropDownModule,
-    ModuleSwitcherComponent,
+    ModuleSwitcherComponent, NotificationBellComponent,
   ],
   template: `
     <nz-layout class="root">
@@ -38,6 +39,10 @@ import { environment } from '../../../environments/environment';
         <span class="spacer"></span>
 
         <app-module-switcher />
+
+        @if (uiSettings.notificationsEnabled()) {
+          <app-notification-bell />
+        }
 
         <a nz-dropdown [nzDropdownMenu]="userMenu" class="user">
           <span nz-icon nzType="user"></span>
@@ -110,7 +115,7 @@ import { environment } from '../../../environments/environment';
 })
 export class ShellComponent {
   readonly auth = inject(AuthService);
-  private readonly uiSettings = inject(TimeBaseService);
+  readonly uiSettings = inject(TimeBaseService);
   readonly collapsed = signal(true); // по умолчанию компактный
   readonly moduleId = environment.moduleId;
   // Ширины берём из токенов (§8: только переменные, не числа).

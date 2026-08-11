@@ -25,6 +25,8 @@ export class TimeBaseService {
   readonly base = signal<TimeBase>('jd');
   /** Экран «Карта» включён на бэке (map.enabled) — иначе прячем пункт меню. */
   readonly mapEnabled = signal(true);
+  /** Уведомления включены на бэке (notifications.enabled + БД) — иначе прячем колокольчик. */
+  readonly notificationsEnabled = signal(true);
   private loaded = false;
 
   /** Подтянуть дефолт из настроек клиента (один раз; ошибка — остаёмся на ЖД). */
@@ -33,10 +35,11 @@ export class TimeBaseService {
     this.loaded = true;
     try {
       const s = await firstValueFrom(
-        this.http.get<{ time_base: string; map_enabled?: boolean }>(
+        this.http.get<{ time_base: string; map_enabled?: boolean; notifications_enabled?: boolean }>(
           `${environment.apiBaseUrl}/v1/settings/ui`));
       if (s.time_base === 'msk' || s.time_base === 'jd') this.base.set(s.time_base);
       if (s.map_enabled === false) this.mapEnabled.set(false);
+      if (s.notifications_enabled === false) this.notificationsEnabled.set(false);
     } catch {
       /* настройка не критична — дефолт ЖД, карта видна */
     }
