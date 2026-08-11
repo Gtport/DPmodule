@@ -37,8 +37,13 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 					t.Error("keycloak.strict_roles обязан быть true в конфиге стенда")
 				}
 				// Тайлы карты на стенде — в общей базе, своя схема (MAP_TILES.md).
-				if !cfg.Tiles.Enabled || cfg.Tiles.Schema == "" {
-					t.Error("tiles: на стенде ждали enabled: true и заполненную schema")
+				// Пока DevOps не выдал имена базы и схемы, кэш выключен: карта
+				// живёт без подложки OSM (тайлы — картинка, не данные), свой слой
+				// ж/д сети виден. Сторожим не факт включения, а связку: включили —
+				// значит schema заполнена, иначе search_path уедет в public и
+				// тайлы молча не найдутся.
+				if cfg.Tiles.Enabled && cfg.Tiles.Schema == "" {
+					t.Error("tiles: при enabled: true обязана быть заполнена schema")
 				}
 			},
 		},
