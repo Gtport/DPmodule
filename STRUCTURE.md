@@ -65,6 +65,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `delay.go` | `VagonDelay` — эпизод задержки вагона («стоял на станции с… по…», kind 4 — долгий простой / 5 — брошен) + константы видов. Память о задержках рейса; связь с `bros` — через `group_key` (= `id_status4/5`). |
 | `errors.go` | Общие sentinel-ошибки домена (`ErrNotFound`/`ErrBadRequest`/`ErrForbidden`/`ErrConflict`) для маппинга в HTTP-коды. |
 | `report_preset.go` | `ReportPreset` — клиентский вариант отчётной формы (перенос gtport «Подход Марис»: имя карточки на «Справках и отчётах» + фильтр клиентов через `\|`); таблица `report_preset`, правится в Админе. |
+| `notification.go` | Внутренние уведомления (перенос колокольчика gtport): `Notification` (аудитория вместо списка получателей — пользователей в БД нет, видимость считается на чтении по ролям claims; персистентный `DedupKey` вместо RAM-мап gtport), `UserNotification` (+прочитано), константы типов/аудиторий/deep-link'ов. |
 
 ### `internal/port/` — интерфейсы (контракты хранилищ/интеграций)
 | Файл | За что отвечает |
@@ -89,6 +90,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `external.go` | Внешние интеграции: `SecretSource` (секрет по имени ключа; реализации — `secret/layered.go` поверх `secret/env.go`), `TokenProvider` (access-токен сервис-аккаунта для исходящих запросов; реализация — `adapter/oauth`), `ASUClient` (АСУ, pull/push) и `ReferenceClient` (памятки: по номеру / инкремент). |
 | `max.go` | `MessengerSender` — исходящий канал рассылки в мессенджер MAX: `Ping` (health), `SendText`, `SendImage`, `SendFile`. Реализация — `adapter/max`. Плюс `MaxChatRepository` — чтение справочника чатов (`Chats`) и маршрутов рассылки форм (`Routes` по форме+терминалу). |
 | `report_preset.go` | `ReportPresetRepository`: чтение пресетов отчётных форм (`report_preset`) — включённые по форме, по порядку. |
+| `notification.go` | `NotificationRepository`: внутренние уведомления (`notifications`/`notification_read`) — Insert с дедупом (false = погашено), видимые списки/счётчик непрочитанных по аудиториям пользователя, идемпотентные MarkRead/MarkAllRead (только видимые), PurgeOlderThan для крона-очистки. |
 | `tiles.go` | `TileRepository`: чтение кэша тайлов OSM для подложки карты (вторая БД, блок `tiles:` конфига); `ErrTileNotFound` — промах кэша (обработчик отвечает 404, в OSM не ходим — решение владельца 06.08.2026, docs/MAP_TILES.md). |
 
 ### `internal/adapter/` — адаптеры внешних интеграций
@@ -205,6 +207,8 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `lk_account.go` | `LKAccountRepository`: чтение аккаунтов ЛК РЖД (`lk_account`, включённые по порядку) — по одному на поток/порт. Без кэша: правка логина в админ-редакторе должна работать без рестарта. |
 | `max.go` | `MaxChatRepository`: чтение справочника чатов MAX (`max_chat`, по имени) и маршрутов рассылки форм (`max_route` по форме+терминалу, включённые, по порядку). Обе таблицы правятся в админ-редакторе. |
 | `report_preset.go` | `ReportPresetRepository` (реализация): включённые пресеты формы из `report_preset`, по `sort_order` и имени. |
+| `notification.go` | `NotificationRepository`: уведомления сырым SQL — INSERT с `ON CONFLICT (dedup_key) WHERE dedup_key <> '' DO NOTHING` + RETURNING (false = дубль), выборки с `LEFT JOIN notification_read` (условие видимости `visibleCond`: аудитория ИЛИ адресно), MarkRead/MarkAllRead — INSERT..SELECT только видимых (чужой id молча игнорируется), PurgeOlderThan (каскад чистит прочтения, dedup_key освобождается). |
+| `notification_integration_test.go` | Integration-тест уведомлений (гейт `DPMODULE_TEST_PG_DSN`): дедуп, видимость по аудиториям/адресно, «непрочитанные = видимые − прочитанные», идемпотентность отметок, purge с каскадом и освобождением dedup_key. |
 
 ### `internal/parser/` — разбор входных файлов
 | Файл | За что отвечает |
@@ -340,7 +344,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 | `PRODUCT.md` | Продуктовый контекст для дизайн-работы (скил impeccable): пользователи, назначение, брендовые обязательства IQPort, принципы; открытые вопросы (клиентские экраны, мобильная адаптация). |
 
 ### `migrations/` — SQL-миграции (golang-migrate, `cmd/migrate`)
-Пары `up`/`down` с последовательной нумерацией `000001–000060`: инициализация схемы
+Пары `up`/`down` с последовательной нумерацией `000001–000061`: инициализация схемы
 `dpport`, справочников и конфигурации, расширения портов, скоростные профили, пороги
 статусов, таблицы `status9`/`status6`, назначения, план подвода, словарь cargo,
 админ-редактор, поля переадресации и доверенного лица, поле `owner` («чей вагон»:
@@ -402,6 +406,7 @@ handler (HTTP, gin)  →  service (бизнес-логика, RAM-кэши)  →
 - `000058_gt_forecast_speed.*.sql` — `port_cargo_line.plan_speed`: плановая скорость выгрузки линии, ваг/сут (прогноз ГТ; NULL — как способность `pc`). Отдельной таблицы `gt_port_speeds` gtport не заводим: ключ линии (terminal, cargo_key) = поток симуляции 1:1, норма — существующий `pc`. Сид — дефолты gtport (130/250/120/100/30), правится в Админе
 - `000059_gt_forecast_snapshot.*.sql` — `gt_forecast_snapshot`: сохранённые планы прогноза ГТ (перенос gtport `gt_saved_plans`), ключ (plan_date, station), jsonb-слепки ответа simulate + вход сеанса + журнал правок. Данные UI, НЕ справочник — в `list_tables` не заводится
 - `000060_ports_org_short.*.sql` — `ports.org_short`: короткое имя организации для статус-панелей (сид АТТИС/НМТП по `provider_client`). Подпись веток дислокации едина для всех источников (ЛК/АСУ/робот); пусто — панель подписывает по-старому
+- `000061_notifications.*.sql` — `notifications` + `notification_read`: внутренние уведомления (перенос колокольчика gtport). Аудитория вместо fan-out по users (пользователи — в Keycloak), ленивое «прочитано» на имя, персистентный `dedup_key` (частичный уникальный индекс — рестарт не респамит). НЕ справочник, в `list_tables` не заводится
   (`vygruzka`): терминал → его чат (как gtport CargoReport; guard `WHERE EXISTS`).
 - `000014_plan.*.sql` — таблицы плана подвода (`plan`, `plan_nitka`).
 - `000015_plan_history.*.sql` — история загрузок плана (несколько загрузок на станцию,
