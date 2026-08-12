@@ -27,16 +27,15 @@
 | Порты | 8080 / 9090 / 4200 | 8081 / 9091 / 4201 |
 | База | `dpport` | `dpport_river` (схема в обеих — `dpport`) |
 | Фронт | `ng serve` (development) | `ng serve --configuration river` |
-| Адрес | `https://95850.koara.live` | `https://<имя>.duckdns.org` (напр. `anb-port`) |
+| Адрес | `https://95850.koara.live` | `https://anb-port.duckdns.org`  |
 
 Адрес — **бесплатное имя DuckDNS** (решение владельца 12.08.2026: домен
 `95850.koara.live` выдан хостером VPS, A-записи на поддомены завести нельзя,
 поэтому берём стороннее имя; когда клиент примет систему — переедем на
-купленный домен, это один server-блок nginx + redirect URI). 🖐 Владелец заводит
-имя сам: https://www.duckdns.org → вход (Google/GitHub) → add domain → в поле
-IP вписать `212.113.99.3`. Фактическое имя сообщить агенту — ниже оно
-подставляется вместо `<имя>.duckdns.org`. Keycloak **один на оба** (контейнер
-боевого, realm `iqport`, те же пользователи).
+купленный домен, это один server-блок nginx + redirect URI). Имя
+`anb-port.duckdns.org` заведено владельцем 12.08.2026 и указывает на
+212.113.99.3 (проверено). Keycloak **один на оба** (контейнер боевого, realm
+`iqport`, те же пользователи).
 
 ## Шаги
 
@@ -44,7 +43,7 @@ IP вписать `212.113.99.3`. Фактическое имя сообщить
 ```bash
 ss -ltnp | grep -E ':(8081|9091|4201)\b'   # должно быть пусто
 free -m; df -h /home                        # клон + node_modules ≈ 1.5 ГБ, второй ng serve ≈ 0.5–1 ГБ RAM
-dig +short <имя>.duckdns.org               # ждём 212.113.99.3 (имя заведено владельцем)
+dig +short anb-port.duckdns.org               # ждём 212.113.99.3 (имя заведено владельцем)
 ```
 Мало места или памяти — остановиться и сказать владельцу.
 
@@ -109,7 +108,7 @@ psql "$PG_DSN" -v ON_ERROR_STOP=1 -f scripts/clients/river.sql   # уже в git
 Копии боевых (`~/.config/systemd/user/dpmodule-*.service`) с заменами:
 `WorkingDirectory` → клон 2, `EnvironmentFile` → его `.env`, бэкенд
 `-config config.river.yaml`, фронт `ng serve --configuration river --port 4201`.
-⚠️ У фронта в параметры `ng serve` добавить `--allowed-hosts <имя>.duckdns.org`
+⚠️ У фронта в параметры `ng serve` добавить `--allowed-hosts anb-port.duckdns.org`
 (по образцу боевого юнита, где стоит `95850.koara.live`) — без этого dev-сервер
 отбросит запросы с чужим Host.
 ```bash
@@ -118,14 +117,14 @@ systemctl --user enable --now dpmodule2-backend dpmodule2-frontend
 ```
 
 ### 5. nginx + сертификат (после того как имя DuckDNS резолвится)
-Новый файл `/etc/nginx/sites-available/<имя>.duckdns.org` (+ симлинк в
+Новый файл `/etc/nginx/sites-available/anb-port.duckdns.org` (+ симлинк в
 `sites-enabled`), боевой конфиг не трогать. Сначала обычный `listen 80` server
 block: `/` → `127.0.0.1:4201` (WebSocket-апгрейд — по образцу боевого),
 `/api/` → `127.0.0.1:8081` (`client_max_body_size 50m`). Затем:
 
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d <имя>.duckdns.org   # выпустит сертификат и допишет listen 443
+sudo certbot --nginx -d anb-port.duckdns.org   # выпустит сертификат и допишет listen 443
 sudo nginx -t && curl -s -o /dev/null -w '%{http_code}\n' https://95850.koara.live/  # бой жив
 ```
 DuckDNS в Public Suffix List — лимиты Let's Encrypt считаются на само имя, не
@@ -134,8 +133,8 @@ DuckDNS в Public Suffix List — лимиты Let's Encrypt считаются 
 
 ### 6. Keycloak (единственное касание боевого)
 В админке realm `iqport`, клиент `iqport-dpport`: добавить
-`https://<имя>.duckdns.org/*` в **Valid redirect URIs** и
-`https://<имя>.duckdns.org` в **Web origins** (чужой origin — без этой записи
+`https://anb-port.duckdns.org/*` в **Valid redirect URIs** и
+`https://anb-port.duckdns.org` в **Web origins** (чужой origin — без этой записи
 браузер зарубит запросы токена по CORS). Контейнер не перезапускать, realm и
 пользователей не менять. Без redirect URI будет 400
 `Invalid parameter: redirect_uri`.
@@ -148,7 +147,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/health   # 200
 journalctl --user -u dpmodule2-backend -n 30 | grep -iE "error|listening|disabled"
 ```
 В логе — `listening 127.0.0.1:8081`, интеграции «disabled», справочники прогреты.
-Браузером `https://<имя>.duckdns.org`: вход существующим пользователем (`disp`/`boss`) →
+Браузером `https://anb-port.duckdns.org`: вход существующим пользователем (`disp`/`boss`) →
 главная с ОДНИМ терминалом, меню БЕЗ «Плана подвода». Затем ручной приём ЛК:
 загрузить xlsx выгрузки клиента → вагоны разложились по терминалу; дыры
 справочников придут уведомлениями (колокольчик) — дозаполнить в Админе.
