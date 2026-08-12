@@ -88,7 +88,8 @@ export interface MapWagon {
   naznach: string;
   station_nach: string; // станция отправления
   gruzotpr: string; // отправитель
-  date_otpr: string | null; // дата отправления
+  date_nach: string | null; // дата погрузки (начало рейса) — ею подписаны погрузочные колонки прочих экранов
+  date_otpr: string | null; // дата отправления по АСОУП (может отличаться от погрузки на часы и сутки)
   date_dostav: string | null; // нормативный срок доставки
 }
 

@@ -211,7 +211,10 @@ const MAP_ZOOM = 5;
                   <tr>
                     <th>№</th><th>Вагон</th><th>Накладная</th><th>Марка груза</th>
                     <th>Вес, т</th><th>Собственник</th><th>Статус</th><th>Получ.</th><th>Назн.</th>
-                    <th>Ст. отправления</th><th>Отправитель</th><th>Отправление</th><th>Срок дост.</th>
+                    <th>Ст. отправления</th><th>Отправитель</th>
+                    <th nz-tooltip nzTooltipTitle="Начало рейса по ЛК — та же дата, что «Дата погрузки» на прочих экранах">Погружен</th>
+                    <th nz-tooltip nzTooltipTitle="Фактическое отправление со станции по АСОУП — может быть на часы и сутки позже погрузки">Отправление</th>
+                    <th>Срок дост.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -228,6 +231,7 @@ const MAP_ZOOM = 5;
                       <td>{{ v.naznach }}</td>
                       <td>{{ v.station_nach }}</td>
                       <td>{{ v.gruzotpr }}</td>
+                      <td>{{ fmtDT(v.date_nach) }}</td>
                       <td>{{ fmtDT(v.date_otpr) }}</td>
                       <td>{{ fmtDT(v.date_dostav) }}</td>
                     </tr>
@@ -811,14 +815,15 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   async exportWagons(): Promise<void> {
     const XLSX = await import('xlsx-js-style');
     const header = ['№', 'Вагон', 'Накладная', 'Марка груза', 'Вес, т', 'Собственник',
-      'Статус', 'Получ.', 'Назн.', 'Ст. отправления', 'Отправитель', 'Отправление', 'Срок доставки'];
+      'Статус', 'Получ.', 'Назн.', 'Ст. отправления', 'Отправитель', 'Погружен', 'Отправление', 'Срок доставки'];
     const rows = this.wagons().map((v) => [
       v.npp_vag ?? '', v.vagon, v.invoice, v.freight, v.ves ?? '', v.owner,
       this.statusLabel(v.status), v.gruzpol_s, v.naznach,
-      v.station_nach, v.gruzotpr, this.fmtDT(v.date_otpr), this.fmtDT(v.date_dostav),
+      v.station_nach, v.gruzotpr, this.fmtDT(v.date_nach), this.fmtDT(v.date_otpr),
+      this.fmtDT(v.date_dostav),
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-    ws['!cols'] = [4, 10, 10, 22, 7, 16, 18, 8, 8, 18, 22, 12, 12].map((wch) => ({ wch }));
+    ws['!cols'] = [4, 10, 10, 22, 7, 16, 18, 8, 8, 18, 22, 12, 12, 12].map((wch) => ({ wch }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Вагоны');
     XLSX.writeFile(wb, `Вагоны_${(this.wagonsKey() ?? '').replace(/[^\wА-Яа-я-]+/g, '_')}.xlsx`);
