@@ -28,6 +28,15 @@ UPDATE dpport.client_settings
        updated_at = now()
  WHERE id = 1 AND client_name IN ('', 'DPport');
 
+-- Пороги Stage 4 (решение владельца 12.08.2026): отправки АНБ идут мелкими
+-- партиями и одиночными вагонами — прогноз считается ВСЕМ группам, без
+-- отсечки по размеру (у трёх терминалов было 20/10).
+UPDATE dpport.client_settings
+   SET extra = jsonb_set(COALESCE(extra, '{}'::jsonb), '{stage4}',
+         '{"min_vagon_count":1,"min_vagon_bros":1,"bros_penalty_h":72}'::jsonb),
+       updated_at = now()
+ WHERE id = 1;
+
 -- Каналы: клиенты провайдера АСУ отсутствуют (интеграции выключены конфигом),
 -- маршруты MAX не заводятся, план подвода не настраивается — соответствующие
 -- разделы шаблона осознанно пусты. ОКПО грузополучателя живёт в реестре ports
