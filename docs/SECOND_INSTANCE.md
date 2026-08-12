@@ -169,3 +169,46 @@ Keycloak не сбросилось.
 Всё аддитивно, точек невозврата нет: `systemctl --user disable --now dpmodule2-*`,
 убрать server block nginx и redirect URI из Keycloak, при необходимости
 `DROP DATABASE dpport_river`. Боевой инстанс при этом не трогается вовсе.
+
+## Состояние выполнения (12.08.2026, Claude Code на VPS)
+
+Сделано шаги 0–4 и 6; **остался шаг 5 (nginx + certbot)** — он требует `sudo`, а
+`sudo` на этой машине просит пароль и не имеет TTY у ассистента: команды выполняет
+владелец сам (готовый конфиг лежит в `~/projects/anb-port.duckdns.org.conf`,
+команды — в ответе ассистента). До шага 5 второй инстанс доступен только изнутри
+машины (`127.0.0.1:4201` / `:8081`), браузером снаружи — нет.
+
+- Преф-лайт: порты 8081/9091/4201 свободны, 18,8 ГБ RAM, 158 ГБ диска,
+  `anb-port.duckdns.org` → 212.113.99.3.
+- База `dpport_river` создана, `db_bootstrap.sql` прогнан, 122 миграции легли,
+  43 таблицы схемы `dpport`, все — владения `gtport_app` (миграции гнали под
+  `gtport_app`, ловушка «владелец alex» из истории не повторилась).
+  ⚠️ `sudo -u postgres` не понадобился: OS-роль `alex` — суперюзер Postgres по
+  peer-подключению, база создана `psql -d postgres`.
+- Клон 2, ветка `multi-tenant`, `.env` — ТОЛЬКО `PG_PASSWORD` (`ASU_TOKEN` и
+  `MAX_BOT_TOKEN` боевого сюда не копировались: интеграции выключены конфигом).
+- Справочники: комплект АНБ из `/home/alex/seed_river_anb/` → `_reference/seed/`,
+  `seed_directories.sql` (stations 3157, cargo 5033, marka 8, ports 1,
+  naznach_station 1, port_cargo_line 1, sf 14, max_* пусто) + `clients/river.sql`
+  (`client_name` = «АНБ (речной порт, ст. Амур)», `max_staleness_minutes` 720).
+- Юниты `dpmodule2-backend` / `dpmodule2-frontend` заведены и включены
+  (`enable --now`): бэкенд слушает 127.0.0.1:8081, метрики 9091, `/health` 200,
+  фоновый воркер один (`notifications-cleanup`) — интеграции выключены; фронт
+  `ng serve --configuration river --port 4201` отдаёт 200.
+  ⚠️ Отход от текста задания: у фронта стоит `--allowed-hosts` БЕЗ значения
+  (boolean true), как в боевом юните, — список хостов в CLI не задаётся, только
+  в `angular.json`; дев-сервер слушает лишь 127.0.0.1, наружу идёт через nginx.
+  ⚠️ Добавлен `frontend/proxy.river.conf.json` (`/api` → `:8081`) и прописан в
+  юните: боевой `proxy.conf.json` целится в `:8080`, и запрос к `4201/api`
+  молча ушёл бы в БОЕВУЮ базу.
+- Keycloak (шаг 6) сделан через `kcadm.sh` в контейнере: клиенту `iqport-dpport`
+  realm'а `iqport` добавлены `https://anb-port.duckdns.org/*` в redirect URIs и
+  `https://anb-port.duckdns.org` в web origins. Контейнер не перезапускался
+  (Up-время цело), боевой вход и главная отвечают 200. ⚠️ `webOrigins` там и до
+  правки был `["+"]` (= все origin'ы из redirect URIs), явная запись добавлена
+  рядом с `+` для наглядности — CORS работал бы и без неё.
+
+Открытое: `ports.pc_other`/`pc_total` = 40 — ЗАГЛУШКА из комплекта сидов,
+уточнить у клиента реальную перерабатывающую способность (от неё Stage 4 считает
+прогноз, плана подвода у АНБ нет). Проверка браузером (вход `disp`/`boss`, одна
+карточка терминала, меню без «Плана подвода», ручной приём xlsx) — после шага 5.
