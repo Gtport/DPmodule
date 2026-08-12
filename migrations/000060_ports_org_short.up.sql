@@ -23,7 +23,7 @@ ALTER TABLE dpport.ports
 COMMENT ON COLUMN dpport.ports.org_short
     IS 'Короткое имя организации для статус-панелей (АТТИС/НМТП); пусто — подпись по терминалам';
 
-UPDATE dpport.ports SET org_short = 'АТТИС'
-    WHERE provider_client = 'attis' AND org_short = '';
-UPDATE dpport.ports SET org_short = 'НМТП'
-    WHERE provider_client = 'nmtp' AND org_short = '';
+-- Сид значений (АТТИС/НМТП по provider_client) — клиентские данные, переехал в
+-- scripts/clients/gtport.sql. Он же чинит давнюю дыру: seed_directories.sql
+-- делает TRUNCATE ports и терял org_short — теперь клиентский сид, запускаемый
+-- после пересева, возвращает значения.

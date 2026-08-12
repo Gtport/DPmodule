@@ -7,6 +7,11 @@
 --
 --      psql "$PG_DSN" -v ON_ERROR_STOP=1 -f scripts/seed_directories.sql
 --
+--  ⚠️ ПОСЛЕ этого файла обязательно прогнать клиентский сид
+--  scripts/clients/<клиент>.sql (у трёх терминалов — gtport.sql): TRUNCATE ports
+--  ниже стирает org_short/nmtp_norm, клиентский сид их возвращает. Полный
+--  порядок чистой БД: bootstrap → migrate up → этот файл → clients/<клиент>.sql.
+--
 --  Идемпотентно: TRUNCATE + перезаливка. RESTART IDENTITY сбрасывает bigserial
 --  (id у marka/ports/naznach_station), чтобы повторный прогон не наращивал счётчики.
 --
@@ -25,9 +30,12 @@ TRUNCATE stations, cargo_operations, cargo, marka, ports, route_speed, naznach_s
 \copy cargo_operations(kod,oper,oper_s) FROM '_reference/seed/cargo_operations.csv' WITH (FORMAT csv, HEADER true)
 \copy cargo(cargo_kod,name,cargo_group,cargo_s,cargo_sms) FROM '_reference/seed/cargo.csv' WITH (FORMAT csv, HEADER true)
 \copy marka(okpo,station_kod,station,cargo_group,shipper,client,sms_1,sms_3,color,sprav_1) FROM '_reference/seed/marka.csv' WITH (FORMAT csv, HEADER true, FORCE_NOT_NULL (sms_3, color, sprav_1))
-\copy ports(okpo,location,organisation,name_s,name,code,plan_code,station_code,pc_coal,pc_metal,pc_other,pc_total,front,color,enabled) FROM '_reference/seed/ports.csv' WITH (FORMAT csv, HEADER true)
+-- FORCE_NOT_NULL по текстовым колонкам-строкам: они NOT NULL DEFAULT '', а пустое
+-- поле CSV (`,,`) без этого читается как NULL и валит заливку. Живой случай —
+-- клиент БЕЗ плана подвода: у него plan_code пустой у всех терминалов.
+\copy ports(okpo,location,organisation,name_s,name,code,plan_code,station_code,pc_coal,pc_metal,pc_other,pc_total,front,color,enabled) FROM '_reference/seed/ports.csv' WITH (FORMAT csv, HEADER true, FORCE_NOT_NULL (location, organisation, name_s, name, code, plan_code, station_code, color))
 \copy route_speed(station_nach,is_bam,from_km,speed) FROM '_reference/seed/route_speed.csv' WITH (FORMAT csv, HEADER true)
-\copy naznach_station(dest_station,origin_station,naznach,univers,enabled) FROM '_reference/seed/naznach_station.csv' WITH (FORMAT csv, HEADER true)
+\copy naznach_station(dest_station,origin_station,naznach,univers,enabled) FROM '_reference/seed/naznach_station.csv' WITH (FORMAT csv, HEADER true, FORCE_NOT_NULL (origin_station, naznach))
 \copy sf(sinonim,station,quantity) FROM '_reference/seed/sf.csv' WITH (FORMAT csv, HEADER true)
 \copy port_cargo_line(terminal,kind,cargo_key,label,pc,sort_order,enabled,plan_label) FROM '_reference/seed/port_cargo_line.csv' WITH (FORMAT csv, HEADER true)
 \copy max_chat(name,chat_id,description,is_active) FROM '_reference/seed/max_chat.csv' WITH (FORMAT csv, HEADER true)

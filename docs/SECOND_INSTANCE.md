@@ -1,0 +1,214 @@
+# Второй инстанс на VPS: новый клиент (речной порт)
+
+Задание для Claude Code **на VPS**. Ветка кода — `multi-tenant`.
+
+Цель: поднять рядом с боевым приложением второй инстанс того же репозитория со
+своей базой, настроить нового клиента таблицами и получить контур «одна раскатка
+обновляет оба приложения». Боевой инстанс работает непрерывно; все шаги ниже
+аддитивны — ни один боевой файл, юнит или контейнер не редактируется.
+
+## Что уже сделано в коде (ветка `multi-tenant`, запушена)
+
+- Миграции очищены от данных боевого клиента; клиентские сиды — `scripts/clients/`.
+- `config.river.yaml` — конфиг второго инстанса.
+- `environment.river.ts` + конфигурация `river` в `angular.json` — фронт второго
+  инстанса (Keycloak абсолютным адресом).
+- Станции плана подвода приходят с бэка; у клиента без плана пункт меню «План
+  подвода» скрывается сам.
+
+## Раскладка (что чем отличается)
+
+| | Боевой («3 порта») | Второй (речной порт, `river`) |
+|---|---|---|
+| Каталог | `/home/alex/projects/DPmodule` | `/home/alex/projects/DPmodule2` |
+| Ветка | `main` | `multi-tenant` |
+| Юниты | `dpmodule-backend` / `dpmodule-frontend` | `dpmodule2-backend` / `dpmodule2-frontend` |
+| Конфиг | `config.vps.yaml` | `config.river.yaml` |
+| Порты | 8080 / 9090 / 4200 | 8081 / 9091 / 4201 |
+| База | `dpport` | `dpport_river` (схема в обеих — `dpport`) |
+| Фронт | `ng serve` (development) | `ng serve --configuration river` |
+| Адрес | `https://95850.koara.live` | `https://anb-port.duckdns.org`  |
+
+Адрес — **бесплатное имя DuckDNS** (решение владельца 12.08.2026: домен
+`95850.koara.live` выдан хостером VPS, A-записи на поддомены завести нельзя,
+поэтому берём стороннее имя; когда клиент примет систему — переедем на
+купленный домен, это один server-блок nginx + redirect URI). Имя
+`anb-port.duckdns.org` заведено владельцем 12.08.2026 и указывает на
+212.113.99.3 (проверено). Keycloak **один на оба** (контейнер боевого, realm
+`iqport`, те же пользователи).
+
+## Шаги
+
+### 0. Преф-лайт
+```bash
+ss -ltnp | grep -E ':(8081|9091|4201)\b'   # должно быть пусто
+free -m; df -h /home                        # клон + node_modules ≈ 1.5 ГБ, второй ng serve ≈ 0.5–1 ГБ RAM
+dig +short anb-port.duckdns.org               # ждём 212.113.99.3 (имя заведено владельцем)
+```
+Мало места или памяти — остановиться и сказать владельцу.
+
+### 1. База (не ждёт домена)
+```bash
+sudo -u postgres psql -c "CREATE DATABASE dpport_river OWNER gtport_app"
+sudo -u postgres psql -d dpport_river -v ON_ERROR_STOP=1 \
+     -v app_role=gtport_app -v app_schema=dpport -f /home/alex/projects/DPmodule/scripts/db_bootstrap.sql
+```
+`db_bootstrap.sql` сам ставит схему, `GRANT CREATE` (нужен миграции 000001) и
+`search_path`/`TimeZone` на пару роль+база. ⚠️ Всё, что льётся `psql` под `alex`,
+принадлежит `alex` — миграции гнать только под `gtport_app` (DSN ниже).
+
+### 2. Второй клон и накат
+```bash
+git clone git@github.com:Gtport/DPmodule.git /home/alex/projects/DPmodule2
+cd /home/alex/projects/DPmodule2 && git checkout multi-tenant
+cp /home/alex/projects/DPmodule/.env .env      # нужен только PG_PASSWORD; лишние секреты убрать
+go build -o bin/server ./cmd/server/...
+cd frontend && npm ci && cd ..
+
+PG_DSN="postgres://gtport_app:<пароль>@localhost:5432/dpport_river?sslmode=disable" \
+  go run ./cmd/migrate/... -dir migrations up
+```
+
+### 3. Справочники и клиентский сид
+
+**Комплект CSV клиента АНБ уже собран, проверен вживую и лежит на VPS в
+`/home/alex/seed_river_anb/`** (скопирован с WSL 12.08.2026; проверка: чистая
+база + этот комплект + реальная выгрузка ЛК → 316 вагонов, все атрибутированы,
+ни одной неизвестной станции). Осталось положить его на место клона 2:
+
+```bash
+mkdir -p /home/alex/projects/DPmodule2/_reference/seed
+cp /home/alex/seed_river_anb/*.csv /home/alex/projects/DPmodule2/_reference/seed/
+rm /home/alex/projects/DPmodule2/_reference/seed/stations_additions.csv  # справочный, уже влит в stations.csv
+```
+
+Профиль клиента (из выгрузки ЛК за 31.07–12.08.2026): ООО «АНБ», нефтебаза,
+станция назначения АМУР (970302, ДВС), ОКПО 33576117, грузы — нефтепродукты в
+цистернах (дизтопливо/авиатопливо/бензин, группа «НЕФТЬ И НЕФТЕПРОДУКТЫ»),
+подход ~430 вагонов за две недели (~33/сутки). В комплекте: `ports.csv` — один
+терминал АНБ (`plan_code` пустой; ⚠️ `pc_other`/`pc_total` = 40 — ЗАГЛУШКА,
+уточнить у владельца реальную перерабатывающую способность); `stations.csv` —
+боевой справочник + 33 станции маршрутов АНБ (Южно-Уральская, Куйбышевская,
+Горьковская — доливка также отдельным файлом `stations_additions.csv`);
+`marka.csv` — 8 связок отправитель×станция погрузки (ГПН-Логистика/Комбинатская,
+Орскнефтеоргсинтез/Никель, Газпромтранс/Сургут, Татнефть-Транс/Биклянь, Тайга
+Энерджи/Магнитогорск, РН-Транс/Дземги+Суховская-Южная+Новая Еловка);
+`naznach_station.csv` — одно универсальное правило АМУР→АНБ; `port_cargo_line.csv`
+— одна линия «Нефтепродукты»; `max_chat.csv`/`max_route.csv` — пустые.
+
+```bash
+cd /home/alex/projects/DPmodule2
+psql "$PG_DSN" -v ON_ERROR_STOP=1 -f scripts/seed_directories.sql
+psql "$PG_DSN" -v ON_ERROR_STOP=1 -f scripts/clients/river.sql   # уже в git, заполнен
+```
+⚠️ Без справочников бэкенд не стартует (валидация `DirectoryCache` на старте).
+`plan_profile`, `nitka_schedule`, `nmtp_*` клиенту НЕ заполнять: пусто = функции
+скрыты, Stage 4 считает прогноз по перерабатывающей способности.
+`scripts/clients/river.sql` уже ставит `client_name` и ослабляет
+`max_staleness_minutes` до 720 (грузят руками — дефолтные 60 минут отвергали бы
+выгрузку, снятую пару часов назад).
+
+### 4. Юниты
+Копии боевых (`~/.config/systemd/user/dpmodule-*.service`) с заменами:
+`WorkingDirectory` → клон 2, `EnvironmentFile` → его `.env`, бэкенд
+`-config config.river.yaml`, фронт `ng serve --configuration river --port 4201`.
+⚠️ У фронта в параметры `ng serve` добавить `--allowed-hosts anb-port.duckdns.org`
+(по образцу боевого юнита, где стоит `95850.koara.live`) — без этого dev-сервер
+отбросит запросы с чужим Host.
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now dpmodule2-backend dpmodule2-frontend
+```
+
+### 5. nginx + сертификат (после того как имя DuckDNS резолвится)
+Новый файл `/etc/nginx/sites-available/anb-port.duckdns.org` (+ симлинк в
+`sites-enabled`), боевой конфиг не трогать. Сначала обычный `listen 80` server
+block: `/` → `127.0.0.1:4201` (WebSocket-апгрейд — по образцу боевого),
+`/api/` → `127.0.0.1:8081` (`client_max_body_size 50m`). Затем:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d anb-port.duckdns.org   # выпустит сертификат и допишет listen 443
+sudo nginx -t && curl -s -o /dev/null -w '%{http_code}\n' https://95850.koara.live/  # бой жив
+```
+DuckDNS в Public Suffix List — лимиты Let's Encrypt считаются на само имя, не
+на весь duckdns.org, сертификат выпустится штатно. `/realms/` проксировать НЕ
+нужно: фронт ходит на Keycloak абсолютным адресом `https://95850.koara.live`.
+
+### 6. Keycloak (единственное касание боевого)
+В админке realm `iqport`, клиент `iqport-dpport`: добавить
+`https://anb-port.duckdns.org/*` в **Valid redirect URIs** и
+`https://anb-port.duckdns.org` в **Web origins** (чужой origin — без этой записи
+браузер зарубит запросы токена по CORS). Контейнер не перезапускать, realm и
+пользователей не менять. Без redirect URI будет 400
+`Invalid parameter: redirect_uri`.
+
+## Проверка
+
+Второй инстанс:
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/health   # 200
+journalctl --user -u dpmodule2-backend -n 30 | grep -iE "error|listening|disabled"
+```
+В логе — `listening 127.0.0.1:8081`, интеграции «disabled», справочники прогреты.
+Браузером `https://anb-port.duckdns.org`: вход существующим пользователем (`disp`/`boss`) →
+главная с ОДНИМ терминалом, меню БЕЗ «Плана подвода». Затем ручной приём ЛК:
+загрузить xlsx выгрузки клиента → вагоны разложились по терминалу; дыры
+справочников придут уведомлениями (колокольчик) — дозаполнить в Админе.
+
+Боевой инстанс (после шагов 5 и 6): вход на `95850.koara.live`, главная с тремя
+терминалами, «План подвода» с обеими вкладками, `curl 127.0.0.1:8080/health`,
+`journalctl --user -u dpmodule-backend` без ошибок, `docker ps` — Up-время
+Keycloak не сбросилось.
+
+Контур «раскатка меняет оба»: тривиальная правка в `multi-tenant` → по скиллу
+`/deploy` сначала `DPmodule2` (канарейка) → smoke → затем `DPmodule`.
+
+## Откат
+
+Всё аддитивно, точек невозврата нет: `systemctl --user disable --now dpmodule2-*`,
+убрать server block nginx и redirect URI из Keycloak, при необходимости
+`DROP DATABASE dpport_river`. Боевой инстанс при этом не трогается вовсе.
+
+## Состояние выполнения (12.08.2026, Claude Code на VPS)
+
+**Шаги 0–6 выполнены, второй инстанс живёт на `https://anb-port.duckdns.org`.**
+Шаг 5 делал владелец в своём SSH-терминале: `sudo` на этой машине просит пароль и
+не имеет TTY ни у ассистента, ни через префикс `!` — все команды с `sudo` уходят
+владельцу готовым куском (конфиг заранее кладётся в
+`~/projects/anb-port.duckdns.org.conf`).
+
+- Преф-лайт: порты 8081/9091/4201 свободны, 18,8 ГБ RAM, 158 ГБ диска,
+  `anb-port.duckdns.org` → 212.113.99.3.
+- База `dpport_river` создана, `db_bootstrap.sql` прогнан, 122 миграции легли,
+  43 таблицы схемы `dpport`, все — владения `gtport_app` (миграции гнали под
+  `gtport_app`, ловушка «владелец alex» из истории не повторилась).
+  ⚠️ `sudo -u postgres` не понадобился: OS-роль `alex` — суперюзер Postgres по
+  peer-подключению, база создана `psql -d postgres`.
+- Клон 2, ветка `multi-tenant`, `.env` — ТОЛЬКО `PG_PASSWORD` (`ASU_TOKEN` и
+  `MAX_BOT_TOKEN` боевого сюда не копировались: интеграции выключены конфигом).
+- Справочники: комплект АНБ из `/home/alex/seed_river_anb/` → `_reference/seed/`,
+  `seed_directories.sql` (stations 3157, cargo 5033, marka 8, ports 1,
+  naznach_station 1, port_cargo_line 1, sf 14, max_* пусто) + `clients/river.sql`
+  (`client_name` = «АНБ (речной порт, ст. Амур)», `max_staleness_minutes` 720).
+- Юниты `dpmodule2-backend` / `dpmodule2-frontend` заведены и включены
+  (`enable --now`): бэкенд слушает 127.0.0.1:8081, метрики 9091, `/health` 200,
+  фоновый воркер один (`notifications-cleanup`) — интеграции выключены; фронт
+  `ng serve --configuration river --port 4201` отдаёт 200.
+  ⚠️ Отход от текста задания: у фронта стоит `--allowed-hosts` БЕЗ значения
+  (boolean true), как в боевом юните, — список хостов в CLI не задаётся, только
+  в `angular.json`; дев-сервер слушает лишь 127.0.0.1, наружу идёт через nginx.
+  ⚠️ Добавлен `frontend/proxy.river.conf.json` (`/api` → `:8081`) и прописан в
+  юните: боевой `proxy.conf.json` целится в `:8080`, и запрос к `4201/api`
+  молча ушёл бы в БОЕВУЮ базу.
+- Keycloak (шаг 6) сделан через `kcadm.sh` в контейнере: клиенту `iqport-dpport`
+  realm'а `iqport` добавлены `https://anb-port.duckdns.org/*` в redirect URIs и
+  `https://anb-port.duckdns.org` в web origins. Контейнер не перезапускался
+  (Up-время цело), боевой вход и главная отвечают 200. ⚠️ `webOrigins` там и до
+  правки был `["+"]` (= все origin'ы из redirect URIs), явная запись добавлена
+  рядом с `+` для наглядности — CORS работал бы и без неё.
+
+Открытое: `ports.pc_other`/`pc_total` = 40 — ЗАГЛУШКА из комплекта сидов,
+уточнить у клиента реальную перерабатывающую способность (от неё Stage 4 считает
+прогноз, плана подвода у АНБ нет). Проверка браузером (вход `disp`/`boss`, одна
+карточка терминала, меню без «Плана подвода», ручной приём xlsx) — после шага 5.

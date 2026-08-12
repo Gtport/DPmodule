@@ -32,18 +32,5 @@ COMMENT ON COLUMN dpport.report_preset.clients    IS 'Клиенты (через
 COMMENT ON COLUMN dpport.report_preset.sort_order IS 'Порядок';
 COMMENT ON COLUMN dpport.report_preset.enabled    IS 'Включён';
 
--- Пресет «Марис» — единственный клиентский вариант «Подхода» в gtport.
-INSERT INTO dpport.report_preset (report, name, clients, sort_order)
-VALUES ('podhod', 'Марис', 'КЛЦ МАРИС|HORIZON COMMODITIES TRADING LIMITED', 10)
-ON CONFLICT ON CONSTRAINT report_preset_key DO NOTHING;
-
--- Маршруты MAX формы «Подход»: справка терминала → чат терминала (зеркало
--- формы 'spravki'), пресеты (terminal='') → оперативный чат, как слал gtport.
--- Guard WHERE EXISTS: сид только для реально заведённых чатов (на пустой
--- dev-базе строки не вставятся — это не ошибка).
-INSERT INTO dpport.max_route (report, terminal, chat_name, sort_order, enabled)
-SELECT 'podhod', t.terminal, t.chat, t.so, true
-FROM (VALUES ('АЭ', 'at', 10), ('ГУТ-2', 'gut', 20), ('УТ-1', 'ut', 30), ('', 'oper', 40))
-     AS t(terminal, chat, so)
-WHERE EXISTS (SELECT 1 FROM dpport.max_chat c WHERE c.name = t.chat)
-ON CONFLICT ON CONSTRAINT max_route_key DO NOTHING;
+-- Пресет «Марис» и маршруты MAX формы «Подход» — клиентские данные,
+-- переехали в scripts/clients/gtport.sql.

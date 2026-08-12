@@ -37,21 +37,25 @@ CREATE TABLE dpport.client_settings (
     updated_at    timestamp NOT NULL DEFAULT now()
 );
 
--- ─────────────────────────────── сид текущего клиента ───────────────────────
--- Каналы ввода. ЛК (Excel, две выгрузки — Аттис/НМТП по ОКПО в файле).
+-- ─────────────────────────── нейтральный сид ядра ───────────────────────────
+-- Миграции — общий код всех клиентов, поэтому здесь только строки, без которых
+-- приложение не работает, с НЕЙТРАЛЬНЫМИ значениями; клиентское (имя клиента,
+-- пороги под его ритм загрузки) доливает scripts/clients/<клиент>.sql.
+-- Формат выгрузки ЛК (маркеры, расширения, отсечка 18ч) общий для всех клиентов
+-- ЛК РЖД — остаётся здесь. ОКПО кабинетов не здесь: «чей файл» определяется по
+-- реестру ports (прежний okpo_map упразднён миграцией 000006).
 INSERT INTO dpport.data_source (id, name, ingest, category, config) VALUES
  ('lk', 'Дислокация из ЛК РЖД', 'upload', 'dislocation',
    '{"detect":["Личный кабинет"],
      "subtype_marker":{"Дислокация вагонов":"lk"},
      "allowed_ext":["xlsx","xls"], "max_mb":10,
-     "okpo_map":{"10230304":"AT","1126022":"NMTP"},
      "header_marker":"Номер вагона", "date_cutoff_hour":18}')
 ON CONFLICT (id) DO NOTHING;
 
 -- Пороги приёма (§3.9): разрыв 15м, устаревание 60м, откат на старое (кроме админа),
 -- потеря данных 30%; для планов — план не позже дислокации на 1ч.
 INSERT INTO dpport.client_settings (id, client_name, ingest_policy) VALUES
- (1, 'GTport (3 порта)',
+ (1, 'DPport',
    '{"dislocation":{"max_gap_minutes":15,"max_staleness_minutes":60,
      "reject_older_than_current":true,"reject_older_role_exempt":"administrator",
      "max_data_loss_pct":30},

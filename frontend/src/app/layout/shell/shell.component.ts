@@ -129,9 +129,16 @@ export class ShellComponent {
 
   // Пункты меню из реестра, отфильтрованные по ролям текущего пользователя
   // (реактивно — сигналы ролей внутри auth.allows) и флагам бэка: карта,
-  // выключенная конфигом (map.enabled: false), в меню не показывается.
+  // выключенная конфигом (map.enabled: false), в меню не показывается; «План
+  // подвода» прячется у клиента без плановых станций (plan_stations из
+  // /settings/ui пуст; null = ещё не загружено — не прячем).
   readonly navItems = computed(() =>
     DISPATCHER_NAV.filter((i) => this.auth.allows(i.roles))
-      .filter((i) => i.path !== 'maps' || this.uiSettings.mapEnabled()),
+      .filter((i) => i.path !== 'maps' || this.uiSettings.mapEnabled())
+      .filter((i) => {
+        if (i.path !== 'plan') return true;
+        const st = this.uiSettings.planStations();
+        return st === null || st.length > 0;
+      }),
   );
 }

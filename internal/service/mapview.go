@@ -292,8 +292,13 @@ type MapWagonDTO struct {
 	Naznach     string            `json:"naznach"`
 	StationNach string            `json:"station_nach"` // станция отправления
 	Gruzotpr    string            `json:"gruzotpr"`     // отправитель
-	DateOtpr    *domain.LocalTime `json:"date_otpr"`    // дата отправления
-	DateDostav  *domain.LocalTime `json:"date_dostav"`  // нормативный срок доставки
+	// Две РАЗНЫЕ даты источника, и путать их нельзя (разбор случая 12.08.2026,
+	// вагон 73315582: 08.08 17:13 против 09.08 05:20). DateNach — «начало
+	// рейса» ЛК, ею подписаны погрузочные колонки прочих экранов и она же в
+	// ключе рейса; DateOtpr — фактическое отправление по АСОУП.
+	DateNach   *domain.LocalTime `json:"date_nach"`   // дата погрузки (начало рейса)
+	DateOtpr   *domain.LocalTime `json:"date_otpr"`   // дата отправления (АСОУП)
+	DateDostav *domain.LocalTime `json:"date_dostav"` // нормативный срок доставки
 }
 
 // MapWagonsDTO — ответ ручки вагонов группы.
@@ -323,7 +328,7 @@ func (s *MapService) Wagons(key string) MapWagonsDTO {
 			Freight: freight, Ves: r.Ves, Owner: r.Owner, Status: r.Status,
 			GruzpolS: r.GruzpolS, Naznach: r.Naznach,
 			StationNach: r.StationNach, Gruzotpr: r.Gruzotpr,
-			DateOtpr: r.DateOtpr, DateDostav: r.DateDostav,
+			DateNach: r.DateNach, DateOtpr: r.DateOtpr, DateDostav: r.DateDostav,
 		})
 	}
 	return out

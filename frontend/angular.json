@@ -60,6 +60,17 @@
                   "with": "src/environments/environment.development.ts"
                 }
               ]
+            },
+            "river": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true,
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.river.ts"
+                }
+              ]
             }
           },
           "defaultConfiguration": "production"
@@ -69,7 +80,8 @@
           "configurations": {
             "production": { "buildTarget": "app:build:production" },
             "uat": { "buildTarget": "app:build:uat" },
-            "development": { "buildTarget": "app:build:development" }
+            "development": { "buildTarget": "app:build:development" },
+            "river": { "buildTarget": "app:build:river" }
           },
           "defaultConfiguration": "development"
         },
