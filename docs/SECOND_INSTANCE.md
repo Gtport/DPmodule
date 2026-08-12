@@ -71,12 +71,16 @@ PG_DSN="postgres://gtport_app:<пароль>@localhost:5432/dpport_river?sslmode
 
 ### 3. Справочники и клиентский сид
 
-**Комплект CSV клиента АНБ уже собран и проверен вживую** (12.08.2026, WSL:
-чистая база + этот комплект + реальная выгрузка ЛК → 316 вагонов, все
-атрибутированы, ни одной неизвестной станции). Лежит на машине разработчика:
-`<WSL>/projects/DP/DPmodule/_reference/seed_river/` — скопировать в
-`_reference/seed/` клона 2 (например `scp -r` с WSL на VPS; git его не переносит,
-каталог в gitignore).
+**Комплект CSV клиента АНБ уже собран, проверен вживую и лежит на VPS в
+`/home/alex/seed_river_anb/`** (скопирован с WSL 12.08.2026; проверка: чистая
+база + этот комплект + реальная выгрузка ЛК → 316 вагонов, все атрибутированы,
+ни одной неизвестной станции). Осталось положить его на место клона 2:
+
+```bash
+mkdir -p /home/alex/projects/DPmodule2/_reference/seed
+cp /home/alex/seed_river_anb/*.csv /home/alex/projects/DPmodule2/_reference/seed/
+rm /home/alex/projects/DPmodule2/_reference/seed/stations_additions.csv  # справочный, уже влит в stations.csv
+```
 
 Профиль клиента (из выгрузки ЛК за 31.07–12.08.2026): ООО «АНБ», нефтебаза,
 станция назначения АМУР (970302, ДВС), ОКПО 33576117, грузы — нефтепродукты в
