@@ -35,7 +35,7 @@ TRUNCATE stations, cargo_operations, cargo, marka, ports, route_speed, naznach_s
 -- клиент БЕЗ плана подвода: у него plan_code пустой у всех терминалов.
 \copy ports(okpo,location,organisation,name_s,name,code,plan_code,station_code,pc_coal,pc_metal,pc_other,pc_total,front,color,enabled) FROM '_reference/seed/ports.csv' WITH (FORMAT csv, HEADER true, FORCE_NOT_NULL (location, organisation, name_s, name, code, plan_code, station_code, color))
 \copy route_speed(station_nach,is_bam,from_km,speed) FROM '_reference/seed/route_speed.csv' WITH (FORMAT csv, HEADER true)
-\copy naznach_station(dest_station,origin_station,naznach,univers,enabled) FROM '_reference/seed/naznach_station.csv' WITH (FORMAT csv, HEADER true)
+\copy naznach_station(dest_station,origin_station,naznach,univers,enabled) FROM '_reference/seed/naznach_station.csv' WITH (FORMAT csv, HEADER true, FORCE_NOT_NULL (origin_station, naznach))
 \copy sf(sinonim,station,quantity) FROM '_reference/seed/sf.csv' WITH (FORMAT csv, HEADER true)
 \copy port_cargo_line(terminal,kind,cargo_key,label,pc,sort_order,enabled,plan_label) FROM '_reference/seed/port_cargo_line.csv' WITH (FORMAT csv, HEADER true)
 \copy max_chat(name,chat_id,description,is_active) FROM '_reference/seed/max_chat.csv' WITH (FORMAT csv, HEADER true)
