@@ -183,6 +183,24 @@ func TestBuildNmtpReport(t *testing.T) {
 	assert.True(t, groups["ЗСМК"] && groups["САВИТАР"] && groups["КЛЦ МАРИС"] && groups["ПРОЧЕЕ"])
 }
 
+// Пустая раскладка nmtp_column — не ошибка (решение владельца 13.08.2026,
+// отчёт «Подход груза» доступен любому клиенту): форма строится с одной
+// грузовой колонкой «прочее», куда падает весь груз.
+func TestBuildNmtpReport_NoColumns(t *testing.T) {
+	v1 := nmtpVagon("60000021", "1111-111-1111", "ЕВРАЗ ТК", "НОВОКУЗНЕЦК-СЕВЕРНЫЙ", "СЛЯБЫ", "СЛЯБЫ", 1, 70)
+	v2 := nmtpVagon("60000022", "1111-111-1111", "ЕВРАЗ ТК", "НОВОКУЗНЕЦК-СЕВЕРНЫЙ", "КАТАНКА", "КАТ", 2, 70)
+
+	rep, _, _ := buildNmtpReport([]domain.Dislocation{v1, v2}, nil, nmtpTestMarks, "ГУТ-2",
+		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false, nil)
+
+	assert.Empty(t, rep.Columns)
+	assert.True(t, rep.HasOther)
+	assert.Equal(t, []int{2}, rep.ColCounts) // единственная колонка — «прочее»
+	assert.Equal(t, 2, rep.TotalVagons)
+	require.Len(t, rep.ClientTons, 1)
+	assert.Equal(t, "ПРОЧЕЕ", rep.ClientTons[0].Client)
+}
+
 // Безиндексные поезда («Б/И») не слипаются: ключ строки — индекс + станция +
 // прогноз, иначе все Б/И подхода сливались в одну строку (баг, найден сверкой
 // с выгрузкой gtport по АЭ 30.07.2026: 5 поездов Б/И → одна строка на 285 ваг).

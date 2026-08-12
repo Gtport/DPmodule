@@ -43,10 +43,12 @@ import { OverdueApiService } from './overdue-api.service';
           <button nz-button nzSize="small" (click)="lastDays(30)">30 дней</button>
         </div>
         <div class="filters">
-          <nz-select class="term" nzSize="small" [ngModel]="terminal()" (ngModelChange)="terminal.set($event)">
-            <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
-            @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
-          </nz-select>
+          @if (terminals().length > 1) {
+            <nz-select class="term" nzSize="small" [ngModel]="terminal()" (ngModelChange)="terminal.set($event)">
+              <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
+              @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
+            </nz-select>
+          }
           <span class="spacer"></span>
           <button nz-button nzType="primary" nzSize="small" [nzLoading]="downloading()" (click)="download()">
             <span nz-icon nzType="file-excel"></span> Скачать Excel
@@ -91,7 +93,10 @@ export class OverdueReportModalComponent implements OnInit {
 
   private async loadTerminals(): Promise<void> {
     try {
-      this.terminals.set((await this.arrivals.getTerminals()).map((t) => t.name));
+      const ts = (await this.arrivals.getTerminals()).map((t) => t.name);
+      this.terminals.set(ts);
+      // Единственный терминал и есть «все»: селектор скрыт, отчёт сразу по нему.
+      if (ts.length === 1 && !this.terminal()) this.terminal.set(ts[0]);
     } catch {
       /* справочник не критичен */
     }

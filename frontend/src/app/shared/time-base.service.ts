@@ -41,17 +41,32 @@ export class TimeBaseService {
    * пустой список = у клиента плана подвода нет, меню прячется.
    */
   readonly planStations = signal<PlanStation[] | null>(null);
-  private loaded = false;
+  /**
+   * Число включённых терминалов реестра ports; null = ответ ещё не пришёл
+   * (или упал) — как у planStations, временная ошибка настроек не прячет
+   * экраны. У клиента с единственным терминалом скрываются «Перестановки»
+   * (меню, страница, карточка отчётов) и кнопки «Все терминалы»
+   * (решение владельца 13.08.2026).
+   */
+  readonly terminalCount = signal<number | null>(null);
+  private initPromise: Promise<void> | null = null;
 
-  /** Подтянуть дефолт из настроек клиента (один раз; ошибка — остаёмся на ЖД). */
-  async init(): Promise<void> {
-    if (this.loaded) return;
-    this.loaded = true;
+  /**
+   * Подтянуть дефолт из настроек клиента (один раз; ошибка — остаёмся на ЖД).
+   * Повторные вызовы отдают ТОТ ЖЕ promise: гард маршрута дожидается ответа,
+   * даже если первым init запустил shell.
+   */
+  init(): Promise<void> {
+    this.initPromise ??= this.load();
+    return this.initPromise;
+  }
+
+  private async load(): Promise<void> {
     try {
       const s = await firstValueFrom(
         this.http.get<{
           time_base: string; map_enabled?: boolean; notifications_enabled?: boolean;
-          plan_stations?: PlanStation[];
+          plan_stations?: PlanStation[]; terminal_count?: number;
         }>(`${environment.apiBaseUrl}/v1/settings/ui`));
       if (s.time_base === 'msk' || s.time_base === 'jd') this.base.set(s.time_base);
       if (s.map_enabled === false) this.mapEnabled.set(false);
@@ -59,6 +74,7 @@ export class TimeBaseService {
       if (Array.isArray(s.plan_stations)) {
         this.planStations.set(s.plan_stations.filter((p) => !!p?.code));
       }
+      if (typeof s.terminal_count === 'number') this.terminalCount.set(s.terminal_count);
     } catch {
       /* настройка не критична — дефолт ЖД, карта и «План подвода» видны */
     }

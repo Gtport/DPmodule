@@ -45,14 +45,16 @@ export const DISPATCHER_NAV: NavItem[] = [
   // «Справки» убраны из меню (решение владельца 29.07.2026): в gtport вкладка
   // была байт-в-байт поднабором «Справок и отчётов» — СМС-формы влиты туда
   // (features/reports), маршрут /reference редиректит на /reports.
+  // «Работа за сутки» убрана из меню (решение владельца 13.08.2026): страница
+  // так и осталась заглушкой — суточный учёт живёт модалкой «Грузовая работа».
+  // Порядок пунктов — решение владельца 13.08.2026.
   { path: 'rearrangement',  label: 'Перестановки',          icon: 'swap',         theme: 'outline', roles: OPER },
   { path: 'plan',           label: 'План подвода',          icon: 'train',        theme: 'fill',    roles: OPER },
+  { path: 'reports',        label: 'Справки и отчёты',      icon: 'bar-chart',    theme: 'outline', roles: OPER },
+  { path: 'operator-tools', label: 'Инструменты оператора', icon: 'tool',         theme: 'fill',    roles: OPER },
+  { path: 'forecasts',      label: 'Прогнозы',              icon: 'line-chart',   theme: 'outline', roles: OPER },
+  { path: 'maps',           label: 'Карты',                 icon: 'global',       theme: 'outline', roles: OPER },
   { path: 'warehouse',      label: 'Склад',                 icon: 'warehouse',    theme: 'fill',    roles: OPER },
   { path: 'shipments',      label: 'Судовые партии',        icon: 'ship',         theme: 'fill',    roles: OPER },
-  { path: 'daily-work',     label: 'Работа за сутки',       icon: 'clock-circle', theme: 'fill',    roles: OPER },
-  { path: 'operator-tools', label: 'Инструменты оператора', icon: 'tool',         theme: 'fill',    roles: OPER },
-  { path: 'maps',           label: 'Карты',                 icon: 'global',       theme: 'outline', roles: OPER },
-  { path: 'forecasts',      label: 'Прогнозы',              icon: 'line-chart',   theme: 'outline', roles: OPER },
-  { path: 'reports',        label: 'Справки и отчёты',      icon: 'bar-chart',    theme: 'outline', roles: OPER },
   { path: 'admin',          label: 'Админ',                 icon: 'setting',      theme: 'fill',    roles: DICTS },
 ];

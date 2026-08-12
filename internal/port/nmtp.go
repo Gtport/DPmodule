@@ -15,8 +15,6 @@ type NmtpRepository interface {
 	Columns(ctx context.Context, terminal string) ([]domain.NmtpColumn, error)
 	// Marks — словарь марок груза для нормализатора (канонические имена).
 	Marks(ctx context.Context) ([]string, error)
-	// Terminals — терминалы с настроенной раскладкой (для кнопок карточки).
-	Terminals(ctx context.Context) ([]string, error)
 
 	// Привязки «вагон → колонка» (nmtp_vagon_column, миграция 000055):
 	// указание грузовладельца сильнее правил раскладки, живёт по номерам

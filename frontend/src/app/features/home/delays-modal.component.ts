@@ -57,10 +57,12 @@ interface DelayGroup {
             <nz-option nzValue="4" nzLabel="Долгий простой"></nz-option>
             <nz-option nzValue="5" nzLabel="Брошенные"></nz-option>
           </nz-select>
-          <nz-select class="term" nzSize="small" [ngModel]="terminalFilter()" (ngModelChange)="terminalFilter.set($event)">
-            <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
-            @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
-          </nz-select>
+          @if (terminals().length > 1) {
+            <nz-select class="term" nzSize="small" [ngModel]="terminalFilter()" (ngModelChange)="terminalFilter.set($event)">
+              <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
+              @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
+            </nz-select>
+          }
           <span class="spacer"></span>
           <button nz-button nzSize="small" (click)="showReport.set(true)"
                   nz-tooltip nzTooltipTitle="Отчёт по простоям за период (терминал, даты)">

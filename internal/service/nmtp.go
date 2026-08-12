@@ -126,9 +126,13 @@ func NewNmtpService(actual *ActualCache, dir *DirectoryCache, repo port.NmtpRepo
 	return &NmtpService{actual: actual, dir: dir, repo: repo, bros: bros}
 }
 
-// Terminals — терминалы, у которых настроена раскладка (кнопки карточки).
-func (s *NmtpService) Terminals(ctx context.Context) ([]string, error) {
-	return s.repo.Terminals(ctx)
+// Terminals — кнопки карточки «Подход груза»: ВСЕ включённые терминалы
+// реестра ports (решение владельца 13.08.2026 — отчёт доступен любому
+// клиенту; раскладка nmtp_column лишь уточняет колонки, без неё весь груз
+// падает в «прочее»). Раньше список брался из nmtp_column, и клиент без
+// раскладки не видел карточку вовсе.
+func (s *NmtpService) Terminals(_ context.Context) ([]string, error) {
+	return s.dir.EnabledTerminals(), nil
 }
 
 // Report — форма терминала из текущего снимка. naznachOnly — режим «скрыть
@@ -143,9 +147,8 @@ func (s *NmtpService) Report(ctx context.Context, terminal string, naznachOnly b
 	if err != nil {
 		return domain.NmtpReport{}, err
 	}
-	if len(cols) == 0 {
-		return domain.NmtpReport{}, fmt.Errorf("для терминала %s не настроены колонки НМТП (справочник nmtp_column)", terminal)
-	}
+	// Пустая раскладка — не ошибка (решение владельца 13.08.2026): форма
+	// строится с одной грузовой колонкой «прочее» — работает у любого клиента.
 	marks, err := s.repo.Marks(ctx)
 	if err != nil {
 		return domain.NmtpReport{}, err

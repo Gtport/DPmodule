@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
+import { multiTerminalGuard } from './core/multi-terminal.guard';
 import { ShellComponent } from './layout/shell/shell.component';
 import { PlaceholderComponent } from './features/placeholder/placeholder.component';
 import { DICTS, OPER, DISPATCHER_NAV } from './layout/shell/nav.config';
@@ -45,10 +46,12 @@ export const routes: Routes = [
         data: { roles: OPER },
       },
       {
+        // «Перестановки» осмысленны только при нескольких терминалах: у клиента
+        // с одним гард уводит на главную (пункт меню скрывает shell).
         path: 'rearrangement',
         loadComponent: () =>
           import('./features/rearrangement/rearrangement.component').then((m) => m.RearrangementComponent),
-        canActivate: [authGuard],
+        canActivate: [authGuard, multiTerminalGuard],
         data: { roles: OPER },
       },
       {

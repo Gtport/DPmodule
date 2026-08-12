@@ -16,12 +16,13 @@ import (
 // конфига (map.enabled), которые фронт читает один раз на старте.
 type settingsHandler struct {
 	cfg          *service.ConfigCache
+	dir          *service.DirectoryCache
 	mapEnabled   bool
 	notifEnabled bool
 }
 
-func NewSettingsHandler(cfg *service.ConfigCache, mapEnabled, notifEnabled bool) *settingsHandler {
-	return &settingsHandler{cfg: cfg, mapEnabled: mapEnabled, notifEnabled: notifEnabled}
+func NewSettingsHandler(cfg *service.ConfigCache, dir *service.DirectoryCache, mapEnabled, notifEnabled bool) *settingsHandler {
+	return &settingsHandler{cfg: cfg, dir: dir, mapEnabled: mapEnabled, notifEnabled: notifEnabled}
 }
 
 func (h *settingsHandler) RegisterRoutes(g *gin.RouterGroup) {
@@ -43,6 +44,10 @@ type uiSettingsDTO struct {
 	// нет, фронт прячет пункт меню (у бесплановой станции Stage 4 живёт на
 	// перерабатывающей способности, экран плана не нужен).
 	PlanStations []planStationDTO `json:"plan_stations"`
+	// Число включённых терминалов реестра ports. У клиента с единственным
+	// терминалом фронт прячет «Перестановки» (меню, страницу, карточку отчётов)
+	// и кнопки «Все терминалы» (решение владельца 13.08.2026).
+	TerminalCount int `json:"terminal_count"`
 }
 
 // planStationDTO — вкладка станции плана: code — plan_code (ma/nk, ключ API
@@ -84,5 +89,6 @@ func (h *settingsHandler) ui(c *gin.Context) {
 		MapEnabled:           h.mapEnabled,
 		NotificationsEnabled: h.notifEnabled,
 		PlanStations:         planStations(h.cfg.PlanProfiles()),
+		TerminalCount:        len(h.dir.EnabledTerminals()),
 	})
 }

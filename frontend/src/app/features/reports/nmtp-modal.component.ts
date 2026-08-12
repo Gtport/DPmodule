@@ -36,7 +36,8 @@ interface RowForm {
 }
 
 /**
- * Перемещаемая модалка «Подход вагонов {терминал}» по форме порта (НМТП) —
+ * Перемещаемая модалка «Подход груза {терминал}» по форме порта (экс-«Отчёты
+ * НМТП», переименована и открыта всем клиентам решением владельца 13.08.2026) —
  * экранное представление той же формы, что серверная книга .xlsx: шапка в три
  * уровня (клиент / станции погрузки / марка), секции-дороги (пустая дорога —
  * одна полоса-заголовок, причальные станции показываются только с поездами),
@@ -65,7 +66,7 @@ interface RowForm {
       <ng-template #ttl>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
           <span class="tbadge" [style.background]="terminalColor()">{{ terminal() }}</span>
-          Подход вагонов (форма порта)
+          Подход груза
           <span class="sub">поездов: {{ report()?.trains_active ?? 0 }}</span>
           @if (dirty()) {
             <span class="edited" nz-tooltip
@@ -786,7 +787,7 @@ export class NmtpModalComponent implements OnInit {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Подход вагонов ${this.terminal()} ${todayMsk()}.png`;
+      a.download = `Подход груза ${this.terminal()} ${todayMsk()}.png`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -799,9 +800,9 @@ export class NmtpModalComponent implements OnInit {
     this.sending.set(true);
     try {
       const blob = await this.png();
-      const caption = `Подход вагонов ${this.terminal()} на ${todayMsk()}`;
+      const caption = `Подход груза ${this.terminal()} на ${todayMsk()}`;
       const res = await this.max.sendImage('nmtp', this.terminal(), blob,
-        `Подход вагонов ${this.terminal()} ${todayMsk()}.png`, caption);
+        `Подход груза ${this.terminal()} ${todayMsk()}.png`, caption);
       if (res.chats === 0) {
         this.msg.warning('Нет настроенного маршрута рассылки (форма «nmtp»)');
       } else if (Object.keys(res.failed).length) {
@@ -826,7 +827,7 @@ export class NmtpModalComponent implements OnInit {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Подход вагонов ${this.terminal()} ${todayMsk()}.xlsx`;
+      a.download = `Подход груза ${this.terminal()} ${todayMsk()}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {

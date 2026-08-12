@@ -75,15 +75,6 @@ func (r *NmtpRepository) Marks(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-func (r *NmtpRepository) Terminals(ctx context.Context) ([]string, error) {
-	var out []string
-	err := r.db.WithContext(ctx).Model(&nmtpColumnModel{}).
-		Where("enabled").Distinct().
-		Order("terminal").
-		Pluck("terminal", &out).Error
-	return out, err
-}
-
 // ── Привязки «вагон → колонка» (nmtp_vagon_column, миграция 000055) ─────────
 
 type nmtpVagonColumnModel struct {

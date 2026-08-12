@@ -11,6 +11,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { todayMsk } from '../../shared/msk-date';
+import { readableTextColor } from '../../shared/readable-color';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { MaxApiService } from './max-api.service';
 import { PodhodApiService, PodhodItem, PodhodReport, PodhodSubgroup } from './podhod-api.service';
@@ -42,7 +43,7 @@ import { PodhodApiService, PodhodItem, PodhodReport, PodhodSubgroup } from './po
       <ng-template #ttl>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
           <span class="tbadge" [style.background]="terminalColor()">{{ terminal() }}</span>
-          Подход @if (presetName()) { <span class="preset">{{ presetName() }}</span> }
+          Подход поездов @if (presetName()) { <span class="preset">{{ presetName() }}</span> }
           <span class="sub">поездов: {{ report()?.total ?? 0 }}</span>
         </div>
       </ng-template>
@@ -212,18 +213,22 @@ export class PodhodModalComponent implements OnInit {
   groupColor(item: PodhodItem): string | null {
     const sgs = item.subgroups;
     if (!sgs.length || !sgs[0].prim_4) return null;
-    return sgs.every((s) => s.prim_4 === sgs[0].prim_4) ? sgs[0].prim_4 : null;
+    const mark = sgs.every((s) => s.prim_4 === sgs[0].prim_4) ? sgs[0].prim_4 : null;
+    return readableTextColor(mark);
   }
 
   /**
    * Цвет примечания — по имени терминала в тексте из реестра ports (в gtport
    * был хардкод «аттис → синий, нмтп → зелёный»; универсально — цвет терминала).
+   * Цвета реестра подобраны заливками, текст бледным не читается — затемняем.
    */
   primColor(prim: string): string | null {
     if (!prim) return null;
     const low = prim.toLowerCase();
     for (const t of this.terminals()) {
-      if (t.name && low.includes(t.name.toLowerCase())) return t.color || null;
+      if (t.name && low.includes(t.name.toLowerCase())) {
+        return readableTextColor(t.color || null);
+      }
     }
     return null;
   }

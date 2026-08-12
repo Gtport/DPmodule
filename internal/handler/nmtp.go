@@ -36,7 +36,7 @@ func (h *nmtpHandler) RegisterRoutes(g *gin.RouterGroup) {
 func naznachOnly(c *gin.Context) bool { return c.Query("mode") == "naznach" }
 
 // terminals godoc
-// @Summary  Терминалы с настроенной раскладкой НМТП-отчёта (nmtp_column)
+// @Summary  Терминалы отчёта «Подход груза» (все включённые из реестра ports)
 // @Tags     reports
 // @Security BearerAuth
 // @Success  200 {array} string
@@ -115,8 +115,10 @@ func (h *nmtpHandler) excelEdited(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "не разобран отчёт: " + err.Error()})
 		return
 	}
-	if rep.Terminal == "" || len(rep.Columns) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "пустой отчёт (нет терминала или колонок)"})
+	// Колонок может не быть вовсе: без раскладки nmtp_column форма живёт одной
+	// колонкой «прочее» (решение владельца 13.08.2026).
+	if rep.Terminal == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "пустой отчёт (нет терминала)"})
 		return
 	}
 	data, filename, err := report.NmtpXLSX(rep)

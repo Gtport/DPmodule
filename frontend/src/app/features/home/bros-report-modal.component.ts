@@ -65,10 +65,12 @@ interface DailyStat { date: string; count: number; created: number; lifted: numb
 
         @if (showFilters()) {
           <div class="filters">
-            <nz-select class="term" nzSize="small" [ngModel]="terminal()" (ngModelChange)="terminal.set($event)">
-              <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
-              @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
-            </nz-select>
+            @if (terminals().length > 1) {
+              <nz-select class="term" nzSize="small" [ngModel]="terminal()" (ngModelChange)="terminal.set($event)">
+                <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
+                @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
+              </nz-select>
+            }
             <label class="fl">Начало <input type="date" class="date" [ngModel]="start()" (ngModelChange)="start.set($event)" /></label>
             <label class="fl">Конец <input type="date" class="date" [ngModel]="end()" (ngModelChange)="end.set($event)" /></label>
             <button nz-button nzType="primary" nzSize="small" [nzLoading]="loading()" (click)="load()">
@@ -516,6 +518,9 @@ export class BrosReportModalComponent implements OnInit {
       const [codes, terms] = await Promise.all([this.api.getReasonCodes(), this.arrivals.getTerminals()]);
       this.codes.set(codes);
       this.terminals.set(terms.map((t) => t.name));
+      // Единственный терминал и есть «все»: селектор скрыт, отчёт (и подпись
+      // portLabel в экспорте) сразу по нему.
+      if (terms.length === 1 && !this.terminal()) this.terminal.set(terms[0].name);
       const cm: Record<string, string> = {};
       for (const t of terms) cm[t.name] = t.color;
       this.termColor.set(cm);

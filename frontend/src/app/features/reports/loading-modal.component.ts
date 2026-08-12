@@ -89,11 +89,13 @@ interface TerminalSummary {
               <span nz-icon nzType="camera"></span>
             </button>
           } @else {
-            <nz-select class="term" nzSize="small" nzPlaceHolder="Терминал"
-                       [ngModel]="terminal()" (ngModelChange)="pickTerminal($event)">
-              <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
-              @for (t of terminals(); track t.name) { <nz-option [nzValue]="t.name" [nzLabel]="t.name"></nz-option> }
-            </nz-select>
+            @if (terminals().length > 1) {
+              <nz-select class="term" nzSize="small" nzPlaceHolder="Терминал"
+                         [ngModel]="terminal()" (ngModelChange)="pickTerminal($event)">
+                <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
+                @for (t of terminals(); track t.name) { <nz-option [nzValue]="t.name" [nzLabel]="t.name"></nz-option> }
+              </nz-select>
+            }
             <label class="fl">С <input type="date" class="date" [ngModel]="from()" (ngModelChange)="from.set($event)" /></label>
             <label class="fl">По <input type="date" class="date" [ngModel]="to()" (ngModelChange)="to.set($event)" /></label>
             <button nz-button nzType="primary" nzSize="small" [nzLoading]="loading()" (click)="loadDaily()">
@@ -345,8 +347,14 @@ export class LoadingModalComponent implements OnInit {
       const ts = await this.arrivals.getTerminals();
       this.terminals.set(ts);
       const want = this.initialTerminal();
-      if (want && ts.some((t) => t.name === want)) this.terminal.set(want);
-      // want пуст либо вне реестра → остаётся '' («Все терминалы»).
+      if (want && ts.some((t) => t.name === want)) {
+        this.terminal.set(want);
+      } else if (ts.length === 1) {
+        // Единственный терминал и есть «все»: селектор скрыт, вид «По дням»
+        // сразу по нему (пивот «дата × отправитель», а не «дата × терминал»).
+        this.terminal.set(ts[0].name);
+      }
+      // Иначе want пуст либо вне реестра → остаётся '' («Все терминалы»).
     } catch { /* без реестра сводка будет пустой — тост даст загрузка */ }
     await this.loadSummary();
     if (this.initialView() === 'daily') this.switchView('daily');

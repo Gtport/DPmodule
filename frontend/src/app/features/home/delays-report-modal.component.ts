@@ -62,10 +62,12 @@ interface ReportGroup {
 
       <ng-container *nzModalContent>
         <div class="filters">
-          <nz-select class="term" nzSize="small" [ngModel]="terminal()" (ngModelChange)="terminal.set($event)">
-            <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
-            @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
-          </nz-select>
+          @if (terminals().length > 1) {
+            <nz-select class="term" nzSize="small" [ngModel]="terminal()" (ngModelChange)="terminal.set($event)">
+              <nz-option nzValue="" nzLabel="Все терминалы"></nz-option>
+              @for (t of terminals(); track t) { <nz-option [nzValue]="t" [nzLabel]="t"></nz-option> }
+            </nz-select>
+          }
           <nz-select class="kind" nzSize="small" [ngModel]="kindFilter()" (ngModelChange)="kindFilter.set($event)">
             <nz-option nzValue="" nzLabel="Все задержки"></nz-option>
             <nz-option nzValue="4" nzLabel="Долгий простой"></nz-option>
@@ -237,7 +239,10 @@ export class DelaysReportModalComponent implements OnInit {
 
   private async loadTerminals(): Promise<void> {
     try {
-      this.terminals.set((await this.arrivals.getTerminals()).map((t) => t.name));
+      const ts = (await this.arrivals.getTerminals()).map((t) => t.name);
+      this.terminals.set(ts);
+      // Единственный терминал и есть «все»: селектор скрыт, отчёт сразу по нему.
+      if (ts.length === 1 && !this.terminal()) this.terminal.set(ts[0]);
     } catch {
       /* справочник не критичен */
     }

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
@@ -32,8 +32,13 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
  * Верхний ряд:
  * - «Оперативка»: «Утренняя СМС с ПП», «Оперативная СМС с ПП», «Брошенные
  *   поезда» (модалка из features/home);
- * - «Подход»: кнопка на каждый терминал из реестра (`GET /dislocation/terminals`);
- * - «Подход {пресет}» — карточка на каждый пресет из report_preset («Марис»);
+ * - «Подход поездов»: кнопка на каждый терминал из реестра
+ *   (`GET /dislocation/terminals`);
+ * - «Подход поездов {пресет}» — карточка на каждый пресет из report_preset
+ *   («Марис»);
+ * - «Подход груза» (экс-«Отчёты НМТП», решение владельца 13.08.2026): форма
+ *   порта по каждому терминалу; раскладка nmtp_column необязательна — без неё
+ *   груз падает в колонку «прочее», карточка есть у любого клиента;
  * - «Погрузка/Выгрузка»: «Погрузка в адрес портов» (сводка дня, в MAX) и
  *   «Выгрузка за день» (скрин-форма, в MAX).
  * Нижний ряд:
@@ -46,8 +51,10 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
  *   каждый терминал из реестра — модалка открывается сразу по нему; у
  *   брошенных и погрузки первая кнопка «Все терминалы» (у выгрузки «все»
  *   нет — отчёт всегда по одному терминалу, `GET /reports/vygruzka`).
- * Оставшийся блок оригинала (Отчёты НМТП) добавится по мере переноса —
- * пустых кнопок не заводим.
+ *
+ * Клиент с ОДНИМ терминалом (решение владельца 13.08.2026): карточка
+ * «Перестановки» не показывается (переставлять некуда), кнопки «Все
+ * терминалы» скрыты — единственный терминал и есть «все».
  */
 @Component({
   selector: 'app-reports',
@@ -73,7 +80,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
 
           @if (terminals().length) {
             <div class="card">
-              <div class="head">Подход</div>
+              <div class="head">Подход поездов</div>
               <div class="body">
                 @for (t of terminals(); track t.name) {
                   <button nz-button nzBlock (click)="openPodhod(t.name, '', '')">
@@ -85,7 +92,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
 
             @for (p of presets(); track p.id) {
               <div class="card">
-                <div class="head">Подход {{ p.name }}</div>
+                <div class="head">Подход поездов {{ p.name }}</div>
                 <div class="body">
                   @for (t of terminals(); track t.name) {
                     <button nz-button nzBlock (click)="openPodhod(t.name, p.clients, p.name)">
@@ -98,11 +105,11 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
 
             @if (nmtpTerminals().length) {
               <div class="card">
-                <div class="head">Отчёты НМТП</div>
+                <div class="head">Подход груза</div>
                 <div class="body">
                   @for (t of nmtpTerminals(); track t) {
                     <button nz-button nzBlock (click)="nmtpOpen.set(t)">
-                      <span class="dot" [style.background]="terminalColor(t)"></span>Подход {{ t }}
+                      <span class="dot" [style.background]="terminalColor(t)"></span>{{ t }}
                     </button>
                   }
                 </div>
@@ -135,7 +142,7 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
             </div>
           </div>
 
-          @if (terminals().length) {
+          @if (multiTerminal()) {
             <div class="card">
               <div class="head">Перестановки</div>
               <div class="body">
@@ -153,7 +160,9 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
           <div class="card">
             <div class="head">Отчёты по брошенным</div>
             <div class="body">
-              <button nz-button nzBlock (click)="brosReport.set('')">Все терминалы</button>
+              @if (multiTerminal()) {
+                <button nz-button nzBlock (click)="brosReport.set('')">Все терминалы</button>
+              }
               @for (t of terminals(); track t.name) {
                 <button nz-button nzBlock (click)="brosReport.set(t.name)">
                   <span class="dot" [style.background]="t.color"></span>{{ t.name }}
@@ -165,7 +174,9 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
           <div class="card">
             <div class="head">Отчёты по погрузке</div>
             <div class="body">
-              <button nz-button nzBlock (click)="loading.set({ view: 'daily', terminal: '' })">Все терминалы</button>
+              @if (multiTerminal()) {
+                <button nz-button nzBlock (click)="loading.set({ view: 'daily', terminal: '' })">Все терминалы</button>
+              }
               @for (t of terminals(); track t.name) {
                 <button nz-button nzBlock (click)="loading.set({ view: 'daily', terminal: t.name })">
                   <span class="dot" [style.background]="t.color"></span>{{ t.name }}
@@ -207,11 +218,14 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
   `,
   styles: [`
     .page { padding: var(--space-lg); display: flex; justify-content: center; align-items: flex-start; }
-    .rows { display: flex; flex-direction: column; gap: var(--space-sm); max-width: 1200px; }
+    .rows { display: flex; flex-direction: column; gap: var(--space-sm); width: min(100%, 1200px); }
     .row-label { color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: 600;
                  text-transform: uppercase; letter-spacing: .04em; margin-top: var(--space-sm); }
-    .blocks { display: flex; flex-wrap: wrap; gap: var(--space-md); align-items: flex-start; }
-    .card { width: 260px; background: var(--color-bg-surface); border: 1px solid var(--color-border);
+    /* Сетка карточек: четыре в ряд на рабочей ширине (замечание владельца
+       13.08.2026), на узком окне колонки сами убывают до трёх/двух. */
+    .blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+              gap: var(--space-md); align-items: start; }
+    .card { background: var(--color-bg-surface); border: 1px solid var(--color-border);
             border-top: 6px solid var(--color-primary); border-radius: var(--radius-card);
             box-shadow: var(--shadow-card); overflow: hidden;
             transition: box-shadow .2s ease, transform .2s ease; }
@@ -249,6 +263,12 @@ export class ReportsComponent implements OnInit {
 
   readonly terminals = signal<TerminalTarget[]>([]);
   readonly presets = signal<ReportPreset[]>([]);
+  /**
+   * Терминалов больше одного (решение владельца 13.08.2026): только тогда
+   * есть смысл в карточке «Перестановки» и кнопках «Все терминалы» —
+   * у клиента с единственным терминалом он и есть «все».
+   */
+  readonly multiTerminal = computed(() => this.terminals().length > 1);
 
   ngOnInit(): void {
     void this.loadRegistry();

@@ -253,7 +253,7 @@ func Build(
 		// Клиентские настройки интерфейса (шкала ввода времени и т.п.)
 		// + флаг «карта включена» — по нему фронт прячет пункт меню «Карты»,
 		// + флаг «уведомления включены» — по нему фронт прячет колокольчик.
-		handler.NewSettingsHandler(cfgCache, cfg.MapView.EnabledOrDefault(), notifSvc != nil).RegisterRoutes(api)
+		handler.NewSettingsHandler(cfgCache, dirCache, cfg.MapView.EnabledOrDefault(), notifSvc != nil).RegisterRoutes(api)
 
 		// Робот ЛК: сам ходит в личный кабинет РЖД вместо ручной выгрузки
 		// диспетчером, кладёт файл в тот же приём и следом обновляет дислокацию.
