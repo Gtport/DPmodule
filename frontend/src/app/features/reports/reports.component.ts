@@ -218,11 +218,13 @@ import { SmsPlanModalComponent } from './sms-plan-modal.component';
   `,
   styles: [`
     .page { padding: var(--space-lg); display: flex; justify-content: center; align-items: flex-start; }
-    .rows { display: flex; flex-direction: column; gap: var(--space-sm); width: min(100%, 1200px); }
+    .rows { display: flex; flex-direction: column; gap: var(--space-sm); width: min(100%, 1400px); }
     .row-label { color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: 600;
                  text-transform: uppercase; letter-spacing: .04em; margin-top: var(--space-sm); }
-    /* Сетка карточек: четыре в ряд на рабочей ширине (замечание владельца
-       13.08.2026), на узком окне колонки сами убывают до трёх/двух. */
+    /* Сетка карточек: ПЯТЬ в ряд на рабочей ширине (поправка владельца
+       14.08.2026: не четыре), на узком окне колонки сами убывают. Потолок
+       контейнера 1400px держит ровно 5 колонок минимума 240px и не даёт
+       шестой на сверхшироком мониторе. */
     .blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
               gap: var(--space-md); align-items: start; }
     .card { background: var(--color-bg-surface); border: 1px solid var(--color-border);
