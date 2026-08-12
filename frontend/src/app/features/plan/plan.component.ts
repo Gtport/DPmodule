@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, ViewChild, WritableSignal, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, WritableSignal, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { DragDropModule } from '@angular/cdk/drag-drop';
@@ -20,15 +20,8 @@ import { PlanStatusPanelComponent } from './plan-status-panel.component';
 import { PlanUploadHint, planUploadHint } from './plan-upload-hint';
 import { IndexInputComponent } from './index-input.component';
 import { FileDropComponent } from '../../shared/file-drop.component';
-
-/**
- * Станции плана подвода со встроенным профилем на бэке (internal/parser/plan/
- * profile.go, ResolveProfile). Появится профиль из БД — добавить строку.
- */
-const STATION_OPTIONS: { code: string; label: string }[] = [
-  { code: 'ma', label: 'Мыс Астафьева' },
-  { code: 'nk', label: 'Находка' },
-];
+import { TimeBaseService } from '../../shared/time-base.service';
+import { stationTitle } from '../../shared/station-name';
 
 /** Текущая дата МСК (yyyy-MM-dd) — дефолт фильтра по дате плана; не зависит от пояса браузера. */
 function todayMsk(): string {
@@ -54,8 +47,12 @@ function todayMsk(): string {
       <app-plan-status-panel />
       <nz-card class="card">
         <nz-tabs class="plan-tabs" [nzSelectedIndex]="selectedIndex()" (nzSelectedIndexChange)="onTabChange($event)">
-          @for (o of stationOptions; track o.code) {
-            <nz-tab [nzTitle]="o.label"></nz-tab>
+          @for (o of stationOptions(); track o.code) {
+            <nz-tab [nzTitle]="stationTitle(o.label)"></nz-tab>
+          } @empty {
+            <!-- Профили станций не настроены (plan_profile пуст) либо настройки
+                 ещё не загрузились — прямая ссылка /plan без вкладок. -->
+            <nz-tab nzTitle="Станции плана подвода не настроены"></nz-tab>
           }
         </nz-tabs>
 
@@ -413,15 +410,19 @@ export class PlanComponent implements OnInit, OnDestroy {
   private readonly api = inject(PlanApiService);
   /** Уведомления — всплывающие тосты с автоуборкой (договорённость), не баннеры в теле. */
   private readonly msg = inject(NzMessageService);
+  private readonly uiSettings = inject(TimeBaseService);
 
   @ViewChild(PlanStatusPanelComponent) private statusPanel?: PlanStatusPanelComponent;
 
-  readonly stationOptions = STATION_OPTIONS;
-  readonly selectedCode = signal(STATION_OPTIONS[0].code);
-  readonly selectedLabel = signal(STATION_OPTIONS[0].label);
+  /** Вкладки станций — из /settings/ui (plan_profile), хардкода больше нет. */
+  readonly stationOptions = computed(() => this.uiSettings.planStations() ?? []);
+  /** «МЫС АСТАФЬЕВА» → «Мыс Астафьева» на подписи вкладки (данные не трогаем). */
+  readonly stationTitle = stationTitle;
+  readonly selectedCode = signal('');
+  readonly selectedLabel = signal('');
   readonly selectedPlanId = signal<number | null>(null);
   readonly selectedIndex = computed(() =>
-    this.stationOptions.findIndex((o) => o.code === this.selectedCode()),
+    this.stationOptions().findIndex((o) => o.code === this.selectedCode()),
   );
 
   readonly plans = signal<PlanSummary[]>([]);
@@ -484,8 +485,20 @@ export class PlanComponent implements OnInit, OnDestroy {
     return g.nitki.filter((n) => n.is_ostatok || n.activ > 0);
   });
 
+  constructor() {
+    // Станции приходят из /settings/ui асинхронно (обычно уже загружены shell'ом
+    // к моменту навигации). Как только список известен и текущий код не из него
+    // (старт или смена клиента) — встаём на первую станцию и грузим её план.
+    effect(() => {
+      const opts = this.stationOptions();
+      if (opts.length && !opts.some((o) => o.code === this.selectedCode())) {
+        this.onCodeChange(opts[0].code);
+      }
+    });
+  }
+
   ngOnInit(): void {
-    this.reload(this.selectedCode());
+    if (this.selectedCode()) this.reload(this.selectedCode());
   }
 
   ngOnDestroy(): void {
@@ -494,13 +507,14 @@ export class PlanComponent implements OnInit, OnDestroy {
 
   onCodeChange(code: string): void {
     this.selectedCode.set(code);
-    this.selectedLabel.set(this.stationOptions.find((o) => o.code === code)?.label ?? code);
+    const st = this.stationOptions().find((o) => o.code === code);
+    this.selectedLabel.set(st ? stationTitle(st.label) : code);
     this.reload(code);
   }
 
   /** Переключение станции вкладкой. */
   onTabChange(index: number): void {
-    const code = this.stationOptions[index]?.code;
+    const code = this.stationOptions()[index]?.code;
     if (code) this.onCodeChange(code);
   }
 

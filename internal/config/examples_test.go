@@ -62,6 +62,31 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 			},
 		},
 		{
+			file: "config.river.yaml",
+			want: func(t *testing.T, cfg *Config) {
+				// Второй инстанс VPS (клиент river): Keycloak общий с боевым —
+				// issuer обязан совпадать с боевым (сверяется дословно).
+				if cfg.Keycloak.Issuer != "https://95850.koara.live/realms/iqport" {
+					t.Error("keycloak.issuer обязан совпадать с боевым (общий realm)")
+				}
+				// Все внешние интеграции выключены: у клиента нет АСУ/MAX/памяток,
+				// а их включение без своих записей data_source/max_chat слало бы
+				// данные боевого провайдера.
+				if cfg.ASU.Enabled || cfg.Reference.Enabled || cfg.MAX.Enabled ||
+					cfg.WagonOps.Enabled || cfg.Bros.Enabled || cfg.LKRobot.Enabled {
+					t.Error("у инстанса river внешние интеграции обязаны быть выключены")
+				}
+				// Порты не должны столкнуться с боевым инстансом (8080/9090).
+				if cfg.HTTP.Port == 8080 || cfg.Metrics.Port == 9090 {
+					t.Error("порты river обязаны отличаться от боевых 8080/9090")
+				}
+				// Своя база — защита от случайного захода в боевую dpport.
+				if cfg.Postgres.DBName != "dpport_river" {
+					t.Error("postgres.dbname обязан быть dpport_river")
+				}
+			},
+		},
+		{
 			file: "config.local.example.yaml",
 			want: func(t *testing.T, cfg *Config) {
 				// Машина разработчика: ВСЕ исходящие интеграции выключены —

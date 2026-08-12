@@ -11,6 +11,7 @@ import { OperativkaCardComponent } from './operativka-card.component';
 import { SystemStatusCardComponent } from './system-status-card.component';
 import { InfoCardComponent } from './info-card.component';
 import { UnplannedCardComponent } from './unplanned-card.component';
+import { stationTitle } from '../../shared/station-name';
 
 /** Половина рабочей зоны: станция и её терминалы (из реестра ports). */
 interface StationHalf {
@@ -40,7 +41,7 @@ interface StationHalf {
   imports: [ArrivalsCardComponent, CandidatesCardComponent, NearestCardComponent, OperativkaCardComponent,
             SystemStatusCardComponent, InfoCardComponent, UnplannedCardComponent],
   template: `
-    <div class="cols">
+    <div class="cols" [style.--col-count]="stations().length + 1">
       <section class="col">
         <h2 class="st-title">Оперативка</h2>
         <!-- Сигнал «поезд едет без плана» — в ширину колонки, над карточками
@@ -71,7 +72,10 @@ interface StationHalf {
   `,
   styles: [`
     :host { display: flex; flex-direction: column; gap: var(--space-md); }
-    .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-lg); align-items: start; }
+    /* Колонок — «Оперативка» + по одной на станцию реестра ports (--col-count из
+       шаблона): у клиента с одной станцией не остаётся пустой трети экрана. */
+    .cols { display: grid; grid-template-columns: repeat(var(--col-count, 3), 1fr);
+            gap: var(--space-lg); align-items: start; }
     .col { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
     /* Верх «Оперативки»: слева статус системы, справа «Работа» (обе в половину
        ширины колонки); суточные счётчики терминалов — ниже, во всю ширину. */
@@ -144,17 +148,9 @@ export class HomeComponent implements OnInit {
     void this.operativka.load();
   }
 
-  /** «МЫС АСТАФЬЕВА» → «Мыс Астафьева» (заголовок половины). Слова короче
-   *  4 букв, стоящие не первыми, оставляем как в реестре: «…ГЭС» — аббревиатура,
-   *  а не «Гэс» (имя станции — данные, капитализацией их ломать нельзя). */
+  /** «МЫС АСТАФЬЕВА» → «Мыс Астафьева» (заголовок половины); общий с вкладками
+   *  «Плана подвода» хелпер — shared/station-name.ts. */
   title(name: string): string {
-    return name
-      .split(/(\s+|-)/)
-      .map((w, i) => {
-        if (/^\s+$|^-$/.test(w) || !w) return w;
-        if (i > 0 && w.length <= 4 && w === w.toUpperCase()) return w; // аббревиатура: ГЭС, ВП
-        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-      })
-      .join('');
+    return stationTitle(name);
   }
 }

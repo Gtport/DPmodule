@@ -19,10 +19,12 @@
 
 SET search_path TO dpport;
 
+-- Список клиентов провайдера (clients) — клиентские данные, доливает
+-- scripts/clients/<клиент>.sql; здесь нейтральная заготовка канала.
 INSERT INTO dpport.data_source (id, name, enabled, ingest, category, config, sort_order) VALUES
  ('asu', 'Дислокация из АСУ-АСУ (авто)', false, 'api_pull', 'dislocation',
    '{"base_url":"",
-     "clients":["attis","nmtp"],
+     "clients":[],
      "path_template":"/{client}/dislocation",
      "method":"GET",
      "auth_secret_key":"ASU_TOKEN",

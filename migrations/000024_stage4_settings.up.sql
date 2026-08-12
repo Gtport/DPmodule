@@ -11,14 +11,10 @@
 
 SET search_path TO dpport;
 
-INSERT INTO dpport.nitka_schedule (station_code, slot_time, sort_order) VALUES
-    ('984700','01:41',1),('984700','05:38',2),('984700','08:43',3),('984700','12:08',4),
-    ('984700','15:53',5),('984700','17:30',6),('984700','19:10',7),('984700','21:00',8),
-    ('984700','23:00',9)
-ON CONFLICT (station_code, slot_time) DO NOTHING;
+-- Расписание Находки и её slot_tolerance_h=6 — клиентские данные, переехали в
+-- scripts/clients/gtport.sql. Здесь остаётся только общая схема и пороги.
 
 ALTER TABLE dpport.plan_profile ADD COLUMN IF NOT EXISTS slot_tolerance_h numeric NOT NULL DEFAULT 0;
-UPDATE dpport.plan_profile SET slot_tolerance_h = 6 WHERE station_code = '984700';
 
 UPDATE dpport.client_settings
    SET extra = jsonb_set(COALESCE(extra, '{}'::jsonb), '{stage4}',

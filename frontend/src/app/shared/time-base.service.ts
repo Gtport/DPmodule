@@ -6,6 +6,12 @@ import { environment } from '../../environments/environment';
 /** Шкала ручного ввода времени в диалогах прибытия/выгрузки. */
 export type TimeBase = 'jd' | 'msk';
 
+/** Станция плана подвода (вкладка экрана «План»): code = plan_code (ma/nk). */
+export interface PlanStation {
+  code: string;
+  label: string;
+}
+
 /**
  * Единая шкала ввода времени для всех диалогов правок (решение владельца
  * 03.08.2026): дефолт приходит из настроек клиента (`GET /settings/ui`,
@@ -27,6 +33,14 @@ export class TimeBaseService {
   readonly mapEnabled = signal(true);
   /** Уведомления включены на бэке (notifications.enabled + БД) — иначе прячем колокольчик. */
   readonly notificationsEnabled = signal(true);
+  /**
+   * Станции плана подвода из настроечных профилей (plan_profile, mode=planned)
+   * — вкладки экрана «План подвода»; хардкода станций на фронте больше нет.
+   * null = ответ ещё не пришёл (или упал): пункт меню НЕ прячем — временная
+   * ошибка настроек не должна отбирать экран у боевого клиента. Загруженный
+   * пустой список = у клиента плана подвода нет, меню прячется.
+   */
+  readonly planStations = signal<PlanStation[] | null>(null);
   private loaded = false;
 
   /** Подтянуть дефолт из настроек клиента (один раз; ошибка — остаёмся на ЖД). */
@@ -35,13 +49,18 @@ export class TimeBaseService {
     this.loaded = true;
     try {
       const s = await firstValueFrom(
-        this.http.get<{ time_base: string; map_enabled?: boolean; notifications_enabled?: boolean }>(
-          `${environment.apiBaseUrl}/v1/settings/ui`));
+        this.http.get<{
+          time_base: string; map_enabled?: boolean; notifications_enabled?: boolean;
+          plan_stations?: PlanStation[];
+        }>(`${environment.apiBaseUrl}/v1/settings/ui`));
       if (s.time_base === 'msk' || s.time_base === 'jd') this.base.set(s.time_base);
       if (s.map_enabled === false) this.mapEnabled.set(false);
       if (s.notifications_enabled === false) this.notificationsEnabled.set(false);
+      if (Array.isArray(s.plan_stations)) {
+        this.planStations.set(s.plan_stations.filter((p) => !!p?.code));
+      }
     } catch {
-      /* настройка не критична — дефолт ЖД, карта видна */
+      /* настройка не критична — дефолт ЖД, карта и «План подвода» видны */
     }
   }
 

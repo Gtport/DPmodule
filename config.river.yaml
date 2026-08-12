@@ -1,0 +1,106 @@
+# Конфиг ВТОРОГО инстанса на VPS — новый клиент «речной порт» (кодовое имя river).
+# Клон /home/alex/projects/DPmodule2, systemd-юнит dpmodule2-backend запускает
+# бинарь с `-config config.river.yaml`. Своя БД dpport_river (схема dpport),
+# порты 8081/9091 — боевой инстанс (8080/9090, база dpport) не трогается.
+#
+# Keycloak ОБЩИЙ с боевым инстансом (решение владельца 12.08.2026): один realm
+# iqport, одни пользователи; изоляции доступа между инстансами нет — это
+# осознанная хитрость до настоящей мультитенантной раскатки (realm на
+# заказчика, docs/ARCHITECTURE_MULTITENANT.md).
+#
+# ⚠️ Все внешние интеграции ВЫКЛЮЧЕНЫ: у клиента нет АСУ/памяток/MAX, а робот ЛК
+# не нужен — дислокация грузится ручным приёмом xlsx. Включать по одной, только
+# заведя клиенту собственные записи в data_source/lk_account/max_chat.
+app:
+  name: iqport-service
+  env: dev
+
+http:
+  host: 127.0.0.1   # только loopback — наружу отдаётся через nginx (<домен2>)
+  port: 8081
+  read_timeout: 10s
+  write_timeout: 30s
+  shutdown_timeout: 15s
+
+metrics:
+  port: 9091
+
+postgres:
+  enabled: true
+  host: localhost
+  port: 5432
+  dbname: dpport_river   # своя база; схема внутри — dpport (зашита в миграции)
+  user: gtport_app       # роль общая, search_path/TimeZone заданы per-база (db_bootstrap.sql)
+  sslmode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+
+# Кэш тайлов OSM общий с боевым инстансом (read-mostly картинки, не бизнес-данные).
+# Тайлы региона нового клиента не запрефетчены — карта пока без подложки
+# (geojson-слой ж/д сети виден и так); прогрев — отдельная задача.
+tiles:
+  enabled: true
+  host: localhost
+  port: 5432
+  dbname: tiles
+  user: gtport_app
+  sslmode: disable
+
+keycloak:
+  enabled: true
+  jwks_url: http://localhost:8180/realms/iqport/protocol/openid-connect/certs  # общий боевой Keycloak
+  issuer: https://95850.koara.live/realms/iqport  # ТОТ ЖЕ issuer, что у боя: KC_HOSTNAME зашит на 95850
+  audience: iqport-backend
+
+log:
+  level: debug
+  file: logs/service.log   # относительный путь = свой каталог клона DPmodule2
+  max_size_mb: 100
+  max_backups: 5
+  max_age_days: 30
+
+asu:
+  enabled: false        # у клиента нет АСУ-АСУ; включать только со своим data_source
+  pull_interval: 10m
+  pull_offset: 5m
+
+lk_robot:
+  enabled: false        # дислокация — ручным приёмом xlsx; робот включать только
+  base_url: https://cargolk.rzd.ru  # со своим аккаунтом клиента в lk_account
+  service_id: 226
+  timeout: 2m
+  poll_every: 5s
+  poll_timeout: 5m
+  run_timeout: 30m
+  dump_dir: _data/lk_raw
+
+wagonops:
+  enabled: false        # запрос 601 — провайдер трёх терминалов, клиенту недоступен
+  drain_interval: 15s
+  batch: 50
+  pause: 500ms
+  max_attempts: 5
+
+reference:
+  enabled: false        # памятки ГУ-45 — провайдер трёх терминалов
+  base_url: ""
+  pull_interval: 1h
+  clients: []
+
+max:
+  enabled: false        # рассылок нет; чаты боевого клиента сюда не сеются
+  base_url: https://platform-api2.max.ru
+  timeout_secs: 120
+  send_delay: 500ms
+
+bros:
+  enabled: false        # крон журнала брошенных не нужен (экран живёт и без него)
+  journal_cron: "01:00"
+
+notifications:
+  enabled: true         # колокольчик работает (дыры справочников видно диспетчеру)
+  retention_hours: 72
+  cleanup_interval: 1h
+  stale_after: -1h      # сторож «снимок старше 2ч» ВЫКЛЮЧЕН (отрицательное значение):
+                        # дислокация грузится руками раз в сутки — сторож спамил бы

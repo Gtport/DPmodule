@@ -40,19 +40,9 @@ CREATE TABLE IF NOT EXISTS dpport.nitka_schedule (
     PRIMARY KEY (station_code, slot_time)
 );
 
--- сид: перенос builtinProfiles (parser/plan/profile.go) в таблицу.
-INSERT INTO dpport.plan_profile
-    (station_code, station_name, mode, plan_code, match_requires_naznach, our_terminals) VALUES
-    ('985702', 'МЫС АСТАФЬЕВА', 'planned', 'ma', false, '["НАХОДКИНСКИЙ","НМТП","АТТИС"]'::jsonb),
-    ('984700', 'НАХОДКА',       'planned', 'nk', true,  '["НАХОДКИНСКИЙ","НМТП"]'::jsonb)
-ON CONFLICT (station_code) DO NOTHING;
-
--- расписание Мыс Астафьева (9 слотов, эталон maTrainSchedule). NK — данными позже.
-INSERT INTO dpport.nitka_schedule (station_code, slot_time, sort_order) VALUES
-    ('985702','00:01',1),('985702','03:47',2),('985702','06:00',3),('985702','08:49',4),
-    ('985702','12:05',5),('985702','15:33',6),('985702','17:30',7),('985702','19:22',8),
-    ('985702','21:00',9)
-ON CONFLICT (station_code, slot_time) DO NOTHING;
+-- Профили станций и слоты — клиентские данные: сеются per-deployment скриптом
+-- scripts/clients/<клиент>.sql (для трёх терминалов — gtport.sql). Пустая
+-- plan_profile = у клиента нет плановых станций, плановая машинерия выключена.
 
 ALTER TABLE dpport.plan_profile   OWNER TO gtport_app;
 ALTER TABLE dpport.nitka_schedule OWNER TO gtport_app;
