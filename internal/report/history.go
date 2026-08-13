@@ -75,7 +75,11 @@ func historyColumns() []historyColumn {
 		{"Прибыл", 11, func(h *domain.VagonHistory) any { return vagDate(h.DatePribD, vagDay) }, false},
 		{"ПП", 11, func(h *domain.VagonHistory) any { return vagDate(h.PlanJd, vagDay) }, false},
 		{"Просрочка", 11, func(h *domain.VagonHistory) any { return vagInt(h.Delay) }, false},
-		{"Выгружен", 11, func(h *domain.VagonHistory) any { return vagDate(h.DateVigr, vagDay) }, false},
+		// Две колонки выгрузки (решение владельца 14.08.2026): факт — МСК,
+		// ЖД — учётные сутки (после 18:00 факт и учёт расходятся на день;
+		// фильтр экрана и счётчики считают по ЖД).
+		{"Выгружен (факт)", 13, func(h *domain.VagonHistory) any { return vagDate(h.DateVigr, vagDay) }, false},
+		{"Выгружен (ЖД)", 13, func(h *domain.VagonHistory) any { return vagDate(h.DateVigrD, vagDay) }, false},
 		{"Терминал", 11, func(h *domain.VagonHistory) any { return h.PlaceVigr }, false},
 		{"Смерзаемость", 12, func(h *domain.VagonHistory) any { return vagInt(h.Frost) }, false},
 		{"Собст", 10, func(h *domain.VagonHistory) any { return h.Owner }, false},

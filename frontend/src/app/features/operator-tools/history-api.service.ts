@@ -63,6 +63,8 @@ export interface HistoryRow {
   plan_jd: string | null;
   delay: number | null;
   date_vigr: string | null;
+  /** ЖД-сутки выгрузки — шкала фильтра date_vigr_d и учётных счётчиков. */
+  date_vigr_d: string | null;
   place_vigr: string;
   frost: number | null;
   owner: string;

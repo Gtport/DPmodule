@@ -46,7 +46,8 @@ interface HistCol {
   w: number;
 }
 
-/** 26 колонок в порядке gtport; замены DPmodule: Собст=owner, Марка=freight,
+/** 27 колонок: порядок gtport + вторая колонка выгрузки (ЖД, 14.08.2026);
+ * замены DPmodule: Собст=owner, Марка=freight,
  *  ГТД=gtd_number, «Перегруз»=peregruz (в gtport «Отгружен» ← info_3). */
 const COLS: HistCol[] = [
   { key: 'vagon', label: 'Вагон', w: 90 },
@@ -67,7 +68,12 @@ const COLS: HistCol[] = [
   { key: 'date_prib_d', label: 'Прибыл', w: 90 },
   { key: 'plan_jd', label: 'ПП', w: 90 },
   { key: 'delay', label: 'Просрочка', w: 85 },
-  { key: 'date_vigr', label: 'Выгружен', w: 90 },
+  // Две колонки выгрузки (решение владельца 14.08.2026): факт — МСК-время
+  // операции, ЖД — учётные сутки («час ≥ 18 → +1»). Фильтр «Дата выгрузки»
+  // и счётчики Оперативки/грузовой работы считают по ЖД — вечерняя выгрузка
+  // с одной колонкой выглядела ошибкой фильтра.
+  { key: 'date_vigr', label: 'Выгружен (факт)', w: 110 },
+  { key: 'date_vigr_d', label: 'Выгружен (ЖД)', w: 105 },
   { key: 'place_vigr', label: 'Терминал', w: 90 },
   { key: 'frost', label: 'Смерзаемость', w: 105 },
   { key: 'owner', label: 'Собст', w: 140 },
@@ -280,6 +286,7 @@ const COLS: HistCol[] = [
                     @if (r.delay != null && r.delay !== 0) { {{ r.delay }} дн }
                   </td>
                   <td class="c">{{ fmtD(r.date_vigr) }}</td>
+                  <td class="c">{{ fmtD(r.date_vigr_d) }}</td>
                   <td class="c">
                     @if (r.place_vigr) {
                       <nz-tag class="thin term" [style.background-color]="placeColor(r.place_vigr)">{{ r.place_vigr }}</nz-tag>

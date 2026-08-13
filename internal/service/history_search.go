@@ -111,6 +111,11 @@ type HistoryRowDTO struct {
 	PlanJd      *domain.LocalTime `json:"plan_jd"`
 	Delay       *int              `json:"delay"`
 	DateVigr    *domain.LocalTime `json:"date_vigr"`
+	// ЖД-сутки выгрузки — рядом с МСК-фактом date_vigr, чтобы колонка
+	// «Выгружен (ЖД)» была согласована с фильтром date_vigr_d (решение
+	// владельца 14.08.2026: вечерняя выгрузка уходит в следующие ЖД-сутки,
+	// одна дата на экране выглядела ошибкой фильтра).
+	DateVigrD   *domain.LocalTime `json:"date_vigr_d"`
 	PlaceVigr   string            `json:"place_vigr"`
 	Frost       *int              `json:"frost"`
 	Owner       string            `json:"owner"`
@@ -146,6 +151,7 @@ var historySortColumns = map[string]string{
 	"cargo_s": "cargo_s", "ves": "ves", "client": "client", "status": "status",
 	"date_dostav": "date_dostav", "date_prib_d": "date_prib_d",
 	"plan_jd": "plan_jd", "delay": "delay", "date_vigr": "date_vigr",
+	"date_vigr_d": "date_vigr_d",
 	"place_vigr": "place_vigr", "frost": "frost", "owner": "owner",
 	"freight": "freight_exact_name", "gtd_number": "gtd_number",
 	"shipments": "shipments", "peregruz": "peregruz",
@@ -354,7 +360,7 @@ func toHistoryRowDTO(h *domain.VagonHistory) HistoryRowDTO {
 		Naznach: h.Naznach, CargoS: h.CargoS, Ves: h.Ves, Client: h.Client,
 		Status: h.Status, DateDostav: h.DateDostav, DatePribD: h.DatePribD,
 		PlanJd: h.PlanJd, Delay: h.Delay, DateVigr: h.DateVigr,
-		PlaceVigr: h.PlaceVigr, Frost: h.Frost, Owner: h.Owner,
+		DateVigrD: h.DateVigrD, PlaceVigr: h.PlaceVigr, Frost: h.Frost, Owner: h.Owner,
 		Freight: h.FreightExactName, GtdNumber: h.GtdNumber,
 		Shipments: h.Shipments, Peregruz: h.Peregruz,
 	}

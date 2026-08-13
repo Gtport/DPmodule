@@ -24,7 +24,7 @@ func TestHistoryXLSX(t *testing.T) {
 	rows := []domain.VagonHistory{
 		{ID: "a", Vagon: "62158654", Invoice: "ЭЛ123456", StationNach: "ЕРУНАКОВО",
 			GruzpolS: "АЭ", Naznach: "АЭ", PlaceVigr: "АЭ", Ves: &ves, Status: &status,
-			DateNachD: lt(2026, 7, 1), DateVigr: lt(2026, 7, 9),
+			DateNachD: lt(2026, 7, 1), DateVigr: lt(2026, 7, 9), DateVigrD: lt(2026, 7, 10),
 			Owner: "СОБСТВЕННИК", FreightExactName: "МАРКА-Г", Peregruz: "11111111"},
 		{ID: "b", Vagon: "62158655", Status: &status},
 	}
@@ -48,7 +48,12 @@ func TestHistoryXLSX(t *testing.T) {
 	require.Len(t, got, 3)
 
 	assert.Equal(t, "Вагон", got[0][0])
-	assert.Equal(t, "Перегруз", got[0][25], "последняя колонка — «Перегруз», не «Отгружен» gtport")
+	assert.Equal(t, "Перегруз", got[0][26], "последняя колонка — «Перегруз», не «Отгружен» gtport")
+	// Две колонки выгрузки (решение владельца 14.08.2026): факт МСК + ЖД-сутки.
+	assert.Equal(t, "Выгружен (факт)", got[0][18])
+	assert.Equal(t, "Выгружен (ЖД)", got[0][19])
+	assert.Equal(t, "09.07.2026", got[1][18], "факт выгрузки — МСК")
+	assert.Equal(t, "10.07.2026", got[1][19], "учётная выгрузка — ЖД-сутки")
 
 	assert.Equal(t, "62158654", got[1][0])
 	assert.Equal(t, "01.07.2026", got[1][5], "дата погрузки дд.ММ.гггг")
