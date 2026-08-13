@@ -392,8 +392,13 @@ interface VagonHit {
     .filters { display: flex; align-items: flex-start; gap: var(--space-lg); flex-wrap: wrap;
                padding: var(--space-xs) var(--space-md); background: var(--color-bg-surface);
                border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
-    .ftitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: 2px; }
+    /* Подписи фильтров и границы контролов заметнее (замечание владельца
+       14.08.2026: на светлом фоне терялись). */
+    .ftitle { font-size: var(--font-size-sm); color: var(--color-text); font-weight: 600; margin-bottom: 2px; }
     .fblock nz-tag, .fblock .ant-tag { cursor: pointer; user-select: none; }
+    .filters ::ng-deep .ant-tag, .search-bar ::ng-deep .ant-input {
+      border-color: var(--color-text-muted);
+    }
     nz-tag.on { border-color: var(--color-primary, #1677ff); background: var(--color-primary-bg, #e6f4ff); }
     nz-tag.warn.on { border-color: var(--color-error, #ff4d4f); background: var(--color-error-bg, #fff1f0); }
     /* Поиск */

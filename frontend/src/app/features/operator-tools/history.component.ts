@@ -46,8 +46,8 @@ interface HistCol {
   w: number;
 }
 
-/** 27 колонок: порядок gtport + вторая колонка выгрузки (ЖД, 14.08.2026);
- * замены DPmodule: Собст=owner, Марка=freight,
+/** 26 колонок: порядок gtport + вторая колонка выгрузки (ЖД), без «ПП»
+ * (решения владельца 14.08.2026); замены DPmodule: Собст=owner, Марка=freight,
  *  ГТД=gtd_number, «Перегруз»=peregruz (в gtport «Отгружен» ← info_3). */
 const COLS: HistCol[] = [
   { key: 'vagon', label: 'Вагон', w: 90 },
@@ -66,13 +66,15 @@ const COLS: HistCol[] = [
   { key: 'status', label: 'Статус', w: 130 },
   { key: 'date_dostav', label: 'Срок доставки', w: 110 },
   { key: 'date_prib_d', label: 'Прибыл', w: 90 },
-  { key: 'plan_jd', label: 'ПП', w: 90 },
+  // «ПП» (план подвода) убрана из таблицы (решение владельца 14.08.2026):
+  // рейсы истории в основном закрыты, колонка почти всегда пустовала.
   { key: 'delay', label: 'Просрочка', w: 85 },
   // Две колонки выгрузки (решение владельца 14.08.2026): факт — МСК-время
-  // операции, ЖД — учётные сутки («час ≥ 18 → +1»). Фильтр «Дата выгрузки»
-  // и счётчики Оперативки/грузовой работы считают по ЖД — вечерняя выгрузка
-  // с одной колонкой выглядела ошибкой фильтра.
-  { key: 'date_vigr', label: 'Выгружен (факт)', w: 110 },
+  // операции (со временем, чч:мм — уточнение 14.08.2026), ЖД — учётные сутки
+  // («час ≥ 18 → +1»). Фильтр «Дата выгрузки» и счётчики Оперативки/грузовой
+  // работы считают по ЖД — вечерняя выгрузка с одной колонкой выглядела
+  // ошибкой фильтра.
+  { key: 'date_vigr', label: 'Выгружен (факт)', w: 130 },
   { key: 'date_vigr_d', label: 'Выгружен (ЖД)', w: 105 },
   { key: 'place_vigr', label: 'Терминал', w: 90 },
   { key: 'frost', label: 'Смерзаемость', w: 105 },
@@ -281,11 +283,10 @@ const COLS: HistCol[] = [
                     }
                   </td>
                   <td class="c">{{ fmtD(r.date_prib_d) }}</td>
-                  <td class="c">{{ fmtD(r.plan_jd) }}</td>
                   <td class="c" [class.overdue]="(r.delay ?? 0) > 0">
                     @if (r.delay != null && r.delay !== 0) { {{ r.delay }} дн }
                   </td>
-                  <td class="c">{{ fmtD(r.date_vigr) }}</td>
+                  <td class="c nowrap">{{ fmtDT(r.date_vigr) }}</td>
                   <td class="c">{{ fmtD(r.date_vigr_d) }}</td>
                   <td class="c">
                     @if (r.place_vigr) {
@@ -343,7 +344,12 @@ const COLS: HistCol[] = [
     .frow { display: flex; align-items: flex-end; gap: var(--space-lg); flex-wrap: wrap; }
     .frow.chips { align-items: flex-start; }
     .fcol.grow { flex: 1 1 420px; }
-    .ftitle { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: 2px; }
+    /* Подписи полей и границы контролов заметнее (замечание владельца
+       14.08.2026: на светлом фоне терялись). */
+    .ftitle { font-size: var(--font-size-sm); color: var(--color-text); font-weight: 600; margin-bottom: 2px; }
+    .filters ::ng-deep :is(.ant-input, .ant-picker, .ant-select-selector, .ant-tag) {
+      border-color: var(--color-text-muted);
+    }
     .fbtns { display: flex; gap: var(--space-sm); padding-bottom: 2px; }
     .w-list { width: 300px; resize: vertical; }
     .w-stations { width: 100%; max-width: 700px; }
@@ -625,6 +631,12 @@ export class HistoryComponent implements OnInit {
   fmtD(ts: string | null): string {
     if (!ts || ts.length < 10) return '';
     return `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(0, 4)}`;
+  }
+
+  /** дд.ММ.гггг чч:мм — факт выгрузки целиком (уточнение владельца 14.08.2026). */
+  fmtDT(ts: string | null): string {
+    if (!ts || ts.length < 16) return this.fmtD(ts);
+    return `${this.fmtD(ts)} ${ts.slice(11, 16)}`;
   }
 
   /** Правило gtport: место + дата выгрузки → «выгружен» поверх кода статуса. */
