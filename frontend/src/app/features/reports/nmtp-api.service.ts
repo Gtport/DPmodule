@@ -69,16 +69,22 @@ export class NmtpApiService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiBaseUrl}/v1/reports/nmtp`;
 
-  /** Терминалы с настроенной раскладкой (кнопки карточки). */
+  /** Терминалы отчёта — все включённые из реестра ports (кнопки карточки). */
   terminals(): Promise<string[]> {
     return firstValueFrom(this.http.get<string[]>(`${this.base}/terminals`));
   }
 
   /** Данные формы для экранной модалки. */
-  report(terminal: string, mode: NmtpMode): Promise<NmtpReport> {
+  async report(terminal: string, mode: NmtpMode): Promise<NmtpReport> {
     const params: Record<string, string> = { terminal };
     if (mode) params['mode'] = mode;
-    return firstValueFrom(this.http.get<NmtpReport>(this.base, { params }));
+    const r = await firstValueFrom(this.http.get<NmtpReport>(this.base, { params }));
+    // Страховка от null-массивов в JSON (шаблон крутит @for прямо по ним):
+    // у клиента без раскладки nmtp_column колонок нет вовсе — null ронял
+    // рендер модалки (пустой «Подход груза» АНБ, разбор 14.08.2026).
+    r.columns ??= [];
+    r.client_tons ??= [];
+    return r;
   }
 
   /** Книга .xlsx (сервер собирает) — в том же режиме, что на экране. */

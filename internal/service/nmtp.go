@@ -576,9 +576,14 @@ func buildNmtpReport(records []domain.Dislocation, cols []domain.NmtpColumn, mar
 	}
 
 	report := domain.NmtpReport{
-		Terminal:  terminal,
-		ColCounts: make([]int, nCols),
-		ColTons:   make([]float64, nCols),
+		Terminal: terminal,
+		// В JSON — [], не null: экран крутит @for прямо по columns/client_tons,
+		// null ронял рендер модалки у клиента без раскладки nmtp_column
+		// (пустой «Подход груза» АНБ, разбор 14.08.2026).
+		Columns:    []domain.NmtpColumnHead{},
+		ClientTons: []domain.NmtpClientTons{},
+		ColCounts:  make([]int, nCols),
+		ColTons:    make([]float64, nCols),
 	}
 	for _, c := range cols {
 		report.Columns = append(report.Columns, domain.NmtpColumnHead{ID: c.ID, Group: c.GroupLabel, Station: c.StationLabel, Mark: c.MarkLabel})

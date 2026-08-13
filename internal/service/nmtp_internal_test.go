@@ -193,6 +193,9 @@ func TestBuildNmtpReport_NoColumns(t *testing.T) {
 	rep, _, _ := buildNmtpReport([]domain.Dislocation{v1, v2}, nil, nmtpTestMarks, "ГУТ-2",
 		[]string{"МЫС АСТАФЬЕВА", "НАХОДКА"}, nil, false, nil)
 
+	// НЕ nil, а именно []: null в JSON ронял рендер модалки (@for по columns) —
+	// пустой «Подход груза» АНБ, разбор 14.08.2026.
+	assert.NotNil(t, rep.Columns)
 	assert.Empty(t, rep.Columns)
 	assert.True(t, rep.HasOther)
 	assert.Equal(t, []int{2}, rep.ColCounts) // единственная колонка — «прочее»
