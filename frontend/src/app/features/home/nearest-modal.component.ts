@@ -11,6 +11,7 @@ import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { TerminalTarget } from './arrivals-api.service';
+import { TimeBaseService } from '../../shared/time-base.service';
 import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.service';
 
 /**
@@ -39,10 +40,12 @@ import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.ser
         <div class="bar">
           <b>Подход {{ terminalNames().join('+') }}</b>
           <span class="mut">поездов: {{ shown().length }}</span>
-          <nz-radio-group [ngModel]="mode()" (ngModelChange)="mode.set($event)" nzSize="small">
-            <label nz-radio-button nzValue="plan">Только план</label>
-            <label nz-radio-button nzValue="all">Весь прогноз</label>
-          </nz-radio-group>
+          @if (!planless()) {
+            <nz-radio-group [ngModel]="mode()" (ngModelChange)="mode.set($event)" nzSize="small">
+              <label nz-radio-button nzValue="plan">Только план</label>
+              <label nz-radio-button nzValue="all">Весь прогноз</label>
+            </nz-radio-group>
+          }
           <span class="spacer"></span>
           <button nz-button nzType="text" nzSize="small" nz-tooltip nzTooltipTitle="Печать таблицы"
                   (click)="printTable()">
@@ -175,6 +178,7 @@ export class NearestModalComponent implements OnInit {
   private readonly api = inject(NearestApiService);
   private readonly msg = inject(NzMessageService);
   private readonly ctxMenu = inject(NzContextMenuService);
+  private readonly uiSettings = inject(TimeBaseService);
 
   readonly station = input.required<string>();
   readonly terminals = input.required<TerminalTarget[]>();
@@ -182,10 +186,18 @@ export class NearestModalComponent implements OnInit {
 
   readonly loading = signal(false);
   readonly trains = signal<NearestTrain[]>([]);
-  /** Режим показа: только плановые нитки (дефолт) либо весь прогноз. */
+  /**
+   * Режим показа: только плановые нитки (дефолт) либо весь прогноз. У клиента
+   * БЕЗ плана подвода (plan_stations пуст — речной порт) переключатель скрыт и
+   * всегда показывается весь прогноз: плановых ниток у него не бывает, дефолт
+   * «Только план» оставлял модалку пустой (решение владельца 14.08.2026).
+   */
   readonly mode = signal<'plan' | 'all'>('plan');
+  readonly planless = computed(() => this.uiSettings.planStations()?.length === 0);
   readonly shown = computed(() =>
-    this.mode() === 'plan' ? this.trains().filter((t) => t.has_plan) : this.trains());
+    this.mode() === 'plan' && !this.planless()
+      ? this.trains().filter((t) => t.has_plan)
+      : this.trains());
   /** Поезд под курсором ПКМ — цель действий. */
   readonly ctx = signal<NearestTrain | null>(null);
   readonly naturOpen = signal(false);

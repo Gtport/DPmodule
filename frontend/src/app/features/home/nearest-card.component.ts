@@ -6,6 +6,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { TerminalTarget } from './arrivals-api.service';
 import { StaleTracker } from '../../shared/stale';
+import { TimeBaseService } from '../../shared/time-base.service';
 import { NearestApiService, NearestTrain } from './nearest-api.service';
 import { NearestModalComponent } from './nearest-modal.component';
 
@@ -41,12 +42,12 @@ import { NearestModalComponent } from './nearest-modal.component';
           <tbody>
             @for (t of planTrains(); track t.key) {
               <tr>
-                <td class="c plan">{{ fmtDT(t.time_jd) }}</td>
+                <td class="c" [class.plan]="t.has_plan">{{ fmtDT(t.time_jd) }}</td>
                 <td class="c num" [class.danger]="t.broshen">{{ t.index || '—' }}</td>
                 <td class="sost ell" [title]="sostav(t)">{{ sostav(t) }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="3" class="empty">{{ loading() ? 'Загрузка…' : 'Нет плановых ниток в подходе' }}</td></tr>
+              <tr><td colspan="3" class="empty">{{ loading() ? 'Загрузка…' : emptyText() }}</td></tr>
             }
           </tbody>
         </table>
@@ -83,6 +84,7 @@ import { NearestModalComponent } from './nearest-modal.component';
 export class NearestCardComponent implements OnInit, OnDestroy {
   private readonly api = inject(NearestApiService);
   private readonly msg = inject(NzMessageService);
+  private readonly uiSettings = inject(TimeBaseService);
 
   readonly station = input.required<string>();
   readonly terminals = input.required<TerminalTarget[]>();
@@ -94,8 +96,24 @@ export class NearestCardComponent implements OnInit, OnDestroy {
   readonly expanded = signal(false);
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  /** Миниатюра показывает ВСЕ нитки плана (has_plan); бесплановый прогноз — в модалке. */
-  readonly planTrains = computed(() => this.trains().filter((t) => t.has_plan));
+  /**
+   * Миниатюра: у клиента с планом подвода — ВСЕ нитки плана (has_plan),
+   * бесплановый прогноз — в модалке по переключателю. У клиента БЕЗ плана
+   * (plan_stations из /settings/ui пуст — например речной порт) плановых ниток
+   * не бывает вовсе — показываем весь прогноз Stage 4 (решение владельца
+   * 14.08.2026, иначе карточка вечно «Нет плановых ниток»). null = настройки
+   * ещё не загрузились — считаем клиента плановым, карточка догрузится.
+   */
+  readonly planTrains = computed(() => {
+    if (this.planless()) return this.trains();
+    return this.trains().filter((t) => t.has_plan);
+  });
+
+  /** У клиента нет плана подвода вовсе (пустой plan_stations, НЕ null). */
+  readonly planless = computed(() => this.uiSettings.planStations()?.length === 0);
+
+  readonly emptyText = computed(() =>
+    this.planless() ? 'Поездов с прогнозом в подходе нет' : 'Нет плановых ниток в подходе');
 
   ngOnInit(): void {
     void this.load(true);
