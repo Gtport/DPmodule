@@ -48,8 +48,9 @@ interface VagonHit {
  * Экран «Поезда в движении» — перенос gtport OperatorToolsDislocation.tsx.
  * Дерево «поезд → подгруппа отправки → вагоны» по всему снимку; фильтры-чипы
  * (управление/прибытие/терминалы/статус) и поиски (индекс, станция погрузки,
- * груз, списки вагонов и накладных) — на клиенте; Excel «вся таблица» и
- * «Натурный лист» поезда; ПКМ по вагону — «История движения вагона».
+ * станция дислокации, груз, списки вагонов и накладных) — на клиенте; Excel
+ * «вся таблица» и «Натурный лист» поезда; ПКМ по вагону — «История движения
+ * вагона».
  *
  * Отходы от gtport (решения владельца 31.07.2026):
  * - терминалы фильтров — из реестра ports (в gtport — хардкод АЭ/ГУТ-2/УТ-1
@@ -60,6 +61,8 @@ interface VagonHit {
  * - собственник = owner (в gtport колонку заполнял род вагона), марка груза =
  *   freight_exact_name (просьба владельца), род вагона показан отдельно;
  * - «История движения вагона» по ПКМ — новая возможность (в gtport не было);
+ * - поиск по станции дислокации (station_oper поезда) — новая возможность
+ *   (решение владельца 14.08.2026; в gtport искали только станцию погрузки);
  * - «Детали поезда» — перемещаемая модалка (канон проекта), а не боковая
  *   панель gtport; открывается иконкой ⓘ на строке и из ПКМ.
  */
@@ -141,6 +144,8 @@ interface VagonHit {
                maxlength="13" [ngModel]="indexSearch()" (ngModelChange)="setIndexSearch($event)" />
         <input nz-input nzSize="small" class="w-st" placeholder="станция погрузки"
                [ngModel]="stationSearch()" (ngModelChange)="stationSearch.set($event)" />
+        <input nz-input nzSize="small" class="w-st" placeholder="станция дислокации"
+               [ngModel]="operStationSearch()" (ngModelChange)="operStationSearch.set($event)" />
         <input nz-input nzSize="small" class="w-st" placeholder="груз / группа груза"
                [ngModel]="cargoSearch()" (ngModelChange)="cargoSearch.set($event)" />
         <span class="grp">
@@ -465,9 +470,10 @@ export class TrainsComponent implements OnInit {
   readonly withPlan = signal(false);
   readonly broshen = signal(false);
 
-  // Поиски. Индекс/станция/груз фильтруют дерево; вагоны/накладные — режим карточек.
+  // Поиски. Индекс/станции/груз фильтруют дерево; вагоны/накладные — режим карточек.
   readonly indexSearch = signal('');
   readonly stationSearch = signal('');
+  readonly operStationSearch = signal('');
   readonly cargoSearch = signal('');
   readonly vagonQuery = signal('');
   readonly invoiceQuery = signal('');
@@ -543,7 +549,11 @@ export class TrainsComponent implements OnInit {
     const st = this.stationSearch().trim().toUpperCase();
     if (st) list = list.filter((t) => t.sub_groups.some((sg) => sg.station_nach.toUpperCase().includes(st)));
 
-    // (4) Груз — поверх станции (cargo_s / cargo_group / марка вагона).
+    // (4) Станция дислокации (где поезд сейчас) — поле поезда, не подгрупп.
+    const so = this.operStationSearch().trim().toUpperCase();
+    if (so) list = list.filter((t) => t.station_oper.toUpperCase().includes(so));
+
+    // (5) Груз — поверх станций (cargo_s / cargo_group / марка вагона).
     const cg = this.cargoSearch().trim().toUpperCase();
     if (cg) {
       list = list.filter((t) => t.sub_groups.some((sg) =>
@@ -612,6 +622,7 @@ export class TrainsComponent implements OnInit {
     this.broshen.set(false);
     this.indexSearch.set('');
     this.stationSearch.set('');
+    this.operStationSearch.set('');
     this.cargoSearch.set('');
     this.clearListSearch();
   }
