@@ -185,20 +185,24 @@ function todayMsk(): string {
       <!-- Диалог проверки плана: сборные формирования + нитки без вагонов (один на план) -->
       <nz-modal
         [nzVisible]="sfPrepare() !== null"
-        nzTitle="Проверка плана подвода: с.ф. и нитки без вагонов"
+        [nzTitle]="sfTtl"
         [nzWidth]="820"
         [nzMaskClosable]="false"
         (nzOnCancel)="sfCancel()"
         [nzFooter]="sfFooter"
       >
+        <ng-template #sfTtl>
+          <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
+            Проверка плана подвода
+          </div>
+        </ng-template>
         <div *nzModalContent>
           @if (sfPrepare(); as prep) {
-            @if (prep.sf?.length || prep.problems?.length) {
-              <div class="scale-note">Дата и время строк — как в файле плана (ЖД).</div>
-            }
             <!-- Сборные формирования: выбрать группы ИЛИ вписать реальный индекс -->
             @if (prep.sf?.length) {
-              <div class="sec-title">Сборные формирования (с.ф.)</div>
+              <div class="sec-title">Сборные поезда — выберите группы вагонов</div>
+              <div class="sec-note">План называет сборный поезд станцией формирования. Отметьте
+                группы, которые в него войдут, либо впишите реальный индекс поезда.</div>
             }
             @for (row of prep.sf ?? []; track row.ord) {
               <div class="sf-block">
@@ -232,7 +236,7 @@ function todayMsk(): string {
 
                 <!-- 2. Группы на станции формирования -->
                 @if (standingCands(row).length) {
-                  <div class="sub-title">Группы на станции формирования</div>
+                  <div class="sub-title">Отметьте группы, которые войдут в поезд:</div>
                   @for (c of standingCands(row); track c.key) {
                     <label
                       nz-checkbox
@@ -246,20 +250,21 @@ function todayMsk(): string {
                   }
                 }
                 @if (row.candidates.length === 0) {
-                  <div class="muted">Кандидатов нет: ни групп на станции формирования, ни уехавших поездов.</div>
+                  <div class="muted">Группы этого поезда ещё не видны в дислокации. Если индекс уже известен — впишите его ниже.</div>
                 }
 
                 <!-- 3. Ручной ввод индекса -->
                 <div class="ovr">
-                  <span class="ovr-lbl">Знаете индекс? Впишите вручную:</span>
+                  <span class="ovr-lbl">{{ row.candidates.length ? 'Или впишите' : 'Впишите' }} реальный индекс поезда:</span>
                   <app-index-input (valueChange)="onOverride(row.ord, $event)" (completed)="revalidate()" />
                 </div>
               </div>
             }
 
-            <!-- Обычные нитки без вагонов: вероятна опечатка индекса -->
+            <!-- Обычные нитки без вагонов: поезд не привязан (опечатка индекса или
+                 кандидаты отбракованы количественным фильтром) -->
             @if (prep.problems?.length) {
-              <div class="sec-title">Нитки без вагонов — проверьте индекс</div>
+              <div class="sec-title">Нитки плана, к которым поезд не привязан</div>
             }
             @for (row of prep.problems ?? []; track row.ord) {
               <div class="sf-block">
@@ -267,26 +272,38 @@ function todayMsk(): string {
                   <span class="idx">{{ row.index_pp || '—' }}</span>
                   <span>· {{ dmDate(row.plan_jd) }} {{ hm(row.plan_jd) }}</span>
                   <span class="sf-terms">план {{ row.activ }} ваг</span>
-                  <span class="sf-cnt">вагоны не найдены</span>
                 </div>
-                @if (row.candidates?.length) {
+                @if (row.candidates ?? []; as cands) {
+                  @if (cands.length === 0) {
+                    <div class="prob-note">Поезда с таким индексом в дислокации нет — вероятна
+                      опечатка, проверьте индекс.</div>
+                  } @else if (cands.length === 1) {
+                    <div class="prob-note">Поезд с этим индексом найден, но наших вагонов в нём
+                      {{ cands[0].ma_wagons }} из {{ row.activ }} по плану — привязка не выполнена
+                      автоматически. Привяжите его вручную или исправьте индекс.</div>
+                  } @else {
+                    <div class="prob-note">Найдено несколько поездов с этим индексом, но автоматика
+                      не выбрала ни один. Привяжите нужный вручную или исправьте индекс.</div>
+                  }
+                  @if (cands.length) {
+                    <div class="ovr">
+                      <span class="ovr-lbl">Привязать поезд:</span>
+                      <nz-select nzSize="small" class="cand-sel" nzAllowClear
+                                 nzPlaceHolder="выбрать найденный поезд"
+                                 [ngModel]="forced()[row.ord] ?? null"
+                                 (ngModelChange)="onForced(row.ord, $event ?? '')">
+                        @for (c of cands; track c.key) {
+                          <nz-option [nzValue]="c.key"
+                                     [nzLabel]="c.index + ' — наших ' + c.ma_wagons + ' из ' + row.activ + ' (в поезде ' + c.total + ')'" />
+                        }
+                      </nz-select>
+                    </div>
+                  }
                   <div class="ovr">
-                    <span class="ovr-lbl">Привязать поезд:</span>
-                    <nz-select nzSize="small" class="cand-sel" nzAllowClear
-                               nzPlaceHolder="выберите поезд (в обход фильтра)"
-                               [ngModel]="forced()[row.ord] ?? null"
-                               (ngModelChange)="onForced(row.ord, $event ?? '')">
-                      @for (c of row.candidates ?? []; track c.key) {
-                        <nz-option [nzValue]="c.key"
-                                   [nzLabel]="c.index + ' — наших ' + c.ma_wagons + ' из ' + row.activ + ' (в поезде ' + c.total + ')'" />
-                      }
-                    </nz-select>
+                    <span class="ovr-lbl">{{ cands.length ? 'Или исправьте' : 'Исправьте' }} индекс:</span>
+                    <app-index-input [value]="row.index_pp" (valueChange)="onOverride(row.ord, $event)" (completed)="revalidate()" />
                   </div>
                 }
-                <div class="ovr">
-                  <span class="ovr-lbl">Исправьте индекс:</span>
-                  <app-index-input [value]="row.index_pp" (valueChange)="onOverride(row.ord, $event)" (completed)="revalidate()" />
-                </div>
               </div>
             }
 
@@ -297,7 +314,7 @@ function todayMsk(): string {
         </div>
       </nz-modal>
       <ng-template #sfFooter>
-        <span class="foot-cnt">сопоставлено {{ sfPrepare()?.matched ?? 0 }} / {{ sfPrepare()?.nitki ?? 0 }}</span>
+        <span class="foot-cnt">сопоставлено ниток: {{ sfPrepare()?.matched ?? 0 }} из {{ sfPrepare()?.nitki ?? 0 }}</span>
         <button nz-button (click)="revalidate()" [nzLoading]="revalBusy()">Пересчитать</button>
         <button nz-button (click)="sfCancel()" [nzLoading]="sfBusy()">Отмена (без правок)</button>
         <button nz-button nzType="primary" (click)="sfApply()" [nzLoading]="sfBusy()">Применить</button>
@@ -393,15 +410,18 @@ function todayMsk(): string {
     .sf-cand { display: flex; align-items: flex-start; margin: 3px 0; }
     .sf-cand ::ng-deep .ant-checkbox { top: 0.15em; }
     .sf-body { display: inline-block; }
-    /* Заголовок секции диалога (с.ф. / нитки без вагонов). */
-    .sec-title { font-weight: 600; margin: var(--space-sm) 0 var(--space-xs); color: var(--color-text-secondary); }
+    /* Заголовок секции диалога (с.ф. / нитки без поезда) — тёмный и крупнее,
+       чтобы структура диалога читалась с первого взгляда. */
+    .sec-title { font-weight: 600; font-size: 1rem; margin: var(--space-sm) 0 var(--space-xs); color: var(--color-text); }
+    .sec-note { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: var(--space-sm); line-height: 1.4; }
     .sub-title { font-size: var(--font-size-sm); font-weight: 500; margin: var(--space-xs) 0 2px; color: var(--color-text-secondary); }
-    /* Пояснение шкалы: строки диалога подписаны ЖД-временем, как в книге плана. */
-    .scale-note { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-bottom: var(--space-xs); }
+    /* Пояснение, почему нитка осталась без поезда, и что с этим делать. */
+    .prob-note { font-size: var(--font-size-sm); color: var(--color-text-secondary); margin: 2px 0 var(--space-xs); line-height: 1.4; }
     /* Строка ручного ввода индекса (переопределение с.ф./исправление опечатки). */
     .ovr { display: flex; align-items: center; gap: var(--space-sm); margin: var(--space-xs) 0; flex-wrap: wrap; }
     .ovr-lbl { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
     .cand-sel { min-width: 320px; }
+    .cand-sel ::ng-deep .ant-select-selector { border: 1.5px solid #69b1ff !important; }
     /* Счётчик «сопоставлено N / M» в футере — слева, поодаль от кнопок. */
     .foot-cnt { margin-right: auto; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
   `],

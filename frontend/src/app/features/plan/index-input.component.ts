@@ -32,7 +32,7 @@ import { AfterViewInit, Component, ElementRef, EventEmitter, Input, Output, inje
     .idx { display: inline-flex; align-items: center; gap: 3px; }
     .s {
       font-family: var(--font-mono, monospace); font-size: 0.95rem; text-align: center;
-      border: 1px solid var(--color-border, #d9d9d9); border-radius: var(--radius-sm, 4px);
+      border: 1.5px solid #69b1ff; border-radius: var(--radius-sm, 4px);
       padding: 2px 4px; height: 28px; box-sizing: border-box;
     }
     .s:focus { outline: none; border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,0.15); }
