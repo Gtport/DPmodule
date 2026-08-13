@@ -415,6 +415,22 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   /** Те же фильтры для бокового списка «не на карте». */
   readonly noCoordsShown = computed(() => this.applyFilters(this.noCoords()));
 
+  /**
+   * Эталон «большого поезда» для размера меток — 90-й перцентиль составов
+   * ВСЕГО снимка, без фильтров (решение владельца 14.08.2026: прежняя
+   * gtport-формула «полный размер к 100 вагонам» делала у клиента с
+   * короткими партиями — АНБ, до 20 ваг — все метки одинаково мелкими).
+   * У угольных клиентов перцентиль ~71 — шкала почти как раньше; пол 10
+   * вагонов — чтобы единственная трёхвагонная группа не рисовалась гигантом.
+   */
+  private readonly sizeRef = computed(() => {
+    const counts = [...this.groups(), ...this.noCoords()]
+      .map((g) => g.vagon_count)
+      .sort((a, b) => a - b);
+    if (!counts.length) return 10;
+    return Math.max(10, counts[Math.floor((counts.length - 1) * 0.9)]);
+  });
+
   constructor() {
     // Данные/фильтры изменились → перерисовать маркеры (карта уже может жить).
     effect(() => {
@@ -712,8 +728,10 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
   }
 
   private markerIcon(g: MapGroup, color: string, isSelected: boolean): L.DivIcon {
-    // Размер круга растёт с числом вагонов — формула gtport: 20 + count/5, 20…40px.
-    const size = Math.max(20, Math.min(40, 20 + g.vagon_count / 5));
+    // Размер круга 20…40px растёт с числом вагонов ОТНОСИТЕЛЬНО эталона
+    // снимка (sizeRef): полный размер — у поездов от 90-го перцентиля.
+    // В gtport знаменатель был жёстким (count/5, полный размер к 100 ваг).
+    const size = Math.round(Math.max(20, Math.min(40, 20 + 20 * (g.vagon_count / this.sizeRef()))));
     const border = g.broshen ? '#ff4d4f' : '#ffffff';
     const rings: string[] = [];
     if (isSelected) rings.push('0 0 0 6px rgba(22,119,255,.45)'); // выбор Ctrl+кликом
