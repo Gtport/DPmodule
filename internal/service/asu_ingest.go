@@ -88,7 +88,24 @@ func (a *ASUIngest) Pull(ctx context.Context, trigger string) (LKProcessResult, 
 			return LKProcessResult{}, fmt.Errorf("%w: источник %q без списка клиентов", ErrNoASUSource, ds.ID)
 		}
 		cl := a.newCl(ds.Config)
+
+		// Режим авторизации спрашиваем у самого клиента: из конфига источника он не
+		// вычисляется (пустой auth_mode значит keycloak или apikey в зависимости от
+		// того, настроен ли сервис-аккаунт). Необязательный интерфейс — чтобы не
+		// расширять port.ASUClient ради строки лога и не править фейки в тестах.
+		authMode := "unknown"
+		if am, ok := cl.(interface{ AuthMode() string }); ok {
+			authMode = am.AuthMode()
+		}
+
 		for _, code := range ds.Config.Clients {
+			// Момент похода к провайдеру. Успешный заход прежде не оставлял в логе
+			// НИЧЕГО (пишутся только гарды и ошибки), и по логу нельзя было отличить
+			// работающий крон от молча пропускающего — итог виден лишь в event_journal.
+			a.log.Info("АСУ: запрос дислокации",
+				zap.String("source", ds.ID), zap.String("client", code),
+				zap.String("trigger", trigger), zap.String("auth", authMode))
+
 			raw, err := cl.Pull(ctx, code)
 			if err != nil {
 				return reject("fetch", fmt.Errorf("забор АСУ %s/%s: %w", ds.ID, code, err))
@@ -97,6 +114,17 @@ func (a *ASUIngest) Pull(ctx context.Context, trigger string) (LKProcessResult, 
 			if err != nil {
 				return reject("parse", fmt.Errorf("разбор АСУ %s/%s: %w", ds.ID, code, err))
 			}
+
+			// Метка формирования — та же, по которой работают гарды свежести:
+			// в логе она отвечает на «данные вообще новые?» без похода в базу.
+			formation := ""
+			if res.FormationTS != nil {
+				formation = res.FormationTS.String()
+			}
+			a.log.Info("АСУ: срез получен",
+				zap.String("source", ds.ID), zap.String("client", code),
+				zap.Int("vagons", len(res.Records)), zap.String("formation_ts", formation))
+
 			// Контроль целостности: заявленный count против фактического (только предупреждение).
 			if res.DeclaredCount != nil && *res.DeclaredCount != len(res.Records) {
 				a.log.Warn("АСУ: count в теле не совпал с числом вагонов",
@@ -145,6 +173,8 @@ func (a *ASUIngest) Pull(ctx context.Context, trigger string) (LKProcessResult, 
 		return reject("process", err) // в т.ч. порог потери данных (max_data_loss_pct)
 	}
 	a.journal.RecordDislUpdate(ctx, "asu", trigger, files, res.Count)
+	a.log.Info("АСУ: дислокация обновлена",
+		zap.String("trigger", trigger), zap.Int("vagons", res.Count), zap.Int("streams", len(files)))
 	return res, nil
 }
 

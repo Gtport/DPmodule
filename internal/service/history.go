@@ -82,10 +82,27 @@ func applyHistory(ctx context.Context, kept []domain.Dislocation, actual *Actual
 		st.Updated++
 	}
 	if err := repo.Insert(ctx, toInsert); err != nil {
-		return HistoryStats{}, fmt.Errorf("insert history: %w", err)
+		// Вставка пачкой: падает она целиком, а сообщение драйвера называет
+		// только нарушенное ограничение — 06.08.2026 из-за этого «duplicate key
+		// vagon_history_pkey» на 4890 строках пришлось разбирать вручную. Размер
+		// пачки и несколько id (id рейса = вагон/станция/дата) сужают поиск до
+		// понятного места. ⚠️ Виновник в выборку попадает не всегда: DETAIL с
+		// конкретным ключом pgx в текст ошибки не кладёт.
+		return HistoryStats{}, fmt.Errorf("insert history (%d рейсов, напр. %s): %w",
+			len(toInsert), sampleTripIDs(toInsert), err)
 	}
 	st.Inserted = len(toInsert)
 	return st, nil
+}
+
+// sampleTripIDs — несколько id рейсов из пачки для сообщения об отказе вставки.
+func sampleTripIDs(rows []domain.VagonHistory) string {
+	const maxSample = 3
+	ids := make([]string, 0, maxSample)
+	for i := 0; i < len(rows) && i < maxSample; i++ {
+		ids = append(ids, rows[i].ID)
+	}
+	return strings.Join(ids, ", ")
 }
 
 // applyUnloadOnLeave — дополнение к S2-6 (решение владельца): вагон со статусом 10

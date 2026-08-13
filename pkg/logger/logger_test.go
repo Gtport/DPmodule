@@ -51,6 +51,31 @@ func TestFileLogIsPlainJSONEvenInDevEnv(t *testing.T) {
 	}
 }
 
+// Опечатка в уровне должна ронять старт, а не молча давать info: иначе стенд
+// поднимается «работающим», нужных записей в файле нет, и сказать об этом
+// некому — сообщить должен был как раз лог.
+func TestUnknownLevelIsRejected(t *testing.T) {
+	for _, lvl := range []string{"infoo", "verbose", "TRACE"} {
+		if _, err := New(Config{Level: lvl, Env: "prod"}); err == nil {
+			t.Errorf("уровень %q принят молча, ожидался отказ", lvl)
+		} else if !strings.Contains(err.Error(), lvl) {
+			t.Errorf("в ошибке нет самого значения %q: %v", lvl, err)
+		}
+	}
+}
+
+// Пустой уровень — не опечатка, а «не задано»: config.Load подставляет info,
+// и собственные вызовы New (тесты, утилиты) не обязаны его указывать.
+func TestEmptyLevelDefaultsToInfo(t *testing.T) {
+	log, err := New(Config{Level: "", Env: "prod"})
+	if err != nil {
+		t.Fatalf("пустой уровень должен приниматься: %v", err)
+	}
+	if log.Core().Enabled(zap.DebugLevel) {
+		t.Error("по умолчанию ожидался info, а debug оказался включён")
+	}
+}
+
 // Пустой File — только stdout, файла быть не должно (шаблон/контейнер, где
 // логи забирает docker).
 func TestNoFileWhenPathEmpty(t *testing.T) {

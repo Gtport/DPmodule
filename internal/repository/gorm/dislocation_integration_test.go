@@ -23,7 +23,7 @@ func TestDislocationRepository_ReplaceAndLoad(t *testing.T) {
 		t.Skip("DPMODULE_TEST_PG_DSN не задан — пропускаю integration-тест")
 	}
 
-	db, err := gormrepo.Open(config.Postgres{DSN: dsn, MaxOpenConns: 5, MaxIdleConns: 2})
+	db, err := gormrepo.Open(config.Postgres{DSN: dsn, MaxOpenConns: 5, MaxIdleConns: 2}, nil, 0)
 	require.NoError(t, err)
 
 	repo := gormrepo.NewDislocationRepository(db)

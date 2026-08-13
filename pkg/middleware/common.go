@@ -1,17 +1,68 @@
 package middleware
 
 import (
+	"bytes"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
+	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 const requestIDHeader = "X-Request-Id"
+
+// errBodyLimit — сколько байт тела неуспешного ответа забираем в лог. Тексты
+// наших ошибок — одна русская фраза, 2 КБ хватает с запасом; ограничение стоит
+// против чужих многословных ответов (панику отдаёт сам gin, ошибку разбора
+// JSON — биндер) и на случай, если ручка вернёт ошибкой большой документ.
+const errBodyLimit = 2 << 10
+
+// errorCapture — обёртка над gin.ResponseWriter, снимающая копию тела ТОЛЬКО у
+// неуспешных ответов (статус ≥ 400).
+//
+// Зачем: причина ошибки живёт в теле. Хендлеры (175 мест) отвечают
+// `c.JSON(status, gin.H{"error": err.Error()})` и в лог не пишут ничего, так
+// что в файле оставалась строка `http status=500` без единого слова о том, что
+// сломалось. Перехват в одном месте закрывает все ручки разом — и будущие тоже,
+// без обязанности помнить про лог в каждой новой.
+//
+// Успешные ответы не копируются никогда: среди них выгрузки Excel (история —
+// 100 тыс. строк, 11 МБ) и тайлы карты, держать их в памяти вторым экземпляром
+// незачем.
+type errorCapture struct {
+	gin.ResponseWriter
+	body bytes.Buffer
+}
+
+func (w *errorCapture) Write(b []byte) (int, error) {
+	w.capture(b)
+	return w.ResponseWriter.Write(b)
+}
+
+// WriteString переопределён вместе с Write: gin отдаёт им разные ответы
+// (c.JSON идёт через Write, c.String — через WriteString), и без этого метода
+// часть ошибок терялась бы, потому что встроенный писатель мимо нас.
+func (w *errorCapture) WriteString(s string) (int, error) {
+	w.capture([]byte(s))
+	return w.ResponseWriter.WriteString(s)
+}
+
+func (w *errorCapture) capture(b []byte) {
+	// Статус к моменту записи уже проставлен: c.JSON/c.String сначала зовут
+	// c.Status(code), и только потом рендерят тело.
+	if w.Status() < http.StatusBadRequest {
+		return
+	}
+	if free := errBodyLimit - w.body.Len(); free > 0 {
+		w.body.Write(b[:min(len(b), free)])
+	}
+}
 
 // InjectLogger puts the root zap logger into every request's context.
 func InjectLogger(log *zap.Logger) gin.HandlerFunc {
@@ -26,7 +77,15 @@ func Recover(log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if p := recover(); p != nil {
-				log.Error("panic recovered", zap.Any("panic", p))
+				// Логгер берём из контекста: там уже лежит request_id, и паника
+				// связывается со строкой http того же запроса. Корневой log —
+				// запасной путь, если Recover окажется выше RequestID в цепочке.
+				logger.FromContextOr(c.Request.Context(), log).Error("panic recovered",
+					zap.Any("panic", p),
+					zap.String("method", c.Request.Method),
+					zap.String("path", c.Request.URL.Path),
+					zap.Stack("stack"),
+				)
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 			}
 		}()
@@ -50,15 +109,78 @@ func RequestID() gin.HandlerFunc {
 }
 
 // RequestLogger logs method, path, status, and latency for every request.
+// Уровень записи выбирается по статусу (см. levelFor), у неуспешных ответов
+// добавляется причина из тела и имя пользователя из токена.
 func RequestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
+		cap := &errorCapture{ResponseWriter: c.Writer}
+		c.Writer = cap
+
+		// Пишем в defer: паника разворачивает стек мимо обычного пути, и без
+		// defer запрос, уронивший обработчик, не оставил бы строки http вовсе —
+		// только запись Recover, без латентности и пути.
+		defer func() {
+			status := c.Writer.Status()
+
+			fields := []zap.Field{
+				zap.String("method", c.Request.Method),
+				zap.String("path", c.Request.URL.Path),
+				zap.Int("status", status),
+				zap.Duration("latency", time.Since(start)),
+			}
+			// Query кладём только у неуспешных: у отчётов и выгрузок там весь
+			// фильтр (период, терминалы, список вагонов), и в успешной строке
+			// это лишний шум, а в разборе отказа — половина ответа на «почему».
+			if raw := c.Request.URL.RawQuery; raw != "" && status >= http.StatusBadRequest {
+				fields = append(fields, zap.String("query", raw))
+			}
+			if cl := auth.ClaimsFromContext(c.Request.Context()); cl != nil && cl.Username != "" {
+				fields = append(fields, zap.String("user", cl.Username))
+			}
+			if cap.body.Len() > 0 {
+				// ToValidUTF8: лимит режет по байтам, а тексты ошибок русские —
+				// обрезка попадает в середину буквы, и в JSON-логе оставался бы
+				// символ замены. Отсекаем недобитую руну вместо неё.
+				fields = append(fields, zap.String("error",
+					strings.ToValidUTF8(strings.TrimSpace(cap.body.String()), "")))
+			}
+
+			log := logger.FromContext(c.Request.Context())
+			if ce := log.Check(levelFor(status, c.Request.URL.Path), "http"); ce != nil {
+				ce.Write(fields...)
+			}
+		}()
+
 		c.Next()
-		logger.FromContext(c.Request.Context()).Info("http",
-			zap.String("method", c.Request.Method),
-			zap.String("path", c.Request.URL.Path),
-			zap.Int("status", c.Writer.Status()),
-			zap.Duration("latency", time.Since(start)),
-		)
 	}
+}
+
+// levelFor — уровень строки http. Отказ виден по уровню, а не вычитыванием
+// поля status: 5xx — наша поломка (Error), 4xx — отказ клиенту, чаще всего
+// осознанный гард или права (Warn).
+//
+// Успешные обращения к пробам и тайлам уходят на Debug: docker-healthcheck
+// дёргает /ready каждые несколько секунд, а один экран карты — это десятки
+// тайлов, и на Info они забивают файл, в котором ищут работу диспетчера.
+// Их ОТКАЗЫ при этом остаются на Warn/Error — тишины по ошибке не наступает.
+func levelFor(status int, path string) zapcore.Level {
+	switch {
+	case status >= http.StatusInternalServerError:
+		return zapcore.ErrorLevel
+	case status >= http.StatusBadRequest:
+		return zapcore.WarnLevel
+	case isQuietPath(path):
+		return zapcore.DebugLevel
+	default:
+		return zapcore.InfoLevel
+	}
+}
+
+func isQuietPath(path string) bool {
+	switch path {
+	case "/health", "/ready", "/metrics":
+		return true
+	}
+	return strings.HasPrefix(path, "/api/v1/map/tiles/")
 }

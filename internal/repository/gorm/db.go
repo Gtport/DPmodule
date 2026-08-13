@@ -3,9 +3,9 @@ package gormrepo
 import (
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/Gtport/DPmodule/internal/config"
 )
@@ -14,9 +14,15 @@ import (
 // Драйвер — pgx (через gorm.io/driver/postgres). SkipDefaultTransaction отключает
 // неявную транзакцию вокруг каждого Create/Update — для нашей нагрузки (массовая
 // заливка снимка дислокации) это убирает лишний оверхед; явные транзакции пишем сами.
-func Open(cfg config.Postgres) (*gorm.DB, error) {
+//
+// log — куда GORM пишет ошибки запросов и медленные запросы (см. zapGorm).
+// nil допустим (cmd-утилиты, тесты): тогда БД молчит, как молчала при Silent.
+func Open(cfg config.Postgres, log *zap.Logger, slowQuery time.Duration) (*gorm.DB, error) {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	db, err := gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{
-		Logger:                 gormlogger.Default.LogMode(gormlogger.Silent),
+		Logger:                 NewGormLogger(log, slowQuery),
 		SkipDefaultTransaction: true,
 	})
 	if err != nil {

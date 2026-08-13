@@ -54,11 +54,14 @@ keycloak:
   audience: iqport-backend
 
 log:
-  level: debug
+  # ⚠️ info, НЕ debug: боевой инстанс, на debug пишется трасса каждого SQL
+  # плюс тайлы и пробы healthcheck (см. docs/LOGGING.md). Включать точечно.
+  level: info
   file: logs/service.log   # относительный путь = свой каталог клона DPmodule2
   max_size_mb: 100
   max_backups: 5
   max_age_days: 30
+  slow_query: 500ms        # дольше — запрос пишется как медленный (Warn); отрицательное — выключить
 
 asu:
   enabled: false        # у клиента нет АСУ-АСУ; включать только со своим data_source

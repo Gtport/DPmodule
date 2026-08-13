@@ -48,7 +48,8 @@ func run() error {
 	if !cfg.Postgres.Enabled {
 		return fmt.Errorf("postgres.enabled = false")
 	}
-	db, err := gormrepo.Open(cfg.Postgres)
+	// nil-логгер: утилита печатает свой отчёт в stdout, трасса SQL там лишняя.
+	db, err := gormrepo.Open(cfg.Postgres, nil, 0)
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
 	}

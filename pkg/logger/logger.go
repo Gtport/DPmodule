@@ -2,6 +2,7 @@ package logger
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"go.uber.org/zap"
@@ -22,10 +23,20 @@ type Config struct {
 }
 
 // New creates a zap logger that writes to stdout and optionally to a rotating file.
+//
+// Неизвестный уровень — ОТКАЗ, а не тихий откат на info: опечатка в конфиге
+// («infoo», «verbose») иначе оборачивалась бы молчанием, и разбор поломки шёл бы
+// по файлу, где нужных записей просто нет, — а причину не видно, потому что
+// сообщить о ней должен был как раз лог. Пустое значение отказом не считается:
+// это «не задано», и config.Load подставляет ему info.
 func New(cfg Config) (*zap.Logger, error) {
-	level, err := zapcore.ParseLevel(cfg.Level)
-	if err != nil {
-		level = zapcore.InfoLevel
+	level := zapcore.InfoLevel
+	if cfg.Level != "" {
+		var err error
+		if level, err = zapcore.ParseLevel(cfg.Level); err != nil {
+			return nil, fmt.Errorf("log.level %q: %w (допустимо: debug, info, warn, error, dpanic, panic, fatal)",
+				cfg.Level, err)
+		}
 	}
 
 	cores := []zapcore.Core{
@@ -60,10 +71,17 @@ func New(cfg Config) (*zap.Logger, error) {
 
 // FromContext extracts a logger from context; falls back to a no-op logger.
 func FromContext(ctx context.Context) *zap.Logger {
+	return FromContextOr(ctx, zap.NewNop())
+}
+
+// FromContextOr — то же, но с явным запасным логгером вместо молчащего.
+// Нужен там, где потеря записи хуже лишней строки: фон и кроны работают вне
+// запроса (в контексте логгера нет), а Nop проглотил бы сообщение целиком.
+func FromContextOr(ctx context.Context, def *zap.Logger) *zap.Logger {
 	if l, ok := ctx.Value(contextKey{}).(*zap.Logger); ok && l != nil {
 		return l
 	}
-	return zap.NewNop()
+	return def
 }
 
 // WithContext returns a child context carrying the logger.

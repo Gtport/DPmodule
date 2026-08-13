@@ -77,11 +77,12 @@ keycloak:
     client_secret: ${vault:kv/authorization/keycloak/dev:dpport_service}
 
 log:
-  level: info
+  level: info              # debug пишет трассу каждого SQL — только для разбора поломки
   file: /var/log/iqport/service.log
   max_size_mb: 100
   max_backups: 5
   max_age_days: 30
+  slow_query: 500ms        # дольше — запрос пишется как медленный (Warn); отрицательное — выключить
 
 asu:
   enabled: false        # true → фоновый забор дислокации из АСУ по тикеру

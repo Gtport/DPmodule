@@ -8,11 +8,14 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser"
 	"github.com/Gtport/DPmodule/internal/port"
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 // LKProcessor — шаг 2 двухшаговой загрузки ЛК: обработка staged-файлов в снимок
@@ -33,15 +36,25 @@ type LKProcessor struct {
 	enricher  *Enricher
 	journal   *Journal             // единый журнал событий (может быть nil — cmd-утилиты)
 	notif     *NotificationService // уведомления конвейера (nil — выключено/тесты)
+	log       *zap.Logger          // запасной логгер: крон работает вне запроса (см. ProcessRecords)
 	mu        sync.Mutex           // сериализует пересборку снимка (ручной ЛК vs cron-АСУ идут через один proc)
 }
 
 func NewLKProcessor(intake *LKIntake, repo port.DislocationRepository, actual *ActualCache, status9 *Status9Cache, status6 *Status6Cache, history port.HistoryRepository) *LKProcessor {
-	return &LKProcessor{intake: intake, repo: repo, actual: actual, status9: status9, status6: status6, history: history, enricher: NewEnricher(intake.dir)}
+	return &LKProcessor{intake: intake, repo: repo, actual: actual, status9: status9, status6: status6, history: history,
+		enricher: NewEnricher(intake.dir), log: zap.NewNop()}
 }
 
 // SetJournal подключает журнал событий (nil-safe: без него запись пропускается).
 func (p *LKProcessor) SetJournal(j *Journal) { p.journal = j }
+
+// SetLogger подключает логгер пересборки. Не задан — молчим (Nop): cmd-утилиты
+// (jsonrun, planapply) печатают свой отчёт в stdout, второй поток им не нужен.
+func (p *LKProcessor) SetLogger(l *zap.Logger) {
+	if l != nil {
+		p.log = l
+	}
+}
 
 var (
 	ErrNotReady             = errors.New("приём не готов к обработке")
@@ -299,6 +312,12 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	// Логгер запроса, если пересборку позвал человек («Обновить из АСУ», приём
+	// ЛК) — тогда строки конвейера сшиваются с его request_id. Крон работает вне
+	// запроса, там остаётся корневой.
+	log := logger.FromContextOr(ctx, p.log)
+	started := time.Now()
+
 	var err error
 
 	// Stage 1: станции → идентификация порта + фильтр → операции → статусы.
@@ -318,6 +337,22 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	// Уведомление dicts-ролям о станциях вне справочника (дедуп по коду —
 	// каждый забор их приносит заново, а сигналить надо один раз).
 	p.notif.NotifyStationsMissing(ctx, enr.StationsNotFound)
+
+	// Дыры справочников — Warn, а не Info: вагон из-за них не теряется (решение
+	// владельца 03.08.2026, неизвестная станция гасит только свои поля), но
+	// пустой терминал уводит запись мимо прогнозов и отчётов молча. Именно так
+	// пропадали 15 вагонов НМТП со станцией ШУШАРЫ. Коды даём выборкой: их
+	// бывают сотни, а для правки справочника хватает первых.
+	if len(enr.StationsNotFound)+len(enr.OperationsNotFound)+len(enr.CargoNotFound) > 0 {
+		log.Warn("конвейер: коды вне справочников",
+			zap.Int("stations", len(enr.StationsNotFound)), zap.Ints("stations_sample", sampleCodes(enr.StationsNotFound)),
+			zap.Int("operations", len(enr.OperationsNotFound)), zap.Ints("operations_sample", sampleCodes(enr.OperationsNotFound)),
+			zap.Int("cargo", len(enr.CargoNotFound)), zap.Ints("cargo_sample", sampleCodes(enr.CargoNotFound)))
+	}
+	if enr.PortUnresolved > 0 {
+		log.Warn("конвейер: порт не резолвится — вагоны остались без терминала",
+			zap.Int("vagons", enr.PortUnresolved))
+	}
 
 	// Контроль потери данных относительно текущего снимка (размер — из RAM ActualCache,
 	// в БД за этим не ходим).
@@ -489,6 +524,24 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 			return LKProcessResult{}, fmt.Errorf("перечитывание актуальной мапы: %w", err)
 		}
 	}
+
+	// Итог пересборки одной строкой. Те же счётчики уходят в event_journal, но
+	// журнал — экран диспетчера и живёт в базе: когда база и есть подозреваемый
+	// (пересборка встала, снимок не подменился), смотреть больше некуда.
+	// carry_new_trip здесь не для красоты: рейс, сменившийся под тем же вагоном,
+	// сбрасывает назначение и план, и всплеск этого счётчика объясняет
+	// «вагон вдруг без терминала» без раскопок.
+	log.Info("снимок пересобран",
+		zap.Duration("took", time.Since(started)),
+		zap.Int("vagons", len(all)), zap.Int("prev", prevSize),
+		zap.Int("carry_matched", co.Matched), zap.Int("carry_new", co.New),
+		zap.Int("carry_new_trip", co.NewTrip), zap.Int("carry_sticky", co.Sticky),
+		zap.Int("history_inserted", hist.Inserted), zap.Int("history_updated", hist.Updated),
+		zap.Int("status9", s9.Inserted), zap.Int("status8_missing", s9.Missing8),
+		zap.Int("bros_new", brosStats.New), zap.Int("bros_stopped", brosStats.Stopped),
+		zap.Int("marka_missed", mk.MissedMarka),
+	)
+
 	return LKProcessResult{
 		Count: len(all), Files: files, PrevSnapshot: prevSize, PerFile: perFile,
 		NaznEnriched: enr.NaznEnriched, StationsNotFound: enr.StationsNotFound, OpsNotFound: enr.OperationsNotFound,
@@ -510,6 +563,15 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 		DelayClosed: delayStats.Closed, DelayActive: delayStats.Active,
 		DelayPurged: delayPurged,
 	}, nil
+}
+
+// sampleCodes — первые несколько кодов для строки лога. Дыр в справочниках
+// бывают сотни (диапазон 00xxxx–05xxxx Октябрьской дороги отсутствует целиком),
+// и вываливать их полным списком в каждую запись незачем: точное число рядом,
+// а править справочник начинают с первого.
+func sampleCodes(codes []int) []int {
+	const maxSample = 10
+	return codes[:min(len(codes), maxSample)]
 }
 
 func countBlocking(issues []LKIssue) int {

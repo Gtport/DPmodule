@@ -65,11 +65,14 @@ keycloak:
   audience: iqport-backend
 
 log:
+  # debug здесь уместен: на машине разработчика трасса SQL и есть то, ради чего
+  # уровень включают. На бою (config.vps.yaml) — info, иначе файл забивается.
   level: debug
   file: logs/service.log
   max_size_mb: 100
   max_backups: 5
   max_age_days: 30
+  slow_query: 500ms        # дольше — запрос пишется как медленный (Warn); отрицательное — выключить
 
 # ---- исходящие интеграции: на локальной машине выключены ----
 

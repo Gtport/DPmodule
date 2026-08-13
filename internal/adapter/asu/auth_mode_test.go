@@ -123,3 +123,40 @@ func TestPull_TokenErrorStopsRequest(t *testing.T) {
 		t.Error("запрос не должен был уйти на провайдера")
 	}
 }
+
+// AuthMode — то, что уходит в лог; проверяем все четыре исхода. Особенно важен
+// последний: ключ без auth_header идёт в "Authorization: Bearer <ключ>" и в
+// перехваченном запросе неотличим от токена Keycloak, поэтому лог обязан
+// называть его иначе.
+func TestAuthMode(t *testing.T) {
+	cases := []struct {
+		name   string
+		cfg    domain.DataSourceConfig
+		tokens *staticToken
+		want   string
+	}{
+		{"сервис-аккаунт настроен, режим не задан", domain.DataSourceConfig{}, &staticToken{token: "t"}, "keycloak"},
+		{"явный apikey сильнее токена",
+			domain.DataSourceConfig{AuthMode: "apikey", AuthSecretKey: "ASU_TOKEN", AuthHeader: "X-API-Key"},
+			&staticToken{token: "t"}, "apikey:X-API-Key"},
+		{"без сервис-аккаунта — запасной ключ",
+			domain.DataSourceConfig{AuthSecretKey: "ASU_TOKEN", AuthHeader: "X-API-Key"}, nil, "apikey:X-API-Key"},
+		{"ключ без заголовка — статический Bearer, не JWT",
+			domain.DataSourceConfig{AuthSecretKey: "ASU_TOKEN"}, nil, "apikey:bearer"},
+		{"авторизации не просили вовсе", domain.DataSourceConfig{}, nil, "none"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var cl *HTTPClient
+			if c.tokens == nil {
+				cl = NewHTTPClient(c.cfg, staticSecrets{}, nil)
+			} else {
+				cl = NewHTTPClient(c.cfg, staticSecrets{}, *c.tokens)
+			}
+			if got := cl.AuthMode(); got != c.want {
+				t.Errorf("AuthMode() = %q, ждали %q", got, c.want)
+			}
+		})
+	}
+}

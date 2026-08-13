@@ -104,12 +104,17 @@ func Build(
 	router := gin.New()
 
 	// ---- global middleware ----
+	// Порядок значащий. RequestID выше Recover — иначе паника писалась бы без
+	// request_id и её нельзя было бы связать со строкой http того же запроса.
+	// Recover, наоборот, самый внутренний: он гасит панику ДО того, как та
+	// развернёт стек через метрики (счётчик пишется после c.Next() без defer —
+	// упавший запрос не попадал бы в Prometheus) и через RequestLogger.
 	router.Use(
 		middleware.InjectLogger(log),
-		middleware.Recover(log),
 		middleware.RequestID(),
 		middleware.RequestLogger(),
 		metrics.Middleware(),
+		middleware.Recover(log),
 	)
 
 	// ---- system routes (no auth) ----
@@ -209,6 +214,10 @@ func Build(
 	if historyRepo != nil && pamCursorRepo != nil {
 		refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS,
 			cfg.Reference.AuthMode, cfg.Reference.AuthSecretKey, secrets, tokens)
+		// Режим авторизации памяток — один на подсистему (в отличие от АСУ, где он
+		// свой у каждого источника), поэтому говорим его один раз при старте.
+		log.Info("памятки: исходящая авторизация",
+			zap.String("auth", refClient.AuthMode()), zap.String("base_url", cfg.Reference.BaseURL))
 		refSvc = service.NewReferenceService(refClient, historyRepo, pamCursorRepo, journalRepo,
 			cfg.Reference.Clients, service.ReferenceTiming{
 				Interval:        cfg.Reference.PullInterval,
@@ -294,6 +303,7 @@ func Build(
 
 			proc := service.NewLKProcessor(lkIntake, dislRepo, actualCache, status9Cache, status6Cache, historyRepo)
 			proc.SetJournal(journal)
+			proc.SetLogger(log)
 			// «Бесплановые в подходе» (Оперативка): трекинг на сравнении снимков.
 			if unplannedRepo != nil {
 				proc.SetUnplannedRepo(unplannedRepo)

@@ -80,7 +80,7 @@ func run() error {
 		sqlDB *sql.DB
 	)
 	if cfg.Postgres.Enabled {
-		db, err = gormrepo.Open(cfg.Postgres)
+		db, err = gormrepo.Open(cfg.Postgres, log, cfg.Log.SlowQuery)
 		if err != nil {
 			return fmt.Errorf("db: %w", err)
 		}
@@ -215,7 +215,7 @@ func run() error {
 		log.Info("map disabled — экран «Карта» и БД тайлов выключены конфигом")
 	}
 	if cfg.Tiles.Enabled && cfg.MapView.EnabledOrDefault() {
-		tdb, terr := gormrepo.Open(cfg.Tiles)
+		tdb, terr := gormrepo.Open(cfg.Tiles, log.Named("tiles"), cfg.Log.SlowQuery)
 		if terr == nil {
 			var tsql *sql.DB
 			if tsql, terr = tdb.DB(); terr == nil {
@@ -255,12 +255,16 @@ func run() error {
 	var workers []worker.Worker
 
 	// Забор дислокации из АСУ. Источники — в data_source; если включённых нет,
-	// Pull вернёт ErrNoASUSource — тихо пропускаем.
+	// Pull вернёт ErrNoASUSource — работы нет, но тик состоялся.
 	if cfg.ASU.Enabled && asuIngest != nil {
 		job := func(ctx context.Context) error {
 			_, err := asuIngest.Pull(ctx, domain.TriggerScheduled)
 			if errors.Is(err, service.ErrNoASUSource) {
-				log.Debug("asu-pull: источник не настроен/выключен — пропуск")
+				// Уровень info, а не debug: при выключенном источнике тик не доходит
+				// даже до строки «запрос дислокации» в Pull, и лог уровня info молчал
+				// целиком — «крон тикает вхолостую» было не отличить от «крон не тикал».
+				// Нужен именно api_pull: включённый источник другого рода сюда не годится.
+				log.Info("asu-pull: включённого источника с ingest=api_pull нет — забор пропущен")
 				return nil
 			}
 			return err

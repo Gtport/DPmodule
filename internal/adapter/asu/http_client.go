@@ -114,6 +114,25 @@ func (c *HTTPClient) PullWagonHistory(ctx context.Context, client, vagon, from, 
 	return c.get(ctx, c.baseURL+path+"?from="+from+"&to="+to, "601 "+vagon)
 }
 
+// AuthMode — режим, который ФАКТИЧЕСКИ применится к запросу; только для логов.
+// По конфигу источника этого не видно: пустой auth_mode значит разное в
+// зависимости от того, настроен ли сервис-аккаунт. Различаем и две разновидности
+// apikey: ключ без auth_header уходит в "Authorization: Bearer <ключ>" и в
+// перехваченном запросе неотличим от токена Keycloak, хотя это статический ключ.
+func (c *HTTPClient) AuthMode() string {
+	if c.useKeycloak() {
+		return "keycloak"
+	}
+	switch {
+	case c.authKey == "":
+		return "none"
+	case c.authHeader != "":
+		return "apikey:" + c.authHeader
+	default:
+		return "apikey:bearer"
+	}
+}
+
 // authorize вешает на запрос авторизацию согласно режиму. Молча без авторизации
 // уходим только там, где её и не просили (apikey без auth_secret_key).
 func (c *HTTPClient) authorize(ctx context.Context, req *http.Request, resource string) error {

@@ -249,6 +249,13 @@ type Log struct {
 	MaxSizeMB  int    `yaml:"max_size_mb"`  // rotate after N MB (default 100)
 	MaxBackups int    `yaml:"max_backups"`  // keep N rotated files (default 5)
 	MaxAgeDays int    `yaml:"max_age_days"` // delete files older than N days (default 30)
+
+	// SlowQuery — порог, с которого запрос к БД пишется в лог как медленный
+	// (Warn). Сам текст запроса виден и на уровне debug, но там он тонет в
+	// потоке; этот порог вытаскивает наверх только подозрительное.
+	// Не задан → 500ms. Выключается ОТРИЦАТЕЛЬНЫМ значением, а не нулём:
+	// стенд, где ключа в файле нет, должен получить порог, а не тишину.
+	SlowQuery time.Duration `yaml:"slow_query"`
 }
 
 // Load reads config from a YAML file and overlays secrets from environment variables.
@@ -393,6 +400,9 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
+	}
+	if cfg.Log.SlowQuery == 0 {
+		cfg.Log.SlowQuery = 500 * time.Millisecond
 	}
 	if cfg.Storage.BaseDir == "" {
 		cfg.Storage.BaseDir = "_data"

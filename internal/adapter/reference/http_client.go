@@ -93,6 +93,19 @@ func (c *HTTPClient) Update(ctx context.Context, client, lastUpdate string) ([]b
 	return c.get(ctx, u, "памятки update "+client)
 }
 
+// AuthMode — режим, который ФАКТИЧЕСКИ применится к запросу; только для логов.
+// Пустой auth_mode сам по себе ничего не говорит: он значит keycloak или apikey
+// в зависимости от того, настроен ли сервис-аккаунт.
+func (c *HTTPClient) AuthMode() string {
+	if c.useKeycloak() {
+		return "keycloak"
+	}
+	if c.authSecretKey == "" {
+		return "none"
+	}
+	return "apikey:" + authHeader
+}
+
 // authorize вешает авторизацию согласно режиму (основной — токен сервис-аккаунта).
 func (c *HTTPClient) authorize(ctx context.Context, req *http.Request, label string) error {
 	if c.useKeycloak() {
