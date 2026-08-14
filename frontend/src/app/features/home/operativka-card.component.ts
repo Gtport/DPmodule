@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, input, signal } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
@@ -132,6 +132,16 @@ export class OperativkaCardComponent implements OnInit, OnDestroy {
   readonly api = inject(OperativkaApiService);
 
   readonly showCargoWork = signal(false);
+
+  /** Deep-link /home?open=cargo-work (страница «Справка») — открыть «Грузовую
+   *  работу». Тот же контракт, что у info-card: чужие kind игнорируются. */
+  readonly openModal = input<{ kind: string } | null>(null);
+
+  constructor() {
+    effect(() => {
+      if (this.openModal()?.kind === 'cargo-work') this.showCargoWork.set(true);
+    });
+  }
 
   /** «Итого» по всем терминалам; при одном терминале строка лишняя — не показываем. */
   readonly totals = computed<OperativkaTotals | null>(() => {

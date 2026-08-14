@@ -56,5 +56,8 @@ export const DISPATCHER_NAV: NavItem[] = [
   { path: 'maps',           label: 'Карты',                 icon: 'global',       theme: 'outline', roles: OPER },
   { path: 'warehouse',      label: 'Склад',                 icon: 'warehouse',    theme: 'fill',    roles: OPER },
   { path: 'shipments',      label: 'Судовые партии',        icon: 'ship',         theme: 'fill',    roles: OPER },
+  // «Справка» — регламент смены и разборы функционала (решение владельца
+  // 14.08.2026); ANY: клиентским ролям читать полезно и безвредно.
+  { path: 'help',           label: 'Справка',               icon: 'question-circle', theme: 'outline', roles: ANY },
   { path: 'admin',          label: 'Админ',                 icon: 'setting',      theme: 'fill',    roles: DICTS },
 ];
