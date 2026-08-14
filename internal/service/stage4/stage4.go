@@ -50,7 +50,12 @@ type Config struct {
 	BrosPenalty  time.Duration            // штраф бросания (эталон 72ч): сдвиг нитки и базы Mistake
 	Tolerance    map[string]time.Duration // station_code → допуск: слот может быть ≥ Rasch − допуск (квирк «−6ч»)
 	MaxLen       map[string]int           // station_code → лимит длины состава (ваг) для формулы интервала; 0 — без лимита
-	Now          time.Time                // «сейчас» (clock.Now) — старт распределения, если плана нет вовсе
+	// Coef — station_code → поправочный коэффициент приёма (plan_profile.correction_coef):
+	// станция фактически принимает в Coef раз больше НОРМАТИВНОЙ pc из ports/
+	// port_cargo_line. Норматив остаётся нормативом (он же в «Грузовой работе»),
+	// а очередь причала считается по факту. Отсутствует/≤0 → 1 (прежнее поведение).
+	Coef map[string]float64
+	Now  time.Time // «сейчас» (clock.Now) — старт распределения, если плана нет вовсе
 	// StartTime — фиксированное стартовое время беспланового распределения (what-if:
 	// вычисляется от БАЗОВЫХ поездов до правок и не плывёт, когда правка снимает
 	// план с последнего планового — иначе правка одного поезда двигала бы все).
@@ -118,6 +123,7 @@ func Distribute(trains []Train, schedules map[string][]HM, cfg Config) map[strin
 func distributeStation(station string, groups map[string][]Train, slots []HM, cfg Config, startTime time.Time, allTrains []Train, out map[string]time.Time) {
 	tol := cfg.Tolerance[station]
 	limit := cfg.MaxLen[station]
+	coef := cfg.Coef[station]
 
 	// Занятые нитки станции — плановые поезда (их PlanMsk = нитка). Пул общий для всех причалов.
 	// Затравка первой нитки по группе-причалу: последний плановый поезд группы + его интервал.
@@ -131,7 +137,7 @@ func distributeStation(station string, groups map[string][]Train, slots []HM, cf
 		occupied[*t.PlanMsk] = true
 		if cur, ok := prevSlot[t.Group]; !ok || t.PlanMsk.After(cur) {
 			prevSlot[t.Group] = *t.PlanMsk
-			prevIv[t.Group] = interval(t, limit)
+			prevIv[t.Group] = interval(t, limit, coef)
 		}
 	}
 
@@ -154,7 +160,7 @@ func distributeStation(station string, groups map[string][]Train, slots []HM, cf
 		out[t.Key] = slot
 		occupied[slot] = true
 		prevSlot[g] = slot // ре-якорь очереди причала на назначенную нитку
-		prevIv[g] = interval(t, limit)
+		prevIv[g] = interval(t, limit, coef)
 	}
 }
 
@@ -172,18 +178,23 @@ func base(t Train, cfg Config) time.Time {
 	return b
 }
 
-// interval — время «переваривания» состава причалом: min(вагонов, лимит) × 24ч / pc_рода.
-// Лимит длины состава — станционная настройка (наши причалы 64 ваг): в дислокации поезд
-// до 71 ваг, но причал ограничен по длине. pc ≤ 0 (ёмкость неизвестна) → 0 (не спейсим).
-func interval(t Train, limit int) time.Duration {
+// interval — время «переваривания» состава причалом: min(вагонов, лимит) × 24ч /
+// (pc_рода × coef). Лимит длины состава — станционная настройка (наши причалы 64 ваг):
+// в дислокации поезд до 71 ваг, но причал ограничен по длине. pc ≤ 0 (ёмкость
+// неизвестна) → 0 (не спейсим). coef — поправка «факт против норматива» (см. Config.Coef),
+// ≤0 → 1: станции без профиля и профили с дефолтной единицей считаются как прежде.
+func interval(t Train, limit int, coef float64) time.Duration {
 	if t.Pc <= 0 {
 		return 0
+	}
+	if coef <= 0 {
+		coef = 1
 	}
 	v := t.VagonCount
 	if limit > 0 && v > limit {
 		v = limit
 	}
-	return time.Duration(float64(v) * 24.0 / float64(t.Pc) * float64(time.Hour))
+	return time.Duration(float64(v) * 24.0 / (float64(t.Pc) * coef) * float64(time.Hour))
 }
 
 // findSlot — ближайший свободный слот ≥ minTime. Сначала слоты текущих суток, затем

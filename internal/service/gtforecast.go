@@ -743,12 +743,18 @@ func (s *GtForecastService) recomputeArrival(trains []GtTrainDTO, station string
 
 	tol := map[string]time.Duration{}
 	maxLen := map[string]int{}
+	coef := map[string]float64{}
 	for _, p := range s.cfg.PlanProfiles() {
 		if p.SlotToleranceH > 0 {
 			tol[p.StationCode] = time.Duration(p.SlotToleranceH * float64(time.Hour))
 		}
 		if p.MaxTrainLength > 0 {
 			maxLen[p.StationCode] = p.MaxTrainLength
+		}
+		// Та же поправка приёма, что в конвейере (stage4_apply): вкладка what-if
+		// обязана считать очередь причала теми же числами, что главный экран.
+		if p.CorrectionCoef > 0 && p.CorrectionCoef != 1 {
+			coef[p.StationCode] = p.CorrectionCoef
 		}
 	}
 
@@ -778,7 +784,7 @@ func (s *GtForecastService) recomputeArrival(trains []GtTrainDTO, station string
 
 	out := stage4.Distribute(list, toStage4Schedules(s.cfg.NitkaSchedule()), stage4.Config{
 		MinVagon: pol.MinVagonCount, MinVagonBros: pol.MinVagonBros,
-		BrosPenalty: brosPenalty, Tolerance: tol, MaxLen: maxLen,
+		BrosPenalty: brosPenalty, Tolerance: tol, MaxLen: maxLen, Coef: coef,
 		Now: clock.Now().Time(), StartTime: &fixedStart,
 	})
 

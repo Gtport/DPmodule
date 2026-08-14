@@ -72,6 +72,7 @@ func applyStage4(kept []domain.Dislocation, dir *DirectoryCache, cfg *ConfigCach
 	// 2. Расписания, допуски, лимиты длины состава, пороги.
 	tol := map[string]time.Duration{}
 	maxLen := map[string]int{}
+	coef := map[string]float64{}
 	for _, p := range cfg.PlanProfiles() {
 		if p.SlotToleranceH > 0 {
 			tol[p.StationCode] = time.Duration(p.SlotToleranceH * float64(time.Hour))
@@ -79,10 +80,16 @@ func applyStage4(kept []domain.Dislocation, dir *DirectoryCache, cfg *ConfigCach
 		if p.MaxTrainLength > 0 {
 			maxLen[p.StationCode] = p.MaxTrainLength
 		}
+		// Норматив pc — из ports/port_cargo_line, поправка «сколько принимают на
+		// самом деле» — здесь. Единица (дефолт колонки) ничего не меняет.
+		if p.CorrectionCoef > 0 && p.CorrectionCoef != 1 {
+			coef[p.StationCode] = p.CorrectionCoef
+		}
 	}
 	scfg := stage4.Config{
 		MinVagon: pol.MinVagonCount, MinVagonBros: pol.MinVagonBros,
-		BrosPenalty: brosPenalty, Tolerance: tol, MaxLen: maxLen, Now: clock.Now().Time(),
+		BrosPenalty: brosPenalty, Tolerance: tol, MaxLen: maxLen, Coef: coef,
+		Now: clock.Now().Time(),
 	}
 
 	// 3. Распределение.

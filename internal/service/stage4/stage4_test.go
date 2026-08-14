@@ -238,3 +238,32 @@ func TestDistribute_AssignSlotOccupies(t *testing.T) {
 	// other: старт = после плановых (NextEighteen от 14.07 18:00 = 15.07 18:00), слот 18:00 занят... старт уже 15.07.
 	assert.Equal(t, tm(2026, 7, 15, 18, 0), out["other"], "чужая нитка занята, беспланный после плановых")
 }
+
+func TestDistribute_CorrectionCoefShortensInterval(t *testing.T) {
+	// Станция принимает больше норматива (plan_profile.correction_coef): норматив pc
+	// остаётся документным, а очередь причала считается по факту. A,B одной группы,
+	// Pc=120, по 120 вагонов → интервал 120*24/120 = 24ч, с коэффициентом 2 — 12ч.
+	trains := []Train{
+		{Key: "A", Station: "S", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 5, 0)), VagonCount: 120, Pc: 120},
+		{Key: "B", Station: "S", Group: "g", RaschMsk: tp(tm(2026, 7, 14, 6, 0)), VagonCount: 120, Pc: 120},
+	}
+
+	out := Distribute(trains, schedS, baseCfg())
+	assert.Equal(t, tm(2026, 7, 14, 18, 0), out["A"])
+	assert.Equal(t, tm(2026, 7, 15, 18, 0), out["B"], "без коэффициента причал занят сутки")
+
+	cfg := baseCfg()
+	cfg.Coef = map[string]float64{"S": 2}
+	out = Distribute(trains, schedS, cfg)
+	assert.Equal(t, tm(2026, 7, 14, 18, 0), out["A"])
+	assert.Equal(t, tm(2026, 7, 15, 6, 0), out["B"], "коэффициент 2 → интервал 12ч, следующая нитка раньше")
+
+	// Чужая станция и невалидные значения ничего не меняют: станции без профиля и
+	// профили с дефолтной единицей должны считаться ровно как прежде.
+	for _, bad := range []map[string]float64{{"OTHER": 2}, {"S": 0}, {"S": -3}} {
+		cfg := baseCfg()
+		cfg.Coef = bad
+		out := Distribute(trains, schedS, cfg)
+		assert.Equal(t, tm(2026, 7, 15, 18, 0), out["B"], "coef %v не должен влиять", bad)
+	}
+}

@@ -37,6 +37,26 @@ UPDATE dpport.client_settings
        updated_at = now()
  WHERE id = 1;
 
+-- ── Портрет станции АМУР: бесплановая, с поправкой приёма ────────────────────
+--  Плана подвода у станции нет (mode='capacity', plan_code пуст) — экран и меню
+--  «План подвода» остаются скрытыми, в реестр парсера плана строка не идёт.
+--  correction_coef=2 (решение владельца 14.08.2026): норматив выгрузки по
+--  документам порта — 24 ваг/сут (ports.pc_other, port_cargo_line), а фактически
+--  подают в 2–2,5 раза больше (замер по vagon_history 12–14.08: 41/43/90 вагонов
+--  в сутки при 22 стоящих невыгруженными, очередь не растёт). Норматив остаётся
+--  нормативом — он же в «Грузовой работе»; на очередь причала Stage 4 работает
+--  pc × correction_coef. Ослабить обратно = поправить одно число здесь и в Админе.
+--  slot_tolerance_h/max_train_length оставлены нулевыми: расписания ниток нет,
+--  длину состава для АНБ владелец не задавал.
+INSERT INTO dpport.plan_profile
+    (station_code, station_name, mode, plan_code, correction_coef,
+     match_requires_naznach, our_terminals, slot_tolerance_h, max_train_length)
+VALUES ('970302', 'АМУР', 'capacity', '', 2.0, false, '["АНБ"]'::jsonb, 0, 0)
+ON CONFLICT (station_code) DO UPDATE
+   SET mode = EXCLUDED.mode,
+       correction_coef = EXCLUDED.correction_coef,
+       updated_at = now();
+
 -- Каналы: клиенты провайдера АСУ отсутствуют (интеграции выключены конфигом),
 -- маршруты MAX не заводятся, план подвода не настраивается — соответствующие
 -- разделы шаблона осознанно пусты. ОКПО грузополучателя живёт в реестре ports
