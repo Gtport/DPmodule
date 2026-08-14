@@ -25,12 +25,12 @@ import {
               (nzOnCancel)="closed.emit()">
       <ng-template #ttl>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
-          Сохранённые планы ГТ
+          Сохранённые прогнозы
         </div>
       </ng-template>
       <ng-container *nzModalContent>
         <div class="save-row">
-          <label>Сохранить текущий план на:
+          <label>Сохранить текущий прогноз на:
             <input type="date" [(ngModel)]="saveDate" />
           </label>
           <button nz-button nzType="primary" nzSize="small" (click)="save()" [disabled]="busy()">
@@ -54,7 +54,7 @@ import {
         } @else {
           <table class="dp-tbl">
             <thead>
-              <tr><th>План на</th><th>Расчёт</th><th>Сохранил</th><th>Обновлён</th><th></th></tr>
+              <tr><th>Прогноз на</th><th>Расчёт</th><th>Сохранил</th><th>Обновлён</th><th></th></tr>
             </thead>
             <tbody>
               @for (s of list(); track s.plan_date + s.station) {

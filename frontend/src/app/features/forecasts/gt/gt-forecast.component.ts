@@ -98,7 +98,7 @@ const ACTION_LABEL: Record<string, string> = {
                 title="Скрыть окраску клиентов" (click)="black.set(!black())">
           <span nz-icon nzType="bg-colors"></span>
         </button>
-        <button nz-button nzSize="small" title="Сохранённые планы и CSV-аналитика"
+        <button nz-button nzSize="small" title="Сохранённые прогнозы и CSV-аналитика"
                 (click)="snapshotsOpen.set(true)" [disabled]="archived()">
           <span nz-icon nzType="book"></span>
         </button>
@@ -118,7 +118,7 @@ const ACTION_LABEL: Record<string, string> = {
 
       @if (archive(); as a) {
         <div class="archive-banner">
-          📂 Архив плана на <b>{{ fmtDate(a.plan_date) }}</b>
+          📂 Архив прогноза на <b>{{ fmtDate(a.plan_date) }}</b>
           (расчёт с {{ fmtDate(a.start_date) }} · {{ a.days_count }} дн. ·
           сохранил {{ a.saved_by || '—' }}) — только просмотр, данные зафиксированы
           <button nz-button nzSize="small" (click)="closeArchive()">Вернуться к текущему</button>

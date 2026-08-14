@@ -33,7 +33,7 @@ interface SpeedRow {
               (nzOnCancel)="closed.emit()">
       <ng-template #ttl>
         <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
-          Настройки прогноза ГТ — скорости выгрузки
+          Настройки прогноза — скорости выгрузки
         </div>
       </ng-template>
       <ng-container *nzModalContent>
