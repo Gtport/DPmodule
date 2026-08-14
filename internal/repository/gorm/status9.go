@@ -74,11 +74,16 @@ func (r *Status9Repository) UpsertMissing(ctx context.Context, items []domain.Di
 	}
 	// При конфликте по vagon обновляем только status и updated_at (EXCLUDED —
 	// значения из вставляемой строки: сервис проставил status=8 и updated_at).
-	// Остальные поля (правки прибытия оператора) сохраняются.
+	// Остальные поля (правки прибытия оператора) сохраняются. dismissed_at
+	// сбрасывается явно: скрытый кандидат-9, ушедший в пропавшие, — НОВОЕ
+	// событие, диспетчер должен его увидеть (upsert идёт только в момент
+	// пропажи, пересборы снимка запись-8 повторно не трогают).
+	set := clause.AssignmentColumns([]string{"status", "updated_at"})
+	set = append(set, clause.Assignment{Column: clause.Column{Name: "dismissed_at"}, Value: nil})
 	res := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "vagon"}},
-			DoUpdates: clause.AssignmentColumns([]string{"status", "updated_at"}),
+			DoUpdates: set,
 		}).
 		CreateInBatches(models, batchSize)
 	if res.Error != nil {
@@ -129,6 +134,19 @@ func (r *Status9Repository) SetDismissed(ctx context.Context, vagons []string, a
 	}
 	res := r.db.WithContext(ctx).Table("status9").
 		Where("vagon IN ? AND status = 9", vagons).
+		Update("dismissed_at", &at)
+	return int(res.RowsAffected), res.Error
+}
+
+// SetDismissedMissing — пометка «скрыт диспетчером» на пропавших (статус 8):
+// запись остаётся в таблице (снимется возвратом вагона в поток или TTL-очисткой),
+// но из списков кандидатов уходит. Колонка та же, что у кандидатов-9.
+func (r *Status9Repository) SetDismissedMissing(ctx context.Context, vagons []string, at domain.LocalTime) (int, error) {
+	if len(vagons) == 0 {
+		return 0, nil
+	}
+	res := r.db.WithContext(ctx).Table("status9").
+		Where("vagon IN ? AND status = 8", vagons).
 		Update("dismissed_at", &at)
 	return int(res.RowsAffected), res.Error
 }

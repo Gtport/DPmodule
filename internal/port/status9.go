@@ -30,6 +30,9 @@ type Status9Repository interface {
 	// SetDismissed помечает живых кандидатов (статус 9) отклонёнными оператором
 	// («скрыть до новых данных»). Возвращает число помеченных.
 	SetDismissed(ctx context.Context, vagons []string, at domain.LocalTime) (int, error)
+	// SetDismissedMissing — та же пометка на пропавших (статус 8): запись
+	// остаётся (уйдёт возвратом вагона или TTL), но списки её не показывают.
+	SetDismissedMissing(ctx context.Context, vagons []string, at domain.LocalTime) (int, error)
 	// DismissedVagons — номера вагонов с пометкой «отклонён» (для фильтра списка
 	// кандидатов). Пометка живёт вместе с записью и снимается reconcile'ом.
 	DismissedVagons(ctx context.Context) (map[string]struct{}, error)

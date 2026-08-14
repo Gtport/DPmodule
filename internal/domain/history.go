@@ -67,6 +67,11 @@ type VagonHistory struct {
 	Sms3      string
 	Color     string
 
+	// Недоехавший: рейс закрыт вручную удалением вагона из пропавших (запись-8) —
+	// вагон не прибыл и не прибудет. Не «в пути»: исключается из «не выгруж.» и
+	// отчёта просрочки; снимается реальным переходом статуса, если вагон вернулся.
+	NotArrived bool
+
 	CreatedAt *LocalTime
 	UpdatedAt *LocalTime
 }
@@ -140,6 +145,10 @@ type HistorySearchFilter struct {
 	Invoices      []string
 	StationNach   []string
 	OnlyOverdue   bool // delay > 0: факт просрочки доставки, зафиксированный при прибытии
+	// Только недоехавшие (not_arrived): рейсы, закрытые вручную удалением из
+	// пропавших. Без этого флага недоехавшие видны в общем списке (с пометкой),
+	// но исключаются из «не выгруж.» и OnlyOverdue — они не «в пути».
+	OnlyNotArrived bool
 }
 
 // HistoryAttribution — бизнес-атрибуция для дозаполнения строки истории рейса

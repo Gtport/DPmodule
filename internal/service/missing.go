@@ -80,13 +80,25 @@ type MissingGroupDTO struct {
 
 // Groups — пропавшие агрегированно: поезд → подгруппа → вагоны, с фильтром по
 // терминалам naznach (пусто — все): станционные карточки «Кандидаты на
-// прибытие» показывают каждой станции только её пропавших.
+// прибытие» показывают каждой станции только её пропавших. Скрытые диспетчером
+// (dismissed_at, «Скрыть» в модалке кандидатов) не показываются — запись жива
+// и уйдёт возвратом вагона либо TTL-очисткой.
 func (s *MissingService) Groups(ctx context.Context, naznach []string) ([]MissingGroupDTO, error) {
 	rows, err := s.status9.MissingRows(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return groupMissing(filterByNaznach(rows, naznach), time.Time(clock.Now())), nil
+	dismissed, err := s.status9.DismissedVagons(ctx)
+	if err != nil {
+		return nil, err
+	}
+	visible := rows[:0]
+	for i := range rows {
+		if _, off := dismissed[rows[i].Vagon]; !off {
+			visible = append(visible, rows[i])
+		}
+	}
+	return groupMissing(filterByNaznach(visible, naznach), time.Time(clock.Now())), nil
 }
 
 // filterByNaznach — только записи с назначением из списка (пусто — как есть).

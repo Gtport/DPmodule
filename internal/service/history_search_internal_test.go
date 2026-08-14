@@ -58,6 +58,19 @@ func TestBuildHistoryFilter(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, f.OnlyOverdue)
 	})
+
+	t.Run("only_not_arrived проходит в доменный фильтр", func(t *testing.T) {
+		f, err := buildHistoryFilter(HistorySearchFilterDTO{OnlyNotArrived: true})
+		require.NoError(t, err)
+		assert.True(t, f.OnlyNotArrived)
+	})
+
+	t.Run("недоехавшие + не выгруж./просрочка — конфликт (гарантированно пусто)", func(t *testing.T) {
+		_, err := buildHistoryFilter(HistorySearchFilterDTO{OnlyNotArrived: true, NotUnloaded: true})
+		require.ErrorIs(t, err, ErrHistorySearchInvalid)
+		_, err = buildHistoryFilter(HistorySearchFilterDTO{OnlyNotArrived: true, OnlyOverdue: true})
+		require.ErrorIs(t, err, ErrHistorySearchInvalid)
+	})
 }
 
 func TestHistorySortColumn(t *testing.T) {

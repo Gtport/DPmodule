@@ -386,6 +386,10 @@ func (r *s9StubRepo) SetDismissed(context.Context, []string, domain.LocalTime) (
 	return 0, nil
 }
 
+func (r *s9StubRepo) SetDismissedMissing(context.Context, []string, domain.LocalTime) (int, error) {
+	return 0, nil
+}
+
 func (r *s9StubRepo) DismissedVagons(context.Context) (map[string]struct{}, error) {
 	return nil, nil
 }

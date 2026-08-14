@@ -187,7 +187,8 @@ func (j *Journal) RecordRearrangement(ctx context.Context, source string, count 
 // RecordArrivalsEdit фиксирует операторские действия с прибывшими и кандидатами
 // (правки истории прибытий/выгрузок, скрытия кандидатов и бесплановых): action —
 // код действия (edit_arrival / unload / set_naznach / dismiss_candidate /
-// dismiss_unplanned), count — затронуто вагонов, extra — детали.
+// dismiss_unplanned / confirm_missing / dismiss_missing / delete_missing),
+// count — затронуто вагонов, extra — детали.
 func (j *Journal) RecordArrivalsEdit(ctx context.Context, action string, count int, extra map[string]any) {
 	if j == nil || j.repo == nil {
 		return

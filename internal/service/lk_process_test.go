@@ -40,6 +40,8 @@ type fakeStatus9Repo struct {
 	missing  []domain.Dislocation // полные записи-8 для LoadMissing (экран/подтверждение)
 	inserted []domain.Dislocation
 	deleted  []string
+	// Вагоны, скрытые из пропавших (SetDismissedMissing) — проверка DismissMissing.
+	dismissedMissing []string
 }
 
 func newFakeStatus9() *fakeStatus9Repo { return &fakeStatus9Repo{vagons: map[string]int{}} }
@@ -397,6 +399,18 @@ func (f *fakeHistoryRepo) UpdateFieldsBatch(_ context.Context, updates map[strin
 
 func (f *fakeStatus9Repo) SetDismissed(context.Context, []string, domain.LocalTime) (int, error) {
 	return 0, nil
+}
+
+func (f *fakeStatus9Repo) SetDismissedMissing(_ context.Context, vagons []string, _ domain.LocalTime) (int, error) {
+	// Помечаются только записи со статусом 8 (семантика SQL-репозитория).
+	n := 0
+	for _, v := range vagons {
+		if f.vagons[v] == 8 {
+			f.dismissedMissing = append(f.dismissedMissing, v)
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeStatus9Repo) DismissedVagons(context.Context) (map[string]struct{}, error) {

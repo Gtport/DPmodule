@@ -13,6 +13,7 @@ import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { AuthService } from '../../core/auth/auth.service';
+import { DICTS } from '../../core/auth/roles';
 import { todayMsk } from '../../shared/msk-date';
 import { TimeBase, TimeBaseService, mskDateInBase, shiftDateIfEvening } from '../../shared/time-base.service';
 import { ArrivalsApiService, CandidateGroup, TerminalTarget } from './arrivals-api.service';
@@ -57,6 +58,12 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
               <button nz-button nzType="primary" nzSize="small" (click)="openConfirmSelected()">
                 Подтвердить прибытие…
               </button>
+              <button nz-button nzSize="small" nz-tooltip
+                      nzTooltipTitle="Скрыть из списка: запись остаётся, вернётся с новыми данными или уйдёт по сроку"
+                      (click)="dismissSelected()">Скрыть</button>
+            }
+            @if (canDelete()) {
+              <button nz-button nzDanger nzSize="small" (click)="openDeleteSelected()">Удалить…</button>
             }
             <button nz-button nzSize="small" (click)="clearSelection()">Сбросить</button>
           }
@@ -151,10 +158,22 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
                       }
                     </td>
                     @if (canEdit()) {
-                      <td class="c">
+                      <td class="c acts">
                         <button nz-button nzSize="small" nz-tooltip
                                 nzTooltipTitle="Подтвердить прибытие всего состава"
                                 (click)="openConfirmGroup(g)">Подтвердить…</button>
+                        <button nz-button nzType="text" nzSize="small" nz-tooltip
+                                nzTooltipTitle="Скрыть состав из списка (запись остаётся)"
+                                (click)="dismissGroup(g)">
+                          <span nz-icon nzType="eye-invisible"></span>
+                        </button>
+                        @if (canDelete()) {
+                          <button nz-button nzType="text" nzSize="small" nzDanger nz-tooltip
+                                  nzTooltipTitle="Удалить состав: рейс будет помечен «недоехавший»"
+                                  (click)="openDeleteGroup(g)">
+                            <span nz-icon nzType="delete"></span>
+                          </button>
+                        }
                       </td>
                     }
                   </tr>
@@ -167,9 +186,11 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
         </nz-spin>
 
         @if (canEdit()) {
-          <p class="hint">Клик по вагону — выбор; «Подтвердить прибытие» — кнопкой на поезде или ПКМ
-            по поезду/составу/вагону. ПКМ по вагону также даёт историю движения. Вернувшийся в
-            дислокацию вагон уходит из пропавших автоматически.</p>
+          <p class="hint">Клик по вагону — выбор; действия — кнопками на поезде или ПКМ по
+            поезду/составу/вагону. «Скрыть» — временно (запись вернётся с новыми данными или уйдёт
+            по сроку){{ canDelete() ? '; «Удалить» — насовсем, рейс помечается «недоехавший»' : '' }}.
+            ПКМ по вагону также даёт историю движения. Вернувшийся в дислокацию вагон уходит из
+            пропавших автоматически.</p>
         } @else {
           <p class="hint">Клик по вагону — история движения. Времена — московские.</p>
         }
@@ -185,6 +206,10 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
         @if (canEdit()) {
           @if (ctxVagon()) { <li nz-menu-divider></li> }
           <li nz-menu-item (click)="openConfirmSelected()">Подтвердить прибытие…</li>
+          <li nz-menu-item (click)="dismissSelected()">Скрыть (до новых данных)</li>
+        }
+        @if (canDelete()) {
+          <li nz-menu-item nzDanger (click)="openDeleteSelected()">Удалить (пометить «недоехавший»)…</li>
         }
       </ul>
     </nz-dropdown-menu>
@@ -192,6 +217,29 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
     @if (trailVagon(); as tv) {
       <app-vagon-trail-modal [vagonId]="tv.id" [vagon]="tv.vagon" (closed)="trailVagon.set(null)" />
     }
+
+    <!-- Диалог «Удалить из кандидатов» (senior/admin): действие необратимое для
+         записи-8, поэтому с подтверждением и предпросмотром вагонов. -->
+    <nz-modal [nzVisible]="deleteOpen()" [nzTitle]="delTtl" nzWidth="440px"
+              (nzOnCancel)="deleteOpen.set(false)" (nzOnOk)="saveDelete()"
+              nzOkText="Удалить" nzOkDanger [nzOkLoading]="applying()">
+      <ng-template #delTtl>
+        <div class="ttl" cdkDrag cdkDragRootElement=".ant-modal-content" cdkDragHandle>
+          Удалить из кандидатов — {{ ctxGroup()?.index || 'выбранные вагоны' }}
+        </div>
+      </ng-template>
+      <ng-container *nzModalContent>
+        <div class="frm">
+          <p class="mut">Вагонов: {{ selectedVagons().length }}. Записи уйдут из кандидатов
+            насовсем, а рейсы в истории будут помечены «недоехавший» — не «в пути», вне
+            «не выгруж.» и отчёта просрочки (фильтр «недоехавшие» — на экране истории).
+            Вернувшийся в дислокацию вагон снимет пометку сам. Действие пишется в журнал.</p>
+          <div class="sel-chips">
+            @for (v of selectedVagons(); track v) { <span class="chip">{{ v }}</span> }
+          </div>
+        </div>
+      </ng-container>
+    </nz-modal>
 
     <!-- Диалог «Подтвердить прибытие»: общий для кандидатов-9 (без выгрузки)
          и пропавших-8 (прибытие обязательно, выгрузка опционально) -->
@@ -276,7 +324,8 @@ import { MissingApiService, MissingGroup, MissingSubgroup, MissingVagon } from '
                   font-size: var(--font-size-sm); margin-bottom: var(--space-xs); }
     .dp-tbl td { vertical-align: top; }
     .c-idx { width: 130px; } .c-op { width: 130px; } .c-dt { width: 100px; }
-    .c-days { width: 52px; } .c-act { width: 118px; }
+    .c-days { width: 52px; } .c-act { width: 176px; }
+    .acts { white-space: nowrap; }
     .num { font-variant-numeric: tabular-nums; }
     .idx, .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .c { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -320,8 +369,11 @@ export class CandidatesModalComponent implements OnInit {
   private readonly arrivalsApi = inject(ArrivalsApiService);
   private readonly msg = inject(NzMessageService);
   private readonly ctxMenu = inject(NzContextMenuService);
-  /** Подтверждение — порог operator; клиенту только просмотр и история движения. */
-  readonly canEdit = inject(AuthService).canEdit;
+  private readonly auth = inject(AuthService);
+  /** Подтверждение/скрытие — порог operator; клиенту только просмотр и история движения. */
+  readonly canEdit = this.auth.canEdit;
+  /** «Удалить» (пометка «недоехавший» в истории) — senior-operator и admin. */
+  readonly canDelete = computed(() => this.auth.allows(DICTS));
   /** Шкала ввода времени (ЖД/МСК) — общая для всех диалогов правок. */
   readonly tb = inject(TimeBaseService);
 
@@ -348,6 +400,8 @@ export class CandidatesModalComponent implements OnInit {
   readonly ctxVagon = signal<MissingVagon | null>(null);
   readonly trailVagon = signal<MissingVagon | null>(null);
 
+  // Диалог «Удалить из кандидатов» (пропавшие, senior/admin).
+  readonly deleteOpen = signal(false);
   // Диалог «Подтвердить прибытие»: режим — живой кандидат (9) или пропавший (8).
   readonly confirmOpen = signal(false);
   readonly cfMode = signal<'cand' | 'missing'>('missing');
@@ -529,6 +583,62 @@ export class CandidatesModalComponent implements OnInit {
       this.changed.emit();
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
+    }
+  }
+
+  // ── Пропавшие (статус 8): скрытие и удаление ─────────────────────────────
+  /** id выбранных пропавших; пусто — подсказка (цели действий бара и ПКМ). */
+  private selectedIdsOrHint(): string[] | null {
+    if (!this.selected().size) {
+      this.msg.info('Сначала выберите вагоны (клик по вагону или ПКМ по поезду/составу).');
+      return null;
+    }
+    return [...this.selected()];
+  }
+
+  /** «Скрыть» выбранных: запись-8 остаётся, из списков уходит (до возврата вагона/TTL). */
+  async dismissSelected(): Promise<void> {
+    const ids = this.selectedIdsOrHint();
+    if (!ids) return;
+    try {
+      const res = await this.api.dismissMissing(ids);
+      this.msg.info(`Скрыто пропавших: ${res.updated} ваг. (вернутся с новыми данными или уйдут по сроку).`);
+      await this.load();
+      this.changed.emit();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    }
+  }
+
+  dismissGroup(g: MissingGroup): void {
+    this.selected.set(new Set(g.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id))));
+    void this.dismissSelected();
+  }
+
+  openDeleteSelected(): void {
+    if (!this.selectedIdsOrHint()) return;
+    this.deleteOpen.set(true);
+  }
+
+  openDeleteGroup(g: MissingGroup): void {
+    this.ctxGroup.set(g);
+    this.selected.set(new Set(g.sub_groups.flatMap((sg) => sg.vagons.map((v) => v.id))));
+    this.deleteOpen.set(true);
+  }
+
+  /** «Удалить» выбранных: запись-8 насовсем + пометка «недоехавший» в истории. */
+  async saveDelete(): Promise<void> {
+    this.applying.set(true);
+    try {
+      const res = await this.api.deleteMissing([...this.selected()]);
+      this.msg.success(`Удалено из кандидатов: ${res.updated} ваг. — в истории помечены «недоехавший».`);
+      this.deleteOpen.set(false);
+      await this.load();
+      this.changed.emit();
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    } finally {
+      this.applying.set(false);
     }
   }
 

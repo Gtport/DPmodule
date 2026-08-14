@@ -118,6 +118,27 @@ export class MissingApiService {
     }));
   }
 
+  /**
+   * «Скрыть» пропавших (operator+): запись-8 остаётся, но уходит из списков —
+   * вернётся вагон в дислокацию или сработает TTL-очистка. vagonIds — id рейсов.
+   */
+  dismissMissing(vagonIds: string[]): Promise<MissingConfirmResult> {
+    return firstValueFrom(this.http.post<MissingConfirmResult>(`${this.base}/missing/dismiss`, {
+      vagon_ids: vagonIds,
+    }));
+  }
+
+  /**
+   * «Удалить» пропавших (senior-operator/admin): запись-8 снимается насовсем,
+   * рейс в истории помечается «недоехавший» (не «в пути», вне «не выгруж.» и
+   * отчёта просрочки). vagonIds — id рейсов.
+   */
+  deleteMissing(vagonIds: string[]): Promise<MissingConfirmResult> {
+    return firstValueFrom(this.http.post<MissingConfirmResult>(`${this.base}/missing/delete`, {
+      vagon_ids: vagonIds,
+    }));
+  }
+
   /** Доноры перегруза (статус 6) — из RAM-кэша снимка. */
   getStatus6(): Promise<Status6Vagon[]> {
     return firstValueFrom(this.http.get<Status6Vagon[]>(`${this.base}/status6`));

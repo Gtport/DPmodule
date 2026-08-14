@@ -65,8 +65,10 @@ type vagonHistoryModel struct {
 	Sms2      string            `gorm:"column:sms_2"`
 	Sms3      string            `gorm:"column:sms_3"`
 	Color     string            `gorm:"column:color"`
-	CreatedAt *domain.LocalTime `gorm:"column:created_at"`
-	UpdatedAt *domain.LocalTime `gorm:"column:updated_at"`
+	// Недоехавший (рейс закрыт удалением из пропавших) — миграция 000062.
+	NotArrived bool              `gorm:"column:not_arrived"`
+	CreatedAt  *domain.LocalTime `gorm:"column:created_at"`
+	UpdatedAt  *domain.LocalTime `gorm:"column:updated_at"`
 }
 
 func (vagonHistoryModel) TableName() string { return "vagon_history" }
@@ -91,7 +93,8 @@ func toHistoryModel(h domain.VagonHistory) vagonHistoryModel {
 		DateVigrD: h.DateVigrD, PlaceVigr: h.PlaceVigr,
 		Frost: h.Frost, Shipments: h.Shipments, Peregruz: h.Peregruz,
 		Info1: h.Info1, Info2: h.Info2, Sms1: h.Sms1, Sms2: h.Sms2, Sms3: h.Sms3,
-		Color: h.Color, CreatedAt: h.CreatedAt, UpdatedAt: h.UpdatedAt,
+		Color: h.Color, NotArrived: h.NotArrived,
+		CreatedAt: h.CreatedAt, UpdatedAt: h.UpdatedAt,
 	}
 }
 
@@ -268,7 +271,8 @@ func toHistoryDomain(m vagonHistoryModel) domain.VagonHistory {
 		DateVigrD: m.DateVigrD, PlaceVigr: m.PlaceVigr,
 		Frost: m.Frost, Shipments: m.Shipments, Peregruz: m.Peregruz,
 		Info1: m.Info1, Info2: m.Info2, Sms1: m.Sms1, Sms2: m.Sms2, Sms3: m.Sms3,
-		Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+		Color: m.Color, NotArrived: m.NotArrived,
+		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 	}
 }
 

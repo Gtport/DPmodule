@@ -180,4 +180,37 @@ func TestHistoryRepository_Search(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, stations, station)
 	})
+
+	// Недоехавший (not_arrived, миграция 000062): рейс закрыт удалением из
+	// пропавших — не «в пути». Вставляется после прогонов выше, чтобы не
+	// пересчитывать их ожидания.
+	t.Run("недоехавший: свой фильтр, вне «не выгруж.» и «просрочки»", func(t *testing.T) {
+		na := domain.VagonHistory{ID: "t-hs-5", Vagon: vagBase + "5", StationNach: station,
+			GruzpolS: "АЭ", Naznach: "АЭ", Invoice: "ЭЛ100006",
+			DateNachD: day(4), Delay: dint(4), NotArrived: true}
+		require.NoError(t, repo.Insert(ctx, []domain.VagonHistory{na}))
+
+		f := mine
+		f.OnlyNotArrived = true
+		got, total, err := repo.SearchRows(ctx, f, "vagon", false, 100, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 1, total)
+		require.Len(t, got, 1)
+		assert.Equal(t, "t-hs-5", got[0].ID)
+		assert.True(t, got[0].NotArrived, "пометка возвращается строкой выдачи")
+
+		// «Не выгруж.»: место пусто, но недоехавший исключён (было бы 3).
+		f = mine
+		f.NotUnloaded = true
+		_, total, err = repo.SearchRows(ctx, f, "vagon", false, 100, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 2, total, "недоехавший не считается невыгруженным")
+
+		// «Просрочка»: delay 4 > 0, но недоехавший вне отчёта претензий.
+		f = mine
+		f.OnlyOverdue = true
+		_, total, err = repo.SearchRows(ctx, f, "vagon", false, 100, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 1, total, "недоехавший с просрочкой не попадает в отчёт")
+	})
 }

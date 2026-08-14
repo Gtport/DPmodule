@@ -73,37 +73,18 @@ func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissing
 		}
 	}
 
-	// Записи-8 по id рейса. Незнакомый id — вагон уже ушёл из пропавших (вернулся
-	// в поток, снят TTL или подтверждён параллельно) — честная ошибка вместо
-	// тихого пропуска: диспетчер должен увидеть, что картина устарела.
-	missing, err := s.proc.status9.MissingRows(ctx)
+	// Записи-8 по id рейса (resolveMissingByIDs: незнакомый id — честная ошибка).
+	recs, err := s.resolveMissingByIDs(ctx, req.VagonIDs)
 	if err != nil {
 		return ArrivalsUpdateResult{}, err
 	}
-	byID := map[string]*domain.Dislocation{}
-	for i := range missing {
-		if missing[i].Status != nil && *missing[i].Status == 8 {
-			byID[missing[i].ID] = &missing[i]
-		}
-	}
-	recs := make([]domain.Dislocation, 0, len(req.VagonIDs))
-	seen := map[string]struct{}{}
-	for _, id := range req.VagonIDs {
-		if _, dup := seen[id]; dup {
-			continue
-		}
-		seen[id] = struct{}{}
-		r, ok := byID[id]
-		if !ok {
-			return ArrivalsUpdateResult{}, fmt.Errorf(
-				"вагон уже не в пропавших (id %s) — обновите список", id)
-		}
+	for i := range recs {
+		r := &recs[i]
 		if r.TimeOp != nil && pribMsk.Time().Before(r.TimeOp.Time()) {
 			return ArrivalsUpdateResult{}, fmt.Errorf(
 				"прибытие раньше последней операции: вагон %s видели %s",
 				r.Vagon, r.TimeOp.String())
 		}
-		recs = append(recs, *r)
 	}
 
 	// Строка рейса в истории обычно уже есть (создавалась при первом появлении в
@@ -138,7 +119,10 @@ func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissing
 	for i := range recs {
 		r := &recs[i]
 		fields := map[string]any{
-			"status":      status,
+			"status": status,
+			// Подтверждённое прибытие снимает возможную пометку «недоехавший»
+			// (рейс мог быть удалён из пропавших ранее и вернуться).
+			"not_arrived": false,
 			"date_prib":   pribJd, // хранение — ЖД-штамп, как у автоматики (date_kon)
 			"date_prib_d": dateOnly(pribJd),
 			"delay":       calculateHistoryDelay(dateOnly(pribJd), r.DateDostav),
@@ -182,25 +166,9 @@ func (s *ArrivalsService) ConfirmMissing(ctx context.Context, req ConfirmMissing
 	}
 
 	if s.proc.journal != nil {
-		var trains []string
-		trainSeen := map[string]struct{}{}
-		for i := range recs {
-			idx := recs[i].Index
-			if idx == "" {
-				idx = recs[i].IndexMain
-			}
-			if idx == "" {
-				continue
-			}
-			if _, dup := trainSeen[idx]; dup {
-				continue
-			}
-			trainSeen[idx] = struct{}{}
-			trains = append(trains, idx)
-		}
 		extra := map[string]any{
 			"selected":      len(req.VagonIDs),
-			"trains":        trains,
+			"trains":        missingTrains(recs),
 			"new_date_prib": pribJd.String(), // в журнале — значения хранения
 		}
 		if req.DateVigr != nil {

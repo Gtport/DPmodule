@@ -70,6 +70,9 @@ type HistorySearchFilterDTO struct {
 	Invoices      []string `json:"invoices"`
 	StationNach   []string `json:"station_nach"`
 	OnlyOverdue   bool     `json:"only_overdue"`
+	// Только недоехавшие: рейсы, закрытые вручную удалением из пропавших
+	// (vagon_history.not_arrived, миграция 000062).
+	OnlyNotArrived bool `json:"only_not_arrived"`
 }
 
 type HistorySortDTO struct {
@@ -123,6 +126,7 @@ type HistoryRowDTO struct {
 	GtdNumber   string            `json:"gtd_number"`
 	Shipments   string            `json:"shipments"`
 	Peregruz    string            `json:"peregruz"`
+	NotArrived  bool              `json:"not_arrived"` // недоехавший (пометка в колонке «Статус»)
 }
 
 // HistorySearchDTO — страница выдачи (формат пагинации — канон bros).
@@ -269,6 +273,12 @@ func buildHistoryFilter(dto HistorySearchFilterDTO) (domain.HistorySearchFilter,
 		return f, fmt.Errorf("%w: «не выгруж.» несовместим со списком мест выгрузки", ErrHistorySearchInvalid)
 	}
 	f.OnlyOverdue = dto.OnlyOverdue
+	f.OnlyNotArrived = dto.OnlyNotArrived
+	// «Не выгруж.» и «просрочка» исключают недоехавших по построению — вместе
+	// с «недоехавшие» дали бы гарантированно пустую выдачу, это ошибка запроса.
+	if f.OnlyNotArrived && (f.NotUnloaded || f.OnlyOverdue) {
+		return f, fmt.Errorf("%w: «недоехавшие» несовместим с «не выгруж.» и «просрочка»", ErrHistorySearchInvalid)
+	}
 	return f, nil
 }
 
@@ -362,6 +372,6 @@ func toHistoryRowDTO(h *domain.VagonHistory) HistoryRowDTO {
 		PlanJd: h.PlanJd, Delay: h.Delay, DateVigr: h.DateVigr,
 		DateVigrD: h.DateVigrD, PlaceVigr: h.PlaceVigr, Frost: h.Frost, Owner: h.Owner,
 		Freight: h.FreightExactName, GtdNumber: h.GtdNumber,
-		Shipments: h.Shipments, Peregruz: h.Peregruz,
+		Shipments: h.Shipments, Peregruz: h.Peregruz, NotArrived: h.NotArrived,
 	}
 }

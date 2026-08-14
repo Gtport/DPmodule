@@ -25,6 +25,7 @@ export interface HistoryFilter {
   place_vigr?: string[];
   not_unloaded?: boolean;
   only_overdue?: boolean; // просрочка доставки: delay > 0 (зафиксирована при прибытии)
+  only_not_arrived?: boolean; // недоехавшие: рейс закрыт удалением из пропавших
   vagons?: string[];
   invoices?: string[];
   station_nach?: string[];
@@ -72,6 +73,8 @@ export interface HistoryRow {
   gtd_number: string;
   shipments: string;
   peregruz: string;
+  /** Недоехавший: рейс закрыт вручную удалением из пропавших (пометка в «Статусе»). */
+  not_arrived: boolean;
 }
 
 export interface HistorySearchResponse {

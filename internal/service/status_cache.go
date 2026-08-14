@@ -196,6 +196,13 @@ func (c *Status9Cache) SetDismissed(ctx context.Context, vagons []string, at dom
 	return c.repo.SetDismissed(ctx, vagons, at)
 }
 
+// SetDismissedMissing — пометка «пропавший скрыт диспетчером»: запись-8 остаётся
+// (снимется возвратом вагона или TTL), списки её не показывают. RAM-мапа
+// vagon→статус не меняется — статус записи прежний (8).
+func (c *Status9Cache) SetDismissedMissing(ctx context.Context, vagons []string, at domain.LocalTime) (int, error) {
+	return c.repo.SetDismissedMissing(ctx, vagons, at)
+}
+
 // DismissedVagons — отклонённые кандидаты (фильтр списка на чтении; редкая
 // операция, читаем из БД без кэша).
 func (c *Status9Cache) DismissedVagons(ctx context.Context) (map[string]struct{}, error) {

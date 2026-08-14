@@ -42,6 +42,8 @@ func (h *arrivalsHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/dislocation/arrivals/candidates", h.candidates)
 	g.POST("/dislocation/arrivals/confirm", h.confirm)
 	g.POST("/dislocation/missing/confirm", h.confirmMissing)
+	g.POST("/dislocation/missing/dismiss", h.dismissMissing)
+	g.POST("/dislocation/missing/delete", h.deleteMissing)
 	g.POST("/dislocation/arrivals/dismiss", h.dismiss)
 	g.POST("/dislocation/arrivals/cancel", h.cancel)
 }
@@ -135,6 +137,52 @@ func (h *arrivalsHandler) confirmMissing(c *gin.Context) {
 // dismissRequest — тело отклонения кандидатов.
 type dismissRequest struct {
 	VagonIDs []string `json:"vagon_ids"`
+}
+
+// dismissMissing godoc
+// @Summary  Скрыть пропавших (запись-8 остаётся, из списков уходит до возврата вагона/TTL)
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    body body dismissRequest true "vagon_ids (id рейсов записей-8)"
+// @Success  200 {object} service.ArrivalsUpdateResult
+// @Router   /api/v1/dislocation/missing/dismiss [post]
+func (h *arrivalsHandler) dismissMissing(c *gin.Context) {
+	var req dismissRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса: " + err.Error()})
+		return
+	}
+	res, err := h.svc.DismissMissing(c.Request.Context(), req.VagonIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// deleteMissing godoc
+// @Summary  Удалить пропавших (senior/admin): рейс в истории помечается «недоехавший», запись-8 снимается
+// @Tags     dislocation
+// @Security BearerAuth
+// @Param    body body dismissRequest true "vagon_ids (id рейсов записей-8)"
+// @Success  200 {object} service.ArrivalsUpdateResult
+// @Router   /api/v1/dislocation/missing/delete [post]
+func (h *arrivalsHandler) deleteMissing(c *gin.Context) {
+	var req dismissRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректное тело запроса: " + err.Error()})
+		return
+	}
+	res, err := h.svc.DeleteMissing(c.Request.Context(), req.VagonIDs)
+	if err != nil {
+		if errors.Is(err, service.ErrArrivalsAccess) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 // dismiss godoc

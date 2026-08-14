@@ -209,6 +209,10 @@ func historyUpdateFields(prev, r *domain.Dislocation, cutoff int) map[string]any
 		return fields
 	}
 	fields["status"] = ns
+	// Живой переход статуса снимает ручную пометку «недоехавший»: вагон,
+	// удалённый из пропавших (DeleteMissing), вернулся в дислокацию и едет —
+	// жизнь вернее ручного решения. Для непомеченных строк поле и так false.
+	fields["not_arrived"] = false
 	if ps == 0 && ns != 0 {
 		fields["index_main"] = r.IndexMain
 	}

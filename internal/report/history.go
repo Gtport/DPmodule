@@ -32,8 +32,12 @@ var historyStatusLabels = map[int]string{
 }
 
 // historyStatusText — текст колонки «Статус»: правило gtport «есть место и дата
-// выгрузки → „выгружен“» поверх кода статуса.
+// выгрузки → „выгружен“» поверх кода статуса. Ручная пометка «недоехал»
+// (удаление из пропавших) сильнее обоих: рейс закрыт человеком.
 func historyStatusText(h *domain.VagonHistory) string {
+	if h.NotArrived {
+		return "недоехал"
+	}
 	if h.PlaceVigr != "" && h.DateVigr != nil {
 		return "выгружен"
 	}

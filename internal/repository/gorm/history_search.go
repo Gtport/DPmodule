@@ -49,7 +49,9 @@ func (r *HistoryRepository) historySearchWhere(ctx context.Context, f domain.His
 	}
 	if f.NotUnloaded {
 		// «Не выгруж.»: и '', и NULL (gtport ловил только пустую строку).
-		q = q.Where("COALESCE(place_vigr, '') = ''")
+		// Недоехавшие исключаются: их место выгрузки пусто «по построению»
+		// (вагон не прибыл), а фильтр ищет невыгруженное НА терминалах.
+		q = q.Where("COALESCE(place_vigr, '') = '' AND NOT not_arrived")
 	}
 	if len(f.Vagons) > 0 {
 		q = q.Where("vagon IN ?", f.Vagons)
@@ -64,7 +66,11 @@ func (r *HistoryRepository) historySearchWhere(ctx context.Context, f domain.His
 	if f.OnlyOverdue {
 		// Просрочка доставки: delay пишется при вехе прибытия (в срок → 0,
 		// рейс без прибытия/норматива → NULL) — оба отсекаются сами.
-		q = q.Where("delay > 0")
+		// Недоехавшие — вне отчёта претензий (решение владельца 14.08.2026).
+		q = q.Where("delay > 0 AND NOT not_arrived")
+	}
+	if f.OnlyNotArrived {
+		q = q.Where("not_arrived")
 	}
 	return q
 }
