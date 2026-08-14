@@ -69,12 +69,15 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 				if cfg.Keycloak.Issuer != "https://95850.koara.live/realms/iqport" {
 					t.Error("keycloak.issuer обязан совпадать с боевым (общий realm)")
 				}
-				// Все внешние интеграции выключены: у клиента нет АСУ/MAX/памяток,
-				// а их включение без своих записей data_source/max_chat слало бы
+				// Интеграции к ПРОВАЙДЕРУ трёх терминалов выключены: у клиента их
+				// нет, а включение без своих записей data_source/max_chat слало бы
 				// данные боевого провайдера.
+				// Робот ЛК сюда не входит (решение владельца 14.08.2026): он ходит
+				// в кабинет РЖД под СОБСТВЕННЫМ аккаунтом клиента из lk_account,
+				// чужих данных достать не может — сторожить нечего.
 				if cfg.ASU.Enabled || cfg.Reference.Enabled || cfg.MAX.Enabled ||
-					cfg.WagonOps.Enabled || cfg.Bros.Enabled || cfg.LKRobot.Enabled {
-					t.Error("у инстанса river внешние интеграции обязаны быть выключены")
+					cfg.WagonOps.Enabled || cfg.Bros.Enabled {
+					t.Error("у инстанса river интеграции провайдера обязаны быть выключены")
 				}
 				// Порты не должны столкнуться с боевым инстансом (8080/9090).
 				if cfg.HTTP.Port == 8080 || cfg.Metrics.Port == 9090 {
