@@ -489,7 +489,13 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
       })
       .catch(() => {}); // тоже декоративный
 
-    this.cluster = L.markerClusterGroup({
+    // markerClusterGroup берём через window.L, а не через `import * as L`:
+    // esbuild фиксирует список полей namespace-импорта ДО выполнения плагина
+    // leaflet.markercluster, и дописанный плагином метод в `L` не попадает
+    // (в проде это «markerClusterGroup is not a function» и пустая карта).
+    // UMD-сборка Leaflet кладёт свой живой объект в window.L — его плагин и патчит.
+    const leafletLive = (window as unknown as { L: typeof L }).L ?? L;
+    this.cluster = leafletLive.markerClusterGroup({
       // Радиус 1 — как в gtport: поезда НЕ схлопываются, пока маркеры реально
       // не легли друг на друга (одна станция); там кластер раскрывается spiderfy.
       maxClusterRadius: 1,
