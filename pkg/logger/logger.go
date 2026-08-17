@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -12,14 +13,31 @@ import (
 
 type contextKey struct{}
 
+// Форматы строки лога. Задаётся ПОЛЕМ КОНФИГА, а не выводится из env: читают
+// файл одни и те же люди, и смена окружения не должна незаметно менять вид
+// логов. Оба формата пишут ОДИН И ТОТ ЖЕ набор полей, поэтому переключение на
+// json ради сборщика ничего не теряет.
+const (
+	FormatText = "text" // колонки для человека (по умолчанию)
+	FormatJSON = "json" // для сборщика логов
+)
+
 // Config holds logger configuration.
 type Config struct {
 	Level      string
 	Env        string
+	Format     string // text | json; пусто = text
 	File       string // path to log file; empty = stdout only
 	MaxSizeMB  int    // max file size before rotation
 	MaxBackups int    // number of rotated files to keep
 	MaxAgeDays int    // days to keep rotated files
+
+	// Location — зона штампа строки. Пусто = UTC. Приложение передаёт сюда
+	// clock.Location(): zap ставит время через time.Now(), то есть в зоне
+	// сервера, а VPS живёт не по Москве. Зона приходит параметром, чтобы
+	// logger не заводил свой FixedZone — единственное место с часовым поясом
+	// в проекте одно, и это internal/clock.
+	Location *time.Location
 }
 
 // New creates a zap logger that writes to stdout and optionally to a rotating file.
@@ -39,8 +57,15 @@ func New(cfg Config) (*zap.Logger, error) {
 		}
 	}
 
+	loc := cfg.Location
+	if loc == nil {
+		loc = time.UTC
+	}
+
+	// stdout — цветной, файл — тот же формат без цвета: «\x1b[34mINFO\x1b[0m»
+	// в файле ломает grep и разбор сборщиками логов.
 	cores := []zapcore.Core{
-		zapcore.NewCore(buildEncoder(cfg.Env), zapcore.AddSync(os.Stdout), level),
+		zapcore.NewCore(buildEncoder(cfg.Format, true, loc), zapcore.AddSync(os.Stdout), level),
 	}
 
 	if cfg.File != "" {
@@ -51,12 +76,8 @@ func New(cfg Config) (*zap.Logger, error) {
 			MaxAge:     maxOrDefault(cfg.MaxAgeDays, 30),
 			Compress:   true,
 		}
-		// В ФАЙЛ всегда JSON, независимо от env. Консольный энкодер (env=dev)
-		// красит уровни ANSI-кодами: на экране это удобно, а в файле мусор —
-		// «\x1b[34mINFO\x1b[0m» ломает grep и разбор сборщиками логов.
 		cores = append(cores, zapcore.NewCore(
-			zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-			zapcore.AddSync(fileWriter), level))
+			buildEncoder(cfg.Format, false, loc), zapcore.AddSync(fileWriter), level))
 	}
 
 	core := zapcore.NewTee(cores...)
@@ -89,13 +110,11 @@ func WithContext(ctx context.Context, l *zap.Logger) context.Context {
 	return context.WithValue(ctx, contextKey{}, l)
 }
 
-func buildEncoder(env string) zapcore.Encoder {
-	if env == "dev" {
-		cfg := zap.NewDevelopmentEncoderConfig()
-		cfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		return zapcore.NewConsoleEncoder(cfg)
+func buildEncoder(format string, colored bool, loc *time.Location) zapcore.Encoder {
+	if format == FormatJSON {
+		return zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
 	}
-	return zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+	return newTextEncoder(colored, loc)
 }
 
 func maxOrDefault(v, def int) int {

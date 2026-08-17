@@ -11,6 +11,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/Gtport/DPmodule/pkg/logger"
+
 	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -323,7 +325,7 @@ func (s *LKRobot) processSnapshot(ctx context.Context, all []domain.Dislocation,
 	if err != nil {
 		s.update(func(j *lkRobotJob) { j.processErr = err.Error() })
 		if s.log != nil {
-			s.log.Warn("ЛК-робот: обновление дислокации не выполнено", zap.Error(err))
+			s.log.Warn("дислокация не обновлена по итогам работы робота", logger.Comp(logger.CompDislocation), zap.Error(err))
 		}
 		return
 	}
@@ -408,7 +410,7 @@ func (s *LKRobot) logf(msg string, acc domain.LKAccount, err error) {
 		return
 	}
 	// Пароль не логируем нигде и никогда — только кто и по какому потоку.
-	s.log.Warn(msg,
+	s.log.Warn(msg, logger.Comp(logger.CompDislocation),
 		zap.Int64("okpo", acc.OKPO),
 		zap.String("login", acc.Login),
 		zap.Error(err))

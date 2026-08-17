@@ -13,8 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 const (
@@ -44,6 +47,15 @@ type HTTPClient struct {
 	secrets      port.SecretSource
 	tokens       port.TokenProvider
 	hc           *http.Client
+	call         logger.CallLog
+}
+
+// WithLogger подключает запись исходящих вызовов. Отдельный сеттер, а не
+// параметр конструктора: логгер нужен в бою, а тесты и утилиты собирают клиент
+// прежним вызовом NewHTTPClient.
+func (c *HTTPClient) WithLogger(log *zap.Logger) *HTTPClient {
+	c.call = c.call.WithLogger(log)
+	return c
 }
 
 // NewHTTPClient собирает клиент из config источника (base_url/path_template/method/
@@ -84,6 +96,10 @@ func NewHTTPClient(cfg domain.DataSourceConfig, secrets port.SecretSource, token
 		secrets:      secrets,
 		tokens:       tokens,
 		hc:           hc,
+		// Компонент — предметная область (дислокация), а не имя системы: тот же
+		// конвейер умеет забирать данные из ЛК, и обе ветки должны собираться
+		// одним грепом. Куда именно сходили, видно в колонке цели.
+		call: logger.NewCallLog(nil, logger.CompDislocation, "АСУ", cfg.BaseURL),
 	}
 }
 
@@ -103,7 +119,8 @@ func (c *HTTPClient) useKeycloak() bool {
 // Pull забирает сырой снимок дислокации по коду клиента провайдера (resource →
 // {client} в шаблоне пути). Возвращает тело ответа как есть; парсинг — выше.
 func (c *HTTPClient) Pull(ctx context.Context, resource string) ([]byte, error) {
-	return c.get(ctx, c.baseURL+strings.ReplaceAll(c.pathTemplate, "{client}", resource), resource)
+	return c.get(ctx, c.baseURL+strings.ReplaceAll(c.pathTemplate, "{client}", resource), resource,
+		"дислокация получена", false, zap.String("client", resource))
 }
 
 // PullWagonHistory — запрос 601 «История продвижения вагона»:
@@ -111,7 +128,10 @@ func (c *HTTPClient) Pull(ctx context.Context, resource string) ([]byte, error) 
 // Тот же провайдер/авторизация, что и снимок дислокации; парсинг — parser.Parse601.
 func (c *HTTPClient) PullWagonHistory(ctx context.Context, client, vagon, from, to string) ([]byte, error) {
 	path := strings.NewReplacer("{vagon}", vagon, "{client}", client).Replace(c.historyPath)
-	return c.get(ctx, c.baseURL+path+"?from="+from+"&to="+to, "601 "+vagon)
+	// quiet: очередь 601 ходит пачками по 50 вагонов — на INFO один проход
+	// очереди дал бы полсотни строк, а её итог сервис пишет одной.
+	return c.get(ctx, c.baseURL+path+"?from="+from+"&to="+to, "601 "+vagon,
+		"история вагона получена", true, zap.String("client", client), zap.String("vagon", vagon))
 }
 
 // AuthMode — режим, который ФАКТИЧЕСКИ применится к запросу; только для логов.
@@ -163,29 +183,52 @@ func (c *HTTPClient) authorize(ctx context.Context, req *http.Request, resource 
 	return nil
 }
 
-func (c *HTTPClient) get(ctx context.Context, url, label string) ([]byte, error) {
+// get выполняет запрос и пишет его результат в лог: успех — одной строкой с
+// объёмом и длительностью, отказ — причиной словами (полный текст в поле
+// error). quiet переводит успех в DEBUG для веерных вызовов.
+func (c *HTTPClient) get(ctx context.Context, url, label, okMsg string, quiet bool, extra ...zap.Field) ([]byte, error) {
 	resource := label
+	start := time.Now()
+
+	// fail — единая точка выхода по ошибке: и в лог, и наверх уходит одно и то
+	// же. Раньше запись отсутствовала вовсе, и об отказе провайдера мы узнавали
+	// из текста чужой обёрнутой ошибки где-то в сервисе.
+	fail := func(err error) ([]byte, error) {
+		c.call.Failure(start, err, extra...)
+		return nil, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, c.method, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("АСУ %q: сборка запроса: %w", resource, err)
+		return fail(fmt.Errorf("АСУ %q: сборка запроса: %w", resource, err))
 	}
 	req.Header.Set("Accept", "application/json")
 	if err := c.authorize(ctx, req, resource); err != nil {
-		return nil, err
+		return fail(err)
 	}
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("АСУ %q: запрос: %w", resource, err)
+		return fail(fmt.Errorf("АСУ %q: запрос: %w", resource, err))
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<20)) // 256 МБ страховочный лимит
 	if err != nil {
-		return nil, fmt.Errorf("АСУ %q: чтение ответа: %w", resource, err)
+		return fail(fmt.Errorf("АСУ %q: чтение ответа: %w", resource, err))
 	}
 	if resp.StatusCode != http.StatusOK {
+		// Статус кладём полем: по нему видно, это отказ провайдера (5xx) или
+		// наша авторизация/параметры (4xx), не вчитываясь в текст.
+		c.call.Failure(start, fmt.Errorf("статус %d: %s", resp.StatusCode, snippet(body)),
+			append(extra, zap.Int("status", resp.StatusCode))...)
 		return nil, fmt.Errorf("АСУ %q: статус %d: %s", resource, resp.StatusCode, snippet(body))
+	}
+
+	if quiet {
+		c.call.SuccessQuiet(okMsg, start, len(body), extra...)
+	} else {
+		c.call.Success(okMsg, start, len(body), extra...)
 	}
 	return body, nil
 }

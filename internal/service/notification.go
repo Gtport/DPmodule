@@ -6,6 +6,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/Gtport/DPmodule/pkg/logger"
+
 	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -62,12 +64,12 @@ func (s *NotificationService) Notify(ctx context.Context, n domain.Notification)
 	}
 	inserted, err := s.repo.Insert(ctx, n)
 	if err != nil {
-		s.log.Warn("notification: запись не удалась",
+		s.log.Warn("уведомление не создано", logger.Comp(logger.CompNotify),
 			zap.String("dedup_key", n.DedupKey), zap.String("title", n.Title), zap.Error(err))
 		return
 	}
 	if inserted {
-		s.log.Info("notification", zap.String("type", n.Type),
+		s.log.Info("уведомление создано", logger.Comp(logger.CompNotify), zap.String("type", n.Type),
 			zap.String("audience", n.Audience), zap.String("title", n.Title),
 			zap.String("dedup_key", n.DedupKey))
 	}
@@ -104,7 +106,7 @@ func (s *NotificationService) Cleanup(ctx context.Context) error {
 		return err
 	}
 	if n > 0 {
-		s.log.Info("notifications cleanup", zap.Int("purged", n))
+		s.log.Info("старые уведомления удалены", logger.Comp(logger.CompNotify), zap.Int("purged", n))
 	}
 	s.checkDislStale(ctx)
 	return nil

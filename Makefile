@@ -2,6 +2,15 @@ BINARY      := server
 MODULE      := github.com/Gtport/DPmodule
 MIGRATE_DIR := migrations
 
+# Версия сборки — в стартовую строку лога. Первый вопрос при разборе инцидента:
+# какой билд крутится. Без -ldflags поля остаются заглушками («dev»/«неизвестно»)
+# и строка выглядит осмысленной, ничего не сообщая, — поэтому прописано и здесь,
+# и в Dockerfile (ARG VERSION/COMMIT/BUILD_TIME).
+VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_TIME  := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS     := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildTime=$(BUILD_TIME)
+
 .PHONY: run run-local build test lint tidy \
         migrate-up migrate-up-local migrate-down migrate-down-local migrate-drop
 
@@ -16,7 +25,7 @@ run-local:
 	set -a; . ./.env; set +a; go run ./cmd/server/... -config config.local.yaml
 
 build:
-	go build -o bin/$(BINARY) ./cmd/server/...
+	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/server/...
 
 test:
 	go test -race -count=1 ./...

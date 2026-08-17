@@ -58,6 +58,7 @@ log:
   # ⚠️ info, НЕ debug: боевой инстанс, на debug пишется трасса каждого SQL
   # плюс тайлы и пробы healthcheck (см. docs/LOGGING.md). Включать точечно.
   level: info
+  format: text             # text — колонки для человека (по умолчанию); json — для сборщика логов
   file: logs/service.log   # относительный путь = свой каталог клона DPmodule2
   max_size_mb: 100
   max_backups: 5

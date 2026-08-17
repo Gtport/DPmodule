@@ -22,6 +22,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/Gtport/DPmodule/pkg/logger"
+
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser"
@@ -139,7 +141,8 @@ func (s *VagonOpService) EnqueueTransitions(ctx context.Context, kept []domain.D
 	}
 	if err := s.repo.Enqueue(ctx, reqs); err != nil {
 		// Трейл — вторичные данные: пересборку снимка отказ очереди не валит.
-		s.log.Warn("601: постановка заявок не удалась", zap.Int("count", len(reqs)), zap.Error(err))
+		s.log.Warn("заявки на историю не поставлены — трейл рейсов не обновится", logger.Comp(logger.CompVagonops),
+			zap.Int("count", len(reqs)), zap.Error(err))
 		return 0, err
 	}
 	return len(reqs), nil
@@ -155,7 +158,7 @@ func (s *VagonOpService) requestFor(r *domain.Dislocation, reason string, priori
 	}
 	client := s.clientForOkpo(r.GruzpolOkpo)
 	if client == "" {
-		s.log.Debug("601: клиент провайдера не определён — заявка пропущена",
+		s.log.Debug("заявка на историю пропущена: клиент провайдера не определён", logger.Comp(logger.CompVagonops),
 			zap.String("vagon", r.Vagon), zap.String("okpo", r.GruzpolOkpo))
 		return domain.VagonOpRequest{}, false
 	}
@@ -211,24 +214,30 @@ func (s *VagonOpService) DrainQueue(ctx context.Context) error {
 		}
 		if err := s.fetchStore(ctx, q); err != nil {
 			failed++
-			s.log.Warn("601: запрос истории не удался",
+			// Сам поход к провайдеру уже записан транспортом (adapter/asu):
+			// здесь — след для ОЧЕРЕДИ, с номером попытки, по которому видно,
+			// добьёт ли заявка лимит и уйдёт ли в отказ навсегда.
+			s.log.Debug("история вагона не получена, заявка остаётся в очереди", logger.Comp(logger.CompVagonops),
 				zap.String("vagon", q.Vagon), zap.Int("attempts", q.Attempts+1), zap.Error(err))
 			// Текст ошибки может прийти в битой кодировке (внешний провайдер) —
 			// чистим, иначе UPDATE last_error упадёт и заявка застрянет навечно
 			// (attempts не вырастет). Поймано стресс-тестом 200 вагонов.
 			msg := strings.ToValidUTF8(err.Error(), "\uFFFD")
 			if ferr := s.repo.Fail(ctx, q.TripKey, msg, s.maxAttempts, clock.Now()); ferr != nil {
-				s.log.Warn("601: фиксация неудачи", zap.Error(ferr))
+				s.log.Warn("неудача заявки не зафиксирована — заявка может застрять", logger.Comp(logger.CompVagonops),
+					zap.String("vagon", q.Vagon), zap.Error(ferr))
 			}
 			continue
 		}
 		done++
 		if cerr := s.repo.Complete(ctx, q.TripKey); cerr != nil {
-			s.log.Warn("601: снятие заявки", zap.Error(cerr))
+			s.log.Warn("выполненная заявка не снята с очереди", logger.Comp(logger.CompVagonops),
+				zap.String("vagon", q.Vagon), zap.Error(cerr))
 		}
 	}
 	left, _ := s.repo.QueueSize(ctx)
-	s.log.Info("601: проход очереди",
+	// Итог веера одной строкой: сами запросы идут в DEBUG (пачка — 50 вагонов).
+	s.log.Info("очередь историй пройдена", logger.Comp(logger.CompVagonops),
 		zap.Int("done", done), zap.Int("failed", failed), zap.Int("left", left))
 	return nil
 }

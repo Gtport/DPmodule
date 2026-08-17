@@ -59,14 +59,14 @@ func (l *zapGorm) Error(ctx context.Context, msg string, args ...any) {
 func (l *zapGorm) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	elapsed := time.Since(begin)
 
-	lvl, msg := zapcore.DebugLevel, "sql"
+	lvl, msg := zapcore.DebugLevel, "запрос выполнен"
 	switch {
 	// ErrRecordNotFound — не поломка, а обычный ответ «строки нет»: так работают
 	// проверки существования. На Error он поднимал бы ложную тревогу.
 	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
-		lvl, msg = zapcore.ErrorLevel, "sql: запрос не выполнен"
+		lvl, msg = zapcore.ErrorLevel, "запрос к базе не выполнен"
 	case l.slowThreshold > 0 && elapsed > l.slowThreshold:
-		lvl, msg = zapcore.WarnLevel, "sql: медленный запрос"
+		lvl, msg = zapcore.WarnLevel, "медленный запрос к базе"
 	}
 
 	// Core общий у корневого и запросного логгеров, так что уровень проверяем
@@ -96,8 +96,12 @@ func (l *zapGorm) Trace(ctx context.Context, begin time.Time, fc func() (string,
 // named — логгер запроса, если GORM позвали внутри HTTP-обработки: тогда у
 // строки SQL тот же request_id, что у строки http, и падение ручки читается
 // сверху вниз. Крон и фоновые воркеры работают вне запроса — там корневой.
+//
+// Область помечается полем component, а не zap.Named: имя логгера колонками
+// текстового формата не печатается, и после перехода на них «sql» пропал бы
+// из строки вовсе.
 func (l *zapGorm) named(ctx context.Context) *zap.Logger {
-	return logger.FromContextOr(ctx, l.log).Named("sql")
+	return logger.FromContextOr(ctx, l.log).With(logger.Comp(logger.CompDB))
 }
 
 // truncateSQL режет запрос по длине. ToValidUTF8 — потому что режем по байтам,

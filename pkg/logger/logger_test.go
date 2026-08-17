@@ -10,10 +10,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// Лог-файл читают grep и сборщики логов, поэтому в нём всегда JSON — даже при
-// env=dev, когда консоль красит уровни ANSI-кодами. Раньше цвет попадал в файл
-// («\x1b[34mINFO\x1b[0m») и ломал разбор.
-func TestFileLogIsPlainJSONEvenInDevEnv(t *testing.T) {
+// writeToFile поднимает логгер с файлом, пишет одну запись и отдаёт её текст.
+func writeToFile(t *testing.T, cfg Config, write func(*zap.Logger)) string {
+	t.Helper()
+
 	// Не t.TempDir(): его уборка падает на Windows — lumberjack держит файл
 	// открытым, закрыть его через zap нельзя (writer наружу не отдаётся).
 	dir, err := os.MkdirTemp("", "logger-test")
@@ -22,32 +22,76 @@ func TestFileLogIsPlainJSONEvenInDevEnv(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
-	path := filepath.Join(dir, "service.log")
-
-	log, err := New(Config{Level: "info", Env: "dev", File: path})
+	cfg.File = filepath.Join(dir, "service.log")
+	log, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	write(log)
 	//nolint:errcheck // Sync на stdout под Windows возвращает ошибку — не важна
-	log.Info("проверка", zap.String("ключ", "значение"))
 	_ = log.Sync()
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(cfg.File)
 	if err != nil {
 		t.Fatalf("лог-файл не создан: %v", err)
 	}
-	line := strings.TrimSpace(string(data))
+	return strings.TrimSpace(string(data))
+}
 
-	if strings.Contains(line, "\x1b[") {
-		t.Errorf("в файл попали ANSI-коды цвета: %q", line)
+// Цвет — только для stdout. В файле «\x1b[34mINFO\x1b[0m» ломает grep, и раньше
+// именно это и происходило при env=dev.
+func TestFileLogHasNoANSIColor(t *testing.T) {
+	for _, format := range []string{FormatText, FormatJSON} {
+		line := writeToFile(t, Config{Level: "info", Env: "dev", Format: format},
+			func(l *zap.Logger) { l.Info("проверка", Comp(CompStartup)) })
+
+		if strings.Contains(line, "\x1b[") {
+			t.Errorf("format=%s: в файл попали ANSI-коды цвета: %q", format, line)
+		}
 	}
+}
+
+// Формат задаётся полем конфига, а не env: при json файл разбирается сборщиком,
+// при text — читается глазом, и в обоих случаях поля одни и те же.
+func TestFormatSelectsEncoder(t *testing.T) {
+	jsonLine := writeToFile(t, Config{Level: "info", Env: "prod", Format: FormatJSON},
+		func(l *zap.Logger) {
+			l.Info("проверка", Comp(CompDislocation), zap.String("ключ", "значение"))
+		})
 
 	var rec map[string]any
-	if err := json.Unmarshal([]byte(line), &rec); err != nil {
-		t.Fatalf("строка файла не разбирается как JSON: %v\n%s", err, line)
+	if err := json.Unmarshal([]byte(jsonLine), &rec); err != nil {
+		t.Fatalf("format=json не разбирается как JSON: %v\n%s", err, jsonLine)
 	}
 	if rec["msg"] != "проверка" || rec["ключ"] != "значение" {
 		t.Errorf("поля записи потерялись: %v", rec)
+	}
+	// Служебные поля колонок в json остаются обычными полями — грепу доступно
+	// то же самое, что в тексте.
+	if rec["component"] != CompDislocation {
+		t.Errorf("component не попал в json: %v", rec)
+	}
+
+	textLine := writeToFile(t, Config{Level: "info", Env: "prod", Format: FormatText},
+		func(l *zap.Logger) {
+			l.Info("проверка", Comp(CompDislocation), zap.String("ключ", "значение"))
+		})
+
+	if json.Valid([]byte(textLine)) {
+		t.Errorf("format=text отдал JSON: %s", textLine)
+	}
+	if !strings.Contains(textLine, CompDislocation) || !strings.Contains(textLine, "ключ=значение") {
+		t.Errorf("в текстовой строке нет компонента или поля: %s", textLine)
+	}
+}
+
+// Пустой формат — не опечатка, а «не задано»: получаем текст для человека.
+func TestEmptyFormatDefaultsToText(t *testing.T) {
+	line := writeToFile(t, Config{Level: "info", Env: "prod"},
+		func(l *zap.Logger) { l.Info("проверка", Comp(CompStartup)) })
+
+	if json.Valid([]byte(line)) {
+		t.Errorf("по умолчанию ожидался текст, получен JSON: %s", line)
 	}
 }
 

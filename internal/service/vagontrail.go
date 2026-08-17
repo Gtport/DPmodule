@@ -25,6 +25,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/Gtport/DPmodule/pkg/logger"
+
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser"
@@ -149,7 +151,8 @@ func (s *VagonOpService) attachDelays(ctx context.Context, row domain.VagonHisto
 	}
 	eps, err := s.delays.ByTrip(ctx, row.Vagon, *row.DateNachD)
 	if err != nil {
-		s.log.Warn("vagon_delay по рейсу не прочитан", zap.String("vagon", row.Vagon), zap.Error(err))
+		s.log.Warn("задержки рейса не прочитаны — в трейле не будет «стоял»",
+			logger.Comp(logger.CompVagonops), zap.String("vagon", row.Vagon), zap.Error(err))
 		return
 	}
 	attachTrailDelays(v, eps, row.DatePrib, clock.Now())

@@ -15,7 +15,12 @@ import (
 	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
-const requestIDHeader = "X-Request-Id"
+const (
+	requestIDHeader = "X-Request-Id"
+	// requestIDKey — полный request_id в контексте gin: строка лога несёт
+	// укороченный, а хендлерам (и ответу об ошибке) нужен целый.
+	requestIDKey = "request_id"
+)
 
 // errBodyLimit — сколько байт тела неуспешного ответа забираем в лог. Тексты
 // наших ошибок — одна русская фраза, 2 КБ хватает с запасом; ограничение стоит
@@ -80,7 +85,8 @@ func Recover(log *zap.Logger) gin.HandlerFunc {
 				// Логгер берём из контекста: там уже лежит request_id, и паника
 				// связывается со строкой http того же запроса. Корневой log —
 				// запасной путь, если Recover окажется выше RequestID в цепочке.
-				logger.FromContextOr(c.Request.Context(), log).Error("panic recovered",
+				logger.FromContextOr(c.Request.Context(), log).Error("паника в обработчике",
+					logger.Comp(logger.CompHTTP),
 					zap.Any("panic", p),
 					zap.String("method", c.Request.Method),
 					zap.String("path", c.Request.URL.Path),
@@ -101,8 +107,12 @@ func RequestID() gin.HandlerFunc {
 			rid = uuid.NewString()
 		}
 		c.Header(requestIDHeader, rid)
+		c.Set(requestIDKey, rid)
 
-		log := logger.FromContext(c.Request.Context()).With(zap.String("request_id", rid))
+		// В строку лога идёт КОРОТКИЙ идентификатор: полный UUID — 36 знаков на
+		// каждой записи, а связать строки внутри файла хватает восьми. Полное
+		// значение остаётся в заголовке ответа (по нему диспетчер и приходит).
+		log := logger.FromContext(c.Request.Context()).With(zap.String("req", shortID(rid)))
 		c.Request = c.Request.WithContext(logger.WithContext(c.Request.Context(), log))
 		c.Next()
 	}
@@ -123,20 +133,22 @@ func RequestLogger() gin.HandlerFunc {
 		defer func() {
 			status := c.Writer.Status()
 
-			fields := []zap.Field{
+			// Личность вызывающего — в колонке цели: «← иванов 10.0.0.14».
+			// Раньше имя добавлялось полем и только у неуспешных, а «кто ходит»
+			// — первый вопрос при разборе жалобы, в том числе по успешным.
+			cl := auth.ClaimsFromContext(c.Request.Context())
+			fields := logger.In(logger.CompHTTP, caller(cl)+" "+c.ClientIP())
+			fields = append(fields,
 				zap.String("method", c.Request.Method),
 				zap.String("path", c.Request.URL.Path),
 				zap.Int("status", status),
-				zap.Duration("latency", time.Since(start)),
-			}
+				zap.Duration("took", time.Since(start)),
+			)
 			// Query кладём только у неуспешных: у отчётов и выгрузок там весь
 			// фильтр (период, терминалы, список вагонов), и в успешной строке
 			// это лишний шум, а в разборе отказа — половина ответа на «почему».
 			if raw := c.Request.URL.RawQuery; raw != "" && status >= http.StatusBadRequest {
 				fields = append(fields, zap.String("query", raw))
-			}
-			if cl := auth.ClaimsFromContext(c.Request.Context()); cl != nil && cl.Username != "" {
-				fields = append(fields, zap.String("user", cl.Username))
 			}
 			if cap.body.Len() > 0 {
 				// ToValidUTF8: лимит режет по байтам, а тексты ошибок русские —
@@ -146,14 +158,40 @@ func RequestLogger() gin.HandlerFunc {
 					strings.ToValidUTF8(strings.TrimSpace(cap.body.String()), "")))
 			}
 
+			// Сообщение — утверждение о результате, а не имя подсистемы: имя
+			// теперь стоит в своей колонке, а «http» в тексте ничего не сообщало.
+			msg := "запрос обработан"
+			if status >= http.StatusBadRequest {
+				msg = "запрос отклонён"
+			}
 			log := logger.FromContext(c.Request.Context())
-			if ce := log.Check(levelFor(status, c.Request.URL.Path), "http"); ce != nil {
+			if ce := log.Check(levelFor(status, c.Request.URL.Path), msg); ce != nil {
 				ce.Write(fields...)
 			}
 		}()
 
 		c.Next()
 	}
+}
+
+// caller — имя вызывающего для колонки цели. Аноним — это либо публичная ручка
+// (тайлы карты, health), либо запрос без токена: и то, и другое надо отличать
+// от входа известного пользователя.
+func caller(cl *auth.Claims) string {
+	if cl == nil || cl.Username == "" {
+		return "аноним"
+	}
+	return cl.Username
+}
+
+// shortID — первые 8 символов request_id. UUID генерируется случайным, и
+// восьми знаков достаточно, чтобы связать строки одного запроса в файле;
+// заголовок ответа при этом несёт значение целиком.
+func shortID(rid string) string {
+	if len(rid) > 8 {
+		return rid[:8]
+	}
+	return rid
 }
 
 // levelFor — уровень строки http. Отказ виден по уровню, а не вычитыванием

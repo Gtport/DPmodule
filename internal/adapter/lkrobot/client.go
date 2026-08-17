@@ -20,6 +20,8 @@ package lkrobot
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,9 +31,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 var (
@@ -70,6 +76,7 @@ type Client struct {
 	opt  Options
 	http *http.Client
 	csrf string
+	call logger.CallLog
 }
 
 func New(opt Options) (*Client, error) {
@@ -80,6 +87,10 @@ func New(opt Options) (*Client, error) {
 	return &Client{
 		opt:  opt,
 		http: &http.Client{Jar: jar, Timeout: opt.Timeout},
+		// Компонент — дислокация: кабинет ЛК и шлюз АСУ питают ОДИН конвейер,
+		// и `grep dislocation` должен собирать обе ветки. Что забор шёл через
+		// кабинет, видно в колонке цели.
+		call: logger.NewCallLog(opt.Log, logger.CompDislocation, "ЛК РЖД", opt.BaseURL),
 	}, nil
 }
 
@@ -129,15 +140,21 @@ func (c *Client) grabCSRF(ctx context.Context, path string) error {
 // Login — вход в кабинет. sms_code кабинет принимает пустым: второго фактора у
 // используемых учёток нет.
 func (c *Client) Login(ctx context.Context, login, password string) error {
-	if err := c.grabCSRF(ctx, "/sign_in"); err != nil {
+	start := time.Now()
+	fail := func(err error) error {
+		c.call.Failure(start, err, zap.String("login", login))
 		return err
+	}
+
+	if err := c.grabCSRF(ctx, "/sign_in"); err != nil {
+		return fail(err)
 	}
 	body, _ := json.Marshal(map[string]any{
 		"user": map[string]any{"query": login, "password": password, "sms_code": nil},
 	})
 	resp, err := c.do(ctx, http.MethodPost, "/sign_in", body, true)
 	if err != nil {
-		return fmt.Errorf("ЛК РЖД: вход: %w", err)
+		return fail(fmt.Errorf("ЛК РЖД: вход: %w", err))
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
@@ -145,12 +162,18 @@ func (c *Client) Login(ctx context.Context, login, password string) error {
 	case resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK:
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden,
 		resp.StatusCode == http.StatusUnprocessableEntity, resp.StatusCode == http.StatusBadRequest:
-		return ErrAuth
+		// Отдельная строка: «логин или пароль» — не сетевой сбой, и лечится
+		// оно не перезапуском, а правкой учётки в конфиге.
+		return fail(fmt.Errorf("%w (ответ %d)", ErrAuth, resp.StatusCode))
 	default:
-		return fmt.Errorf("ЛК РЖД: вход: неожиданный ответ %d", resp.StatusCode)
+		return fail(fmt.Errorf("ЛК РЖД: вход: неожиданный ответ %d", resp.StatusCode))
 	}
 	// После входа токен другой — перечитываем с главной, иначе API ответит 422.
-	return c.grabCSRF(ctx, "/")
+	if err := c.grabCSRF(ctx, "/"); err != nil {
+		return fail(err)
+	}
+	c.call.Success("вход в кабинет выполнен", start, 0, zap.String("login", login))
+	return nil
 }
 
 // orderResponse — ответ на заказ отчёта: номер приходит либо в конверте data,
@@ -191,11 +214,29 @@ type Table struct {
 // 28 из 32 полей 1:1, остальные расходятся в пользу JSON). Ручной приём файлов
 // это не отменяет — там xlsx приносит человек.
 func (c *Client) FetchTable(ctx context.Context, okpo string) (Table, error) {
+	start := time.Now()
+
 	id, err := c.order(ctx, okpo)
 	if err != nil {
+		c.call.Failure(start, err, zap.String("okpo", okpo))
 		return Table{}, err
 	}
-	return c.waitTable(ctx, id, okpo)
+	// Заведомо МЕДЛЕННЫЙ вызов: подготовка отчёта у кабинета занимает десятки
+	// секунд (замер 01.08.2026 — 53,7 с на два кабинета). Пишем две строки —
+	// «заказан» сразу и «получен» с waited: иначе полминуты тишины в логе
+	// неотличимы от зависшего робота.
+	c.call.Success("отчёт заказан, ждём готовности", time.Time{}, 0,
+		zap.String("okpo", okpo), zap.Int64("report_id", id))
+
+	tbl, err := c.waitTable(ctx, id, okpo)
+	if err != nil {
+		c.call.Failure(start, err, zap.String("okpo", okpo), zap.Int64("report_id", id))
+		return Table{}, err
+	}
+	c.call.Success("отчёт получен", time.Time{}, 0,
+		zap.String("okpo", okpo), zap.Int64("report_id", id),
+		zap.Int("rows", len(tbl.Body)), zap.Duration("waited", time.Since(start)))
+	return tbl, nil
 }
 
 func (c *Client) order(ctx context.Context, okpo string) (int64, error) {
@@ -261,7 +302,7 @@ func (c *Client) waitTable(ctx context.Context, id int64, okpo string) (Table, e
 				return Table{}, fmt.Errorf("ЛК РЖД: опрос отчёта: разбор ответа: %w", err)
 			}
 			if out.Data.Status == "done" {
-				c.logColumns(id, out.Data.Data.Head, len(out.Data.Data.Body))
+				c.logColumns(okpo, id, out.Data.Data.Head, len(out.Data.Data.Body))
 				c.dump(okpo, raw)
 				if len(out.Data.Data.Body) == 0 {
 					return Table{}, ErrEmpty
@@ -282,19 +323,58 @@ func (c *Client) waitTable(ctx context.Context, id int64, okpo string) (Table, e
 	}
 }
 
-// logColumns записывает состав готовой таблицы: имена колонок (коды АСОУП,
-// вроде NOM_VAG/DATE_OP) и число строк. Данные вагонов не пишем — только
-// заголовки, чтобы видеть, чем кабинет отвечает на `minimal=true`, и замечать,
-// если состав однажды поменяется. Строка одна на кабинет за запуск.
-func (c *Client) logColumns(id int64, head []string, rows int) {
+// schemaSeen хранит отпечаток последнего виденного состава колонок. Пакетная
+// переменная, а не поле клиента: клиент живёт один забор (сессия кабинета
+// короткая), а сравнивать надо между заборами.
+var (
+	schemaMu   sync.Mutex
+	schemaSeen = map[string]string{} // ОКПО → отпечаток
+)
+
+// schemaFingerprint — короткий отпечаток состава колонок. Порядок значим:
+// строки разбираются по позициям, и перестановка колонок для нас такое же
+// изменение контракта, как переименование.
+func schemaFingerprint(head []string) string {
+	sum := sha256.Sum256([]byte(strings.Join(head, "\x00")))
+	return hex.EncodeToString(sum[:3])
+}
+
+// logColumns записывает состав готовой таблицы. Кабинет отдаёт 136 колонок
+// АСОУП, и печатать их именами в каждом заборе — это ~2 КБ строки четыре раза
+// в час, в которых глазу не за что зацепиться. Поэтому обычный забор несёт
+// только ОТПЕЧАТОК состава, а полный список печатается лишь тогда, когда
+// отпечаток изменился, — то есть ровно в тот момент, ради которого запись и
+// заводилась (смена контракта кабинета).
+func (c *Client) logColumns(okpo string, id int64, head []string, rows int) {
 	if c.opt.Log == nil {
 		return
 	}
-	c.opt.Log.Info("ЛК РЖД: состав таблицы отчёта",
+	fp := schemaFingerprint(head)
+
+	schemaMu.Lock()
+	prev, seen := schemaSeen[okpo]
+	changed := !seen || prev != fp
+	schemaSeen[okpo] = fp
+	schemaMu.Unlock()
+
+	fields := []zap.Field{
+		zap.String("okpo", okpo),
 		zap.Int64("report_id", id),
 		zap.Int("columns", len(head)),
-		zap.Strings("head", head),
-		zap.Int("rows", rows))
+		zap.String("схема", fp),
+		zap.Int("rows", rows),
+	}
+	if !changed {
+		c.opt.Log.Debug("состав таблицы отчёта", append(fields, logger.Comp(logger.CompDislocation))...)
+		return
+	}
+	// Смена состава — предупреждение: разбор идёт по именам полей, и молча
+	// уехавший контракт даёт кривой снимок, а не отказ.
+	if seen {
+		fields = append(fields, zap.String("было", prev))
+	}
+	fields = append(fields, zap.Strings("head", head), logger.Comp(logger.CompDislocation))
+	c.opt.Log.Warn("состав таблицы отчёта изменился", fields...)
 }
 
 // dump сохраняет сырой ответ отчёта в DumpDir (файл на ОКПО, перезаписывается).
@@ -310,6 +390,7 @@ func (c *Client) dump(okpo string, raw []byte) {
 		}
 	}
 	if c.opt.Log != nil {
-		c.opt.Log.Warn("ЛК РЖД: сырой ответ не сохранён", zap.String("okpo", okpo), zap.String("dir", c.opt.DumpDir))
+		c.opt.Log.Warn("сырой ответ отчёта не сохранён", logger.Comp(logger.CompDislocation),
+			zap.String("okpo", okpo), zap.String("dir", c.opt.DumpDir))
 	}
 }

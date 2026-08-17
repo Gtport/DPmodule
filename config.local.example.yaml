@@ -68,6 +68,7 @@ log:
   # debug здесь уместен: на машине разработчика трасса SQL и есть то, ради чего
   # уровень включают. На бою (config.vps.yaml) — info, иначе файл забивается.
   level: debug
+  format: text             # text — колонки для человека (по умолчанию); json — для сборщика логов
   file: logs/service.log
   max_size_mb: 100
   max_backups: 5

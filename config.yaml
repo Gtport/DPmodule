@@ -78,6 +78,7 @@ keycloak:
 
 log:
   level: info              # debug пишет трассу каждого SQL — только для разбора поломки
+  format: text             # text — колонки для человека (по умолчанию); json — для сборщика логов
   file: /var/log/iqport/service.log
   max_size_mb: 100
   max_backups: 5

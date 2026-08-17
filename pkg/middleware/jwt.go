@@ -48,14 +48,14 @@ func (k *KeycloakJWT) Middleware() gin.HandlerFunc {
 
 		raw, err := extractBearer(c.Request)
 		if err != nil {
-			log.Debug("JWT: no bearer token", zap.Error(err))
+			log.Debug("токена в запросе нет", logger.Comp(logger.CompAuth), zap.Error(err))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing or malformed Authorization header"})
 			return
 		}
 
 		claims, err := k.validate(c.Request.Context(), raw)
 		if err != nil {
-			log.Warn("JWT: validation failed", zap.Error(err))
+			log.Warn("токен не принят", logger.Comp(logger.CompAuth), zap.Error(err))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}

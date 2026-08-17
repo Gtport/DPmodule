@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 // SecretKeyServiceAccount — имя ключа секрета сервис-аккаунта Keycloak: под ним
@@ -244,7 +246,15 @@ type ServiceAccount struct {
 }
 
 type Log struct {
-	Level      string `yaml:"level"`        // debug | info | warn | error
+	Level string `yaml:"level"` // debug | info | warn | error
+
+	// Format — вид строки: text (колонки для человека) или json (для сборщика
+	// логов). Не задан → text. Формат ИМЕННО поле конфига, а не следствие
+	// app.env: логи читают одни и те же люди на всех стендах, и смена
+	// окружения не должна незаметно менять их вид. Наборы полей у форматов
+	// одинаковые, поэтому переключение ничего не теряет.
+	Format string `yaml:"format"`
+
 	File       string `yaml:"file"`         // path to log file; empty = stdout only
 	MaxSizeMB  int    `yaml:"max_size_mb"`  // rotate after N MB (default 100)
 	MaxBackups int    `yaml:"max_backups"`  // keep N rotated files (default 5)
@@ -270,6 +280,13 @@ func Load(path string) (*Config, error) {
 	}
 
 	setDefaults(cfg)
+
+	// Опечатка в формате — отказ, а не тихий откат на json: «txt» или «console»
+	// иначе дали бы владельцу нечитаемый файл, и понять причину было бы неоткуда.
+	if cfg.Log.Format != logger.FormatText && cfg.Log.Format != logger.FormatJSON {
+		return nil, fmt.Errorf("log.format %q: допустимо %q или %q",
+			cfg.Log.Format, logger.FormatText, logger.FormatJSON)
+	}
 
 	if cfg.Postgres.Enabled {
 		cfg.Postgres.DSN = cfg.Postgres.BuildDSN()
@@ -400,6 +417,9 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
+	}
+	if cfg.Log.Format == "" {
+		cfg.Log.Format = logger.FormatText
 	}
 	if cfg.Log.SlowQuery == 0 {
 		cfg.Log.SlowQuery = 500 * time.Millisecond

@@ -36,10 +36,12 @@ func newLogRouter(t *testing.T) (*gin.Engine, *observer.ObservedLogs) {
 	return r, logs
 }
 
-// httpEntry — строка доступа (их всего одна на запрос).
+// httpEntry — строка доступа (их всего одна на запрос). Сообщение — утверждение
+// о результате, поэтому у успеха и отказа они разные.
 func httpEntry(t *testing.T, logs *observer.ObservedLogs) observer.LoggedEntry {
 	t.Helper()
-	found := logs.FilterMessage("http").All()
+	found := logs.FilterMessage("запрос обработан").All()
+	found = append(found, logs.FilterMessage("запрос отклонён").All()...)
 	require.Len(t, found, 1, "ожидалась ровно одна строка http")
 	return found[0]
 }
@@ -64,7 +66,7 @@ func TestRequestLogger_ServerErrorLogsReasonAtErrorLevel(t *testing.T) {
 	assert.Contains(t, f["error"], "неожиданный конец файла")
 	// Query у неуспешных нужен: в нём фильтр, с которым ручка сломалась.
 	assert.Equal(t, "client=01126022", f["query"])
-	assert.NotEmpty(t, f["request_id"])
+	assert.NotEmpty(t, f["req"])
 }
 
 func TestRequestLogger_ClientErrorIsWarn(t *testing.T) {
@@ -151,7 +153,19 @@ func TestRequestLogger_ActorFromClaims(t *testing.T) {
 	r.ServeHTTP(httptest.NewRecorder(),
 		httptest.NewRequest(http.MethodPut, "/api/v1/dislocation/arrivals/vagons", nil))
 
-	assert.Equal(t, "dispatcher1", fieldsOf(httpEntry(t, logs))["user"])
+	// Имя вызывающего стоит в колонке цели вместе с адресом: «← dispatcher1 ip».
+	assert.Contains(t, fieldsOf(httpEntry(t, logs))["target"], "dispatcher1")
+}
+
+// Запрос без токена не должен выглядеть как запрос неизвестно чей: у публичных
+// ручек (тайлы, health) вызывающий именуется явно.
+func TestRequestLogger_AnonymousCaller(t *testing.T) {
+	r, logs := newLogRouter(t)
+	r.GET("/api/v1/ping", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/ping", nil))
+
+	assert.Contains(t, fieldsOf(httpEntry(t, logs))["target"], "аноним")
 }
 
 // Паника должна оставлять ОБЕ строки, связанные одним request_id: раньше
@@ -165,7 +179,7 @@ func TestRecover_PanicLinkedToRequestByID(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 
-	panics := logs.FilterMessage("panic recovered").All()
+	panics := logs.FilterMessage("паника в обработчике").All()
 	require.Len(t, panics, 1)
 	pf := fieldsOf(panics[0])
 	assert.Equal(t, "nil map write", pf["panic"])
@@ -175,8 +189,8 @@ func TestRecover_PanicLinkedToRequestByID(t *testing.T) {
 	// Строка http пишется в defer, поэтому переживает разворот стека.
 	hf := fieldsOf(httpEntry(t, logs))
 	assert.Equal(t, int64(500), hf["status"])
-	assert.NotEmpty(t, hf["request_id"])
-	assert.Equal(t, pf["request_id"], hf["request_id"], "паника и запрос должны сшиваться по request_id")
+	assert.NotEmpty(t, hf["req"])
+	assert.Equal(t, pf["req"], hf["req"], "паника и запрос должны сшиваться по request_id")
 }
 
 func TestRequestID_ReusesIncomingHeader(t *testing.T) {
@@ -188,6 +202,8 @@ func TestRequestID_ReusesIncomingHeader(t *testing.T) {
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 
+	// Наружу — значение ЦЕЛИКОМ: по нему диспетчер и приходит с жалобой.
 	assert.Equal(t, "from-ingress", rr.Header().Get("X-Request-Id"))
-	assert.Equal(t, "from-ingress", fieldsOf(httpEntry(t, logs))["request_id"])
+	// В строку лога — укороченное: полный UUID это 36 знаков на каждой записи.
+	assert.Equal(t, "from-ing", fieldsOf(httpEntry(t, logs))["req"])
 }

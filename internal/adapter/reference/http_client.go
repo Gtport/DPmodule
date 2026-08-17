@@ -21,7 +21,10 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/Gtport/DPmodule/internal/port"
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 const (
@@ -38,6 +41,14 @@ type HTTPClient struct {
 	secrets       port.SecretSource
 	tokens        port.TokenProvider
 	hc            *http.Client
+	call          logger.CallLog
+}
+
+// WithLogger подключает запись исходящих вызовов (см. одноимённый сеттер у
+// адаптера АСУ: логгер нужен в бою, тесты собирают клиент прежним вызовом).
+func (c *HTTPClient) WithLogger(log *zap.Logger) *HTTPClient {
+	c.call = c.call.WithLogger(log)
+	return c
 }
 
 // NewHTTPClient собирает клиент из base_url провайдера, флага insecureTLS
@@ -56,6 +67,7 @@ func NewHTTPClient(baseURL string, insecureTLS bool, authMode, authSecretKey str
 		secrets:       secrets,
 		tokens:        tokens,
 		hc:            hc,
+		call:          logger.NewCallLog(nil, logger.CompPamyatka, "памятки", baseURL),
 	}
 }
 
@@ -84,13 +96,15 @@ func (c *HTTPClient) useKeycloak() bool {
 func (c *HTTPClient) ByNumber(ctx context.Context, client, number, dateCreate string) ([]byte, error) {
 	u := c.baseURL + "/" + url.PathEscape(client) + "/reference?number=" + url.QueryEscape(number) +
 		"&date_create=" + url.QueryEscape(dateCreate)
-	return c.get(ctx, u, "памятка "+client+" number="+number+" date_create="+dateCreate)
+	return c.get(ctx, u, "памятка "+client+" number="+number+" date_create="+dateCreate,
+		"памятка получена", zap.String("client", client), zap.String("number", number))
 }
 
 // Update — инкремент по клиенту: GET <base>/<client>/reference/update?last_update=<t>.
 func (c *HTTPClient) Update(ctx context.Context, client, lastUpdate string) ([]byte, error) {
 	u := c.baseURL + "/" + url.PathEscape(client) + "/reference/update?last_update=" + url.QueryEscape(lastUpdate)
-	return c.get(ctx, u, "памятки update "+client)
+	return c.get(ctx, u, "памятки update "+client,
+		"инкремент памяток получен", zap.String("client", client))
 }
 
 // AuthMode — режим, который ФАКТИЧЕСКИ применится к запросу; только для логов.
@@ -131,29 +145,42 @@ func (c *HTTPClient) authorize(ctx context.Context, req *http.Request, label str
 	return nil
 }
 
-func (c *HTTPClient) get(ctx context.Context, u, label string) ([]byte, error) {
+// get выполняет запрос и пишет результат: успех строкой с объёмом и
+// длительностью, отказ — причиной словами (полный текст в поле error).
+func (c *HTTPClient) get(ctx context.Context, u, label, okMsg string, extra ...zap.Field) ([]byte, error) {
+	start := time.Now()
+
+	fail := func(err error) ([]byte, error) {
+		c.call.Failure(start, err, extra...)
+		return nil, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%s: сборка запроса: %w", label, err)
+		return fail(fmt.Errorf("%s: сборка запроса: %w", label, err))
 	}
 	req.Header.Set("Accept", "application/json")
 	if err := c.authorize(ctx, req, label); err != nil {
-		return nil, err
+		return fail(err)
 	}
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s: запрос: %w", label, err)
+		return fail(fmt.Errorf("%s: запрос: %w", label, err))
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return nil, fmt.Errorf("%s: чтение ответа: %w", label, err)
+		return fail(fmt.Errorf("%s: чтение ответа: %w", label, err))
 	}
 	if resp.StatusCode != http.StatusOK {
+		c.call.Failure(start, fmt.Errorf("статус %d: %s", resp.StatusCode, snippet(body)),
+			append(extra, zap.Int("status", resp.StatusCode))...)
 		return nil, fmt.Errorf("%s: статус %d: %s", label, resp.StatusCode, snippet(body))
 	}
+
+	c.call.Success(okMsg, start, len(body), extra...)
 	return body, nil
 }
 
