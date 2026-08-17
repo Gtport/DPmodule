@@ -103,6 +103,7 @@ func convertPamyatka(src *refPamyatka, client string) (domain.Pamyatka, error) {
 		Client:        client,
 		Number:        src.NumberPamyatka,
 		DateCreate:    dateCreate,
+		DateCreateRaw: src.DateCreate,
 		OperationType: src.OperationType,
 		GetPlace:      src.GetPlace,
 		NameStation:   src.NameStation,

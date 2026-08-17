@@ -19,15 +19,25 @@ import (
 type fakeRefClient struct {
 	called     []string
 	cursors    []string
-	byNumberCl string // клиент, с которым пришёл последний ByNumber
-	byNumberDC string // date_create последнего ByNumber
+	byNumberCl string   // клиент, с которым пришёл последний ByNumber
+	byNumberDC string   // date_create последнего ByNumber
+	byNumbers  []string // номера, за которыми ходили ByNumber
 	failFor    map[string]bool
 	bodies     map[string]string
+	docBodies  map[string]string // номер → сырой ответ бланка (для ByNumber)
+	docFail    map[string]bool   // номер → ошибка забора бланка
 }
 
-func (f *fakeRefClient) ByNumber(_ context.Context, client, _, dateCreate string) ([]byte, error) {
+func (f *fakeRefClient) ByNumber(_ context.Context, client, number, dateCreate string) ([]byte, error) {
 	f.byNumberCl = client
 	f.byNumberDC = dateCreate
+	f.byNumbers = append(f.byNumbers, number)
+	if f.docFail[number] {
+		return nil, errors.New("504")
+	}
+	if b, ok := f.docBodies[number]; ok {
+		return []byte(b), nil
+	}
 	return []byte(`{"code":0,"data":{"count":1}}`), nil
 }
 
@@ -429,4 +439,81 @@ func lt2(s string) *domain.LocalTime {
 
 func (r *refHistStub) FillAttribution(context.Context, []domain.HistoryAttribution) (int, error) {
 	return 0, nil
+}
+
+// Состав вагонов берётся из сырого бланка: склеенная выжимка (свой вагон +
+// чужой от старого документа с тем же номером) подменяется чистым составом
+// документа, и чужая строка не доходит до движка вовсе. date_create уходит
+// провайдеру дословно, как пришёл в инкременте.
+func TestPullUpdates_VagonsFromDoc(t *testing.T) {
+	body := `{"LAST_UPDATE":"2026-07-27 22:22:51.869","PAMYATKI":[
+	  {"NUMBER_PAMYATKA":"11224","DATE_CREATE":"07-25-2026","OPERATION_TYPE":"подачу",
+	   "GET_PLACE":"Аттис -1 путь","NAME_STATION":"Мыс Астафьева","PATH_OWNER_OKPO":"10230304",
+	   "VAGONS":[
+	     {"NUMBER_VAGON":"62428651","GR_OPERATION_TYPE":"вгр","GET_IN_DATE":"25.07","GET_IN_TIME":"00:10"},
+	     {"NUMBER_VAGON":"99999999","GR_OPERATION_TYPE":"вгр","GET_IN_DATE":"01.07","GET_IN_TIME":"09:00"}]}]}`
+	doc := `{"code":0,"status":"success","data":{"count":1,"documents":[
+	  {"_summary":{"DocId":"1","DocNum":"11224","DocDate":"25.07.2026 06:00:00",
+	               "DocState":"Подписан Клиентом","DocStateId":"469"},
+	   "_decoded_doc":{"data":{"number":"11224","oper_type":"подачу","get_place":"Аттис -1 путь",
+	     "wagons":{"wagon":[{"order_number":"1","wagon_number":"62428651","gr_oper_type":"вгр",
+	                         "get_in_date":"25.07","get_in_time":"00:10"}]}}}}]}}`
+	hist := &refHistStub{trips: []domain.PamyatkaTrip{
+		{ID: "t1", Vagon: "62428651", DatePrib: lt2("2026-07-24 08:00")},
+	}}
+	fc := &fakeRefClient{
+		bodies:    map[string]string{"attis": body},
+		docBodies: map[string]string{"11224": doc},
+	}
+	svc := newRefSvc(fc, hist, nil, []string{"attis"})
+
+	res, err := svc.PullUpdatesDetailed(context.Background())
+	if err != nil {
+		t.Fatalf("PullUpdatesDetailed: %v", err)
+	}
+	r := res[0]
+	if r.DocOK != 1 || r.DocFallback != 0 {
+		t.Fatalf("ждали doc_ok=1 без фолбэка, получили %+v", r)
+	}
+	if r.Vagons != 1 || r.Applied != 1 || r.Skipped != 0 {
+		t.Fatalf("чужой вагон выжимки должен исчезнуть с составом бланка: %+v", r)
+	}
+	if len(fc.byNumbers) != 1 || fc.byNumbers[0] != "11224" || fc.byNumberDC != "07-25-2026" {
+		t.Fatalf("бланк должен запрашиваться тройкой номер+date_create дословно: %v %q",
+			fc.byNumbers, fc.byNumberDC)
+	}
+	if len(hist.asked) != 1 || hist.asked[0] != "62428651" {
+		t.Fatalf("рейсы должны подниматься по составу бланка, спросили %v", hist.asked)
+	}
+	if hist.updates["t1"] == nil {
+		t.Fatal("веха подачи по вагону бланка не записана")
+	}
+}
+
+// Бланк не достался — памятка идёт с вагонами выжимки (как до доработки),
+// проход не падает, фолбэк посчитан.
+func TestPullUpdates_DocFallbackKeepsVyzhimka(t *testing.T) {
+	body := `{"LAST_UPDATE":"2026-07-27 22:22:51.869","PAMYATKI":[
+	  {"NUMBER_PAMYATKA":"11255","DATE_CREATE":"07-25-2026","OPERATION_TYPE":"подачу",
+	   "GET_PLACE":"путь","NAME_STATION":"ст","PATH_OWNER_OKPO":"1",
+	   "VAGONS":[{"NUMBER_VAGON":"62428651","GR_OPERATION_TYPE":"вгр",
+	              "GET_IN_DATE":"25.07","GET_IN_TIME":"00:10"}]}]}`
+	hist := &refHistStub{trips: []domain.PamyatkaTrip{
+		{ID: "t1", Vagon: "62428651", DatePrib: lt2("2026-07-24 08:00")},
+	}}
+	fc := &fakeRefClient{
+		bodies:  map[string]string{"attis": body},
+		docFail: map[string]bool{"11255": true},
+	}
+	res, err := newRefSvc(fc, hist, nil, []string{"attis"}).PullUpdatesDetailed(context.Background())
+	if err != nil {
+		t.Fatalf("PullUpdatesDetailed: %v", err)
+	}
+	r := res[0]
+	if r.DocOK != 0 || r.DocFallback != 1 {
+		t.Fatalf("ждали фолбэк на выжимку, получили %+v", r)
+	}
+	if r.Vagons != 1 || r.Applied != 1 {
+		t.Fatalf("выжимка должна примениться как раньше: %+v", r)
+	}
 }

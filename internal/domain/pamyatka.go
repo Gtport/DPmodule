@@ -8,13 +8,19 @@ type Pamyatka struct {
 	// Client — код клиента провайдера (attis/nmtp). В теле ответа его нет
 	// (клиент — в пути запроса), но номер памятки уникален только в пределах
 	// клиента, поэтому без него запись неадресуема.
-	Client        string
-	Number        string     // NUMBER_PAMYATKA
-	DateCreate    *LocalTime // DATE_CREATE, только дата (в источнике — MM-DD-YYYY)
-	OperationType string     // OPERATION_TYPE: «подачу» | «уборку»
-	GetPlace      string     // GET_PLACE — место подачи/уборки, свободный текст
-	NameStation   string     // NAME_STATION — станция
-	PathOwnerOkpo string     // PATH_OWNER_OKPO — ОКПО владельца пути
+	Client     string
+	Number     string     // NUMBER_PAMYATKA
+	DateCreate *LocalTime // DATE_CREATE, только дата (в источнике — MM-DD-YYYY)
+	// DateCreateRaw — DATE_CREATE дословно, как пришёл в инкременте
+	// («07-04-2026» либо пустая строка у документа без даты оформления).
+	// Нужен забору сырого бланка по тройке «клиент + номер + дата»: провайдер
+	// требует значение как есть, а пустое и отсутствующее — РАЗНЫЕ вещи
+	// (контракт от 30.07.2026).
+	DateCreateRaw string
+	OperationType string // OPERATION_TYPE: «подачу» | «уборку»
+	GetPlace      string // GET_PLACE — место подачи/уборки, свободный текст
+	NameStation   string // NAME_STATION — станция
+	PathOwnerOkpo string // PATH_OWNER_OKPO — ОКПО владельца пути
 	Vagons        []PamyatkaVagon
 }
 

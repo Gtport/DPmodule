@@ -23,6 +23,10 @@ import (
 // lastUpdateLayout — формат курсора провайдера: "YYYY-MM-DD HH:MM:SS.sss".
 const lastUpdateLayout = "2006-01-02 15:04:05.000"
 
+// docFetchPause — пауза между заборами сырых бланков внутри одной пачки
+// инкремента: документов в тике десятки, очередь без пауз давила бы провайдера.
+const docFetchPause = 200 * time.Millisecond
+
 // ReferenceService — памятки ГУ-45 на подачу/уборку: крон-инкремент у внешнего
 // провайдера и разнос вех подачи/уборки по рейсам в vagon_history.
 //
@@ -70,12 +74,14 @@ func NewReferenceService(
 
 // PamyatkaPullResult — итог одного прохода по клиенту (для ручки и журнала).
 type PamyatkaPullResult struct {
-	Client   string         `json:"client"`
-	Pamyatki int            `json:"pamyatki"` // разобрано памяток
-	Vagons   int            `json:"vagons"`   // строк вагонов в них
-	Applied  int            `json:"applied"`  // рейсов истории обновлено
-	Skipped  int            `json:"skipped"`  // строк не легло ни на один рейс
-	Reasons  map[string]int `json:"reasons"`  // причины пропуска: код → сколько
+	Client      string         `json:"client"`
+	Pamyatki    int            `json:"pamyatki"`     // разобрано памяток
+	Vagons      int            `json:"vagons"`       // строк вагонов в них (после подмены составом бланка)
+	DocOK       int            `json:"doc_ok"`       // памяток с составом из сырого бланка
+	DocFallback int            `json:"doc_fallback"` // бланк не достался — вагоны из выжимки
+	Applied     int            `json:"applied"`      // рейсов истории обновлено
+	Skipped     int            `json:"skipped"`      // строк не легло ни на один рейс
+	Reasons     map[string]int `json:"reasons"`      // причины пропуска: код → сколько
 }
 
 // FetchByNumber — ручной забор памятки по тройке «клиент + номер + дата
@@ -205,6 +211,9 @@ func (s *ReferenceService) pullClient(ctx context.Context, client string) (Pamya
 		return res, err
 	}
 	res.Pamyatki = len(upd.Pamyatki)
+	if len(upd.Pamyatki) > 0 {
+		s.vagonsFromDocs(ctx, client, upd.Pamyatki, &res)
+	}
 	for _, p := range upd.Pamyatki {
 		res.Vagons += len(p.Vagons)
 	}
@@ -231,7 +240,8 @@ func (s *ReferenceService) pullClient(ctx context.Context, client string) (Pamya
 		zap.String("client", client), zap.String("cursor", cursor),
 		zap.String("next_cursor", upd.LastUpdate), zap.String("stored_cursor", stored),
 		zap.Bool("advanced", advanced), zap.Int("pamyatki", res.Pamyatki),
-		zap.Int("vagons", res.Vagons), zap.Int("applied", res.Applied),
+		zap.Int("vagons", res.Vagons), zap.Int("doc_ok", res.DocOK),
+		zap.Int("doc_fallback", res.DocFallback), zap.Int("applied", res.Applied),
 		zap.Int("skipped", res.Skipped), zap.Any("reasons", res.Reasons))
 
 	s.appendJournal(ctx, res, cursor, advanced)
@@ -278,6 +288,51 @@ func cursorAge(cursor string) (time.Duration, bool) {
 	return clock.Now().Time().Sub(t), true
 }
 
+// vagonsFromDocs — состав вагонов каждой памятки пачки подменяется составом из
+// СЫРОГО бланка (решение владельца 17.08.2026). Выжимка reference/update
+// склеивает одноимённые памятки: номера у клиента переиспользуются, и строки
+// разных документов с одним номером приходят одной записью — на боевой выборке
+// 28.07 чужие строки несли 23% памяток и 18% вагоно-строк, замок по прибытию
+// гасил их лишь частично. Бланк адресуется тройкой «клиент + номер +
+// DATE_CREATE дословно» и несёт чистый состав того самого документа. Инкремент
+// остаётся сигналом «что изменилось» и источником шапки (тип операции, место,
+// станция) — движку вех из бланка нужны только вагоны с временами.
+//
+// Бланк не достался (провайдер не ответил, документа нет в ответе, пустой
+// состав) — памятка идёт с вагонами выжимки, как до этой доработки: часть
+// чужих строк лучше потерянной памятки. Итог прохода виден в счётчиках
+// doc_ok/doc_fallback журнала и лога.
+func (s *ReferenceService) vagonsFromDocs(ctx context.Context, client string, pamyatki []domain.Pamyatka, res *PamyatkaPullResult) {
+	for i := range pamyatki {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return // остаток пачки уйдёт с вагонами выжимки; applyToHistory увидит тот же ctx
+			case <-time.After(docFetchPause):
+			}
+		}
+		p := &pamyatki[i]
+		body, err := s.cl.ByNumber(ctx, client, p.Number, p.DateCreateRaw)
+		if err != nil {
+			res.DocFallback++
+			s.log.Warn("бланк памятки не достался — вагоны из выжимки", logger.Comp(logger.CompPamyatka),
+				zap.String("client", client), zap.String("number", p.Number),
+				zap.String("date_create", p.DateCreateRaw), zap.Error(err))
+			continue
+		}
+		doc, err := parser.ParseReferenceDocByNumber(body, client, p.Number)
+		if err != nil {
+			res.DocFallback++
+			s.log.Warn("бланк памятки не разобрался — вагоны из выжимки", logger.Comp(logger.CompPamyatka),
+				zap.String("client", client), zap.String("number", p.Number),
+				zap.String("date_create", p.DateCreateRaw), zap.Error(err))
+			continue
+		}
+		p.Vagons = domain.PamyatkaVagonsFromDoc(&doc)
+		res.DocOK++
+	}
+}
+
 // applyToHistory — сердце разноса: собрать вагоны пачки, поднять их рейсы,
 // решить движком и записать одной транзакцией.
 func (s *ReferenceService) applyToHistory(ctx context.Context, client string, pamyatki []domain.Pamyatka, res *PamyatkaPullResult) error {
@@ -322,6 +377,7 @@ func (s *ReferenceService) appendJournal(ctx context.Context, res PamyatkaPullRe
 	}
 	fields := map[string]any{
 		"pamyatki": res.Pamyatki, "vagons": res.Vagons,
+		"doc_ok": res.DocOK, "doc_fallback": res.DocFallback,
 		"applied": res.Applied, "skipped": res.Skipped, "reasons": res.Reasons,
 	}
 	switch {

@@ -99,3 +99,24 @@ type PamyatkaDocVagon struct {
 	// значение не потерялось молча; разбирать — когда появится образец.
 	Containers string
 }
+
+// PamyatkaVagonsFromDoc — состав вагонов сырого бланка строками движка вех
+// ([PamyatkaVagon]). Нужен конвейеру инкремента (решение владельца 17.08.2026):
+// выжимка reference/update склеивает одноимённые памятки — номера у клиента
+// переиспользуются, и строки разных документов с одним номером приходят одной
+// записью (на выборке 28.07.2026 — 23% памяток и 18% вагоно-строк с чужими
+// строками), а бланк того же документа чист. Поля движка мапятся один в один;
+// остальное бланковое (груз, собственник, стороны) движку вех не нужно.
+func PamyatkaVagonsFromDoc(doc *PamyatkaDoc) []PamyatkaVagon {
+	out := make([]PamyatkaVagon, 0, len(doc.Vagons))
+	for _, v := range doc.Vagons {
+		out = append(out, PamyatkaVagon{
+			Vagon:           v.Vagon,
+			GrOperationType: v.GrOperationType,
+			GetIn:           v.GetIn,
+			Report:          v.Report,
+			GetOut:          v.GetOut,
+		})
+	}
+	return out
+}
