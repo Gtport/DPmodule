@@ -287,7 +287,10 @@ func (s *ReferenceService) applyToHistory(ctx context.Context, client string, pa
 		return fmt.Errorf("reference (%s): чтение рейсов: %w", client, err)
 	}
 
-	applies, skips := domain.ApplyPamyatki(pamyatki, trips)
+	// 0 → граница ЖД-суток 18, как date_cutoff_hour обоих источников дислокации
+	// (lk: 18 явно, asu: пусто → 18). Появится источник с иным порогом —
+	// пробросить сюда его значение, иначе замок разойдётся с записью прибытий.
+	applies, skips := domain.ApplyPamyatki(pamyatki, trips, 0)
 
 	updates := make(map[string]map[string]any, len(applies))
 	for _, a := range applies {

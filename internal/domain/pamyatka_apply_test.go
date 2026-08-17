@@ -38,7 +38,7 @@ func vag(v, getIn, report, getOut string) PamyatkaVagon {
 // пропуска (частый случай в тестах ниже).
 func applyOne(t *testing.T, pamyatki []Pamyatka, trips []PamyatkaTrip) PamyatkaApply {
 	t.Helper()
-	applies, skips := ApplyPamyatki(pamyatki, trips)
+	applies, skips := ApplyPamyatki(pamyatki, trips, 0)
 	if len(skips) != 0 {
 		t.Fatalf("ожидали применение без пропусков, получили пропуски: %+v", skips)
 	}
@@ -144,7 +144,7 @@ func TestApplyPamyatki_NoTripSkips(t *testing.T) {
 	p := pam("11255", PamyatkaOperPod, "2026-07-25", "путь",
 		vag("62428651", "2026-07-03 10:15", "", ""))
 
-	applies, skips := ApplyPamyatki([]Pamyatka{p}, trips)
+	applies, skips := ApplyPamyatki([]Pamyatka{p}, trips, 0)
 	if len(applies) != 0 {
 		t.Fatalf("правок быть не должно, получили %+v", applies)
 	}
@@ -252,7 +252,7 @@ func TestApplyPamyatki_NotFullerSkips(t *testing.T) {
 	p := pam("11255", PamyatkaOperPod, "2026-07-25", "Аттис -1 путь",
 		vag("62231725", "2026-07-03 10:15", "", ""))
 
-	applies, skips := ApplyPamyatki([]Pamyatka{p}, trips)
+	applies, skips := ApplyPamyatki([]Pamyatka{p}, trips, 0)
 	if len(applies) != 0 {
 		t.Fatalf("правок быть не должно, получили %+v", applies)
 	}
@@ -267,7 +267,7 @@ func TestApplyPamyatki_UnknownVagonSkips(t *testing.T) {
 	p := pam("11255", PamyatkaOperPod, "2026-07-25", "путь",
 		vag("99999999", "2026-07-25 00:10", "", ""))
 
-	applies, skips := ApplyPamyatki([]Pamyatka{p}, nil)
+	applies, skips := ApplyPamyatki([]Pamyatka{p}, nil, 0)
 	if len(applies) != 0 {
 		t.Fatalf("правок быть не должно, получили %+v", applies)
 	}
@@ -288,7 +288,7 @@ func TestApplyPamyatki_MergesPerTrip(t *testing.T) {
 	uborka := pam("2", PamyatkaOperUbor, "2026-07-03", "путь A",
 		vag("111", "2026-07-02 10:00", "", "2026-07-03 12:00"))
 
-	applies, skips := ApplyPamyatki([]Pamyatka{podacha, uborka}, trips)
+	applies, skips := ApplyPamyatki([]Pamyatka{podacha, uborka}, trips, 0)
 	if len(skips) != 0 {
 		t.Fatalf("пропусков быть не должно: %+v", skips)
 	}
@@ -316,11 +316,46 @@ func TestApplyPamyatki_UnknownOperationSkips(t *testing.T) {
 	p := pam("1", "перестановку", "2026-07-02", "путь",
 		vag("111", "2026-07-02 10:00", "", ""))
 
-	applies, skips := ApplyPamyatki([]Pamyatka{p}, trips)
+	applies, skips := ApplyPamyatki([]Pamyatka{p}, trips, 0)
 	if len(applies) != 0 {
 		t.Fatalf("правок быть не должно, получили %+v", applies)
 	}
 	if len(skips) != 1 || skips[0].Reason != PamyatkaSkipUnknownOp {
 		t.Fatalf("ожидали пропуск unknown_op, получили %+v", skips)
+	}
+}
+
+// Вечернее прибытие хранится ЖД-штампом с датой +1 («23.07 23:28» = факт
+// 22.07 23:28). Замок обязан сравнивать МСК-факты: по хранимому значению
+// подача утром 23.07 выглядит РАНЬШЕ прибытия, и памятка терялась —
+// на боевом замере 17.08.2026 так уходили в no_trip 22% строк.
+func TestApplyPamyatki_EveningArrivalJdStamp(t *testing.T) {
+	trips := []PamyatkaTrip{
+		{ID: "t1", Vagon: "111", DatePrib: lt("2026-07-23 23:28")}, // факт 22.07 23:28
+	}
+	p := pam("10", PamyatkaOperPod, "2026-07-23", "путь",
+		vag("111", "2026-07-23 07:54", "", ""))
+
+	a := applyOne(t, []Pamyatka{p}, trips)
+	if a.TripID != "t1" {
+		t.Fatalf("памятка должна сесть на t1, села на %s", a.TripID)
+	}
+}
+
+// «Последний подходящий рейс» выбирается по МСК-факту прибытия, а не по
+// хранимому штампу: вечернее прибытие прошлого рейса («21.07 21:00» = факт
+// 20.07) по штампу стоит ПОЗЖЕ дневного прибытия нового рейса (21.07 10:00),
+// и без поправки замок сажал памятку нового визита на старый рейс.
+func TestApplyPamyatki_LastTripByFactNotStamp(t *testing.T) {
+	trips := []PamyatkaTrip{
+		{ID: "old", Vagon: "111", DatePrib: lt("2026-07-21 21:00")}, // факт 20.07 21:00
+		{ID: "new", Vagon: "111", DatePrib: lt("2026-07-21 10:00")}, // факт 21.07 10:00
+	}
+	p := pam("11", PamyatkaOperPod, "2026-07-21", "путь",
+		vag("111", "2026-07-21 23:00", "", ""))
+
+	a := applyOne(t, []Pamyatka{p}, trips)
+	if a.TripID != "new" {
+		t.Fatalf("памятка должна сесть на новый рейс (факт прибытия позже), села на %s", a.TripID)
 	}
 }

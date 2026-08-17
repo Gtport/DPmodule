@@ -1,6 +1,9 @@
 package domain
 
-import "sort"
+import (
+	"sort"
+	"time"
+)
 
 // Стадия заполнения рейса памятками ГУ-45 (колонка vagon_history.pamyatka_state).
 const (
@@ -60,10 +63,17 @@ const (
 // (решения владельца 28.07.2026):
 //
 //   - Рейс выбирается ЗАМКОМ ПО ВРЕМЕНИ ПРИБЫТИЯ: последний рейс вагона, у
-//     которого date_prib ≤ время подачи. Матч по одному номеру вагона на боевых
+//     которого прибытие ≤ время подачи. Матч по одному номеру вагона на боевых
 //     данных сажает треть строк (510 из 1564) на посторонний рейс: памятки
 //     приходят задним числом — документ от 25.07 описывает подачу от 03.07, а
 //     вагон к тому моменту успел приехать заново.
+//   - date_prib хранится ЖД-ШТАМПОМ («час ≥ cutoff → дата +1»), а времена
+//     памяток — МСК-факт. Замок сравнивает МСК с МСК: хранимое прибытие
+//     приводится обратным преобразованием (arrivalFactFromJd). Без него
+//     вагоны с вечерним прибытием теряли памятку: штамп «23.07 23:28»
+//     означает факт 22.07 23:28, и подача утром 23.07 выглядела бы раньше
+//     прибытия (боевой замер 17.08.2026: 22% строк уходили в no_trip).
+//     cutoff ≤ 0 → 18, как date_cutoff_hour источников дислокации.
 //   - Памятка на уборку несёт время подачи ВСЕГДА (100 % боевых строк), поэтому
 //     на рейсе со стадией 0 она заполняет оба блока и ставит сразу 2. Иначе
 //     вагоны, чью подачу инкремент не показал, застряли бы на нуле навсегда:
@@ -79,7 +89,7 @@ const (
 // Порядок применения внутри пачки — по дате составления памятки: если в одном
 // ответе пришли и подача, и уборка одного рейса, побеждает более поздняя.
 // Результат — по одной записи на рейс: правки нескольких памяток слиты.
-func ApplyPamyatki(pamyatki []Pamyatka, trips []PamyatkaTrip) ([]PamyatkaApply, []PamyatkaSkip) {
+func ApplyPamyatki(pamyatki []Pamyatka, trips []PamyatkaTrip, cutoff int) ([]PamyatkaApply, []PamyatkaSkip) {
 	byVagon := make(map[string][]PamyatkaTrip, len(trips))
 	for _, t := range trips {
 		byVagon[t.Vagon] = append(byVagon[t.Vagon], t)
@@ -115,7 +125,7 @@ func ApplyPamyatki(pamyatki []Pamyatka, trips []PamyatkaTrip) ([]PamyatkaApply, 
 				skips = append(skips, PamyatkaSkip{Vagon: v.Vagon, Number: p.Number, Reason: PamyatkaSkipNoGetIn})
 				continue
 			}
-			trip := pickTrip(byVagon[v.Vagon], state, *v.GetIn)
+			trip := pickTrip(byVagon[v.Vagon], state, *v.GetIn, cutoff)
 			if trip == nil {
 				skips = append(skips, PamyatkaSkip{Vagon: v.Vagon, Number: p.Number, Reason: PamyatkaSkipNoTrip})
 				continue
@@ -142,17 +152,45 @@ func ApplyPamyatki(pamyatki []Pamyatka, trips []PamyatkaTrip) ([]PamyatkaApply, 
 	return out, skips
 }
 
-// pickTrip — замок по времени прибытия: последний рейс вагона с date_prib ≤ getIn.
-// Рейсы без прибытия пропускаем: привязать памятку не к чему.
-func pickTrip(trips []PamyatkaTrip, state map[string]*PamyatkaTrip, getIn LocalTime) *PamyatkaTrip {
+// pickTrip — замок по времени прибытия: последний рейс вагона, чьё прибытие
+// МСК-ФАКТОМ ≤ getIn. Хранимый date_prib — ЖД-штамп, поэтому и сравнение, и
+// выбор «последнего» идут по факту (arrivalFactFromJd): по хранимым значениям
+// дневное прибытие 23.07 10:00 стояло бы ПОЗЖЕ вечернего «23.07 23:28»
+// (факт 22.07 23:28), и замок брал бы не тот рейс. Рейсы без прибытия
+// пропускаем: привязать памятку не к чему. При равных фактах побеждает
+// более поздняя строка — как до поправки.
+func pickTrip(trips []PamyatkaTrip, state map[string]*PamyatkaTrip, getIn LocalTime, cutoff int) *PamyatkaTrip {
 	var found *PamyatkaTrip
+	var foundFact time.Time
 	for i := range trips {
-		if trips[i].DatePrib == nil || trips[i].DatePrib.Time().After(getIn.Time()) {
+		if trips[i].DatePrib == nil {
 			continue
 		}
-		found = state[trips[i].ID]
+		fact := arrivalFactFromJd(trips[i].DatePrib.Time(), cutoff)
+		if fact.After(getIn.Time()) {
+			continue
+		}
+		if found == nil || !fact.Before(foundFact) {
+			found = state[trips[i].ID]
+			foundFact = fact
+		}
 	}
 	return found
+}
+
+// arrivalFactFromJd — МСК-факт прибытия из хранимого ЖД-штампа: обратное к
+// «час ≥ cutoff → дата +1» (см. arrivalJd в service). Время внутри штампа
+// фактическое, сдвинута только дата. cutoff ≤ 0 → 18 — дефолт
+// date_cutoff_hour источников дислокации; у источника с иным порогом сюда
+// нужно пробрасывать его значение, иначе замок разойдётся с записью прибытий.
+func arrivalFactFromJd(t time.Time, cutoff int) time.Time {
+	if cutoff <= 0 {
+		cutoff = 18
+	}
+	if t.Hour() >= cutoff {
+		return t.AddDate(0, 0, -1)
+	}
+	return t
 }
 
 // decide — писать ли эту строку памятки в этот рейс, и какие колонки. Возвращает
