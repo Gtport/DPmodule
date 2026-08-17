@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 // CronWorker runs a job on a fixed interval. Два режима:
@@ -81,7 +83,7 @@ func (w *CronWorker) runAligned(ctx context.Context) error {
 
 func (w *CronWorker) runJob(ctx context.Context) {
 	if err := w.job(ctx); err != nil {
-		w.log.Error("cron job failed",
+		w.log.Error("задание крона не выполнено", logger.Comp(logger.CompWorker),
 			zap.String("worker", w.name),
 			zap.Error(err),
 		)

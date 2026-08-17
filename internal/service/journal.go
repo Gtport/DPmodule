@@ -7,6 +7,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/Gtport/DPmodule/pkg/logger"
+
 	"github.com/Gtport/DPmodule/internal/auth"
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
@@ -226,7 +228,7 @@ func (j *Journal) append(ctx context.Context, ev domain.JournalEvent, detail any
 		ev.Detail = b
 	}
 	if err := j.repo.Append(ctx, ev); err != nil && j.log != nil {
-		j.log.Warn("journal append failed",
+		j.log.Warn("событие не записано в журнал", logger.Comp(logger.CompJournal),
 			zap.String("event", ev.EventType), zap.String("source", ev.Source), zap.Error(err))
 	}
 }

@@ -8,7 +8,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -o bin/server ./cmd/server/...
+
+# Версия сборки в стартовую строку лога (см. Makefile). CI передаёт значения
+# через --build-arg; без них поля остаются заглушками, и по логу не понять,
+# какой билд крутится.
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+RUN go build -ldflags "-X main.version=$VERSION -X main.commit=$COMMIT -X main.buildTime=$BUILD_TIME" \
+    -o bin/server ./cmd/server/...
 
 # ---- runtime stage ----
 FROM alpine:3.20

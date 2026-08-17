@@ -7,6 +7,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/Gtport/DPmodule/pkg/logger"
+
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser"
@@ -99,13 +101,9 @@ func (a *ASUIngest) Pull(ctx context.Context, trigger string) (LKProcessResult, 
 		}
 
 		for _, code := range ds.Config.Clients {
-			// Момент похода к провайдеру. Успешный заход прежде не оставлял в логе
-			// НИЧЕГО (пишутся только гарды и ошибки), и по логу нельзя было отличить
-			// работающий крон от молча пропускающего — итог виден лишь в event_journal.
-			a.log.Info("АСУ: запрос дислокации",
-				zap.String("source", ds.ID), zap.String("client", code),
-				zap.String("trigger", trigger), zap.String("auth", authMode))
-
+			// Сам поход к провайдеру пишет транспорт (adapter/asu через
+			// logger.CallLog): там адрес, объём, длительность и причина отказа.
+			// Дублировать его здесь не надо — каждый сбой давал бы две строки.
 			raw, err := cl.Pull(ctx, code)
 			if err != nil {
 				return reject("fetch", fmt.Errorf("забор АСУ %s/%s: %w", ds.ID, code, err))
@@ -121,13 +119,16 @@ func (a *ASUIngest) Pull(ctx context.Context, trigger string) (LKProcessResult, 
 			if res.FormationTS != nil {
 				formation = res.FormationTS.String()
 			}
-			a.log.Info("АСУ: срез получен",
-				zap.String("source", ds.ID), zap.String("client", code),
+			// Строка КОНВЕЙЕРА, а не транспорта: сколько вагонов принёс разбор и
+			// какова метка формирования — то, по чему гарды принимают решение.
+			a.log.Info("срез разобран", logger.Comp(logger.CompDislocation),
+				zap.String("client", code), zap.String("source", ds.ID),
+				zap.String("auth", authMode), zap.String("trigger", trigger),
 				zap.Int("vagons", len(res.Records)), zap.String("formation_ts", formation))
 
 			// Контроль целостности: заявленный count против фактического (только предупреждение).
 			if res.DeclaredCount != nil && *res.DeclaredCount != len(res.Records) {
-				a.log.Warn("АСУ: count в теле не совпал с числом вагонов",
+				a.log.Warn("в срезе меньше вагонов, чем заявлено в count", logger.Comp(logger.CompDislocation),
 					zap.String("client", code), zap.Int("declared", *res.DeclaredCount), zap.Int("got", len(res.Records)))
 			}
 
@@ -173,7 +174,7 @@ func (a *ASUIngest) Pull(ctx context.Context, trigger string) (LKProcessResult, 
 		return reject("process", err) // в т.ч. порог потери данных (max_data_loss_pct)
 	}
 	a.journal.RecordDislUpdate(ctx, "asu", trigger, files, res.Count)
-	a.log.Info("АСУ: дислокация обновлена",
+	a.log.Info("дислокация обновлена из АСУ", logger.Comp(logger.CompDislocation),
 		zap.String("trigger", trigger), zap.Int("vagons", res.Count), zap.Int("streams", len(files)))
 	return res, nil
 }
@@ -189,7 +190,8 @@ func (a *ASUIngest) checkSkew(pulled []pulledSource, limit int) error {
 	first := true
 	for _, p := range pulled {
 		if p.ts == nil || p.ts.IsZero() {
-			a.log.Warn("АСУ: источник без метки формирования — обработка прекращена", zap.String("source", p.label))
+			a.log.Warn("дислокация не обновлена: источник без метки формирования",
+				logger.Comp(logger.CompDislocation), zap.String("source", p.label))
 			return fmt.Errorf("%w: %s", ErrNoFormationTS, p.label)
 		}
 		t := *p.ts
@@ -204,7 +206,8 @@ func (a *ASUIngest) checkSkew(pulled []pulledSource, limit int) error {
 	}
 	gap := int(hi.Time().Sub(lo.Time()).Minutes())
 	if gap > limit {
-		a.log.Warn("АСУ: рассогласование меток формирования — обработка прекращена",
+		a.log.Warn("дислокация не обновлена: метки формирования разъехались",
+			logger.Comp(logger.CompDislocation),
 			zap.Int("gap_min", gap), zap.Int("limit_min", limit),
 			zap.String("oldest", lo.String()), zap.String("newest", hi.String()))
 		return fmt.Errorf("%w: %d мин > %d", ErrSourceSkew, gap, limit)
@@ -230,7 +233,8 @@ func (a *ASUIngest) checkNotNewer(ctx context.Context, files []LKFileInfo) error
 			continue // новый поток — сравнивать не с чем
 		}
 		if !f.FormationTS.Time().After(pts.Time()) {
-			a.log.Warn("АСУ: поток не принёс новых данных — обработка прекращена",
+			a.log.Warn("дислокация не обновлена: поток не принёс новых данных",
+				logger.Comp(logger.CompDislocation),
 				zap.String("source", f.Organisation),
 				zap.String("formation_ts", f.FormationTS.String()),
 				zap.String("prev_ts", pts.String()))

@@ -11,6 +11,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/Gtport/DPmodule/pkg/logger"
+
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/parser"
@@ -90,7 +92,7 @@ func (s *ReferenceService) FetchByNumber(ctx context.Context, client, number, da
 	if err != nil {
 		return nil, err
 	}
-	s.log.Info("reference: памятка по номеру получена",
+	s.log.Info("памятка по номеру получена", logger.Comp(logger.CompPamyatka),
 		zap.String("client", client), zap.String("number", number),
 		zap.String("date_create", dateCreate), zap.Int("bytes", len(body)))
 	return body, nil
@@ -113,7 +115,7 @@ func (s *ReferenceService) FetchExcelByNumber(ctx context.Context, client, numbe
 	if err != nil {
 		return nil, "", err
 	}
-	s.log.Info("reference: памятка по номеру выгружена в Excel",
+	s.log.Info("памятка выгружена бланком ГУ-45", logger.Comp(logger.CompPamyatka),
 		zap.String("client", client), zap.String("number", number),
 		zap.Int("vagons", len(doc.Vagons)), zap.Int("bytes", len(xlsx)))
 	return xlsx, report.FileName(client, number), nil
@@ -153,7 +155,9 @@ func (s *ReferenceService) PullUpdatesDetailed(ctx context.Context) ([]PamyatkaP
 	for _, cl := range s.clients {
 		res, err := s.pullClient(ctx, cl)
 		if err != nil {
-			s.log.Warn("reference: клиент пропущен из-за ошибки",
+			// Утверждение о результате: памятки этого клиента за проход НЕ
+			// разобраны — вехи рейсов остались незаполненными.
+			s.log.Warn("памятки клиента не забраны", logger.Comp(logger.CompPamyatka),
 				zap.String("client", cl), zap.Error(err))
 			failed = append(failed, cl)
 			continue
@@ -223,7 +227,7 @@ func (s *ReferenceService) pullClient(ctx context.Context, client string) (Pamya
 		advanced = true
 	}
 
-	s.log.Info("reference: инкремент памяток обработан",
+	s.log.Info("инкремент памяток разнесён по рейсам", logger.Comp(logger.CompPamyatka),
 		zap.String("client", client), zap.String("cursor", cursor),
 		zap.String("next_cursor", upd.LastUpdate), zap.String("stored_cursor", stored),
 		zap.Bool("advanced", advanced), zap.Int("pamyatki", res.Pamyatki),
@@ -256,7 +260,7 @@ func (s *ReferenceService) cursorWithOverlap(lastUpdate string) string {
 	t, err := time.Parse(lastUpdateLayout, lastUpdate)
 	if err != nil {
 		// Формат провайдера сменился — храним как пришло, инкремент не рвём.
-		s.log.Warn("reference: LAST_UPDATE не разобран, курсор без нахлёста",
+		s.log.Warn("курсор сохранён без нахлёста: LAST_UPDATE не разобран", logger.Comp(logger.CompPamyatka),
 			zap.String("last_update", lastUpdate), zap.Error(err))
 		return lastUpdate
 	}
@@ -332,7 +336,7 @@ func (s *ReferenceService) appendJournal(ctx context.Context, res PamyatkaPullRe
 	}
 	detail, err := json.Marshal(fields)
 	if err != nil {
-		s.log.Warn("reference: сборка detail журнала не удалась", zap.Error(err))
+		s.log.Warn("проход памяток не записан в журнал событий", logger.Comp(logger.CompPamyatka), zap.Error(err))
 		return
 	}
 	ev := domain.JournalEvent{
@@ -345,7 +349,7 @@ func (s *ReferenceService) appendJournal(ctx context.Context, res PamyatkaPullRe
 	if err := s.journal.Append(ctx, ev); err != nil {
 		// Журнал — не критичный путь: вехи уже записаны, ронять проход из-за
 		// него нельзя.
-		s.log.Warn("reference: запись в журнал событий не удалась", zap.Error(err))
+		s.log.Warn("проход памяток не записан в журнал событий", logger.Comp(logger.CompPamyatka), zap.Error(err))
 	}
 }
 

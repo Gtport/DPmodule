@@ -18,8 +18,11 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/port"
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 const (
@@ -37,6 +40,7 @@ type ClientCredentials struct {
 	scope     string
 	secrets   port.SecretSource
 	hc        *http.Client
+	call      logger.CallLog
 
 	mu      sync.Mutex
 	token   string
@@ -61,7 +65,17 @@ func New(tokenURL, clientID, secretKey, scope string, secrets port.SecretSource,
 		scope:     scope,
 		secrets:   secrets,
 		hc:        hc,
+		// Компонент auth: получение токена — не дислокация и не памятки, хотя
+		// нужен он всем троим. Отказ Keycloak иначе выглядел бы поломкой той
+		// подсистемы, которая первой попросила токен.
+		call: logger.NewCallLog(nil, logger.CompAuth, "Keycloak", tokenURL),
 	}
+}
+
+// WithLogger подключает запись походов за токеном.
+func (c *ClientCredentials) WithLogger(log *zap.Logger) *ClientCredentials {
+	c.call = c.call.WithLogger(log)
+	return c
 }
 
 // Token отдаёт живой access-токен: из кэша, пока не истёк, иначе просит новый.
@@ -89,12 +103,19 @@ func (c *ClientCredentials) Token(ctx context.Context) (string, error) {
 }
 
 func (c *ClientCredentials) fetch(ctx context.Context) (string, time.Duration, error) {
+	start := time.Now()
+
+	fail := func(err error) (string, time.Duration, error) {
+		c.call.Failure(start, err, zap.String("client", c.clientID))
+		return "", 0, err
+	}
+
 	if c.tokenURL == "" || c.clientID == "" {
-		return "", 0, fmt.Errorf("keycloak: сервис-аккаунт не настроен (token_url/client_id пусты)")
+		return fail(fmt.Errorf("keycloak: сервис-аккаунт не настроен (token_url/client_id пусты)"))
 	}
 	secret, err := c.secrets.Get(ctx, c.secretKey)
 	if err != nil {
-		return "", 0, fmt.Errorf("keycloak: секрет %q: %w", c.secretKey, err)
+		return fail(fmt.Errorf("keycloak: секрет %q: %w", c.secretKey, err))
 	}
 
 	form := url.Values{
@@ -108,24 +129,26 @@ func (c *ClientCredentials) fetch(ctx context.Context) (string, time.Duration, e
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", 0, fmt.Errorf("keycloak: сборка запроса токена: %w", err)
+		return fail(fmt.Errorf("keycloak: сборка запроса токена: %w", err))
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return "", 0, fmt.Errorf("keycloak: запрос токена: %w", err)
+		return fail(fmt.Errorf("keycloak: запрос токена: %w", err))
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return "", 0, fmt.Errorf("keycloak: чтение ответа токена: %w", err)
+		return fail(fmt.Errorf("keycloak: чтение ответа токена: %w", err))
 	}
 	if resp.StatusCode != http.StatusOK {
 		// Тело ответа Keycloak на ошибку короткое ({"error":"unauthorized_client"}) —
 		// показываем как есть: без него причина отказа не восстанавливается.
+		c.call.Failure(start, fmt.Errorf("статус %d: %s", resp.StatusCode, snippet(body)),
+			zap.String("client", c.clientID), zap.Int("status", resp.StatusCode))
 		return "", 0, fmt.Errorf("keycloak: токен, статус %d: %s", resp.StatusCode, snippet(body))
 	}
 
@@ -134,15 +157,19 @@ func (c *ClientCredentials) fetch(ctx context.Context) (string, time.Duration, e
 		ExpiresIn   int    `json:"expires_in"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return "", 0, fmt.Errorf("keycloak: разбор ответа токена: %w", err)
+		return fail(fmt.Errorf("keycloak: разбор ответа токена: %w", err))
 	}
 	if out.AccessToken == "" {
-		return "", 0, fmt.Errorf("keycloak: в ответе нет access_token")
+		return fail(fmt.Errorf("keycloak: в ответе нет access_token"))
 	}
 	ttl := time.Duration(out.ExpiresIn) * time.Second
 	if ttl <= 0 {
 		ttl = time.Minute // провайдер не сказал срок — перезапросим через минуту
 	}
+	// Токен берут кроны, а живёт он минутами: на INFO это была бы строка каждые
+	// несколько минут круглосуточно. Успех — в DEBUG, отказ остаётся в WARN.
+	c.call.SuccessQuiet("токен получен", start, len(body),
+		zap.String("client", c.clientID), zap.Duration("ttl", ttl))
 	return out.AccessToken, ttl, nil
 }
 

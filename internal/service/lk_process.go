@@ -344,13 +344,13 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	// пропадали 15 вагонов НМТП со станцией ШУШАРЫ. Коды даём выборкой: их
 	// бывают сотни, а для правки справочника хватает первых.
 	if len(enr.StationsNotFound)+len(enr.OperationsNotFound)+len(enr.CargoNotFound) > 0 {
-		log.Warn("конвейер: коды вне справочников",
+		log.Warn("коды вне справочников — поля не заполнены", logger.Comp(logger.CompDislocation),
 			zap.Int("stations", len(enr.StationsNotFound)), zap.Ints("stations_sample", sampleCodes(enr.StationsNotFound)),
 			zap.Int("operations", len(enr.OperationsNotFound)), zap.Ints("operations_sample", sampleCodes(enr.OperationsNotFound)),
 			zap.Int("cargo", len(enr.CargoNotFound)), zap.Ints("cargo_sample", sampleCodes(enr.CargoNotFound)))
 	}
 	if enr.PortUnresolved > 0 {
-		log.Warn("конвейер: порт не резолвится — вагоны остались без терминала",
+		log.Warn("вагоны остались без терминала: порт не резолвится", logger.Comp(logger.CompDislocation),
 			zap.Int("vagons", enr.PortUnresolved))
 	}
 
@@ -531,7 +531,7 @@ func (p *LKProcessor) ProcessRecords(ctx context.Context, all []domain.Dislocati
 	// carry_new_trip здесь не для красоты: рейс, сменившийся под тем же вагоном,
 	// сбрасывает назначение и план, и всплеск этого счётчика объясняет
 	// «вагон вдруг без терминала» без раскопок.
-	log.Info("снимок пересобран",
+	log.Info("снимок пересобран", logger.Comp(logger.CompDislocation),
 		zap.Duration("took", time.Since(started)),
 		zap.Int("vagons", len(all)), zap.Int("prev", prevSize),
 		zap.Int("carry_matched", co.Matched), zap.Int("carry_new", co.New),

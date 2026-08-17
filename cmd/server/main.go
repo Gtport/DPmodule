@@ -27,6 +27,7 @@ import (
 	"gorm.io/gorm"
 
 	_ "github.com/Gtport/DPmodule/api/swagger"
+	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/config"
 	"github.com/Gtport/DPmodule/internal/domain"
 	"github.com/Gtport/DPmodule/internal/port"
@@ -36,6 +37,15 @@ import (
 	"github.com/Gtport/DPmodule/internal/worker"
 	"github.com/Gtport/DPmodule/pkg/logger"
 	"github.com/Gtport/DPmodule/pkg/middleware"
+)
+
+// Версия сборки. Значения подставляет линковщик (-ldflags, см. Makefile и
+// Dockerfile); при сборке «голым» go build остаются заглушки — так честнее,
+// чем показать «1.0» и ввести в заблуждение при разборе инцидента.
+var (
+	version   = "dev"
+	commit    = "неизвестно"
+	buildTime = "неизвестно"
 )
 
 func main() {
@@ -59,17 +69,27 @@ func run() error {
 	log, err := logger.New(logger.Config{
 		Level:      cfg.Log.Level,
 		Env:        cfg.App.Env,
+		Format:     cfg.Log.Format,
 		File:       cfg.Log.File,
 		MaxSizeMB:  cfg.Log.MaxSizeMB,
 		MaxBackups: cfg.Log.MaxBackups,
 		MaxAgeDays: cfg.Log.MaxAgeDays,
+		// Зона штампа строки — из clock, единственного места с часовым поясом:
+		// zap ставит время через time.Now(), а сервер живёт не по Москве.
+		Location: clock.Location(),
 	})
 	if err != nil {
 		return fmt.Errorf("logger: %w", err)
 	}
 	defer log.Sync() //nolint:errcheck
 
-	log.Info("starting", zap.String("app", cfg.App.Name), zap.String("env", cfg.App.Env))
+	// Стартовый блок. Читается при разборе «с какими настройками оно
+	// поднялось», поэтому здесь важнее полнота, чем краткость: версия билда,
+	// адреса подключений и настройка самого лога (без неё не отличить
+	// «ничего не происходило» от «уровень скрыл всё»).
+	log.Info(fmt.Sprintf("%s %s (%s, собран %s)", cfg.App.Name, version, commit, buildTime),
+		logger.Comp(logger.CompStartup), zap.String("env", cfg.App.Env))
+	log.Info(startupLogLine(cfg), logger.Comp(logger.CompStartup))
 
 	// -- postgres (optional) --
 	// Every external dependency is gated by its `enabled` flag so the template
@@ -93,9 +113,12 @@ func run() error {
 		if err := sqlDB.PingContext(context.Background()); err != nil {
 			return fmt.Errorf("db ping: %w", err)
 		}
-		log.Info("postgres connected")
+		log.Info("postgres: подключён", logger.Comp(logger.CompStartup),
+			zap.String("host", fmt.Sprintf("%s:%d", cfg.Postgres.Host, cfg.Postgres.Port)),
+			zap.String("db", cfg.Postgres.DBName), zap.String("schema", cfg.Postgres.Schema),
+			zap.String("user", cfg.Postgres.User))
 	} else {
-		log.Warn("postgres disabled — skipping (set postgres.enabled: true to connect)")
+		log.Warn("postgres: выключен конфигом (postgres.enabled: false)", logger.Comp(logger.CompStartup))
 	}
 
 	// -- directory cache (require postgres) --
@@ -157,7 +180,7 @@ func run() error {
 			return fmt.Errorf("directory cache: %w", err)
 		}
 		stationsN, cargoOpsN, cargoN, markaN, portsN, routeSpeedN, naznachN := dirCache.Counts()
-		log.Info("directory cache loaded",
+		log.Info("справочники загружены", logger.Comp(logger.CompStartup),
 			zap.Int("stations", stationsN),
 			zap.Int("cargo_operations", cargoOpsN),
 			zap.Int("cargo", cargoN),
@@ -174,7 +197,7 @@ func run() error {
 			return fmt.Errorf("config cache: %w", err)
 		}
 		srcTotal, srcEnabled := cfgCache.Counts()
-		log.Info("config cache loaded",
+		log.Info("настройки клиента загружены", logger.Comp(logger.CompStartup),
 			zap.Int("data_sources", srcTotal),
 			zap.Int("enabled", srcEnabled),
 			zap.String("client", cfgCache.Settings().ClientName),
@@ -182,7 +205,8 @@ func run() error {
 
 		// Профили станций плана из настроечной таблицы → реестр парсера (расхардка
 		// builtinProfiles). Пусто → у парсера остаётся builtin-fallback.
-		log.Info("plan profiles applied", zap.Int("profiles", service.ApplyPlanProfiles(cfgCache)))
+		log.Info("профили плана применены", logger.Comp(logger.CompStartup),
+			zap.Int("profiles", service.ApplyPlanProfiles(cfgCache)))
 
 		// Актуальная мапа дислокации (текущий снимок) — в RAM при старте. Основа
 		// Stage 2 (сравнение нового батча с актуальным). Пока — прогрев.
@@ -190,7 +214,8 @@ func run() error {
 		if err := actualCache.Load(context.Background()); err != nil {
 			return fmt.Errorf("actual cache: %w", err)
 		}
-		log.Info("actual cache loaded", zap.Int("vagons", actualCache.Count()))
+		log.Info("снимок дислокации поднят в память", logger.Comp(logger.CompStartup),
+			zap.Int("vagons", actualCache.Count()))
 
 		// Write-through RAM-кэши таблиц состояния (кандидаты status9, доноры status6):
 		// чтение/сопоставление — из RAM, запись — в БД+RAM. Прогрев на старте.
@@ -202,7 +227,7 @@ func run() error {
 		if err := status6Cache.Load(context.Background()); err != nil {
 			return fmt.Errorf("status6 cache: %w", err)
 		}
-		log.Info("state caches loaded",
+		log.Info("состояния подняты в память", logger.Comp(logger.CompStartup),
 			zap.Int("status9", status9Cache.Count()), zap.Int("status6", status6Cache.Count()))
 	}
 
@@ -212,7 +237,7 @@ func run() error {
 	// пустом фоне), ровно как при tiles.enabled: false в WSL.
 	var tilesRepo port.TileRepository
 	if !cfg.MapView.EnabledOrDefault() {
-		log.Info("map disabled — экран «Карта» и БД тайлов выключены конфигом")
+		log.Info("карта: выключена конфигом (tiles.enabled: false)", logger.Comp(logger.CompStartup))
 	}
 	if cfg.Tiles.Enabled && cfg.MapView.EnabledOrDefault() {
 		tdb, terr := gormrepo.Open(cfg.Tiles, log.Named("tiles"), cfg.Log.SlowQuery)
@@ -223,10 +248,13 @@ func run() error {
 			}
 		}
 		if terr != nil {
-			log.Error("tiles: БД кэша тайлов недоступна — карта будет без подложки", zap.Error(terr))
+			log.Error("карта: без подложки — БД кэша тайлов недоступна",
+				logger.Comp(logger.CompStartup), zap.Error(terr))
 		} else {
 			tilesRepo = gormrepo.NewTileRepository(tdb)
-			log.Info("tiles connected")
+			log.Info("карта: кэш тайлов подключён", logger.Comp(logger.CompStartup),
+				zap.String("host", fmt.Sprintf("%s:%d", cfg.Tiles.Host, cfg.Tiles.Port)),
+				zap.String("db", cfg.Tiles.DBName))
 		}
 	}
 
@@ -235,7 +263,8 @@ func run() error {
 	if cfg.Keycloak.Enabled {
 		jwtMW = middleware.NewKeycloakJWT(cfg.Keycloak)
 	} else {
-		log.Warn("keycloak disabled — /api routes are served WITHOUT auth")
+		log.Warn("keycloak: выключен — маршруты /api отдаются БЕЗ авторизации",
+			logger.Comp(logger.CompStartup))
 	}
 
 	// -- http server --
@@ -264,7 +293,8 @@ func run() error {
 				// даже до строки «запрос дислокации» в Pull, и лог уровня info молчал
 				// целиком — «крон тикает вхолостую» было не отличить от «крон не тикал».
 				// Нужен именно api_pull: включённый источник другого рода сюда не годится.
-				log.Info("asu-pull: включённого источника с ingest=api_pull нет — забор пропущен")
+				log.Info("автозабор АСУ: включённого источника ingest=api_pull нет",
+					logger.Comp(logger.CompStartup))
 				return nil
 			}
 			return err
@@ -296,7 +326,8 @@ func run() error {
 	if cfg.Bros.Enabled && brosJournal != nil {
 		offset, err := mskDailyOffset(cfg.Bros.JournalCron)
 		if err != nil {
-			log.Error("bros.journal_cron: неверный формат, ожидается HH:MM (МСК) — крон выключен",
+			log.Error("крон журнала брошенных выключен: bros.journal_cron не ЧЧ:ММ (МСК)",
+				logger.Comp(logger.CompStartup),
 				zap.String("value", cfg.Bros.JournalCron), zap.Error(err))
 		} else {
 			workers = append(workers, worker.NewAlignedCronWorker("bros-journal-bulk", 24*time.Hour, offset, log,
@@ -316,7 +347,8 @@ func run() error {
 
 	if len(workers) > 0 {
 		go worker.Run(bgCtx, log, workers...)
-		log.Info("background workers started", zap.Int("count", len(workers)))
+		log.Info("фоновые воркеры запущены", logger.Comp(logger.CompStartup),
+			zap.Int("count", len(workers)))
 	}
 
 	// -- graceful shutdown --
@@ -324,23 +356,26 @@ func run() error {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Info("listening", zap.String("addr", srv.Addr))
+		log.Info("готов: слушаю", logger.Comp(logger.CompStartup),
+			zap.String("addr", srv.Addr))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal("server error", zap.Error(err))
+			log.Fatal("сервер остановлен ошибкой", logger.Comp(logger.CompStartup), zap.Error(err))
 		}
 	}()
 
 	if metricsSrv != nil {
 		go func() {
-			log.Info("metrics listening", zap.String("addr", metricsSrv.Addr))
+			log.Info("метрики: слушаю", logger.Comp(logger.CompStartup),
+				zap.String("addr", metricsSrv.Addr))
 			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Error("metrics server error", zap.Error(err))
+				log.Error("сервер метрик остановлен ошибкой",
+					logger.Comp(logger.CompStartup), zap.Error(err))
 			}
 		}()
 	}
 
 	<-quit
-	log.Info("shutting down...")
+	log.Info("останавливаемся…", logger.Comp(logger.CompStartup))
 	bgCancel() // останавливаем фоновые воркеры (крон АСУ)
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
@@ -348,7 +383,8 @@ func run() error {
 
 	if metricsSrv != nil {
 		if err := metricsSrv.Shutdown(ctx); err != nil {
-			log.Error("metrics graceful shutdown", zap.Error(err))
+			log.Error("сервер метрик не остановился штатно",
+				logger.Comp(logger.CompStartup), zap.Error(err))
 		}
 	}
 
@@ -356,7 +392,7 @@ func run() error {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 
-	log.Info("stopped")
+	log.Info("приложение остановлено", logger.Comp(logger.CompStartup))
 	return nil
 }
 
@@ -373,4 +409,25 @@ func mskDailyOffset(hhmm string) (time.Duration, error) {
 		d += 24 * time.Hour
 	}
 	return d, nil
+}
+
+// startupLogLine — строка о настройке самого лога. Без неё при разборе нельзя
+// отличить «ничего не происходило» от «уровень скрыл всё», а на стенде — понять,
+// куда вообще смотреть: файла может не быть, и тогда логи только в journald.
+func startupLogLine(cfg *config.Config) string {
+	dest := "stdout"
+	if cfg.Log.File != "" {
+		dest = fmt.Sprintf("%s (%dМБ × %d, %d дней)", cfg.Log.File,
+			orDefault(cfg.Log.MaxSizeMB, 100), orDefault(cfg.Log.MaxBackups, 5),
+			orDefault(cfg.Log.MaxAgeDays, 30))
+	}
+	return fmt.Sprintf("логи: уровень=%s формат=%s медленный_запрос=%s вывод=%s",
+		cfg.Log.Level, cfg.Log.Format, logger.FormatDuration(cfg.Log.SlowQuery), dest)
+}
+
+func orDefault(v, def int) int {
+	if v > 0 {
+		return v
+	}
+	return def
 }

@@ -30,7 +30,10 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/Gtport/DPmodule/internal/port"
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 // russianTrustedCA — корневой сертификат Минцифры (публичный, цепочка Russian
@@ -57,6 +60,13 @@ type Client struct {
 	authSecretKey string // ключ токена в SecretSource (дефолт MAX_BOT_TOKEN)
 	secrets       port.SecretSource
 	hc            *http.Client
+	call          logger.CallLog
+}
+
+// WithLogger подключает запись исходящих отправок.
+func (c *Client) WithLogger(log *zap.Logger) *Client {
+	c.call = c.call.WithLogger(log)
+	return c
 }
 
 // NewClient собирает клиент MAX. baseURL пуст → platform-api.max.ru; authSecretKey
@@ -89,6 +99,7 @@ func NewClient(baseURL, authSecretKey string, timeout time.Duration, secrets por
 		authSecretKey: authSecretKey,
 		secrets:       secrets,
 		hc:            hc,
+		call:          logger.NewCallLog(nil, logger.CompBroadcast, "MAX", baseURL),
 	}, nil
 }
 
@@ -103,25 +114,36 @@ func (c *Client) token(ctx context.Context) (string, error) {
 
 // Ping — GET /me: проверка доступности API и валидности токена (health-ручка).
 func (c *Client) Ping(ctx context.Context) error {
+	start := time.Now()
+	fail := func(err error) error {
+		c.call.Failure(start, err)
+		return err
+	}
+
 	tok, err := c.token(ctx)
 	if err != nil {
-		return err
+		return fail(err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/me", nil)
 	if err != nil {
-		return fmt.Errorf("MAX Ping: сборка запроса: %w", err)
+		return fail(fmt.Errorf("MAX Ping: сборка запроса: %w", err))
 	}
 	req.Header.Set(authHeader, tok)
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return fmt.Errorf("MAX Ping: запрос: %w", err)
+		return fail(fmt.Errorf("MAX Ping: запрос: %w", err))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
+		c.call.Failure(start, fmt.Errorf("статус %d: %s", resp.StatusCode, snippet(body)),
+			zap.Int("status", resp.StatusCode))
 		return fmt.Errorf("MAX Ping: статус %d: %s", resp.StatusCode, snippet(body))
 	}
+	// Проба доступности — DEBUG: её зовут из healthcheck, на INFO она вытеснит
+	// из файла собственно рассылку.
+	c.call.SuccessQuiet("бот доступен", start, len(body))
 	return nil
 }
 
@@ -152,24 +174,33 @@ func (c *Client) SendFile(ctx context.Context, chatID string, file []byte, filen
 // загрузки MAX: "image" (токен приходит вложенным в photos.{id}.token) либо
 // "file" (токен приходит напрямую в поле token).
 func (c *Client) sendAttachment(ctx context.Context, chatID string, data []byte, filename, caption, kind string) error {
+	start := time.Now()
+	// Поля отправки одни на все ветви выхода: чат, тип и размер вложения — то,
+	// по чему потом ищут «почему форма не пришла в чат».
+	who := []zap.Field{zap.String("chat", chatID), zap.String("kind", kind), zap.String("file", filename)}
+	fail := func(err error) error {
+		c.call.Failure(start, err, who...)
+		return err
+	}
+
 	tok, err := c.token(ctx)
 	if err != nil {
-		return err
+		return fail(err)
 	}
 
 	uploadURL, err := c.getUploadURL(ctx, tok, kind)
 	if err != nil {
-		return fmt.Errorf("MAX %s: URL загрузки: %w", kind, err)
+		return fail(fmt.Errorf("MAX %s: URL загрузки: %w", kind, err))
 	}
 	attachTok, err := c.upload(ctx, tok, uploadURL, data, filename, kind)
 	if err != nil {
-		return fmt.Errorf("MAX %s: заливка: %w", kind, err)
+		return fail(fmt.Errorf("MAX %s: заливка: %w", kind, err))
 	}
 
 	// MAX обрабатывает вложение асинхронно — ждём, затем шлём с retry.
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return fail(ctx.Err())
 	case <-time.After(attachWait):
 	}
 
@@ -183,6 +214,8 @@ func (c *Client) sendAttachment(ctx context.Context, chatID string, data []byte,
 	for attempt := 1; attempt <= attachRetries; attempt++ {
 		lastErr = c.sendMessageTok(ctx, tok, chatID, msg)
 		if lastErr == nil {
+			c.call.Success("отправлено в чат", start, len(data),
+				append(who, zap.Int("attempt", attempt))...)
 			return nil
 		}
 		// Только «файл ещё не готов» имеет смысл повторять.
@@ -191,15 +224,15 @@ func (c *Client) sendAttachment(ctx context.Context, chatID string, data []byte,
 			if attempt < attachRetries {
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
+					return fail(ctx.Err())
 				case <-time.After(attachRetryIn):
 				}
 				continue
 			}
 		}
-		return lastErr
+		return fail(lastErr)
 	}
-	return fmt.Errorf("MAX %s: не обработано после %d попыток: %w", kind, attachRetries, lastErr)
+	return fail(fmt.Errorf("MAX %s: не обработано после %d попыток: %w", kind, attachRetries, lastErr))
 }
 
 // getUploadURL — шаг 1: POST /uploads?type=<kind> → URL для заливки тела.
@@ -307,11 +340,18 @@ type attachment struct {
 
 // sendMessage читает токен и шлёт сообщение (для текстовых отправок).
 func (c *Client) sendMessage(ctx context.Context, chatID string, msg messageRequest) error {
+	start := time.Now()
 	tok, err := c.token(ctx)
 	if err != nil {
+		c.call.Failure(start, err, zap.String("chat", chatID))
 		return err
 	}
-	return c.sendMessageTok(ctx, tok, chatID, msg)
+	if err := c.sendMessageTok(ctx, tok, chatID, msg); err != nil {
+		c.call.Failure(start, err, zap.String("chat", chatID))
+		return err
+	}
+	c.call.Success("отправлено в чат", start, len(msg.Text), zap.String("chat", chatID))
+	return nil
 }
 
 // sendMessageTok — POST /messages?chat_id=<id> с уже полученным токеном (чтобы

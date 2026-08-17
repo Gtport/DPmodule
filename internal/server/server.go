@@ -24,6 +24,7 @@ import (
 	"github.com/Gtport/DPmodule/internal/port"
 	"github.com/Gtport/DPmodule/internal/secret"
 	"github.com/Gtport/DPmodule/internal/service"
+	"github.com/Gtport/DPmodule/pkg/logger"
 	"github.com/Gtport/DPmodule/pkg/metrics"
 	"github.com/Gtport/DPmodule/pkg/middleware"
 )
@@ -90,11 +91,12 @@ func Build(
 	var tokens port.TokenProvider
 	if sa := cfg.Keycloak.ServiceAccount; sa.TokenURL != "" && sa.ClientID != "" {
 		tokens = oauth.New(sa.TokenURL, sa.ClientID, config.SecretKeyServiceAccount, sa.Scope,
-			secrets, sa.InsecureTLS, time.Duration(sa.TimeoutSecs)*time.Second)
-		log.Info("исходящая авторизация к провайдеру: Keycloak, сервис-аккаунт",
-			zap.String("client_id", sa.ClientID))
+			secrets, sa.InsecureTLS, time.Duration(sa.TimeoutSecs)*time.Second).WithLogger(log)
+		log.Info("провайдер: авторизация сервис-аккаунтом Keycloak",
+			logger.Comp(logger.CompStartup), zap.String("client_id", sa.ClientID))
 	} else {
-		log.Warn("сервис-аккаунт Keycloak не настроен — к провайдеру ходим запасным режимом X-API-Key")
+		log.Warn("провайдер: сервис-аккаунт не настроен, идём запасным режимом X-API-Key",
+			logger.Comp(logger.CompStartup))
 	}
 
 	if cfg.App.Env != "dev" {
@@ -213,10 +215,10 @@ func Build(
 	var refSvc *service.ReferenceService
 	if historyRepo != nil && pamCursorRepo != nil {
 		refClient := reference.NewHTTPClient(cfg.Reference.BaseURL, cfg.Reference.InsecureTLS,
-			cfg.Reference.AuthMode, cfg.Reference.AuthSecretKey, secrets, tokens)
+			cfg.Reference.AuthMode, cfg.Reference.AuthSecretKey, secrets, tokens).WithLogger(log)
 		// Режим авторизации памяток — один на подсистему (в отличие от АСУ, где он
 		// свой у каждого источника), поэтому говорим его один раз при старте.
-		log.Info("памятки: исходящая авторизация",
+		log.Info("памятки: исходящая авторизация", logger.Comp(logger.CompStartup),
 			zap.String("auth", refClient.AuthMode()), zap.String("base_url", cfg.Reference.BaseURL))
 		refSvc = service.NewReferenceService(refClient, historyRepo, pamCursorRepo, journalRepo,
 			cfg.Reference.Clients, service.ReferenceTiming{
@@ -235,9 +237,10 @@ func Build(
 	if cfg.MAX.Enabled {
 		mc, err := max.NewClient(cfg.MAX.BaseURL, "", time.Duration(cfg.MAX.TimeoutSecs)*time.Second, secrets)
 		if err != nil {
-			log.Error("MAX: клиент не собран, канал отключён", zap.Error(err))
+			log.Error("рассылка в MAX отключена: клиент не собран",
+				logger.Comp(logger.CompStartup), zap.Error(err))
 		} else {
-			maxSender = mc
+			maxSender = mc.WithLogger(log)
 		}
 	}
 	// Справочник чатов и маршруты рассылки — только при наличии БД (max_chat/max_route).
@@ -346,7 +349,7 @@ func Build(
 			// POST /dislocation/asu/pull. Транспорт — HTTP-адаптер, ключ к АСУ —
 			// из конфига (asu.token), запасным путём из env (см. secrets выше).
 			asuFactory := func(dc domain.DataSourceConfig) port.ASUClient {
-				return asu.NewHTTPClient(dc, secrets, tokens)
+				return asu.NewHTTPClient(dc, secrets, tokens).WithLogger(log)
 			}
 			asuIngest = service.NewASUIngest(cfgCache, asuFactory, proc, log)
 			asuIngest.SetJournal(journal)
@@ -361,7 +364,7 @@ func Build(
 			// Клиент собирается из того же источника data_source id=asu.
 			if vagonOpRepo != nil {
 				if ds, ok := cfgCache.DataSource("asu"); ok && ds.Enabled {
-					histClient := asu.NewHTTPClient(ds.Config, secrets, tokens)
+					histClient := asu.NewHTTPClient(ds.Config, secrets, tokens).WithLogger(log)
 					vagonOps = service.NewVagonOpService(vagonOpRepo, histClient, dirCache, actualCache, log)
 					vagonOps.SetHistory(historyRepo) // «История движения вагона»: рейс из vagon_history
 					if delayRepo != nil {

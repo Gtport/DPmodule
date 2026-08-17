@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/Gtport/DPmodule/pkg/logger"
 )
 
 // Worker is the interface every background job must implement.
@@ -21,19 +23,19 @@ func Run(ctx context.Context, log *zap.Logger, workers ...Worker) {
 		go runWorker(ctx, log, w)
 	}
 	<-ctx.Done()
-	log.Info("worker manager: context cancelled, stopping all workers")
+	log.Info("остановка: все воркеры получили сигнал", logger.Comp(logger.CompWorker))
 }
 
 func runWorker(ctx context.Context, log *zap.Logger, w Worker) {
-	log.Info("worker started", zap.String("worker", w.Name()))
+	log.Info("воркер запущен", logger.Comp(logger.CompWorker), zap.String("worker", w.Name()))
 	for {
 		if err := w.Run(ctx); err != nil {
 			if ctx.Err() != nil {
 				// Context cancelled — normal shutdown.
-				log.Info("worker stopped", zap.String("worker", w.Name()))
+				log.Info("воркер остановлен", logger.Comp(logger.CompWorker), zap.String("worker", w.Name()))
 				return
 			}
-			log.Error("worker error, restarting in 5s",
+			log.Error("воркер упал, перезапуск через 5с", logger.Comp(logger.CompWorker),
 				zap.String("worker", w.Name()),
 				zap.Error(err),
 			)
@@ -45,7 +47,7 @@ func runWorker(ctx context.Context, log *zap.Logger, w Worker) {
 			continue
 		}
 		// Worker returned nil — means it finished cleanly, no restart.
-		log.Info("worker finished", zap.String("worker", w.Name()))
+		log.Info("воркер завершил работу", logger.Comp(logger.CompWorker), zap.String("worker", w.Name()))
 		return
 	}
 }
