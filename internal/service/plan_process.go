@@ -105,6 +105,74 @@ func planDateOnly(doc *plan.PlanDoc) *domain.LocalTime {
 	return domain.NewLocalTime(time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC))
 }
 
+// planEveningCutoffHour — час начала следующих ЖД-суток (то же правило «час ≥ 18»,
+// что в applyMskRule парсера): после него завтрашняя дата плана — норма, не «будущее».
+const planEveningCutoffHour = 18
+
+// PlanDateWarning — гард «дата плана не текущая»: дата из файла (самая ранняя ЖД-дата
+// ниток) не совпала с сегодняшней МСК. Отдаётся фронту в ответе prepare — диспетчер
+// выбирает: исправить дату на текущую (повтор prepare с fix_date=1) или отказаться.
+type PlanDateWarning struct {
+	PlanDate string `json:"plan_date"` // дата плана из файла, ДД.ММ.ГГГГ
+	Today    string `json:"today"`     // текущая дата МСК, ДД.ММ.ГГГГ
+}
+
+// Err — та же ситуация текстом: для путей без диалога (одношаговый upload, planapply).
+func (w *PlanDateWarning) Err() error {
+	return fmt.Errorf("в файле план на %s, а сегодня %s (МСК): дата плана должна быть текущей — "+
+		"исправьте дату в файле или загрузите через экран «План подвода» и согласитесь на исправление",
+		w.PlanDate, w.Today)
+}
+
+// checkPlanDate — гард даты плана (случай 17.08.2026: файл с датой из будущего прошёл
+// без вопросов и увёл плановые прибытия). Дата плана обязана быть текущей МСК-датой;
+// после 18:00 (начались следующие ЖД-сутки) допускается и завтрашняя. nil — дата в
+// норме либо датированных ниток нет (сравнивать нечего).
+func checkPlanDate(doc *plan.PlanDoc) *PlanDateWarning {
+	ts := planDateOnly(doc)
+	if ts == nil {
+		return nil
+	}
+	pd := ts.Time()
+	now := clock.Now().Time()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if pd.Equal(today) {
+		return nil
+	}
+	if now.Hour() >= planEveningCutoffHour && pd.Equal(today.AddDate(0, 0, 1)) {
+		return nil
+	}
+	return &PlanDateWarning{PlanDate: pd.Format("02.01.2006"), Today: today.Format("02.01.2006")}
+}
+
+// fixPlanDates сдвигает датированные времена ниток на целое число суток так, чтобы
+// самая ранняя ЖД-дата плана стала сегодняшней (выбор «Исправить дату» в диалоге
+// загрузки). Времена внутри суток и взаимные смещения ниток (многодневный план)
+// сохраняются; нитки без времени («не подводить») не трогаются.
+func fixPlanDates(doc *plan.PlanDoc) {
+	ts := planDateOnly(doc)
+	if ts == nil {
+		return
+	}
+	now := clock.Now().Time()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	days := int(today.Sub(ts.Time()).Hours() / 24)
+	if days == 0 {
+		return
+	}
+	shift := func(t time.Time) time.Time {
+		if t.IsZero() {
+			return t
+		}
+		return t.AddDate(0, 0, days)
+	}
+	for i := range doc.Nitki {
+		doc.Nitki[i].PlanJd = shift(doc.Nitki[i].PlanJd)
+		doc.Nitki[i].PlanMsk = shift(doc.Nitki[i].PlanMsk)
+		doc.Nitki[i].FactMsk = shift(doc.Nitki[i].FactMsk)
+	}
+}
+
 // PlanProcessResult — сводка обработки плана.
 type PlanProcessResult struct {
 	Filename string `json:"filename"`
@@ -117,7 +185,9 @@ type PlanProcessResult struct {
 
 // ProcessFile сохраняет файл плана, разбирает его и применяет матч к снимку.
 // planCode — код станции плана (ma/nk/…), должен иметь профиль и целевые площадки.
-func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename string, data []byte) (PlanProcessResult, error) {
+// fixDate — сдвинуть даты плана на сегодня (согласие на исправление); иначе план
+// с не текущей датой отклоняется (checkPlanDate) — диалога на этом пути нет.
+func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename string, data []byte, fixDate bool) (PlanProcessResult, error) {
 	prof, err := plan.ResolveProfile(planCode)
 	if err != nil {
 		return PlanProcessResult{}, err
@@ -138,6 +208,11 @@ func (p *PlanProcessor) ProcessFile(ctx context.Context, planCode, filename stri
 	doc, err := plan.ParseFile(path, planCode)
 	if err != nil {
 		return PlanProcessResult{}, fmt.Errorf("разбор плана: %w", err)
+	}
+	if fixDate {
+		fixPlanDates(doc)
+	} else if w := checkPlanDate(doc); w != nil {
+		return PlanProcessResult{}, w.Err()
 	}
 
 	records := p.actual.All()

@@ -78,6 +78,9 @@ type PreparePlanResult struct {
 	Problems []ProblemRowDTO `json:"problems"`
 	Nitki    int             `json:"nitki"`
 	Matched  int             `json:"matched"`
+	// Гард даты плана: дата из файла не текущая. Заполнен → матч не гонялся и токена
+	// НЕТ, остальные поля пустые; фронт показывает диалог «исправить дату/отказаться».
+	DateWarning *PlanDateWarning `json:"date_warning,omitempty"`
 }
 
 // checkPlanStation — гард «файл плана не той станции»: fileStation — станция из
@@ -105,7 +108,8 @@ func checkPlanStation(fileStation string, expected []string) error {
 
 // Prepare — фаза A. Возвращает токен (для confirm) и с.ф.-строки с кандидатами.
 // Снимок не изменяется. Нет с.ф. → SF пустой (фронт сразу зовёт confirm без диалога).
-func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, data []byte) (PreparePlanResult, error) {
+// fixDate — повтор после предупреждения гарда даты: сдвинуть даты плана на сегодня.
+func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, data []byte, fixDate bool) (PreparePlanResult, error) {
 	prof, err := plan.ResolveProfile(planCode)
 	if err != nil {
 		return PreparePlanResult{}, err
@@ -130,6 +134,18 @@ func (p *PlanProcessor) Prepare(ctx context.Context, planCode, filename string, 
 	// ошибке загруженный план чужой станции портил снимок).
 	if err := checkPlanStation(doc.StationName, p.dir.PlanStations(planCode)); err != nil {
 		return PreparePlanResult{}, err
+	}
+	// Гард «дата плана не текущая» (случай 17.08.2026): дата обязана быть сегодняшней
+	// МСК (после 18:00 допустима и завтрашняя — ЖД-сутки). Не совпала — возвращаем
+	// предупреждение БЕЗ матча и токена: фронт спрашивает диспетчера, согласие —
+	// повтор prepare с fix_date=1 (даты сдвигаются на сегодня), отказ — конец потока.
+	if fixDate {
+		fixPlanDates(doc)
+	} else if w := checkPlanDate(doc); w != nil {
+		return PreparePlanResult{
+			PlanCode: planCode, Filename: filename, DateWarning: w,
+			SF: []SFRowDTO{}, Problems: []ProblemRowDTO{},
+		}, nil
 	}
 
 	prev, err := p.buildPreview(ctx, doc.Nitki, prof.MatchRequiresNaznach, target, nil)

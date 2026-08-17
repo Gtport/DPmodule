@@ -107,6 +107,7 @@ func (h *planUploadHandler) history(c *gin.Context) {
 // @Accept   multipart/form-data
 // @Param    file formData file   true "xlsx-файл плана подвода"
 // @Param    code formData string true "код станции плана: ma|nk"
+// @Param    fix_date formData string false "1 — сдвинуть даты плана на текущую (согласие на исправление)"
 // @Success  200 {object} object
 // @Failure  400 {object} object
 // @Router   /api/v1/dislocation/plan/upload [post]
@@ -139,7 +140,7 @@ func (h *planUploadHandler) upload(c *gin.Context) {
 		return
 	}
 
-	res, err := h.proc.ProcessFile(c.Request.Context(), code, fh.Filename, data)
+	res, err := h.proc.ProcessFile(c.Request.Context(), code, fh.Filename, data, c.PostForm("fix_date") == "1")
 	if err != nil {
 		if errors.Is(err, service.ErrDislStale) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 — дислокация устарела
@@ -154,6 +155,7 @@ func (h *planUploadHandler) upload(c *gin.Context) {
 
 // prepare — фаза A: разбор плана + кандидаты для с.ф.; снимок НЕ изменяется.
 // Возвращает токен (для confirm) и с.ф.-строки с группами-кандидатами.
+// Поле fix_date=1 — повтор после предупреждения гарда даты (сдвинуть даты на сегодня).
 func (h *planUploadHandler) prepare(c *gin.Context) {
 	code := c.PostForm("code")
 	if code == "" {
@@ -181,7 +183,7 @@ func (h *planUploadHandler) prepare(c *gin.Context) {
 		return
 	}
 
-	res, err := h.proc.Prepare(c.Request.Context(), code, fh.Filename, data)
+	res, err := h.proc.Prepare(c.Request.Context(), code, fh.Filename, data, c.PostForm("fix_date") == "1")
 	if err != nil {
 		if errors.Is(err, service.ErrDislStale) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()}) // 409 — дислокация устарела

@@ -111,8 +111,15 @@ export interface TrainCandidate {
   total: number;     // всего вагонов
 }
 
+/** Гард даты плана: дата из файла не совпала с текущей МСК (обе — «ДД.ММ.ГГГГ»). */
+export interface PlanDateWarning {
+  plan_date: string;
+  today: string;
+}
+
 /** Ответ prepare/revalidate: токен + с.ф.-строки + проблемные нитки + превью.
- *  sf/problems — на границе сети допускаем null (пустой набор), рендер это учитывает. */
+ *  sf/problems — на границе сети допускаем null (пустой набор), рендер это учитывает.
+ *  date_warning заполнен → токена НЕТ, остальное пустое: сначала диалог про дату. */
 export interface PreparePlanResult {
   token: string;
   plan_code: string;
@@ -121,6 +128,7 @@ export interface PreparePlanResult {
   problems: ProblemRow[] | null;
   nitki: number;
   matched: number;
+  date_warning?: PlanDateWarning | null;
 }
 
 /** Результат применения плана (upload/confirm). */
@@ -202,11 +210,13 @@ export class PlanApiService {
     return firstValueFrom(this.http.post<PlanApplyResult>(`${this.base}/upload`, form));
   }
 
-  /** Фаза A: разбор плана + кандидаты с.ф. + проблемные нитки. Снимок не изменяется. */
-  prepare(code: string, file: File): Promise<PreparePlanResult> {
+  /** Фаза A: разбор плана + кандидаты с.ф. + проблемные нитки. Снимок не изменяется.
+   *  fixDate — повтор после предупреждения гарда даты: сдвинуть даты плана на сегодня. */
+  prepare(code: string, file: File, fixDate = false): Promise<PreparePlanResult> {
     const form = new FormData();
     form.set('code', code);
     form.set('file', file);
+    if (fixDate) form.set('fix_date', '1');
     return firstValueFrom(this.http.post<PreparePlanResult>(`${this.base}/prepare`, form));
   }
 

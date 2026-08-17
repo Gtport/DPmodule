@@ -13,9 +13,9 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
-import { NzModalModule } from 'ng-zorro-antd/modal';
+import { NzModalModule, NzModalService } from 'ng-zorro-antd/modal';
 import { apiErrorMessage } from '../../core/api/api-error';
-import { PlanApiService, PlanApplyResult, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFCandidate, SFRow } from './plan-api.service';
+import { PlanApiService, PlanApplyResult, PlanDateWarning, PlanGrid, PlanNitka, PlanSummary, PreparePlanResult, SFCandidate, SFRow } from './plan-api.service';
 import { PlanStatusPanelComponent } from './plan-status-panel.component';
 import { PlanUploadHint, planUploadHint } from './plan-upload-hint';
 import { IndexInputComponent } from './index-input.component';
@@ -430,6 +430,8 @@ export class PlanComponent implements OnInit, OnDestroy {
   private readonly api = inject(PlanApiService);
   /** Уведомления — всплывающие тосты с автоуборкой (договорённость), не баннеры в теле. */
   private readonly msg = inject(NzMessageService);
+  /** Диалог-вопрос гарда даты плана (единый стиль подтверждений — nz-modal, не window.confirm). */
+  private readonly modal = inject(NzModalService);
   private readonly uiSettings = inject(TimeBaseService);
 
   @ViewChild(PlanStatusPanelComponent) private statusPanel?: PlanStatusPanelComponent;
@@ -899,9 +901,14 @@ export class PlanComponent implements OnInit, OnDestroy {
     if (prep) void this.applyConfirm(prep.token, {}, {});
   }
 
-  /** Загрузка плана из файла (двухфазно). */
-  private async doUpload(file: File): Promise<void> {
-    await this.runPrepareFlow(() => this.api.prepare(this.selectedCode(), file), this.busyUpload);
+  /** Загрузка плана из файла (двухфазно). fixDate — повтор после согласия диспетчера
+   *  исправить дату плана на текущую (гард даты). */
+  private async doUpload(file: File, fixDate = false): Promise<void> {
+    await this.runPrepareFlow(
+      () => this.api.prepare(this.selectedCode(), file, fixDate),
+      this.busyUpload,
+      fixDate ? undefined : () => void this.doUpload(file, true),
+    );
   }
 
   /** Пересчитать выбранный план на текущей дислокации — без повторной загрузки Excel:
@@ -921,11 +928,19 @@ export class PlanComponent implements OnInit, OnDestroy {
   private async runPrepareFlow(
     source: () => Promise<PreparePlanResult>,
     busy: WritableSignal<boolean>,
+    retryWithFixedDate?: () => void,
   ): Promise<void> {
     busy.set(true);
     this.resubmit = source;
     try {
       const prep = await source();
+      // Гард даты плана: дата из файла не текущая. Токена в таком ответе нет —
+      // сначала спрашиваем диспетчера (исправить дату / отказаться от загрузки).
+      if (prep.date_warning) {
+        this.resubmit = null;
+        this.askDateFix(prep.date_warning, retryWithFixedDate);
+        return;
+      }
       const needsDialog = (prep.sf?.length ?? 0) > 0 || (prep.problems?.length ?? 0) > 0;
       if (!needsDialog) {
         await this.applyConfirm(prep.token, {}, {}); // ни с.ф., ни проблемных — применяем сразу
@@ -942,6 +957,22 @@ export class PlanComponent implements OnInit, OnDestroy {
     } finally {
       busy.set(false);
     }
+  }
+
+  /** Диалог гарда даты: в файле план не на сегодня (после 18:00 допустима и завтрашняя
+   *  дата — ЖД-сутки). Согласие — повторная prepare с fix_date=1 (сервер сдвинет даты
+   *  плана на текущую), отказ — ничего не загружается, база не тронута. */
+  private askDateFix(w: PlanDateWarning, retryFixed?: () => void): void {
+    this.modal.confirm({
+      nzTitle: 'Дата плана не совпадает с текущей',
+      nzContent:
+        `В файле план на <b>${w.plan_date}</b>, сегодня <b>${w.today}</b> (МСК). ` +
+        'Исправить дату плана на текущую и продолжить загрузку? Пока ничего не загружено.',
+      nzOkText: 'Исправить и загрузить',
+      nzCancelText: 'Отказаться',
+      nzOnOk: () => retryFixed?.(),
+      nzOnCancel: () => this.msg.info('Загрузка плана отменена — данные не изменялись.'),
+    });
   }
 
   /** Подсказка «что поправить в файле» — вместо голого текста ошибки (null — окна нет). */

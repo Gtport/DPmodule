@@ -31,10 +31,13 @@ func main() {
 }
 
 func run() error {
-	if len(os.Args) != 3 {
-		return fmt.Errorf("использование: planapply <файл.xlsx> <код_станции: ma|nk>")
+	// --fix-date — сдвинуть даты плана на сегодня (гард даты иначе отклонит файл
+	// с не текущей датой — как и загрузка через интерфейс).
+	if len(os.Args) < 3 || len(os.Args) > 4 || (len(os.Args) == 4 && os.Args[3] != "--fix-date") {
+		return fmt.Errorf("использование: planapply <файл.xlsx> <код_станции: ma|nk> [--fix-date]")
 	}
 	path, code := os.Args[1], os.Args[2]
+	fixDate := len(os.Args) == 4
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -70,7 +73,7 @@ func run() error {
 
 	planRepo := gormrepo.NewPlanRepository(db)
 	proc := service.NewPlanProcessor(dirCache, dislRepo, actualCache, planRepo, cfg.Storage.BaseDir)
-	res, err := proc.ProcessFile(ctx, code, filepath.Base(path), data)
+	res, err := proc.ProcessFile(ctx, code, filepath.Base(path), data, fixDate)
 	if err != nil {
 		return fmt.Errorf("обработка плана: %w", err)
 	}
