@@ -23,7 +23,7 @@ type brosReasonCodeModel struct {
 	Description string `gorm:"column:description"`
 }
 
-func (brosReasonCodeModel) TableName() string { return "bros_reason_codes" }
+func (brosReasonCodeModel) TableName() string { return "dpport.bros_reason_codes" }
 
 // ReasonCodes — весь справочник, отсортированный по коду.
 func (r *BrosReasonCodesRepository) ReasonCodes(ctx context.Context) ([]domain.BrosReasonCode, error) {
@@ -76,7 +76,7 @@ type brosModel struct {
 	UpdatedAt   *domain.LocalTime `gorm:"column:updated_at"`
 }
 
-func (brosModel) TableName() string { return "bros" }
+func (brosModel) TableName() string { return "dpport.bros" }
 
 func toBrosModel(b domain.Bros) brosModel {
 	return brosModel{
@@ -250,7 +250,7 @@ type brosJournalModel struct {
 	CreatedBy    string            `gorm:"column:created_by"`
 }
 
-func (brosJournalModel) TableName() string { return "bros_journal" }
+func (brosJournalModel) TableName() string { return "dpport.bros_journal" }
 
 func toBrosJournalDomain(m brosJournalModel) domain.BrosJournalEntry {
 	return domain.BrosJournalEntry{
@@ -266,7 +266,7 @@ func toBrosJournalDomain(m brosJournalModel) domain.BrosJournalEntry {
 func (r *BrosJournalRepository) Upsert(ctx context.Context, e domain.BrosJournalEntry) (int64, error) {
 	var id int64
 	err := r.db.WithContext(ctx).Raw(`
-		INSERT INTO bros_journal (
+		INSERT INTO dpport.bros_journal (
 			bros_id, date, reason, comment,
 			zayavka_nomer, zayavka_date, date_pod, reason_text,
 			is_agreed, plan_pod, created_at, created_by

@@ -14,7 +14,7 @@ import (
 // (см. status9Model).
 type status6Model dislocationModel
 
-func (status6Model) TableName() string { return "status6" }
+func (status6Model) TableName() string { return "dpport.status6" }
 
 // Status6Repository реализует port.Status6Repository.
 type Status6Repository struct {

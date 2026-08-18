@@ -25,7 +25,7 @@ type maxChatModel struct {
 	IsActive    bool   `gorm:"column:is_active"`
 }
 
-func (maxChatModel) TableName() string { return "max_chat" }
+func (maxChatModel) TableName() string { return "dpport.max_chat" }
 
 // maxRouteModel — ORM-раскладка маршрутов рассылки.
 type maxRouteModel struct {
@@ -37,7 +37,7 @@ type maxRouteModel struct {
 	Enabled   bool   `gorm:"column:enabled"`
 }
 
-func (maxRouteModel) TableName() string { return "max_route" }
+func (maxRouteModel) TableName() string { return "dpport.max_route" }
 
 // Chats — все чаты по имени.
 func (r *MaxChatRepository) Chats(ctx context.Context) ([]domain.MaxChat, error) {

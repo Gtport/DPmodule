@@ -38,7 +38,7 @@ type vagonDelayModel struct {
 	UpdatedAt   *domain.LocalTime `gorm:"column:updated_at"`
 }
 
-func (vagonDelayModel) TableName() string { return "vagon_delay" }
+func (vagonDelayModel) TableName() string { return "dpport.vagon_delay" }
 
 func toVagonDelayModel(d domain.VagonDelay) vagonDelayModel {
 	return vagonDelayModel{
@@ -147,8 +147,8 @@ func toVagonDelayRowDomain(m vagonDelayRowModel) domain.VagonDelayRow {
 func (r *VagonDelayRepository) ByPeriod(ctx context.Context, from, to domain.LocalTime, terminal string) ([]domain.VagonDelayRow, error) {
 	q := `
 		SELECT d.*, COALESCE(h.id, '') AS trip_id
-		FROM vagon_delay d
-		LEFT JOIN vagon_history h
+		FROM dpport.vagon_delay d
+		LEFT JOIN dpport.vagon_history h
 		       ON h.vagon = d.vagon AND h.date_nach_d = d.date_nach_d
 		WHERE d.date_from < ? AND (d.date_to IS NULL OR d.date_to >= ?)`
 	args := []any{to, from}
@@ -174,8 +174,8 @@ func (r *VagonDelayRepository) Current(ctx context.Context) ([]domain.VagonDelay
 	var ms []vagonDelayRowModel
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT d.*, COALESCE(h.id, '') AS trip_id
-		FROM vagon_delay d
-		LEFT JOIN vagon_history h
+		FROM dpport.vagon_delay d
+		LEFT JOIN dpport.vagon_history h
 		       ON h.vagon = d.vagon AND h.date_nach_d = d.date_nach_d
 		WHERE d.date_to IS NULL
 		ORDER BY d.date_from`).Scan(&ms).Error; err != nil {

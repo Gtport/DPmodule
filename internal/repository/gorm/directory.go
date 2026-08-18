@@ -27,7 +27,7 @@ type stationModel struct {
 	IsBam     bool     `gorm:"column:is_bam"`
 }
 
-func (stationModel) TableName() string { return "stations" }
+func (stationModel) TableName() string { return "dpport.stations" }
 
 type cargoOperationModel struct {
 	Kod   int    `gorm:"column:kod;primaryKey"`
@@ -35,7 +35,7 @@ type cargoOperationModel struct {
 	OperS string `gorm:"column:oper_s"`
 }
 
-func (cargoOperationModel) TableName() string { return "cargo_operations" }
+func (cargoOperationModel) TableName() string { return "dpport.cargo_operations" }
 
 type cargoModel struct {
 	Kod        int64  `gorm:"column:cargo_kod;primaryKey"`
@@ -45,7 +45,7 @@ type cargoModel struct {
 	CargoSms   string `gorm:"column:cargo_sms"`
 }
 
-func (cargoModel) TableName() string { return "cargo" }
+func (cargoModel) TableName() string { return "dpport.cargo" }
 
 type porozhCargoModel struct {
 	Kod     int64  `gorm:"column:cargo_kod;primaryKey"`
@@ -53,7 +53,7 @@ type porozhCargoModel struct {
 	Enabled bool   `gorm:"column:enabled"`
 }
 
-func (porozhCargoModel) TableName() string { return "porozh_cargo" }
+func (porozhCargoModel) TableName() string { return "dpport.porozh_cargo" }
 
 type markaModel struct {
 	Okpo       int64  `gorm:"column:okpo;primaryKey"`
@@ -68,7 +68,7 @@ type markaModel struct {
 	Sprav1     string `gorm:"column:sprav_1"`
 }
 
-func (markaModel) TableName() string { return "marka" }
+func (markaModel) TableName() string { return "dpport.marka" }
 
 type portsModel struct {
 	ID           int64  `gorm:"column:id;primaryKey"`
@@ -97,7 +97,7 @@ type portsModel struct {
 	OrgShort string `gorm:"column:org_short"`
 }
 
-func (portsModel) TableName() string { return "ports" }
+func (portsModel) TableName() string { return "dpport.ports" }
 
 type routeSpeedModel struct {
 	ID          int64   `gorm:"column:id;primaryKey"`
@@ -107,7 +107,7 @@ type routeSpeedModel struct {
 	Speed       float64 `gorm:"column:speed"`
 }
 
-func (routeSpeedModel) TableName() string { return "route_speed" }
+func (routeSpeedModel) TableName() string { return "dpport.route_speed" }
 
 type naznachStationModel struct {
 	ID            int64  `gorm:"column:id;primaryKey"`
@@ -118,7 +118,7 @@ type naznachStationModel struct {
 	Enabled       bool   `gorm:"column:enabled"`
 }
 
-func (naznachStationModel) TableName() string { return "naznach_station" }
+func (naznachStationModel) TableName() string { return "dpport.naznach_station" }
 
 // ──────────────────────────────────────────────────────────────────────────
 //  Адаптер: реализует port.DirectoryRepository, маппит ORM-модели в domain.*.

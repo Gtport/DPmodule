@@ -42,8 +42,9 @@ tidy:
 # На машине разработчика пользуйтесь *-local: они ходят только в локальный кластер
 # (localhost:5433), пароль берут из .env и в строку подключения его не кладут —
 # lib/pq подхватывает PGPASSWORD. Промахнуться базой ими нельзя.
-# search_path указывать не нужно: он задан на уровне базы (dpport, public), поэтому
-# golang-migrate находит dpport.schema_migrations сам.
+# search_path указывать не нужно: cmd/migrate сам создаёт схему dpport, вешает
+# search_path дефолтом роли (работает и за пулером PgBouncer, где параметр в DSN
+# отбивается) и держит schema_migrations в dpport квалифицированным именем.
 PG_DSN_LOCAL := postgres://gtport_app@localhost:5433/dpport?sslmode=disable
 
 migrate-up:

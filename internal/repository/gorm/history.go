@@ -71,7 +71,7 @@ type vagonHistoryModel struct {
 	UpdatedAt  *domain.LocalTime `gorm:"column:updated_at"`
 }
 
-func (vagonHistoryModel) TableName() string { return "vagon_history" }
+func (vagonHistoryModel) TableName() string { return "dpport.vagon_history" }
 
 func toHistoryModel(h domain.VagonHistory) vagonHistoryModel {
 	return vagonHistoryModel{
@@ -366,7 +366,7 @@ func (r *HistoryRepository) DailyTerminalCounts(ctx context.Context, from, to do
 	var pogrRows []row
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT date_nach_d AS day, gruzpol_s AS term, count(*) AS n
-		  FROM vagon_history
+		  FROM dpport.vagon_history
 		 WHERE date_nach_d BETWEEN ? AND ? AND gruzpol_s <> ''
 		   AND COALESCE(peregruz, '') = ''
 		 GROUP BY date_nach_d, gruzpol_s`, from, to).Scan(&pogrRows).Error; err != nil {
@@ -375,7 +375,7 @@ func (r *HistoryRepository) DailyTerminalCounts(ctx context.Context, from, to do
 	var pribRows []row
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT date_prib_d AS day, naznach AS term, count(*) AS n
-		  FROM vagon_history
+		  FROM dpport.vagon_history
 		 WHERE date_prib_d BETWEEN ? AND ? AND naznach <> ''
 		 GROUP BY date_prib_d, naznach`, from, to).Scan(&pribRows).Error; err != nil {
 		return nil, nil, nil, err
@@ -383,7 +383,7 @@ func (r *HistoryRepository) DailyTerminalCounts(ctx context.Context, from, to do
 	var vigrRows []row
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT date_vigr_d AS day, place_vigr AS term, count(*) AS n
-		  FROM vagon_history
+		  FROM dpport.vagon_history
 		 WHERE date_vigr_d BETWEEN ? AND ? AND place_vigr <> ''
 		 GROUP BY date_vigr_d, place_vigr`, from, to).Scan(&vigrRows).Error; err != nil {
 		return nil, nil, nil, err
@@ -406,7 +406,7 @@ func (r *HistoryRepository) DailyCargoUnloaded(ctx context.Context, from, to dom
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT date_vigr_d AS day, place_vigr AS term,
 		       COALESCE(cargo_group, '') AS grp, count(*) AS n
-		  FROM vagon_history
+		  FROM dpport.vagon_history
 		 WHERE date_vigr_d BETWEEN ? AND ? AND place_vigr <> ''
 		 GROUP BY date_vigr_d, place_vigr, COALESCE(cargo_group, '')`,
 		from, to).Scan(&rows).Error; err != nil {
@@ -443,7 +443,7 @@ func (r *HistoryRepository) LoadingDaily(ctx context.Context, from, to domain.Lo
 		       COALESCE(cargo_group, '') AS cargo_group,
 		       count(*) AS vagon_count,
 		       COALESCE(SUM(ves), 0) AS total_weight
-		  FROM vagon_history
+		  FROM dpport.vagon_history
 		 WHERE date_nach_d BETWEEN ? AND ?
 		   AND gruzpol_s <> ''
 		   AND COALESCE(peregruz, '') = ''

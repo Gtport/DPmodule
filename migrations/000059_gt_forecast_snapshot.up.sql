@@ -40,4 +40,10 @@ CREATE TABLE IF NOT EXISTS dpport.gt_forecast_snapshot (
 CREATE INDEX IF NOT EXISTS idx_gt_forecast_snapshot_date
     ON dpport.gt_forecast_snapshot (plan_date DESC, station);
 
-ALTER TABLE dpport.gt_forecast_snapshot OWNER TO gtport_app;
+-- Роль есть только на своих стендах; на управляемой базе шаг пропускается.
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'gtport_app') THEN
+        ALTER TABLE dpport.gt_forecast_snapshot OWNER TO gtport_app;
+    END IF;
+END $$;

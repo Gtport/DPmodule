@@ -24,7 +24,7 @@ type portCargoLineModel struct {
 	PlanSpeed *int   `gorm:"column:plan_speed"`
 }
 
-func (portCargoLineModel) TableName() string { return "port_cargo_line" }
+func (portCargoLineModel) TableName() string { return "dpport.port_cargo_line" }
 
 // cargoWorkModel — ORM-раскладка суточного учётного листа выгрузки.
 // JSON-снимки лежат в jsonb-колонках, в модели — строкой (канон проекта).
@@ -57,7 +57,7 @@ type cargoWorkModel struct {
 	UpdatedAt *domain.LocalTime `gorm:"column:updated_at"`
 }
 
-func (cargoWorkModel) TableName() string { return "cargo_work" }
+func (cargoWorkModel) TableName() string { return "dpport.cargo_work" }
 
 // cargoWorkLoadModel — ORM-раскладка суточной строки погрузки.
 type cargoWorkLoadModel struct {
@@ -72,7 +72,7 @@ type cargoWorkLoadModel struct {
 	UpdatedAt *domain.LocalTime `gorm:"column:updated_at"`
 }
 
-func (cargoWorkLoadModel) TableName() string { return "cargo_work_load" }
+func (cargoWorkLoadModel) TableName() string { return "dpport.cargo_work_load" }
 
 // CargoWorkRepository — хранение «Грузовой работы» (билдер: CRUD и upsert).
 type CargoWorkRepository struct {

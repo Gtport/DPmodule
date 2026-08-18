@@ -27,7 +27,7 @@ type dataSourceModel struct {
 	SortOrder      int    `gorm:"column:sort_order"`
 }
 
-func (dataSourceModel) TableName() string { return "data_source" }
+func (dataSourceModel) TableName() string { return "dpport.data_source" }
 
 type clientSettingsModel struct {
 	ID           int    `gorm:"column:id;primaryKey"`
@@ -36,7 +36,7 @@ type clientSettingsModel struct {
 	Extra        string `gorm:"column:extra"`         // jsonb → text (status-пороги и пр.)
 }
 
-func (clientSettingsModel) TableName() string { return "client_settings" }
+func (clientSettingsModel) TableName() string { return "dpport.client_settings" }
 
 type planProfileModel struct {
 	StationCode          string  `gorm:"column:station_code;primaryKey"`
@@ -50,7 +50,7 @@ type planProfileModel struct {
 	MaxTrainLength       int     `gorm:"column:max_train_length"`
 }
 
-func (planProfileModel) TableName() string { return "plan_profile" }
+func (planProfileModel) TableName() string { return "dpport.plan_profile" }
 
 // ──────────────────────────────────────────────────────────────────────────
 //  Адаптер: реализует port.ConfigRepository.
@@ -153,7 +153,7 @@ func (r *ConfigRepository) LoadNitkaSchedule(ctx context.Context) ([]domain.Nitk
 	}
 	err := r.db.WithContext(ctx).Raw(
 		`SELECT station_code, to_char(slot_time,'HH24:MI') AS hm, sort_order
-		   FROM nitka_schedule ORDER BY station_code, sort_order`).Scan(&rows).Error
+		   FROM dpport.nitka_schedule ORDER BY station_code, sort_order`).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}

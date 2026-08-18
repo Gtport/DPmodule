@@ -22,7 +22,7 @@ type planModel struct {
 	Stamped    int               `gorm:"column:stamped"`
 }
 
-func (planModel) TableName() string { return "plan" }
+func (planModel) TableName() string { return "dpport.plan" }
 
 // planNitkaModel — ORM-раскладка нитки плана. Ports хранится в jsonb-колонке как
 // text (канон проекта: jsonb ↔ строка, marshal/unmarshal вручную, см. config.go).
@@ -50,7 +50,7 @@ type planNitkaModel struct {
 	IsSf          bool              `gorm:"column:is_sf"`
 }
 
-func (planNitkaModel) TableName() string { return "plan_nitka" }
+func (planNitkaModel) TableName() string { return "dpport.plan_nitka" }
 
 func toPlanModel(p domain.Plan) planModel {
 	return planModel{
@@ -212,7 +212,7 @@ type sfModel struct {
 	Quantity int    `gorm:"column:quantity"`
 }
 
-func (sfModel) TableName() string { return "sf" }
+func (sfModel) TableName() string { return "dpport.sf" }
 
 // ListSF возвращает включённые записи справочника sf.
 func (r *PlanRepository) ListSF(ctx context.Context) ([]domain.SFRecord, error) {

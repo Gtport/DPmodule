@@ -44,5 +44,12 @@ CREATE TABLE IF NOT EXISTS dpport.nitka_schedule (
 -- scripts/clients/<клиент>.sql (для трёх терминалов — gtport.sql). Пустая
 -- plan_profile = у клиента нет плановых станций, плановая машинерия выключена.
 
-ALTER TABLE dpport.plan_profile   OWNER TO gtport_app;
-ALTER TABLE dpport.nitka_schedule OWNER TO gtport_app;
+-- Роль есть только на своих стендах; на управляемой базе (миграции идут от
+-- выданной DevOps роли — она и так владелец) шаг пропускается.
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'gtport_app') THEN
+        ALTER TABLE dpport.plan_profile   OWNER TO gtport_app;
+        ALTER TABLE dpport.nitka_schedule OWNER TO gtport_app;
+    END IF;
+END $$;

@@ -20,7 +20,7 @@ type pamyatkaCursorModel struct {
 	UpdatedAt  *domain.LocalTime `gorm:"column:updated_at"`
 }
 
-func (pamyatkaCursorModel) TableName() string { return "pamyatka_cursor" }
+func (pamyatkaCursorModel) TableName() string { return "dpport.pamyatka_cursor" }
 
 // PamyatkaCursorRepository реализует port.PamyatkaCursorRepository.
 type PamyatkaCursorRepository struct{ db *gorm.DB }
