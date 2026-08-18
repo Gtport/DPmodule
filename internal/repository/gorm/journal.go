@@ -21,7 +21,7 @@ type eventJournalModel struct {
 	CreatedAt domain.LocalTime  `gorm:"column:created_at"`
 }
 
-func (eventJournalModel) TableName() string { return "event_journal" }
+func (eventJournalModel) TableName() string { return "dpport.event_journal" }
 
 func (m eventJournalModel) toDomain() domain.JournalEvent {
 	detail := m.Detail

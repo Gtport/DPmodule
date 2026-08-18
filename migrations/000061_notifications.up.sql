@@ -60,5 +60,11 @@ COMMENT ON COLUMN dpport.notification_read.username        IS 'Кто прочи
 COMMENT ON COLUMN dpport.notification_read.notification_id IS 'Прочитанное уведомление (каскад с notifications)';
 COMMENT ON COLUMN dpport.notification_read.read_at         IS 'Когда прочитано (МСК naive)';
 
-ALTER TABLE dpport.notifications OWNER TO gtport_app;
-ALTER TABLE dpport.notification_read OWNER TO gtport_app;
+-- Роль есть только на своих стендах; на управляемой базе шаг пропускается.
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'gtport_app') THEN
+        ALTER TABLE dpport.notifications OWNER TO gtport_app;
+        ALTER TABLE dpport.notification_read OWNER TO gtport_app;
+    END IF;
+END $$;

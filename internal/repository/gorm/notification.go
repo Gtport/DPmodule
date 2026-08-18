@@ -39,7 +39,7 @@ func (r *NotificationRepository) Insert(ctx context.Context, n domain.Notificati
 	}
 	var ids []int64
 	err := r.db.WithContext(ctx).Raw(`
-		INSERT INTO notifications
+		INSERT INTO dpport.notifications
 			(ntype, title, message, audience, target_username,
 			 action_component, action_params, dedup_key, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -74,8 +74,8 @@ func (r *NotificationRepository) ListForUser(ctx context.Context, username strin
 	}
 	q := `
 		SELECT n.*, nr.read_at
-		FROM notifications n
-		LEFT JOIN notification_read nr
+		FROM dpport.notifications n
+		LEFT JOIN dpport.notification_read nr
 			ON nr.notification_id = n.id AND nr.username = ?
 		WHERE ` + visibleCond
 	if unreadOnly {
@@ -113,8 +113,8 @@ func (r *NotificationRepository) UnreadCount(ctx context.Context, username strin
 	var cnt int
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT count(*)
-		FROM notifications n
-		LEFT JOIN notification_read nr
+		FROM dpport.notifications n
+		LEFT JOIN dpport.notification_read nr
 			ON nr.notification_id = n.id AND nr.username = ?
 		WHERE `+visibleCond+` AND nr.notification_id IS NULL`,
 		username, audiences, username).Scan(&cnt).Error
@@ -125,9 +125,9 @@ func (r *NotificationRepository) UnreadCount(ctx context.Context, username strin
 // уведомление игнорируется (INSERT..SELECT с условием видимости).
 func (r *NotificationRepository) MarkRead(ctx context.Context, username string, audiences []string, id int64) error {
 	return r.db.WithContext(ctx).Exec(`
-		INSERT INTO notification_read (username, notification_id, read_at)
+		INSERT INTO dpport.notification_read (username, notification_id, read_at)
 		SELECT ?, n.id, ?
-		FROM notifications n
+		FROM dpport.notifications n
 		WHERE n.id = ? AND `+visibleCond+`
 		ON CONFLICT (username, notification_id) DO NOTHING`,
 		username, clock.Now(), id, audiences, username).Error
@@ -136,9 +136,9 @@ func (r *NotificationRepository) MarkRead(ctx context.Context, username string, 
 // MarkAllRead — отметить прочитанными все видимые; возврат — сколько отмечено.
 func (r *NotificationRepository) MarkAllRead(ctx context.Context, username string, audiences []string) (int, error) {
 	res := r.db.WithContext(ctx).Exec(`
-		INSERT INTO notification_read (username, notification_id, read_at)
+		INSERT INTO dpport.notification_read (username, notification_id, read_at)
 		SELECT ?, n.id, ?
-		FROM notifications n
+		FROM dpport.notifications n
 		WHERE `+visibleCond+`
 		ON CONFLICT (username, notification_id) DO NOTHING`,
 		username, clock.Now(), audiences, username)
@@ -149,6 +149,6 @@ func (r *NotificationRepository) MarkAllRead(ctx context.Context, username strin
 // dedup_key освобождается — живущая проблема напомнит о себе снова.
 func (r *NotificationRepository) PurgeOlderThan(ctx context.Context, cutoff domain.LocalTime) (int, error) {
 	res := r.db.WithContext(ctx).Exec(
-		"DELETE FROM notifications WHERE created_at < ?", cutoff)
+		"DELETE FROM dpport.notifications WHERE created_at < ?", cutoff)
 	return int(res.RowsAffected), res.Error
 }

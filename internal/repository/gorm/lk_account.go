@@ -27,7 +27,7 @@ type lkAccountModel struct {
 	Enabled   bool   `gorm:"column:enabled"`
 }
 
-func (lkAccountModel) TableName() string { return "lk_account" }
+func (lkAccountModel) TableName() string { return "dpport.lk_account" }
 
 // Accounts — включённые аккаунты по порядку.
 func (r *LKAccountRepository) Accounts(ctx context.Context) ([]domain.LKAccount, error) {

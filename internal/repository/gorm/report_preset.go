@@ -27,7 +27,7 @@ type reportPresetModel struct {
 	Enabled   bool   `gorm:"column:enabled"`
 }
 
-func (reportPresetModel) TableName() string { return "report_preset" }
+func (reportPresetModel) TableName() string { return "dpport.report_preset" }
 
 func toReportPresetDomain(m reportPresetModel) domain.ReportPreset {
 	return domain.ReportPreset{

@@ -28,11 +28,11 @@ type vagonOperationModel struct {
 	IndexPoezd *string          `gorm:"column:index_poezd"` // NULL — вне поезда
 }
 
-func (vagonOperationModel) TableName() string { return "vagon_operation" }
+func (vagonOperationModel) TableName() string { return "dpport.vagon_operation" }
 
 func (r *VagonOperationRepository) ReplaceForTrip(ctx context.Context, tripKey int64, ops []domain.VagonOperation) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`DELETE FROM vagon_operation WHERE trip_key = ?`, tripKey).Error; err != nil {
+		if err := tx.Exec(`DELETE FROM dpport.vagon_operation WHERE trip_key = ?`, tripKey).Error; err != nil {
 			return fmt.Errorf("очистка трейла %d: %w", tripKey, err)
 		}
 		// Дедуп по времени в пределах ответа: PK (trip_key, date_op), провайдер
@@ -68,7 +68,7 @@ func (r *VagonOperationRepository) OperationsByTrip(ctx context.Context, tripKey
 	var ms []vagonOperationModel
 	if err := r.db.WithContext(ctx).
 		Raw(`SELECT trip_key, date_op, kop_vmd, stan_op, index_poezd
-		     FROM vagon_operation WHERE trip_key = ? ORDER BY date_op`, tripKey).
+		     FROM dpport.vagon_operation WHERE trip_key = ? ORDER BY date_op`, tripKey).
 		Scan(&ms).Error; err != nil {
 		return nil, fmt.Errorf("трейл рейса %d: %w", tripKey, err)
 	}
@@ -85,7 +85,7 @@ func (r *VagonOperationRepository) OperationsByTrip(ctx context.Context, tripKey
 func (r *VagonOperationRepository) Enqueue(ctx context.Context, reqs []domain.VagonOpRequest) error {
 	for _, q := range reqs {
 		if err := r.db.WithContext(ctx).Exec(`
-			INSERT INTO vagon_op_request
+			INSERT INTO dpport.vagon_op_request
 			       (trip_key, vagon, date_nach_d, client, reason, priority, attempts, last_error, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, ?)
 			ON CONFLICT (trip_key) DO UPDATE SET
@@ -114,7 +114,7 @@ func (r *VagonOperationRepository) NextBatch(ctx context.Context, limit int) ([]
 	}
 	if err := r.db.WithContext(ctx).
 		Raw(`SELECT trip_key, vagon, date_nach_d, client, reason, priority, attempts
-		     FROM vagon_op_request ORDER BY priority DESC, created_at LIMIT ?`, limit).
+		     FROM dpport.vagon_op_request ORDER BY priority DESC, created_at LIMIT ?`, limit).
 		Scan(&ms).Error; err != nil {
 		return nil, fmt.Errorf("очередь 601: %w", err)
 	}
@@ -129,23 +129,23 @@ func (r *VagonOperationRepository) NextBatch(ctx context.Context, limit int) ([]
 }
 
 func (r *VagonOperationRepository) Complete(ctx context.Context, tripKey int64) error {
-	return r.db.WithContext(ctx).Exec(`DELETE FROM vagon_op_request WHERE trip_key = ?`, tripKey).Error
+	return r.db.WithContext(ctx).Exec(`DELETE FROM dpport.vagon_op_request WHERE trip_key = ?`, tripKey).Error
 }
 
 func (r *VagonOperationRepository) Fail(ctx context.Context, tripKey int64, msg string, maxAttempts int, now domain.LocalTime) error {
 	if err := r.db.WithContext(ctx).Exec(`
-		UPDATE vagon_op_request
+		UPDATE dpport.vagon_op_request
 		   SET attempts = attempts + 1, last_error = ?, updated_at = ?
 		 WHERE trip_key = ?`, msg, now, tripKey).Error; err != nil {
 		return err
 	}
 	// Исчерпал попытки — снимаем, чтобы очередь не крутила вечный отказ.
 	return r.db.WithContext(ctx).
-		Exec(`DELETE FROM vagon_op_request WHERE trip_key = ? AND attempts >= ?`, tripKey, maxAttempts).Error
+		Exec(`DELETE FROM dpport.vagon_op_request WHERE trip_key = ? AND attempts >= ?`, tripKey, maxAttempts).Error
 }
 
 func (r *VagonOperationRepository) QueueSize(ctx context.Context) (int, error) {
 	var n int
-	err := r.db.WithContext(ctx).Raw(`SELECT count(*) FROM vagon_op_request`).Scan(&n).Error
+	err := r.db.WithContext(ctx).Raw(`SELECT count(*) FROM dpport.vagon_op_request`).Scan(&n).Error
 	return n, err
 }

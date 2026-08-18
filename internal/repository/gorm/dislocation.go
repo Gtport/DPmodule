@@ -150,8 +150,8 @@ type dislocationModel struct {
 func (dislocationModel) TableName() string { return actualTable }
 
 const (
-	actualTable  = "dislocation"
-	stagingTable = "dislocation_new"
+	actualTable  = "dpport.dislocation"
+	stagingTable = "dpport.dislocation_new"
 	batchSize    = 500
 )
 
@@ -233,7 +233,8 @@ func (r *DislocationRepository) swap(ctx context.Context) error {
 		if err := tx.Exec(`DROP TABLE IF EXISTS ` + actualTable).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`ALTER TABLE ` + stagingTable + ` RENAME TO ` + actualTable).Error; err != nil {
+		// Цель RENAME — имя БЕЗ схемы: переименование не меняет схему таблицы.
+		if err := tx.Exec(`ALTER TABLE ` + stagingTable + ` RENAME TO dislocation`).Error; err != nil {
 			return err
 		}
 		return tx.Exec(`CREATE TABLE ` + stagingTable + ` (LIKE ` + actualTable + ` INCLUDING ALL)`).Error

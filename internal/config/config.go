@@ -183,7 +183,8 @@ type Postgres struct {
 	Port            int           `yaml:"port"`
 	DBName          string        `yaml:"dbname"`
 	User            string        `yaml:"user"`
-	Schema          string        `yaml:"schema"` // непусто → search_path в DSN (общая база стенда, таблицы в своей схеме)
+	Schema          string        `yaml:"schema"`          // непусто → search_path в DSN; только прямой Postgres (тайлы — там имя схемы своё). За пулером (PgBouncer) параметр отбивается — оставить пустым; основной базе он и не нужен: SQL приложения несёт схему dpport явно (repository/gorm/schema.go)
+	SimpleProtocol  bool          `yaml:"simple_protocol"` // true → pgx без prepared statements (default_query_exec_mode=simple_protocol). Обязателен за пулером в transaction-режиме: там prepared statements живут дольше серверного соединения и падают «prepared statement does not exist»
 	SSLMode         string        `yaml:"sslmode"`
 	MaxOpenConns    int           `yaml:"max_open_conns"`
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
@@ -313,6 +314,10 @@ func (p Postgres) BuildDSN() string {
 	)
 	if p.Schema != "" {
 		dsn += fmt.Sprintf(" search_path=%s", p.Schema)
+	}
+	if p.SimpleProtocol {
+		// Параметр клиентский (pgx), на сервер не уходит — пулер его не видит.
+		dsn += " default_query_exec_mode=simple_protocol"
 	}
 	return dsn
 }

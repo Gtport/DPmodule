@@ -26,14 +26,14 @@ type nmtpColumnModel struct {
 	Enabled       bool   `gorm:"column:enabled"`
 }
 
-func (nmtpColumnModel) TableName() string { return "nmtp_column" }
+func (nmtpColumnModel) TableName() string { return "dpport.nmtp_column" }
 
 type nmtpMarkModel struct {
 	Mark      string `gorm:"column:mark;primaryKey"`
 	SortOrder int    `gorm:"column:sort_order"`
 }
 
-func (nmtpMarkModel) TableName() string { return "nmtp_mark" }
+func (nmtpMarkModel) TableName() string { return "dpport.nmtp_mark" }
 
 type NmtpRepository struct {
 	db *gorm.DB
@@ -84,7 +84,7 @@ type nmtpVagonColumnModel struct {
 	CreatedBy string    `gorm:"column:created_by"`
 }
 
-func (nmtpVagonColumnModel) TableName() string { return "nmtp_vagon_column" }
+func (nmtpVagonColumnModel) TableName() string { return "dpport.nmtp_vagon_column" }
 
 func (r *NmtpRepository) VagonColumns(ctx context.Context) (map[string]domain.NmtpVagonBinding, error) {
 	var ms []nmtpVagonColumnModel

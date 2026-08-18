@@ -29,6 +29,12 @@ func quoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
+// qualTable — квотированное имя таблицы со схемой приложения: на search_path
+// сессии не опираемся (см. schema.go).
+func qualTable(name string) string {
+	return `"dpport".` + quoteIdent(name)
+}
+
 // ListTables возвращает редактируемые таблицы реестра с определённым ключом
 // строки: колонка id, если есть, иначе одноколоночный PRIMARY KEY. Таблица без
 // такого ключа (составной PK без id) в редактор не попадает.
@@ -42,15 +48,15 @@ func (r *AdminTablesRepository) ListTables(ctx context.Context) ([]domain.AdminT
 		SELECT lt.name, lt.name_ru,
 		       COALESCE(
 		           (SELECT 'id' FROM information_schema.columns c
-		             WHERE c.table_schema = current_schema() AND c.table_name = lt.name AND c.column_name = 'id'),
+		             WHERE c.table_schema = 'dpport' AND c.table_name = lt.name AND c.column_name = 'id'),
 		           (SELECT a.attname
 		              FROM pg_index i
 		              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-		             WHERE i.indrelid = (quote_ident(current_schema()) || '.' || quote_ident(lt.name))::regclass
+		             WHERE i.indrelid = (quote_ident('dpport') || '.' || quote_ident(lt.name))::regclass
 		               AND i.indisprimary AND array_length(i.indkey, 1) = 1),
 		           ''
 		       ) AS pk
-		  FROM list_tables lt
+		  FROM dpport.list_tables lt
 		 WHERE lt.editable = true
 		 ORDER BY lt.name_ru`).Scan(&rows).Error
 	if err != nil {
@@ -82,7 +88,7 @@ func (r *AdminTablesRepository) Columns(ctx context.Context, table string) ([]do
 		           (quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))::regclass,
 		           c.ordinal_position), '') AS label
 		  FROM information_schema.columns c
-		 WHERE c.table_schema = current_schema() AND c.table_name = ?
+		 WHERE c.table_schema = 'dpport' AND c.table_name = ?
 		 ORDER BY c.ordinal_position`, table).Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -118,7 +124,7 @@ func (r *AdminTablesRepository) Columns(ctx context.Context, table string) ([]do
 // JSON-дружелюбным типам ([]byte → string, время → МСК-строка без TZ).
 func (r *AdminTablesRepository) Rows(ctx context.Context, table string, pk string) ([]domain.AdminRow, error) {
 	sqlRows, err := r.db.WithContext(ctx).
-		Raw("SELECT * FROM " + quoteIdent(table) + " ORDER BY " + quoteIdent(pk)).Rows()
+		Raw("SELECT * FROM " + qualTable(table) + " ORDER BY " + quoteIdent(pk)).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +183,7 @@ func (r *AdminTablesRepository) Insert(ctx context.Context, table string, cols [
 		return fmt.Errorf("нет полей для вставки")
 	}
 	return r.db.WithContext(ctx).Exec(
-		"INSERT INTO "+quoteIdent(table)+" ("+strings.Join(names, ",")+") VALUES ("+strings.Join(ph, ",")+")",
+		"INSERT INTO "+qualTable(table)+" ("+strings.Join(names, ",")+") VALUES ("+strings.Join(ph, ",")+")",
 		args...).Error
 }
 
@@ -201,7 +207,7 @@ func (r *AdminTablesRepository) Update(ctx context.Context, table string, pk str
 	}
 	args = append(args, id)
 	res := r.db.WithContext(ctx).Exec(
-		"UPDATE "+quoteIdent(table)+" SET "+strings.Join(sets, ", ")+" WHERE "+quoteIdent(pk)+"::text = ?",
+		"UPDATE "+qualTable(table)+" SET "+strings.Join(sets, ", ")+" WHERE "+quoteIdent(pk)+"::text = ?",
 		args...)
 	if res.Error != nil {
 		return res.Error
@@ -215,7 +221,7 @@ func (r *AdminTablesRepository) Update(ctx context.Context, table string, pk str
 // Delete удаляет строку по ключу.
 func (r *AdminTablesRepository) Delete(ctx context.Context, table string, pk string, id string) error {
 	res := r.db.WithContext(ctx).Exec(
-		"DELETE FROM "+quoteIdent(table)+" WHERE "+quoteIdent(pk)+"::text = ?", id)
+		"DELETE FROM "+qualTable(table)+" WHERE "+quoteIdent(pk)+"::text = ?", id)
 	if res.Error != nil {
 		return res.Error
 	}

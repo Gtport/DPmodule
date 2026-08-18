@@ -35,6 +35,14 @@ postgres:
   max_open_conns: 25
   max_idle_conns: 5
   conn_max_lifetime: 5m
+  # База за пулером соединений (PgBouncer/Odyssey) — боевой контур именно такой:
+  #  • schema НЕ задавать: search_path стартовым параметром пулер отбивает
+  #    («unsupported startup parameter»), и он не нужен — SQL приложения несёт
+  #    схему dpport явно (internal/repository/gorm/schema.go);
+  #  • simple_protocol: true — без prepared statements: в transaction-режиме
+  #    пулера они переживают серверное соединение и падают. На прямом Postgres
+  #    флаг безвреден.
+  simple_protocol: true
 
 # Кэш тайлов OSM для карты (docs/MAP_TILES.md). На стенде тайлы живут в общей
 # базе kgdm в своей схеме — точные имена базы/схемы за DevOps (решение владельца

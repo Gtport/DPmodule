@@ -12,7 +12,7 @@ import (
 // unplannedMoveModel — раскладка = dislocation (LIKE), таблица unplanned_move.
 type unplannedMoveModel dislocationModel
 
-func (unplannedMoveModel) TableName() string { return "unplanned_move" }
+func (unplannedMoveModel) TableName() string { return "dpport.unplanned_move" }
 
 // UnplannedMoveRepository реализует port.UnplannedMoveRepository.
 type UnplannedMoveRepository struct {

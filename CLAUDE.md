@@ -1458,4 +1458,34 @@ request_id / упавший запрос мимо Prometheus). НЕ принят
 в формате роняет старт с внятным текстом. `go build`, `go vet`, `go test ./...`
 зелёные.
 
+Схема dpport пишется в SQL явно — прод за пулером соединений (решение владельца
+18.08.2026, ветка `feat/schema-in-sql`). Боевой Postgres корпоративного контура
+(база `ma`, роль `ma_admin`, 147.45.97.83:5000) выдан ЗА ПУЛЕРОМ
+(PgBouncer/Odyssey): `search_path` стартовым параметром DSN отбивается
+(«unsupported startup parameter»), админки нет, `ALTER ROLE/DATABASE SET
+search_path` запрещён. Итог: на search_path соединения не опираемся ВООБЩЕ —
+каждое обращение несёт схему явно. Модели `TableName()` → `"dpport.<имя>"`,
+сырой SQL → `dpport.<имя>` в тексте, динамический SQL админ-редактора →
+`qualTable()` + литерал `'dpport'` вместо `current_schema()`, DDL подмены
+снимка — квалифицированные константы (цель `RENAME TO` — без схемы, иначе
+ошибка). Инвариант и мотивировка — `internal/repository/gorm/schema.go`;
+сторожа: `TestSQLSchemaQualified` (repo) и `TestMigrationsSchemaSafe`
+(cmd/migrate — каждая миграция сама ставит `SET search_path` или пишет
+`dpport.`). `cmd/migrate` создаёт схему сам, держит `schema_migrations` в
+dpport квалифицированным `x-migrations-table`, `ALTER ROLE` — best-effort
+(удобство psql, где позволено). Новое поле `postgres.simple_protocol` → pgx
+`default_query_exec_mode=simple_protocol` (клиентский, пулер не видит):
+обязателен за transaction-пулером, где prepared statements переживают
+серверное соединение; в стендовом `config.yaml` включён. `postgres.schema`
+остался только для прямого Postgres (тайлы); основной базе не нужен, за
+пулером — вреден. Условный `OWNER TO gtport_app` в миграциях
+000023/000059/000061 (роль есть только на своих стендах). Проверено дважды
+боем на docker-стенде «Postgres 16 + PgBouncer 1.25 transaction»: (1) без
+дефолта роли и без search_path где-либо — бэкенд стартует, справочники/снимок
+грузятся, `/ready` 200; (2) 14 интеграционных тестов репозиториев через пулер
+зелёные; миграции с нуля через пулер — 43 таблицы в dpport, `public` пуст.
+Наши VPS не трогались: там search_path на уровне БД остаётся, но код от него
+больше не зависит. Развёртывание на выданной базе: дамп `pg_restore
+--no-owner --no-acl`, дальше штатный `cmd/migrate` на каждый релиз.
+
 <обновляй по ходу>

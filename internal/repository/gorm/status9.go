@@ -15,7 +15,7 @@ import (
 // CreateInBatches). Ключ таблицы — vagon (миграция 000010).
 type status9Model dislocationModel
 
-func (status9Model) TableName() string { return "status9" }
+func (status9Model) TableName() string { return "dpport.status9" }
 
 // Status9Repository реализует port.Status9Repository.
 type Status9Repository struct {
@@ -132,7 +132,7 @@ func (r *Status9Repository) SetDismissed(ctx context.Context, vagons []string, a
 	if len(vagons) == 0 {
 		return 0, nil
 	}
-	res := r.db.WithContext(ctx).Table("status9").
+	res := r.db.WithContext(ctx).Table("dpport.status9").
 		Where("vagon IN ? AND status = 9", vagons).
 		Update("dismissed_at", &at)
 	return int(res.RowsAffected), res.Error
@@ -145,7 +145,7 @@ func (r *Status9Repository) SetDismissedMissing(ctx context.Context, vagons []st
 	if len(vagons) == 0 {
 		return 0, nil
 	}
-	res := r.db.WithContext(ctx).Table("status9").
+	res := r.db.WithContext(ctx).Table("dpport.status9").
 		Where("vagon IN ? AND status = 8", vagons).
 		Update("dismissed_at", &at)
 	return int(res.RowsAffected), res.Error
@@ -154,7 +154,7 @@ func (r *Status9Repository) SetDismissedMissing(ctx context.Context, vagons []st
 // DismissedVagons — вагоны с пометкой «отклонён» (фильтр списка кандидатов).
 func (r *Status9Repository) DismissedVagons(ctx context.Context) (map[string]struct{}, error) {
 	var vagons []string
-	if err := r.db.WithContext(ctx).Table("status9").
+	if err := r.db.WithContext(ctx).Table("dpport.status9").
 		Where("dismissed_at IS NOT NULL").Pluck("vagon", &vagons).Error; err != nil {
 		return nil, err
 	}

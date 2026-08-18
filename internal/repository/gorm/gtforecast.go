@@ -27,7 +27,7 @@ type gtSnapshotModel struct {
 	UpdatedAt *domain.LocalTime `gorm:"column:updated_at"`
 }
 
-func (gtSnapshotModel) TableName() string { return "gt_forecast_snapshot" }
+func (gtSnapshotModel) TableName() string { return "dpport.gt_forecast_snapshot" }
 
 // GtSnapshotRepository — хранение сохранённых планов прогноза ГТ (билдер: CRUD/upsert).
 type GtSnapshotRepository struct {
