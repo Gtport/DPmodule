@@ -29,6 +29,22 @@ FROM nginx:alpine
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist/app/browser /usr/share/nginx/html
 
+# Серт-ЗАГЛУШКА для https-порта 8543: с ней контейнер поднимается и БЕЗ
+# примонтированного сертификата (стенды за ingress, локальная проверка) —
+# https-порт там просто не публикуют. Боевой сертификат монтируется поверх
+# заглушки (раскладка /etc/certs на хосте — как у соседей по платформе):
+#   -v /etc/certs/dpport-frontend-production.crt:/etc/nginx/certs/tls.crt:ro
+#   -v /etc/certs/dpport-frontend-production.key:/etc/nginx/certs/tls.key:ro
+# Зачем https вообще: вход в модуль (PKCE) требует Web Crypto API, а браузер
+# даёт его только в безопасном контексте — https или localhost. На http://IP
+# приложение падает до логина («Web Crypto API is not available», 18.08.2026).
+RUN apk add --no-cache openssl \
+ && mkdir -p /etc/nginx/certs \
+ && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+      -subj "/CN=dpport-placeholder" \
+      -keyout /etc/nginx/certs/tls.key \
+      -out /etc/nginx/certs/tls.crt
+
 # API_BACKEND — «хост:порт» Go-бэкенда, куда уходит /api. Порт совпадает с
 # http.port бэкенда (config.docker.yaml стенда: 8580).
 # Дефолт — АДРЕС ХОСТА стенда: там фронт и бэк подняты разными compose-проектами,
@@ -46,10 +62,12 @@ ENV NGINX_ENVSUBST_FILTER="^(API_BACKEND|NGINX_LOCAL_RESOLVERS)$"
 # роняет nginx. Нужна для ленивого резолва адреса бэкенда (см. nginx.conf).
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 
-# Порты должны совпадать с listen в nginx.conf: 8581 — SPA, 9581 — метрики.
-# Раскладка модуля на стенде: бэкенд 8580 / его метрики 9580, фронт 8581 / 9581.
-# Наружу через ingress торчит только 8581.
-EXPOSE 8581 9581
+# Порты должны совпадать с listen в nginx.conf: 8581 — SPA по http,
+# 8543 — то же SPA по https (нужен примонтированный сертификат, см. выше),
+# 9581 — метрики. Раскладка модуля на стенде: бэкенд 8580 / его метрики 9580.
+# За ingress наружу торчит 8581; без ingress пользователи ходят на 8543 —
+# вход работает только по https.
+EXPOSE 8581 8543 9581
 
 # Healthcheck: nginx отдаёт SPA — проверяем, что index.html доступен.
 # wget есть в nginx:alpine (busybox), curl ставить не нужно.

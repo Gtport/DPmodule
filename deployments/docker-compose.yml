@@ -43,6 +43,15 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${FRONTEND_PORT:-8581}:8581"
+      # HTTPS фронта: раскомментировать вместе с volumes ниже, когда есть
+      # сертификат. Вход в модуль работает только по https (PKCE / Web Crypto).
+      # Внешний порт может быть тем же 8581 (вход https://<хост>:8581) — тогда
+      # публикуется "8581:8543" ВМЕСТО строки http-порта выше; http на этом
+      # адресе получит 301 на https (наш nginx, error_page 497).
+      # - "${FRONTEND_TLS_PORT:-8543}:8543"
+    # volumes:
+    #   - /etc/certs/dpport-frontend-production.crt:/etc/nginx/certs/tls.crt:ro
+    #   - /etc/certs/dpport-frontend-production.key:/etc/nginx/certs/tls.key:ro
     environment:
       # Имя сервиса бэкенда в этой же сети compose (app), порт = http.port из
       # config.yaml. Пересборка образа для этого не нужна — адрес
