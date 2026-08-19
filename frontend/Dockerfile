@@ -52,10 +52,23 @@ RUN apk add --no-cache openssl \
 # deployments/docker-compose.yml) переменная переопределяется именем сервиса.
 ENV API_BACKEND=176.53.160.9:8580
 
-# Подстановку ограничиваем ДВУМЯ именами: в конфиге полно собственных
+# Пути к TLS-серту — через envsubst, чтобы платформенный деплой мог
+# примонтировать /etc/certs папкой и указать реальные имена файлов
+# (-e TLS_CERT/-e TLS_KEY), не подгоняя их под tls.crt/tls.key. Дефолты —
+# заглушка из RUN openssl выше: без монтирования и без -e поведение прежнее.
+# (Доработка платформы, принята из GitLab-копии 19.08.2026.)
+ENV TLS_CERT=/etc/nginx/certs/tls.crt
+ENV TLS_KEY=/etc/nginx/certs/tls.key
+
+# TLS_MODE — чем говорит ОСНОВНОЙ порт 8581: пусто (дефолт) — http, как на
+# всех наших стендах; «ssl» — https на том же порту. Нужен корп-проду, где
+# деплой публикует порты 1:1 и отдельный https-порт 8543 неудобен.
+ENV TLS_MODE=""
+
+# Подстановку ограничиваем ПЕРЕЧИСЛЕННЫМИ именами: в конфиге полно собственных
 # переменных nginx ($uri, $status, $request_id…), и envsubst без фильтра
 # затёр бы их пустыми строками.
-ENV NGINX_ENVSUBST_FILTER="^(API_BACKEND|NGINX_LOCAL_RESOLVERS)$"
+ENV NGINX_ENVSUBST_FILTER="^(API_BACKEND|NGINX_LOCAL_RESOLVERS|TLS_CERT|TLS_KEY|TLS_MODE)$"
 
 # Просит entrypoint вычитать DNS-серверы из /etc/resolv.conf и положить их в
 # NGINX_LOCAL_RESOLVERS — без этого переменная пустая, а `resolver ;` в конфиге
@@ -71,7 +84,12 @@ EXPOSE 8581 8543 9581
 
 # Healthcheck: nginx отдаёт SPA — проверяем, что index.html доступен.
 # wget есть в nginx:alpine (busybox), curl ставить не нужно.
+# Вторая ветка — для TLS_MODE=ssl: 8581 тогда говорит https, и http-проба
+# не проходит; busybox wget умеет https (--no-check-certificate — серт может
+# быть заглушкой или выписан не на 127.0.0.1).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://127.0.0.1:8581/ >/dev/null 2>&1 || exit 1
+    CMD wget -qO- http://127.0.0.1:8581/ >/dev/null 2>&1 \
+     || wget -qO- --no-check-certificate https://127.0.0.1:8581/ >/dev/null 2>&1 \
+     || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
