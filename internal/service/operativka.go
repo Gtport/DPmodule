@@ -14,20 +14,26 @@ import (
 // по терминалам (реестр ports, не хардкод) — погружено в адрес терминала /
 // прибыло / выгружено за вчерашние и текущие ЖД-сутки (вехи vagon_history:
 // date_nach_d × gruzpol_s, date_prib_d × naznach, date_vigr_d × place_vigr)
-// плюс «не выгружено» — вагоны статуса 10 в текущем снимке.
+// плюс «не выгружено» — прибывшие без вехи выгрузки ПО ИСТОРИИ (решение
+// владельца 20.08.2026: снимковый счёт не видел вагонов, выпавших из нашей
+// выборки, — после переноса истории gtport их прибытия в истории есть).
 type OperativkaService struct {
 	repo      port.HistoryRepository
-	actual    *ActualCache
 	dir       *DirectoryCache
 	unplanned port.UnplannedMoveRepository // «бесплановые в подходе» (nil — секции нет)
 	journal   *Journal                     // единый журнал (может быть nil)
 }
 
+// notUnloadedWindowDays — окно «не выгружено»: рейсы с прибытием старше двух
+// недель без вехи выгрузки — это хвосты без актов (унаследованы из gtport),
+// а не вагоны, реально стоящие на станции; в счётчик карточки они не идут.
+const notUnloadedWindowDays = 14
+
 // SetJournal подключает журнал событий (nil-safe).
 func (s *OperativkaService) SetJournal(j *Journal) { s.journal = j }
 
-func NewOperativkaService(repo port.HistoryRepository, actual *ActualCache, dir *DirectoryCache, unplanned port.UnplannedMoveRepository) *OperativkaService {
-	return &OperativkaService{repo: repo, actual: actual, dir: dir, unplanned: unplanned}
+func NewOperativkaService(repo port.HistoryRepository, dir *DirectoryCache, unplanned port.UnplannedMoveRepository) *OperativkaService {
+	return &OperativkaService{repo: repo, dir: dir, unplanned: unplanned}
 }
 
 // OperativkaRowDTO — строка карточки: терминал и его суточные счётчики.
@@ -77,13 +83,13 @@ func (s *OperativkaService) Snapshot(ctx context.Context) (OperativkaDTO, error)
 		return OperativkaDTO{}, err
 	}
 
-	// «Не выгружено» — статус 10 по терминалам из RAM-снимка. Порожние под
-	// погрузку не считаются: они прибыли ЗА грузом, выгрузки у них не будет.
-	notUnloaded := map[string]int{}
-	for _, r := range s.actual.All() {
-		if r.Status != nil && *r.Status == 10 && r.Naznach != "" && !s.dir.PorozhInbound(&r) {
-			notUnloaded[r.Naznach]++
-		}
+	// «Не выгружено» — по истории: прибывшие гружёные рейсы без вехи выгрузки
+	// за последние notUnloadedWindowDays суток (порожние под погрузку и
+	// «недоехавшие» исключены в репозитории).
+	notUnloaded, err := s.repo.NotUnloadedCounts(ctx,
+		domain.LocalTime(today.AddDate(0, 0, -notUnloadedWindowDays)))
+	if err != nil {
+		return OperativkaDTO{}, err
 	}
 
 	targets := terminalTargets(s.dir)

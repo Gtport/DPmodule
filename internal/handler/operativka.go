@@ -29,7 +29,7 @@ type dismissUnplannedRequest struct {
 }
 
 // snapshot godoc
-// @Summary  «Оперативка»: прибыло/выгружено по терминалам за вчера и сегодня (ЖД-сутки) + не выгружено (статус 10)
+// @Summary  «Оперативка»: прибыло/выгружено по терминалам за вчера и сегодня (ЖД-сутки) + не выгружено (статус 10 по истории, прибытие за 14 суток)
 // @Tags     dislocation
 // @Security BearerAuth
 // @Success  200 {object} service.OperativkaDTO

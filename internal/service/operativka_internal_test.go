@@ -7,39 +7,44 @@ import (
 	"github.com/Gtport/DPmodule/internal/domain"
 )
 
-// «Не выгружено» оперативки: статус-10 по терминалам; порожний под погрузку
-// (признак порожнего + вес 0/пуст) не считается — выгрузки у него не будет
-// (решение владельца 04.08.2026).
-func TestOperativka_NotUnloadedSkipsPorozhInbound(t *testing.T) {
+func (r *histStubRepo) NotUnloadedCounts(_ context.Context, _ domain.LocalTime) (map[string]int, error) {
+	return r.notUnloaded, nil
+}
+
+// «Не выгружено» оперативки считается ПО ИСТОРИИ (решение владельца
+// 20.08.2026): карточка берёт счётчик из HistoryRepository.NotUnloadedCounts
+// и раскладывает по терминалам реестра. Фильтры (гружёный, не «недоехавший»,
+// окно прибытия) живут в SQL репозитория — их сторожит integration-тест
+// TestHistoryRepository_NotUnloadedCounts.
+func TestOperativka_NotUnloadedFromHistory(t *testing.T) {
 	ctx := context.Background()
-	st10 := 10
 
 	dir := NewDirectoryCache(&unplDirStub{
 		ports: []domain.Ports{
 			{Okpo: 1, NameS: "АЭ", StationCode: "985702", Enabled: true},
+			{Okpo: 2, NameS: "ГУТ-2", StationCode: "985702", Enabled: true},
 		},
 	})
 	if err := dir.Load(ctx); err != nil {
 		t.Fatal(err)
 	}
-	actual := NewActualCache(s9StubDisl{items: []domain.Dislocation{
-		{Vagon: "1", Status: &st10, Naznach: "АЭ", Ves: fp(70)},           // гружёный прибыл → считается
-		{Vagon: "2", Status: &st10, Naznach: "АЭ", PorozhPriznak: "1"},    // порожний под погрузку → нет
-		{Vagon: "3", Status: &st10, Naznach: "АЭ", PorozhPriznak: "1", Ves: fp(70)}, // опустевший с весом → считается
-	}})
-	if err := actual.Load(ctx); err != nil {
-		t.Fatal(err)
-	}
 
-	svc := NewOperativkaService(newHistStub(), actual, dir, nil)
+	repo := newHistStub()
+	repo.notUnloaded = map[string]int{"АЭ": 161, "ГУТ-2": 0, "ЧУЖОЙ": 5}
+
+	svc := NewOperativkaService(repo, dir, nil)
 	dto, err := svc.Snapshot(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dto.Rows) != 1 {
-		t.Fatalf("ожидалась 1 строка терминала, получено %d", len(dto.Rows))
+	if len(dto.Rows) != 2 {
+		t.Fatalf("ожидались 2 строки терминалов, получено %d", len(dto.Rows))
 	}
-	if got := dto.Rows[0].NotUnloaded; got != 2 {
-		t.Fatalf("«не выгружено» = %d, ожидалось 2 (порожний под погрузку не в счёте)", got)
+	byTerm := map[string]int{}
+	for _, r := range dto.Rows {
+		byTerm[r.Terminal] = r.NotUnloaded
+	}
+	if byTerm["АЭ"] != 161 || byTerm["ГУТ-2"] != 0 {
+		t.Fatalf("«не выгружено» по терминалам = %v, ожидалось АЭ=161, ГУТ-2=0", byTerm)
 	}
 }

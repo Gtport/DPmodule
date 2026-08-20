@@ -129,6 +129,10 @@ func (cwHist) UpdateFieldsBatch(context.Context, map[string]map[string]any) erro
 func (cwHist) TripsForPamyatki(context.Context, []string) ([]domain.PamyatkaTrip, error) {
 	return nil, nil
 }
+func (cwHist) NotUnloadedCounts(context.Context, domain.LocalTime) (map[string]int, error) {
+	return nil, nil
+}
+
 func (cwHist) DailyTerminalCounts(context.Context, domain.LocalTime, domain.LocalTime) (map[string]int, map[string]int, map[string]int, error) {
 	return nil, nil, nil, nil
 }

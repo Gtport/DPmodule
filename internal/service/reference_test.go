@@ -91,6 +91,10 @@ func (s *refHistStub) RowsByIDs(context.Context, []string) ([]domain.VagonHistor
 func (s *refHistStub) ArrivedRows(context.Context, domain.LocalTime, domain.LocalTime, []string) ([]domain.VagonHistory, error) {
 	return nil, nil
 }
+func (s *refHistStub) NotUnloadedCounts(context.Context, domain.LocalTime) (map[string]int, error) {
+	return nil, nil
+}
+
 func (s *refHistStub) DailyTerminalCounts(context.Context, domain.LocalTime, domain.LocalTime) (map[string]int, map[string]int, map[string]int, error) {
 	return nil, nil, nil, nil
 }

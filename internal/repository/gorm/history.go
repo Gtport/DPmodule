@@ -392,6 +392,32 @@ func (r *HistoryRepository) DailyTerminalCounts(ctx context.Context, from, to do
 	return toMap(pogrRows), toMap(pribRows), toMap(vigrRows), nil
 }
 
+// NotUnloadedCounts — «не выгружено» по истории (сырой SQL — канон для
+// аналитики): прибывшие гружёные рейсы без вехи выгрузки, по терминалам.
+// Семантика «не выгружен» — как у фильтра «не выгруж.» экрана истории
+// (place_vigr пуст И не «недоехавший»); порог pribFrom отсекает старые хвосты
+// gtport без актов, ves > 0 — порожних под погрузку.
+func (r *HistoryRepository) NotUnloadedCounts(ctx context.Context, pribFrom domain.LocalTime) (map[string]int, error) {
+	var rows []struct {
+		Term string `gorm:"column:term"`
+		N    int    `gorm:"column:n"`
+	}
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT naznach AS term, count(*) AS n
+		  FROM dpport.vagon_history
+		 WHERE status = 10 AND COALESCE(place_vigr, '') = '' AND NOT not_arrived
+		   AND naznach <> '' AND COALESCE(ves, 0) > 0
+		   AND date_prib_d >= ?
+		 GROUP BY naznach`, pribFrom).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]int, len(rows))
+	for _, x := range rows {
+		out[x.Term] = x.N
+	}
+	return out, nil
+}
+
 // DailyCargoUnloaded — выгружено по ЖД-суткам/терминалу/группе груза (сырой SQL —
 // канон для аналитики). Отдельный запрос, а не расширение DailyTerminalCounts:
 // «Оперативке» разбивка не нужна, и менять её контракт ради «Грузовой работы»

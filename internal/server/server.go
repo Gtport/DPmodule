@@ -457,7 +457,7 @@ func Build(
 
 			// «Оперативка» домашней страницы: суточные счётчики по терминалам
 			// (вехи истории + статус 10 из снимка), только чтение.
-			opSvc := service.NewOperativkaService(historyRepo, actualCache, dirCache, unplannedRepo)
+			opSvc := service.NewOperativkaService(historyRepo, dirCache, unplannedRepo)
 			opSvc.SetJournal(journal)
 			handler.NewOperativkaHandler(opSvc).RegisterRoutes(api)
 

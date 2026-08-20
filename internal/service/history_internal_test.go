@@ -21,6 +21,8 @@ type histStubRepo struct {
 	updates  map[string]map[string]any
 	rows     map[string]domain.VagonHistory // для RowsByIDs
 	batch    map[string]map[string]any      // записи UpdateFieldsBatch
+
+	notUnloaded map[string]int // ответ NotUnloadedCounts («Оперативка»)
 }
 
 func newHistStub(existing ...string) *histStubRepo {
