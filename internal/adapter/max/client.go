@@ -5,10 +5,10 @@
 // Отличия от gtport, продиктованные архитектурой DPmodule:
 //   - токен не хранится в структуре, а читается из SecretSource на каждый запрос
 //     (env MAX_BOT_TOKEN сейчас, Vault потом) — как у ASU/reference-адаптеров;
-//   - корневой сертификат Минцифры (Russian Trusted Root CA) вшит через go:embed
-//     и добавлен в доверенный пул TLS ПОВЕРХ системного. platform-api.max.ru
-//     отдаёт цепочку, подписанную нацвендором, — без этого якоря TLS не проходит.
-//     Полагаться на системное хранилище ОС нельзя (сило: свой процесс — свой якорь).
+//   - корневой сертификат Минцифры (Russian Trusted Root CA) добавлен в
+//     доверенный пул TLS ПОВЕРХ системного (общий якорь — pkg/rustca).
+//     platform-api.max.ru отдаёт цепочку, подписанную нацвендором, — без
+//     этого якоря TLS не проходит.
 //
 // Отправка вложений (картинка/файл) в MAX трёхшаговая: получить URL загрузки →
 // залить тело → отправить сообщение с токеном вложения. MAX обрабатывает файл
@@ -20,8 +20,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,13 +32,8 @@ import (
 
 	"github.com/Gtport/DPmodule/internal/port"
 	"github.com/Gtport/DPmodule/pkg/logger"
+	"github.com/Gtport/DPmodule/pkg/rustca"
 )
-
-// russianTrustedCA — корневой сертификат Минцифры (публичный, цепочка Russian
-// Trusted Root CA + Sub CA). Вшит в бинарь: якорь TLS для platform-api.max.ru.
-//
-//go:embed certs/russian_trusted_ca.pem
-var russianTrustedCA []byte
 
 const (
 	defaultBaseURL = "https://platform-api.max.ru"
@@ -82,12 +75,9 @@ func NewClient(baseURL, authSecretKey string, timeout time.Duration, secrets por
 		timeout = defaultTimeout
 	}
 
-	pool, err := x509.SystemCertPool()
-	if err != nil || pool == nil {
-		pool = x509.NewCertPool()
-	}
-	if !pool.AppendCertsFromPEM(russianTrustedCA) {
-		return nil, fmt.Errorf("MAX: не удалось добавить корневой сертификат Минцифры в пул TLS")
+	pool, err := rustca.Pool()
+	if err != nil {
+		return nil, fmt.Errorf("MAX: %w", err)
 	}
 
 	hc := &http.Client{

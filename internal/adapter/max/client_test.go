@@ -2,7 +2,6 @@ package max
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -30,15 +29,6 @@ func newTestClient(t *testing.T, baseURL, token string) *Client {
 		t.Fatalf("NewClient: %v", err)
 	}
 	return c
-}
-
-func TestEmbeddedCAParses(t *testing.T) {
-	// Вшитый сертификат Минцифры обязан складываться в пул — иначе TLS к MAX
-	// не поднимется, и это должно падать здесь, а не в бою.
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(russianTrustedCA) {
-		t.Fatal("вшитый russian_trusted_ca.pem не разобран в пул сертификатов")
-	}
 }
 
 func TestPing(t *testing.T) {

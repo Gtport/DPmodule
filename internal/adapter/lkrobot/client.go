@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -38,6 +39,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/Gtport/DPmodule/pkg/logger"
+	"github.com/Gtport/DPmodule/pkg/rustca"
 )
 
 var (
@@ -84,9 +86,20 @@ func New(opt Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Кабинет перешёл на сертификат Минцифры (цепочка rzd.ru → Russian Trusted
+	// Sub CA, серт от 23.06.2026) — системное хранилище её не знает, транспорт
+	// по умолчанию рвал TLS на первом же запросе. Якорь тот же, что у MAX.
+	pool, err := rustca.Pool()
+	if err != nil {
+		return nil, fmt.Errorf("ЛК РЖД: %w", err)
+	}
 	return &Client{
-		opt:  opt,
-		http: &http.Client{Jar: jar, Timeout: opt.Timeout},
+		opt: opt,
+		http: &http.Client{
+			Jar:       jar,
+			Timeout:   opt.Timeout,
+			Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}},
+		},
 		// Компонент — дислокация: кабинет ЛК и шлюз АСУ питают ОДИН конвейер,
 		// и `grep dislocation` должен собирать обе ветки. Что забор шёл через
 		// кабинет, видно в колонке цели.
