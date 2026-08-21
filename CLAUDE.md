@@ -1603,4 +1603,28 @@ TestHistoryRepository_NotUnloadedCounts (SQL, гейт DPMODULE_TEST_PG_DSN).
 Хвосты закроются повторной докаткой свежего дампа gtport, когда там
 проставят акты; системное решение — переход выгрузки на ГУ-2б.
 
+Фронт готов к path-адресации `ma.domen.com/dpport/` (21.08.2026, решение
+владельца: корп-прод переходит с поддоменов на пути; маршрутизацию делает
+ВХОДНОЙ nginx хоста — location /dpport/ → :8581 со срезанием префикса,
+TLS у него же, наш TLS_MODE при этой схеме не нужен). Что сделано:
+(1) `BASE_HREF` — env фронт-контейнера по образцу TLS_MODE (дефолт `/`,
+прежние стенды не меняются; значение обязано начинаться и заканчиваться `/`):
+nginx подставляет его в `<base href>` собранного index.html через sub_filter
+(location = /index.html; SPA-fallback проходит там же) — бандл ЕДИН, на
+деплое пересборка не нужна. (2) `apiBaseUrl` всех окружений считается от
+`<base href>` (`environments/api-base.ts`: `/api` при базе `/`,
+`/dpport/api` под префиксом); условие Bearer-интерцептора в app.config.ts
+строится из того же значения — жёсткое `^/api` под префиксом оставило бы
+все запросы без токена. Остальной код чист: geojson карты и favicon
+относительные, `routerLink="/…"` — пути роутера под APP_BASE_HREF.
+Проверено вживую браузером через имитацию входного nginx (edge → контейнер
+BASE_HREF=/dpport/ → локальный бэкенд, вход disp через локальный Keycloak):
+вход/возврат на /dpport/, главная с данными, deep-link /dpport/operator-tools,
+все запросы к /dpport/api с Bearer, ответов ≥400 и утечек в корень нет;
+дефолт без BASE_HREF отдаёт `<base href="/">` бит-в-бит. Включение на
+проде: у DevOps env `BASE_HREF=/dpport/` + location с срезанием префикса,
+у админа realm — redirect URI `https://<хост>/dpport/*` и Web origins.
+⚠️ GitLab-копии frontend/Dockerfile и nginx.conf свести с каноном GitHub
+(заливает владелец через веб — как 19.08).
+
 <обновляй по ходу>

@@ -72,11 +72,16 @@ const icons = [
   ...CUSTOM_ICONS,
 ];
 
-// Bearer вешаем ТОЛЬКО на бэкенд модуля (/api) — чтобы токен не утекал в чужие
+// Bearer вешаем ТОЛЬКО на бэкенд модуля — чтобы токен не утекал в чужие
 // сервисы. Интерсептор keycloak-angular сам тихо обновляет токен перед запросом.
-// Матчим и относительный '/api/...', и абсолютный 'http://host:8080/api/...'.
+// Границу строим из ТОГО ЖЕ apiBaseUrl, которым все сервисы собирают URL
+// (под path-адресацией это '/dpport/api', на прежних стендах '/api'), —
+// жёсткая регулярка «^/api» под префиксом перестала бы матчиться, и все
+// запросы ушли бы без токена. Опциональный origin — на случай абсолютного
+// 'http://host:8080/api/...'.
+const apiPathEscaped = environment.apiBaseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const apiBearerCondition = createInterceptorCondition<IncludeBearerTokenCondition>({
-  urlPattern: /^(https?:\/\/[^/]+)?\/api(\/|$)/i,
+  urlPattern: new RegExp(`^(https?://[^/]+)?${apiPathEscaped}(/|$)`, 'i'),
   bearerPrefix: 'Bearer',
 });
 

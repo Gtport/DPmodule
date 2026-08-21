@@ -1,7 +1,9 @@
+import { apiBase } from './api-base';
+
 export const environment = {
   production: true,
   moduleId: 'dpport',
-  apiBaseUrl: '/api',
+  apiBaseUrl: apiBase(),
   // ⚠️ TODO подтвердить у DevOps (см. environment.ts).
   portalUrl: 'https://portal.iqport.ru',
   keycloak: {

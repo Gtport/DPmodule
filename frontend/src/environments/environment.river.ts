@@ -1,7 +1,9 @@
+import { apiBase } from './api-base';
+
 export const environment = {
   production: false,
   moduleId: 'dpport',
-  apiBaseUrl: '/api',
+  apiBaseUrl: apiBase(),
   portalUrl: '',
   keycloak: {
     // Второй инстанс VPS (клиент river, свой домен): Keycloak ОБЩИЙ с боевым

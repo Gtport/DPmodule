@@ -1,5 +1,7 @@
 // Базовый (= production) конфиг. Подменяется на dev через fileReplacements в angular.json.
 // Значения секретов/доменов на деплое — из CI/Vault (IQPort §6.2), не хардкодить здесь.
+import { apiBase } from './api-base';
+
 export const environment = {
   production: true,
 
@@ -7,7 +9,9 @@ export const environment = {
   moduleId: 'dpport',
 
   // Базовый URL Go-бэкенда модуля (через API Gateway). Bearer вешается только на него.
-  apiBaseUrl: '/api',
+  // Считается от <base href> (см. api-base.ts): '/api' на прежних стендах,
+  // '/dpport/api' под path-адресацией ma.domen.com/dpport/.
+  apiBaseUrl: apiBase(),
 
   // Портал-лаунчер платформы (репозиторий iqport/portal): куда ведёт пункт
   // «Портал» в переключателе модулей. Пустая строка — пункт скрыт.

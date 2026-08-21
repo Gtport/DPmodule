@@ -1,7 +1,9 @@
+import { apiBase } from './api-base';
+
 export const environment = {
   production: false,
   moduleId: 'dpport',
-  apiBaseUrl: '/api',
+  apiBaseUrl: apiBase(),
   // Портала на этой машине нет — пункт «Портал» в свитчере скрыт. Если поднять
   // клон iqport/portal локально (`npm start -- --port 4201`, 4200 занят модулем),
   // вписать 'http://localhost:4201'.

@@ -620,6 +620,7 @@ Standalone-компоненты, состояние на сигналах, ст�
 | Файл | За что отвечает |
 |---|---|
 | `src/environments/*.ts` | Настройки контура (ID модуля, адрес бэкенда, Keycloak); подменяются при сборке. `environment.ts`=база, `.development.ts`=локальная разработка, `.production.ts`=прод, `.uat.ts`=заготовка UAT, `.river.ts`=второй инстанс VPS (свой домен, Keycloak общий с боевым — адрес абсолютный `95850.koara.live`, потому что same-origin на другом домене не сработает). |
+| `src/environments/api-base.ts` | Хелпер `apiBase()`: путь к API, вычисленный от `<base href>` страницы — `/api` на прежних стендах, `/dpport/api` под path-адресацией (`ma.domen.com/dpport/`). Все `apiBaseUrl` окружений и условие Bearer-интерцептора (`app.config.ts`) строятся от него. |
 | `angular.json` | Конфигурация сборки Angular: входные файлы, стили, режимы production/uat/development/river (последний — второй инстанс VPS, `ng serve --configuration river`). |
 | `package.json` | Зависимости (Angular 21, ng-zorro, RxJS) и команды (запуск с прокси, сборка, тесты, линт). |
 | `proxy.conf.json` | Прокси dev-сервера: `/api` → локальный Go-бэкенд (`localhost:8080`), `/realms` → Keycloak (`localhost:8180`). Второе нужно локальной разработке (в WSL нет nginx); на VPS такие запросы до dev-сервера не доходят — их перехватывает nginx. |

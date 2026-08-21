@@ -65,10 +65,20 @@ ENV TLS_KEY=/etc/nginx/certs/tls.key
 # деплой публикует порты 1:1 и отдельный https-порт 8543 неудобен.
 ENV TLS_MODE=""
 
+# BASE_HREF — префикс приложения при path-адресации «поддомен = заказчик,
+# путь = модуль» (ma.domen.com/dpport/ → BASE_HREF=/dpport/). Задаётся НА
+# ДЕПЛОЕ, как TLS_MODE: nginx подставляет его в <base href> собранного
+# index.html (см. nginx.conf), пересборка образа не нужна — бандл един для
+# всех стендов. ⚠️ Значение ОБЯЗАНО начинаться и заканчиваться «/».
+# Дефолт «/» — прежнее поведение, наши стенды без префикса не меняются.
+# Срезание префикса из URL — забота ВХОДНОГО nginx хоста
+# (proxy_pass http://…:8581/; со слэшем): сюда запросы приходят уже без него.
+ENV BASE_HREF="/"
+
 # Подстановку ограничиваем ПЕРЕЧИСЛЕННЫМИ именами: в конфиге полно собственных
 # переменных nginx ($uri, $status, $request_id…), и envsubst без фильтра
 # затёр бы их пустыми строками.
-ENV NGINX_ENVSUBST_FILTER="^(API_BACKEND|NGINX_LOCAL_RESOLVERS|TLS_CERT|TLS_KEY|TLS_MODE)$"
+ENV NGINX_ENVSUBST_FILTER="^(API_BACKEND|NGINX_LOCAL_RESOLVERS|TLS_CERT|TLS_KEY|TLS_MODE|BASE_HREF)$"
 
 # Просит entrypoint вычитать DNS-серверы из /etc/resolv.conf и положить их в
 # NGINX_LOCAL_RESOLVERS — без этого переменная пустая, а `resolver ;` в конфиге
