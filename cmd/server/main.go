@@ -30,6 +30,7 @@ import (
 	"github.com/Gtport/DPmodule/internal/clock"
 	"github.com/Gtport/DPmodule/internal/config"
 	"github.com/Gtport/DPmodule/internal/domain"
+	"github.com/Gtport/DPmodule/internal/ha"
 	"github.com/Gtport/DPmodule/internal/port"
 	gormrepo "github.com/Gtport/DPmodule/internal/repository/gorm"
 	"github.com/Gtport/DPmodule/internal/server"
@@ -345,7 +346,27 @@ func run() error {
 			cfg.Notifications.CleanupInterval, log, notifSvc.Cleanup).WithRunAtStart())
 	}
 
-	if len(workers) > 0 {
+	// Фоновые задачи поднимает только active. HTTP при этом работает на обоих
+	// узлах: балансировщик спрашивает хелсчек role_observer, и на standby
+	// запросы просто не приходят, а вот расписание отработало бы дважды в одну
+	// базу — двойной забор АСУ, гонка за курсором памяток, вторая суточная
+	// фиксация журнала брошенных. В режиме standalone (и когда app.mode не задан
+	// вовсе — оба боевых VPS) роль всегда active, поведение не меняется.
+	role, roleErr := ha.Resolve(context.Background(), cfg.App.Mode, cfg.App.RoleObserver)
+	if roleErr != nil {
+		// Не падаем: узел, не сумевший узнать роль, обязан подняться и отдавать
+		// HTTP. Опасны только фоновые задачи, и они как раз не запустятся.
+		log.Error("не удалось определить роль узла — работаем как standby",
+			logger.Comp(logger.CompStartup),
+			zap.String("mode", cfg.App.Mode), zap.String("role_observer", cfg.App.RoleObserver),
+			zap.Error(roleErr))
+	}
+
+	switch {
+	case !role.IsActive():
+		log.Warn("узел standby: фоновые задачи не запущены", logger.Comp(logger.CompStartup),
+			zap.String("подробности", "забор АСУ, памятки, очередь 601, журнал брошенных — их делает active"))
+	case len(workers) > 0:
 		go worker.Run(bgCtx, log, workers...)
 		log.Info("фоновые воркеры запущены", logger.Comp(logger.CompStartup),
 			zap.Int("count", len(workers)))

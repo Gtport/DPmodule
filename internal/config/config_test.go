@@ -58,7 +58,7 @@ max:
 		t.Errorf("max.bot_token = %q, ждали значение из файла", cfg.MAX.BotToken)
 	}
 	// DSN собирается из того же значения — иначе подстановка CI/CD не доедет до базы.
-	if !strings.Contains(cfg.Postgres.DSN, "password=из-файла") {
+	if !strings.Contains(cfg.Postgres.DSN, "password='из-файла'") {
 		t.Errorf("DSN = %q, ждали пароль из файла", cfg.Postgres.DSN)
 	}
 }
@@ -141,8 +141,8 @@ func TestBuildDSN_SchemaOptional(t *testing.T) {
 		t.Errorf("DSN без schema = %q, search_path быть не должно", dsn)
 	}
 	p.Schema = "dpport"
-	if dsn := p.BuildDSN(); !strings.Contains(dsn, "search_path=dpport") {
-		t.Errorf("DSN со schema = %q, ждали search_path=dpport", dsn)
+	if dsn := p.BuildDSN(); !strings.Contains(dsn, "search_path='dpport'") {
+		t.Errorf("DSN со schema = %q, ждали search_path='dpport'", dsn)
 	}
 }
 
@@ -172,7 +172,7 @@ tiles:
 	if cfg.Tiles.Password != "общий-пароль" {
 		t.Errorf("tiles.password = %q, ждали пароль основной базы", cfg.Tiles.Password)
 	}
-	if !strings.Contains(cfg.Tiles.DSN, "dbname=tiles") || !strings.Contains(cfg.Tiles.DSN, "port=5432") {
+	if !strings.Contains(cfg.Tiles.DSN, "dbname='tiles'") || !strings.Contains(cfg.Tiles.DSN, "port=5432") {
 		t.Errorf("tiles.DSN = %q, ждали dbname=tiles и дефолтный порт 5432", cfg.Tiles.DSN)
 	}
 	if cfg.Tiles.MaxOpenConns != 10 {

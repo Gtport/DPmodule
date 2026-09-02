@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -160,6 +161,30 @@ type Storage struct {
 type App struct {
 	Name string `yaml:"name"`
 	Env  string `yaml:"env"` // dev | uat | prod
+
+	// Mode — одиночный узел или пара active/standby.
+	//
+	// standalone (и пусто) — работаем как раньше, полностью. Так живут оба
+	// боевых VPS-инстанса и машина разработчика: их конфиги не меняются.
+	// cluster — роль спрашиваем у role_observer; на standby фоновые задачи не
+	// поднимаются, иначе обе ноды отработают расписание в одну базу
+	// (см. internal/ha).
+	Mode string `yaml:"mode"` // standalone | cluster
+
+	// RoleObserver — адрес наблюдателя, который читает роль узла из etcd
+	// (/iqport/ha/active_server). Пишется без схемы, http подставляется сам.
+	//
+	// ⚠️ Из КОНТЕЙНЕРА это шлюз docker-моста (172.17.0.1:9040/role), а НЕ
+	// 127.0.0.1: внутри контейнера localhost — сам контейнер, наблюдатель туда
+	// не отвечает, и узел молча уходит в standby. У соседнего модуля это стоило
+	// полдня без фоновых задач. Адрес 172.17.0.1 пер-хостовый по построению (на
+	// каждой ноде свой docker0), поэтому один конфиг на обе ноды безопасен —
+	// чужую роль никто не услышит.
+	//
+	// Проверять ИЗ контейнера, а не с хоста: с хоста наблюдатель отвечает и
+	// тогда, когда изнутри он недостижим.
+	//   docker exec <контейнер> wget -qO- http://172.17.0.1:9040/role
+	RoleObserver string `yaml:"role_observer"`
 }
 
 type HTTP struct {
@@ -178,7 +203,11 @@ type Metrics struct {
 }
 
 type Postgres struct {
-	Enabled         bool          `yaml:"enabled"` // false → skip connection, app boots without DB
+	Enabled bool `yaml:"enabled"` // false → skip connection, app boots without DB
+
+	// Host — адрес базы. МОЖНО перечислить несколько через запятую: так устроен
+	// кластер Patroni, где мастер переезжает между узлами, и приложение обязано
+	// найти текущий само (см. BuildDSN). Порт при этом один на все адреса.
 	Host            string        `yaml:"host"`
 	Port            int           `yaml:"port"`
 	DBName          string        `yaml:"dbname"`
@@ -299,27 +328,69 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// BuildDSN собирает строку подключения lib/pq из полей блока. Schema (если
+// BuildDSN собирает conninfo-строку подключения из полей блока. Schema (если
 // задана) уходит в search_path — так один тип Postgres обслуживает и основную
 // базу, и кэш тайлов в общей базе стенда.
+//
+// Кластер Patroni: в Host перечисляются оба узла через запятую, порт один на
+// оба. Драйвер (pgx) перебирает адреса сам, поэтому переезд мастера переживается
+// без правки конфига.
 func (p Postgres) BuildDSN() string {
 	dsn := fmt.Sprintf(
 		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
-		p.Host,
+		conninfoValue(hostList(p.Host)),
 		p.Port,
-		p.DBName,
-		p.User,
-		p.Password,
-		p.SSLMode,
+		conninfoValue(p.DBName),
+		conninfoValue(p.User),
+		conninfoValue(p.Password),
+		conninfoValue(p.SSLMode),
 	)
 	if p.Schema != "" {
-		dsn += fmt.Sprintf(" search_path=%s", p.Schema)
+		dsn += " search_path=" + conninfoValue(p.Schema)
+	}
+	// Сам по себе список адресов мастера НЕ находит: драйвер берёт ответивший
+	// первым, а это с равным успехом реплика — и тогда падает не подключение, а
+	// первая же запись, посреди работы, с «read-only transaction». Условие
+	// отбраковывает реплику на этапе подключения.
+	//
+	// Только при нескольких адресах: на одиночном узле оно запретило бы
+	// НАМЕРЕННОЕ подключение к реплике (порт чтения, отчёты).
+	if strings.Contains(p.Host, ",") {
+		dsn += " target_session_attrs=read-write"
 	}
 	if p.SimpleProtocol {
 		// Параметр клиентский (pgx), на сервер не уходит — пулер его не видит.
 		dsn += " default_query_exec_mode=simple_protocol"
 	}
 	return dsn
+}
+
+// hostList приводит список адресов к тому виду, в каком его понимает драйвер:
+// пробелы вокруг запятых убираются.
+//
+// В конфиге «узел1, узел2» пишется естественно, а pgx режет строку по запятой
+// БЕЗ обрезки пробелов — второй адрес стал бы « узел2» и не зарезолвился.
+// Мина тихая: пока мастер на первом узле, всё работает, и отказ приходит ровно
+// в момент переезда — то есть тогда, ради чего список и заведён.
+func hostList(h string) string {
+	if !strings.Contains(h, ",") {
+		return strings.TrimSpace(h)
+	}
+	parts := strings.Split(h, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return strings.Join(parts, ",")
+}
+
+// conninfoValue заключает значение в одинарные кавычки с экранированием: пароль
+// с пробелом, апострофом или обратным слэшем иначе развалит conninfo-строку —
+// разбор уедет по границам слов, и ошибка будет говорить о чём угодно, кроме
+// настоящей причины.
+func conninfoValue(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	v = strings.ReplaceAll(v, `'`, `\'`)
+	return "'" + v + "'"
 }
 
 func loadFile(path string) (*Config, error) {
