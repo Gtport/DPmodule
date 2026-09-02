@@ -147,6 +147,7 @@ func run() error {
 		maxChatRepo      port.MaxChatRepository
 		lkAccountRepo    port.LKAccountRepository
 		pamCursorRepo    port.PamyatkaCursorRepository
+		gu2bRepo         port.GU2BRepository
 		reportPresetRepo port.ReportPresetRepository
 		nmtpRepo         port.NmtpRepository
 		gtSnapRepo       port.GtSnapshotRepository
@@ -172,6 +173,7 @@ func run() error {
 		maxChatRepo = gormrepo.NewMaxChatRepository(db)
 		lkAccountRepo = gormrepo.NewLKAccountRepository(db)
 		pamCursorRepo = gormrepo.NewPamyatkaCursorRepository(db)
+		gu2bRepo = gormrepo.NewGU2BRepository(db)
 		reportPresetRepo = gormrepo.NewReportPresetRepository(db)
 		nmtpRepo = gormrepo.NewNmtpRepository(db)
 		gtSnapRepo = gormrepo.NewGtSnapshotRepository(db)
@@ -271,7 +273,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, vagonOps, brosJournal, notifSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, tilesRepo, notifRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, gu2bSvc, vagonOps, brosJournal, notifSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, gu2bRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, tilesRepo, notifRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
@@ -311,6 +313,15 @@ func run() error {
 	if cfg.Reference.Enabled && refSvc != nil {
 		workers = append(workers,
 			worker.NewCronWorker("reference-update", cfg.Reference.PullInterval, log, refSvc.PullUpdates).WithRunAtStart())
+	}
+
+	// Инкремент уведомлений ГУ-2б (факт выгрузки): приём + контроль полноты,
+	// перезапись вех — отдельным флагом gu2b.apply. Тик и при старте — по той же
+	// причине, что у памяток. ⚠️ Ручка провайдера ещё не реализована (02.09.2026):
+	// до её релиза тики будут получать 404 — блок держим выключенным в конфигах.
+	if cfg.GU2B.Enabled && gu2bSvc != nil {
+		workers = append(workers,
+			worker.NewCronWorker("gu2b-update", cfg.GU2B.PullInterval, log, gu2bSvc.PullUpdates).WithRunAtStart())
 	}
 
 	// Очередь запросов 601 «История продвижения вагона»: частый лёгкий тик,
@@ -365,7 +376,7 @@ func run() error {
 	switch {
 	case !role.IsActive():
 		log.Warn("узел standby: фоновые задачи не запущены", logger.Comp(logger.CompStartup),
-			zap.String("подробности", "забор АСУ, памятки, очередь 601, журнал брошенных — их делает active"))
+			zap.String("подробности", "забор АСУ, памятки, ГУ-2б, очередь 601, журнал брошенных — их делает active"))
 	case len(workers) > 0:
 		go worker.Run(bgCtx, log, workers...)
 		log.Info("фоновые воркеры запущены", logger.Comp(logger.CompStartup),

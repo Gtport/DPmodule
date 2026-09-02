@@ -8,6 +8,7 @@ import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { AuthService } from '../../core/auth/auth.service';
+import { PlanApiService } from '../plan/plan-api.service';
 import { TrailDelay, TrailOp, TrailVisit, VagonTrail, VagonTrailApiService } from './vagon-trail-api.service';
 import { loadXlsx } from '../../shared/xlsx';
 
@@ -189,6 +190,7 @@ const TRAIL_COL_WIDTHS = [12.3, 25, 8.4, 8.4, 17, 8, 44, 17, 17];
 })
 export class VagonTrailModalComponent implements OnInit {
   private readonly api = inject(VagonTrailApiService);
+  private readonly planApi = inject(PlanApiService); // статус: режим источника провайдера
   private readonly msg = inject(NzMessageService);
   /** Запрос 601 в АСУ (POST pull) — правка данных: порог operator. */
   readonly canEdit = inject(AuthService).canEdit;
@@ -214,12 +216,28 @@ export class VagonTrailModalComponent implements OnInit {
       const t = await this.api.get(this.vagonId());
       this.trail.set(t);
       // Пустой сохранённый трейл → автозапрос в АСУ, но только тому, кому
-      // можно писать (клиенту бэкенд ответит 403 — не дёргаем зря).
-      if (!t.count && this.canEdit()) await this.pull();
+      // можно писать (клиенту бэкенд ответит 403 — не дёргаем зря), и только
+      // когда провайдер в штатном режиме АСУ (решение владельца 02.09.2026):
+      // в режиме ЛК каждый запрос гонит робота провайдера в кабинет РЖД, и
+      // само ОТКРЫТИЕ модалки не должно этого делать. Явная кнопка
+      // «Обновить из АСУ» остаётся — единичный осознанный запрос разрешён.
+      if (!t.count && this.canEdit() && (await this.autoPullAllowed())) await this.pull();
     } catch (err) {
       this.msg.error(apiErrorMessage(err));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  /** Разрешён ли АВТОзапрос истории: провайдер должен быть в режиме АСУ.
+   *  Статус недоступен или поля provider нет (источник выключен) — ведём себя
+   *  как раньше: запрет строится только на явном «не asu». */
+  private async autoPullAllowed(): Promise<boolean> {
+    try {
+      const st = await this.planApi.getStatus();
+      return !st.provider || st.provider.source === 'asu';
+    } catch {
+      return true;
     }
   }
 

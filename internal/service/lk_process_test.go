@@ -386,6 +386,10 @@ func (f *fakeHistoryRepo) RowsByIDs(_ context.Context, ids []string) ([]domain.V
 	return out, nil
 }
 
+func (f *fakeHistoryRepo) TripsForGU2B(context.Context, []string) ([]domain.GU2BTrip, error) {
+	return nil, nil
+}
+
 func (f *fakeHistoryRepo) TripsForPamyatki(_ context.Context, _ []string) ([]domain.PamyatkaTrip, error) {
 	return nil, nil
 }

@@ -75,7 +75,7 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 				// Робот ЛК сюда не входит (решение владельца 14.08.2026): он ходит
 				// в кабинет РЖД под СОБСТВЕННЫМ аккаунтом клиента из lk_account,
 				// чужих данных достать не может — сторожить нечего.
-				if cfg.ASU.Enabled || cfg.Reference.Enabled || cfg.MAX.Enabled ||
+				if cfg.ASU.Enabled || cfg.Reference.Enabled || cfg.GU2B.Enabled || cfg.MAX.Enabled ||
 					cfg.WagonOps.Enabled || cfg.Bros.Enabled {
 					t.Error("у инстанса river интеграции провайдера обязаны быть выключены")
 				}
@@ -95,7 +95,7 @@ func TestRepoExampleConfigsParse(t *testing.T) {
 				// Машина разработчика: ВСЕ исходящие интеграции выключены —
 				// второй инстанс не должен слать формы в живые чаты MAX и
 				// дублировать забор данных у провайдера.
-				if cfg.ASU.Enabled || cfg.Reference.Enabled || cfg.MAX.Enabled ||
+				if cfg.ASU.Enabled || cfg.Reference.Enabled || cfg.GU2B.Enabled || cfg.MAX.Enabled ||
 					cfg.WagonOps.Enabled || cfg.Bros.Enabled {
 					t.Error("в шаблоне разработчика исходящие интеграции обязаны быть выключены")
 				}

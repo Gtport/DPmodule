@@ -61,6 +61,15 @@ type VagonOpService struct {
 	pause       time.Duration
 	maxAttempts int
 
+	// mode — режим источника провайдера: при не-asu (lk/paused/unknown) фоновый
+	// разбор очереди приостанавливается (решение владельца 02.09.2026, см.
+	// DrainQueue). nil — гейта нет, прежнее поведение.
+	mode *ProviderModeService
+	// modeBlocked — режим, о котором уже написали в лог: тик воркера частый
+	// (15 с), и без этой памятки сутки фолбэка дали бы тысячи одинаковых строк.
+	// Читается/пишется только под mu.
+	modeBlocked string
+
 	mu sync.Mutex // один проход воркера за раз (тик + ручной не пересекаются)
 }
 
@@ -73,6 +82,9 @@ func NewVagonOpService(repo port.VagonOperationRepository, client port.WagonHist
 		batch: defaultVagonOpBatch, pause: defaultVagonOpPause, maxAttempts: defaultVagonOpMaxAttempts,
 	}
 }
+
+// SetProviderMode подключает гейт по режиму источника провайдера (см. DrainQueue).
+func (s *VagonOpService) SetProviderMode(mode *ProviderModeService) { s.mode = mode }
 
 // SetLimits — пороги воркера из конфига (0 → дефолт).
 func (s *VagonOpService) SetLimits(batch int, pause time.Duration, maxAttempts int) {
@@ -195,6 +207,31 @@ func (s *VagonOpService) DrainQueue(ctx context.Context) error {
 		return nil // предыдущий проход ещё идёт
 	}
 	defer s.mu.Unlock()
+
+	// Гейт по режиму провайдера (решение владельца 02.09.2026): когда провайдер
+	// не в штатном режиме АСУ (lk — фолбэк через робота ЛК РЖД, paused — лежат
+	// оба источника, unknown — режим не узнать), автоматические запросы истории
+	// ЗАПРЕЩЕНЫ: в режиме lk каждый 601 гонит робота провайдера в кабинет РЖД —
+	// медленно и рискует блокировкой учётки, а пачка по 50 добила бы её первой.
+	// Заявки не теряются — копятся в очереди и разберутся по возвращении asu.
+	// Ручной запрос диспетчера (RequestNow, трейл-модалка) под гейт не подпадает:
+	// единичный осознанный запрос — «предусмотренный случай».
+	if s.mode != nil {
+		if m := s.mode.Mode(ctx); !m.IsASU() {
+			if s.modeBlocked != m.Source {
+				s.log.Warn("очередь историй приостановлена: провайдер не в режиме АСУ",
+					logger.Comp(logger.CompVagonops), zap.String("provider_source", m.Source),
+					zap.String("подробности", "заявки копятся и разберутся после возврата режима asu; ручной запрос из интерфейса работает"))
+				s.modeBlocked = m.Source
+			}
+			return nil
+		}
+		if s.modeBlocked != "" {
+			s.log.Info("разбор очереди историй возобновлён: провайдер снова в режиме АСУ",
+				logger.Comp(logger.CompVagonops), zap.String("was", s.modeBlocked))
+			s.modeBlocked = ""
+		}
+	}
 
 	reqs, err := s.repo.NextBatch(ctx, s.batch)
 	if err != nil {

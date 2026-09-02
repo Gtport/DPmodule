@@ -14,13 +14,19 @@ import (
 // из единого журнала событий. Возрасты пересчитываются от clock.Now() (МСК), а не
 // берутся из момента записи — панель показывает «сколько прошло сейчас».
 type StatusService struct {
-	journal *Journal
-	dir     *DirectoryCache
+	journal  *Journal
+	dir      *DirectoryCache
+	provider *ProviderModeService // nil — источник АСУ выключен, строки на панели нет
 }
 
 func NewStatusService(journal *Journal, dir *DirectoryCache) *StatusService {
 	return &StatusService{journal: journal, dir: dir}
 }
+
+// SetProviderMode подключает режим источника провайдера (asu/lk/paused) к
+// статус-панели. Отдельный сеттер: сервис режима существует только при
+// включённом источнике data_source id=asu.
+func (s *StatusService) SetProviderMode(p *ProviderModeService) { s.provider = p }
 
 // DislTermStatusDTO — актуальность одной ветки дислокации (файл ЛК грузополучателя),
 // аналог d_attis/d_nmtp в gtport.
@@ -59,11 +65,21 @@ type PlanStatusDTO struct {
 	AgeMinutes int               `json:"age_minutes"` // с момента загрузки, мин
 }
 
+// ProviderStatusDTO — режим источника провайдера rwgate для панели: каким
+// шлюзом он добывает данные прямо сейчас. Фронт рисует его парой
+// «дислокация-история»: asu → «АСУ-АСУ», lk → «АСУ-ЛК» (см. providermode.go).
+type ProviderStatusDTO struct {
+	Source    string            `json:"source"`     // asu | lk | paused | unknown
+	OK        bool              `json:"ok"`         // ответ провайдера получен и разобран
+	CheckedAt *domain.LocalTime `json:"checked_at"` // момент последнего похода (МСК)
+}
+
 // StatusDTO — полный статус для панели.
 type StatusDTO struct {
-	Now         domain.LocalTime `json:"now"`
-	Dislocation *DislStatusDTO   `json:"dislocation"` // nil, если снимок ещё не обновлялся
-	Plans       []PlanStatusDTO  `json:"plans"`
+	Now         domain.LocalTime   `json:"now"`
+	Dislocation *DislStatusDTO     `json:"dislocation"` // nil, если снимок ещё не обновлялся
+	Plans       []PlanStatusDTO    `json:"plans"`
+	Provider    *ProviderStatusDTO `json:"provider,omitempty"` // nil — источник АСУ выключен
 }
 
 // Status собирает актуальность дислокации и планов из журнала.
@@ -73,6 +89,11 @@ func (s *StatusService) Status(ctx context.Context) StatusDTO {
 
 	if ev, ok := s.journal.LatestDislUpdate(ctx); ok {
 		out.Dislocation = s.dislStatusFrom(ev, now)
+	}
+	if s.provider != nil {
+		m := s.provider.Mode(ctx) // кэш минуту; протух и провайдер лежит — ждём не дольше 5 с
+		ca := m.CheckedAt
+		out.Provider = &ProviderStatusDTO{Source: m.Source, OK: m.OK, CheckedAt: &ca}
 	}
 	for _, code := range s.dir.PlanCodes() {
 		ps := PlanStatusDTO{PlanCode: code}

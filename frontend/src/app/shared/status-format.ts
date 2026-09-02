@@ -28,6 +28,31 @@ export function sourceLabel(s: string): string {
   return SOURCE_LABELS[s] ?? s ?? '—';
 }
 
+/**
+ * Режим источника провайдера rwgate (ручка /dislocation/status → provider):
+ * пара «дислокация-история» словами владельца. asu — штатно («АСУ-АСУ»),
+ * lk — провайдер добывает данные роботом ЛК РЖД («АСУ-ЛК», автозапросы истории
+ * у нас приостановлены), paused — у провайдера лежат оба источника,
+ * unknown/прочее — провайдер не ответил или ответ не разобран.
+ */
+export function providerModeLabel(src: string): string {
+  switch (src) {
+    case 'asu': return 'АСУ-АСУ';
+    case 'lk': return 'АСУ-ЛК';
+    case 'paused': return 'ПАУЗА';
+    default: return 'нет ответа';
+  }
+}
+
+/** Цвет чипа режима провайдера: штатно — зелёный, фолбэк — оранжевый, беда — красный. */
+export function providerModeColor(src: string): string {
+  switch (src) {
+    case 'asu': return 'green';
+    case 'lk': return 'orange';
+    default: return 'red';
+  }
+}
+
 export function planLabel(code: string): string {
   return PLAN_LABELS[code] ?? code.toUpperCase();
 }

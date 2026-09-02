@@ -172,11 +172,20 @@ export interface PlanStatus {
   age_minutes: number;          // с момента загрузки, мин
 }
 
+/** Режим источника провайдера rwgate: каким шлюзом он добывает данные сейчас. */
+export interface ProviderStatus {
+  source: string;             // asu | lk | paused | unknown
+  ok: boolean;                // ответ провайдера получен и разобран
+  checked_at: string | null;  // момент последнего похода (МСК)
+}
+
 /** Статус-панель: актуальность дислокации и планов. */
 export interface SystemStatus {
   now: string;
   dislocation: DislStatus | null;
   plans: PlanStatus[];
+  /** Отсутствует, когда источник АСУ на стенде выключен. */
+  provider?: ProviderStatus | null;
 }
 
 /** Клиент подсистемы «план подвода» (история загрузок + таблица нитей). */

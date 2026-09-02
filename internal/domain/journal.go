@@ -11,6 +11,7 @@ const (
 	EventRearrange    = "rearrangement" // перестановка/переадресация: правка naznach/pereadr_* оператором
 	EventArrivalsEdit = "arrivals_edit" // операторские действия с прибывшими: правки истории, подтверждения-скрытия
 	EventPamyatkaPull = "pamyatka_pull" // инкремент памяток ГУ-45: вехи подачи/уборки разнесены по рейсам
+	EventGU2BPull     = "gu2b_pull"     // инкремент уведомлений ГУ-2б: приём + (при apply) уточнение вех выгрузки
 )
 
 // Триггеры обновления снимка дислокации (event_journal.trigger).

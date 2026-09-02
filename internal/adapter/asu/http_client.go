@@ -134,6 +134,17 @@ func (c *HTTPClient) PullWagonHistory(ctx context.Context, client, vagon, from, 
 		"история вагона получена", true, zap.String("client", client), zap.String("vagon", vagon))
 }
 
+// PullProviderMode — режим источника провайдера: GET <base_url>/wagons/history/source.
+// Ответ вида {"source":"asu"|"lk"|"paused"} — каким шлюзом провайдер добывает
+// данные прямо сейчас (см. port.ProviderModeClient). Тот же адрес и авторизация,
+// что у дислокации и 601.
+func (c *HTTPClient) PullProviderMode(ctx context.Context) ([]byte, error) {
+	// quiet: ручка опрашивается раз в минуту (кэш ProviderModeService) — на INFO
+	// она бы заняла лог собой; отказы CallLog пишет сам, с глушилкой повторов.
+	return c.get(ctx, c.baseURL+"/wagons/history/source", "режим источника",
+		"режим источника получен", true)
+}
+
 // AuthMode — режим, который ФАКТИЧЕСКИ применится к запросу; только для логов.
 // По конфигу источника этого не видно: пустой auth_mode значит разное в
 // зависимости от того, настроен ли сервис-аккаунт. Различаем и две разновидности

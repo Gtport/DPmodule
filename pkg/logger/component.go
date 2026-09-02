@@ -22,6 +22,7 @@ const (
 	CompAuth        = "auth"        // разбор токена, роли, сервис-аккаунт Keycloak
 	CompDislocation = "dislocation" // конвейер: забор ЛК/АСУ, гарды, пересборка снимка
 	CompPamyatka    = "pamyatka"    // памятки ГУ-45 на подачу/уборку
+	CompGU2B        = "gu2b"        // уведомления ГУ-2б о завершении грузовой операции (факт выгрузки)
 	CompVagonops    = "vagonops"    // история продвижения вагона (запрос 601)
 	CompPlan        = "plan"        // план подвода
 	CompNotify      = "notify"      // уведомления (колокольчик)
@@ -34,7 +35,7 @@ const (
 // components — тот же список для проверок; порядок не важен.
 var components = []string{
 	CompStartup, CompHTTP, CompDB, CompAuth, CompDislocation, CompPamyatka,
-	CompVagonops, CompPlan, CompNotify, CompBroadcast, CompJournal,
+	CompGU2B, CompVagonops, CompPlan, CompNotify, CompBroadcast, CompJournal,
 	CompWorker, CompTiles,
 }
 

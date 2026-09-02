@@ -61,6 +61,10 @@ type refHistStub struct {
 	updates map[string]map[string]any
 }
 
+func (s *refHistStub) TripsForGU2B(context.Context, []string) ([]domain.GU2BTrip, error) {
+	return nil, nil
+}
+
 func (s *refHistStub) TripsForPamyatki(_ context.Context, vagons []string) ([]domain.PamyatkaTrip, error) {
 	s.asked = vagons
 	return s.trips, nil

@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/Gtport/DPmodule/internal/adapter/asu"
+	gu2badapter "github.com/Gtport/DPmodule/internal/adapter/gu2b"
 	"github.com/Gtport/DPmodule/internal/adapter/lkrobot"
 	"github.com/Gtport/DPmodule/internal/adapter/max"
 	"github.com/Gtport/DPmodule/internal/adapter/oauth"
@@ -55,6 +56,7 @@ func Build(
 	maxChatRepo port.MaxChatRepository,
 	lkAccountRepo port.LKAccountRepository,
 	pamCursorRepo port.PamyatkaCursorRepository,
+	gu2bRepo port.GU2BRepository,
 	reportPresetRepo port.ReportPresetRepository,
 	nmtpRepo port.NmtpRepository,
 	gtSnapRepo port.GtSnapshotRepository,
@@ -63,9 +65,9 @@ func Build(
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
-) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.VagonOpService, *service.BrosJournalService, *service.NotificationService) {
-	// asuIngest и refSvc отдаём наружу: их фоновые крон-воркеры живут в main
-	// (жизненный цикл процесса), а ручки остаются здесь. asuIngest = nil, если нет
+) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.GU2BService, *service.VagonOpService, *service.BrosJournalService, *service.NotificationService) {
+	// asuIngest, refSvc и gu2bSvc отдаём наружу: их фоновые крон-воркеры живут в
+	// main (жизненный цикл процесса), а ручки остаются здесь. nil, если нет
 	// БД/справочников (тогда воркер не запускается).
 	var asuIngest *service.ASUIngest
 	var vagonOps *service.VagonOpService
@@ -230,6 +232,29 @@ func Build(
 		handler.NewReferenceHandler(refSvc).RegisterRoutes(api)
 	}
 
+	// Уведомления ГУ-2б — источник факта выгрузки (решение владельца 17.08.2026,
+	// контракт — docs/GU2B.md): крон-инкремент копит уведомления и контролирует
+	// полноту нумерации; перезапись вех выгрузки — отдельный флаг gu2b.apply.
+	// Без истории и хранилища уведомлений подсистему не собрать — тогда ручек
+	// нет вовсе, как у памяток.
+	var gu2bSvc *service.GU2BService
+	if historyRepo != nil && gu2bRepo != nil {
+		gu2bClient := gu2badapter.NewHTTPClient(cfg.GU2B.BaseURL, cfg.GU2B.InsecureTLS,
+			cfg.GU2B.AuthMode, cfg.GU2B.AuthSecretKey, secrets, tokens).WithLogger(log)
+		log.Info("ГУ-2б: исходящая авторизация", logger.Comp(logger.CompStartup),
+			zap.String("auth", gu2bClient.AuthMode()), zap.String("base_url", cfg.GU2B.BaseURL),
+			zap.Bool("apply", cfg.GU2B.Apply))
+		gu2bSvc = service.NewGU2BService(gu2bClient, gu2bRepo, historyRepo, journalRepo,
+			dirCache, cfg.GU2B.Clients, service.GU2BTiming{
+				Interval:      cfg.GU2B.PullInterval,
+				CursorOverlap: cfg.GU2B.CursorOverlap,
+				StaleAfter:    cfg.GU2B.StaleAfter,
+				Limit:         cfg.GU2B.Limit,
+				Apply:         cfg.GU2B.Apply,
+			}, log)
+		handler.NewGU2BHandler(gu2bSvc).RegisterRoutes(api)
+	}
+
 	// Исходящая рассылка форм в мессенджер MAX (токен — max.bot_token из конфига
 	// либо env MAX_BOT_TOKEN, CA Минцифры вшит в адаптер). enabled=false → sender=nil,
 	// health отвечает «выключено». Чаты/маршруты и сами рассылки — следующие ветки.
@@ -359,6 +384,18 @@ func Build(
 			}
 			handler.NewASUPullHandler(asuIngest).RegisterRoutes(api)
 
+			// Режим источника провайдера (asu/lk/paused, ручка провайдера
+			// /wagons/history/source): показывается на панели «Статус системы»
+			// парой «АСУ-АСУ»/«АСУ-ЛК» и гейтит фоновую очередь 601 — при
+			// фолбэке провайдера в ЛК автоматические запросы истории запрещены
+			// (решение владельца 02.09.2026). Клиент — тот же источник
+			// data_source id=asu, что у дислокации и 601.
+			var provMode *service.ProviderModeService
+			if ds, ok := cfgCache.DataSource("asu"); ok && ds.Enabled {
+				modeClient := asu.NewHTTPClient(ds.Config, secrets, tokens).WithLogger(log)
+				provMode = service.NewProviderModeService(modeClient, log)
+			}
+
 			// История продвижения вагона (запрос 601, тот же провайдер): очередь
 			// заявок из конвейера (прибытие/пропажа/выбытие-10) + ручной запрос.
 			// Клиент собирается из того же источника data_source id=asu.
@@ -370,6 +407,9 @@ func Build(
 					if delayRepo != nil {
 						vagonOps.SetDelays(delayRepo) // задержки рейса в трейле («ехал N, из них X стоял»)
 					}
+					if provMode != nil {
+						vagonOps.SetProviderMode(provMode) // гейт очереди по режиму провайдера
+					}
 					vagonOps.SetLimits(cfg.WagonOps.Batch, cfg.WagonOps.Pause, cfg.WagonOps.MaxAttempts)
 					proc.SetVagonOps(vagonOps)
 					handler.NewVagonOpsHandler(vagonOps).RegisterRoutes(api)
@@ -377,7 +417,11 @@ func Build(
 			}
 
 			// Статус-панель: актуальность дислокации и планов из журнала.
-			handler.NewStatusHandler(service.NewStatusService(journal, dirCache)).RegisterRoutes(api)
+			statusSvc := service.NewStatusService(journal, dirCache)
+			if provMode != nil {
+				statusSvc.SetProviderMode(provMode)
+			}
+			handler.NewStatusHandler(statusSvc).RegisterRoutes(api)
 
 			// Экран «Перестановки/Переадресация»: группировки из RAM-снимка,
 			// батч-правка naznach/pereadr_* с одним пересчётом Stage 3–4.
@@ -497,7 +541,7 @@ func Build(
 		Handler:      router,
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
-	}, asuIngest, refSvc, vagonOps, brosJournal, notifSvc
+	}, asuIngest, refSvc, gu2bSvc, vagonOps, brosJournal, notifSvc
 }
 
 // lkFetcher — переходник адаптер → сервис: таблицу кабинета сервис знает своим

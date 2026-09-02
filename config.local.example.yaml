@@ -103,6 +103,14 @@ reference:
   stale_after: 6h       # молчание дольше — пустой проход в журнал
   clients: [attis, nmtp]
 
+gu2b:                   # уведомления ГУ-2б (факт выгрузки) — как и прочие интеграции, в WSL выключено
+  enabled: false
+  base_url: ""
+  insecure_tls: false
+  pull_interval: 1h
+  clients: [attis, nmtp]
+  apply: false
+
 max:
   enabled: false        # ⚠️ true = реальная рассылка в реальные чаты MAX. Не включать.
   base_url: https://platform-api2.max.ru

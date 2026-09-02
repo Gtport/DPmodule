@@ -30,6 +30,11 @@ type HistoryRepository interface {
 	// только якорь привязки (date_prib) и состояние заполнения памятками.
 	// Рейсы без date_prib не возвращаются — привязать памятку к ним не к чему.
 	TripsForPamyatki(ctx context.Context, vagons []string) ([]domain.PamyatkaTrip, error)
+	// TripsForGU2B — рейсы перечисленных вагонов для движка уведомлений ГУ-2б:
+	// якорь замка (date_prib) и текущие вехи выгрузки. Рейсы без date_prib не
+	// возвращаются (замка нет), «недоехавшие» — возвращаются с флагом: движок
+	// обязан их видеть и пропускать осознанно.
+	TripsForGU2B(ctx context.Context, vagons []string) ([]domain.GU2BTrip, error)
 	// ArrivedRows — строки истории с фактом прибытия: date_prib_d ∈ [from; to]
 	// (даты без времени), naznach из набора (пустой набор — все). Для «Истории
 	// прибывших» домашней страницы.

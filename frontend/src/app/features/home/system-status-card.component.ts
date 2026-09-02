@@ -10,7 +10,8 @@ import { DislocationApiService } from '../dislocation/dislocation-api.service';
 import { LkIntakeModalComponent } from './lk-intake-modal.component';
 import { LkRobotModalComponent } from './lk-robot-modal.component';
 import {
-  DISL_AGE, PLAN_AGE, ageColor, fmtStamp, nowJd, nowMsk, planLabel, sourceLabel,
+  DISL_AGE, PLAN_AGE, ageColor, fmtStamp, nowJd, nowMsk, planLabel,
+  providerModeColor, providerModeLabel, sourceLabel,
 } from '../../shared/status-format';
 
 /**
@@ -81,6 +82,20 @@ import {
             }
           </span>
         </div>
+
+        <!-- Режим источника провайдера rwgate: АСУ-АСУ штатно, АСУ-ЛК — провайдер
+             добывает данные роботом ЛК РЖД (наши автозапросы истории при этом
+             приостановлены, см. vagonop). Строки нет, когда источник АСУ на
+             стенде выключен (поле provider не приходит). -->
+        @if (status()?.provider; as pr) {
+          <div class="row" nz-tooltip
+               nzTooltipTitle="Источник данных провайдера (дислокация-история): АСУ-АСУ — штатно; АСУ-ЛК — провайдер работает через ЛК РЖД, автозапросы истории приостановлены; ПАУЗА — у провайдера лежат оба источника">
+            <span class="lbl">Провайдер</span>
+            <span class="vals">
+              <nz-tag class="chip" [nzColor]="providerModeColor(pr.source)">{{ providerModeLabel(pr.source) }}</nz-tag>
+            </span>
+          </div>
+        }
 
         <!-- Ветки дислокации по грузополучателям (АТТИС/НМТП из реестра) —
              без отступа, вровень с остальными метками (решение владельца
@@ -258,6 +273,8 @@ export class SystemStatusCardComponent implements OnInit, OnDestroy {
   nowMsk(): string { return nowMsk(this.now()); }
   nowJd(): string { return nowJd(this.now()); }
   sourceLabel(src: string): string { return sourceLabel(src); }
+  providerModeLabel(src: string): string { return providerModeLabel(src); }
+  providerModeColor(src: string): string { return providerModeColor(src); }
   planLabel(code: string): string { return planLabel(code); }
   fmt(ts: string | null): string { return fmtStamp(ts); }
 

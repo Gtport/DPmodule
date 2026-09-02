@@ -126,6 +126,10 @@ func (cwHist) PerestanovkaRows(context.Context, domain.LocalTime, domain.LocalTi
 }
 func (cwHist) RowsByIDs(context.Context, []string) ([]domain.VagonHistory, error) { return nil, nil }
 func (cwHist) UpdateFieldsBatch(context.Context, map[string]map[string]any) error { return nil }
+func (cwHist) TripsForGU2B(context.Context, []string) ([]domain.GU2BTrip, error) {
+	return nil, nil
+}
+
 func (cwHist) TripsForPamyatki(context.Context, []string) ([]domain.PamyatkaTrip, error) {
 	return nil, nil
 }

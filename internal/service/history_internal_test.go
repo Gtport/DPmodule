@@ -254,6 +254,10 @@ func (r *histStubRepo) RowsByIDs(_ context.Context, ids []string) ([]domain.Vago
 	return out, nil
 }
 
+func (r *histStubRepo) TripsForGU2B(context.Context, []string) ([]domain.GU2BTrip, error) {
+	return nil, nil
+}
+
 func (r *histStubRepo) TripsForPamyatki(_ context.Context, _ []string) ([]domain.PamyatkaTrip, error) {
 	return nil, nil
 }

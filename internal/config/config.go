@@ -26,6 +26,7 @@ type Config struct {
 	ASU       ASU       `yaml:"asu"`
 	LKRobot   LKRobot   `yaml:"lk_robot"`
 	Reference Reference `yaml:"reference"`
+	GU2B      GU2B      `yaml:"gu2b"`
 	WagonOps  WagonOps  `yaml:"wagonops"`
 	MAX       MAX       `yaml:"max"`
 	Bros      Bros      `yaml:"bros"`
@@ -129,6 +130,36 @@ type Reference struct {
 	Clients         []string      `yaml:"clients"`          // коды клиентов провайдера: ["attis","nmtp"]
 	AuthMode        string        `yaml:"auth_mode"`        // "keycloak" | "apikey"; пусто → keycloak, если сервис-аккаунт настроен
 	AuthSecretKey   string        `yaml:"auth_secret_key"`  // режим apikey: имя ключа X-API-Key; дефолт ASU_TOKEN (тот же провайдер)
+}
+
+// GU2B — приём уведомлений ГУ-2б о завершении грузовой операции (источник
+// факта выгрузки, решение владельца 17.08.2026) у того же провайдера, что
+// дислокация и памятки. Крон-инкремент <client>/gu2b/update по контракту
+// docs/GU2B.md; уведомления копятся в gu2b_notification/gu2b_car с контролем
+// полноты сквозной нумерации.
+//
+// ⚠️ Ручка на стороне провайдера ЕЩЁ НЕ реализована (проверено по его коду от
+// 02.09.2026): включённый крон до её релиза будет получать 404 — это видно в
+// логе (component=gu2b) и не вредит, но включать блок раньше времени незачем.
+//
+// Apply — отдельный рубильник ШАГА 3: перезапись вех выгрузки
+// date_vigr/date_vigr_d/place_vigr в vagon_history движком domain.ApplyGU2B.
+// По умолчанию ВЫКЛЮЧЕН: сначала копим живые уведомления и сверяем их с
+// нашими вехами, включение — решение владельца после проверки. Снимковый путь
+// (10→12) остаётся резервом в любом случае — он пишет веху первым, уведомление
+// лишь уточняет её (фактическое время и фактический терминал перестановок).
+type GU2B struct {
+	Enabled       bool          `yaml:"enabled"`        // включить крон-инкремент
+	BaseURL       string        `yaml:"base_url"`       // базовый URL провайдера (тот же, что у памяток)
+	InsecureTLS   bool          `yaml:"insecure_tls"`   // не проверять серт (самоподписанный на IP)
+	PullInterval  time.Duration `yaml:"pull_interval"`  // период крон-инкремента; дефолт 1h
+	CursorOverlap time.Duration `yaml:"cursor_overlap"` // нахлёст курсора (запоздавшие записи); дефолт 30m
+	StaleAfter    time.Duration `yaml:"stale_after"`    // курсор молчит дольше — тревога в журнал; дефолт 12h
+	Limit         int           `yaml:"limit"`          // уведомлений на страницу инкремента; дефолт 200
+	Clients       []string      `yaml:"clients"`        // коды клиентов провайдера: ["attis","nmtp"]
+	AuthMode      string        `yaml:"auth_mode"`      // "keycloak" | "apikey"; пусто → keycloak при сервис-аккаунте
+	AuthSecretKey string        `yaml:"auth_secret_key"` // режим apikey: имя ключа X-API-Key; дефолт ASU_TOKEN
+	Apply         bool          `yaml:"apply"`          // перезапись вех выгрузки в vagon_history (шаг 3)
 }
 
 // ASU — фоновый забор дислокации из АСУ-АСУ (внутренний крон). Сами источники
@@ -541,6 +572,23 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Reference.AuthSecretKey == "" {
 		cfg.Reference.AuthSecretKey = "ASU_TOKEN" // тот же провайдер/ключ, что и АСУ
+	}
+	if cfg.GU2B.PullInterval == 0 {
+		cfg.GU2B.PullInterval = time.Hour
+	}
+	if cfg.GU2B.CursorOverlap == 0 {
+		cfg.GU2B.CursorOverlap = 30 * time.Minute
+	}
+	// Уведомления рождаются реже памяток (~30/сутки на клиента), порог тишины
+	// шире — иначе журнал тревожился бы каждой спокойной ночью.
+	if cfg.GU2B.StaleAfter == 0 {
+		cfg.GU2B.StaleAfter = 12 * time.Hour
+	}
+	if cfg.GU2B.Limit == 0 {
+		cfg.GU2B.Limit = 200
+	}
+	if cfg.GU2B.AuthSecretKey == "" {
+		cfg.GU2B.AuthSecretKey = "ASU_TOKEN" // тот же провайдер/ключ, что и АСУ
 	}
 	if cfg.WagonOps.DrainInterval == 0 {
 		cfg.WagonOps.DrainInterval = 15 * time.Second

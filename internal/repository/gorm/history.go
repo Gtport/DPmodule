@@ -204,6 +204,39 @@ func (r *HistoryRepository) TripsForPamyatki(ctx context.Context, vagons []strin
 	return out, nil
 }
 
+// TripsForGU2B — рейсы вагонов для движка уведомлений ГУ-2б: якорь замка и
+// текущие вехи выгрузки (см. port.HistoryRepository).
+func (r *HistoryRepository) TripsForGU2B(ctx context.Context, vagons []string) ([]domain.GU2BTrip, error) {
+	if len(vagons) == 0 {
+		return nil, nil
+	}
+	var rows []struct {
+		ID         string
+		Vagon      string
+		DatePrib   *domain.LocalTime
+		DateVigr   *domain.LocalTime
+		PlaceVigr  string
+		NotArrived bool
+	}
+	err := r.db.WithContext(ctx).Model(&vagonHistoryModel{}).
+		Select("id, vagon, date_prib, date_vigr, place_vigr, not_arrived").
+		Where("vagon IN ?", vagons).
+		Where("date_prib IS NOT NULL"). // без прибытия замку не за что цепляться
+		Order("vagon, date_prib").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.GU2BTrip, len(rows))
+	for i, w := range rows {
+		out[i] = domain.GU2BTrip{
+			ID: w.ID, Vagon: w.Vagon, DatePrib: w.DatePrib,
+			DateVigr: w.DateVigr, PlaceVigr: w.PlaceVigr, NotArrived: w.NotArrived,
+		}
+	}
+	return out, nil
+}
+
 // ArrivedRows — строки с фактом прибытия за период (date_prib_d ∈ [from; to]),
 // с фильтром по терминалам naznach (пусто — все). Читает по индексу
 // ix_vagon_history_date_prib_d; сортировка — стабильная, по времени прибытия.

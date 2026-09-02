@@ -93,6 +93,11 @@ reference:
   pull_interval: 1h
   clients: []
 
+gu2b:
+  enabled: false        # ГУ-2б — тот же провайдер трёх терминалов, у АНБ его нет
+  base_url: ""
+  clients: []
+
 max:
   enabled: false        # рассылок нет; чаты боевого клиента сюда не сеются
   base_url: https://platform-api2.max.ru
