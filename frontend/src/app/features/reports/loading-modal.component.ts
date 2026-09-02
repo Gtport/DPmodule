@@ -15,6 +15,7 @@ import { addDaysIso, todayMsk, yesterdayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { LoadingApiService, LoadingDailyRow } from './loading-api.service';
 import { MaxApiService } from './max-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /** Строка сводки терминала: метка отправителя × группа груза. */
 interface SummaryLine {
@@ -492,7 +493,7 @@ export class LoadingModalComponent implements OnInit {
     const p = this.pivot();
     if (!p.dates.length) return;
     try {
-      const XLSX = await import('xlsx-js-style');
+      const XLSX = await loadXlsx();
       const border = { style: 'thin', color: { rgb: '000000' } };
       const borders = { top: border, bottom: border, left: border, right: border };
       const center = { horizontal: 'center', vertical: 'center' };

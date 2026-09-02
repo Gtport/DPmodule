@@ -13,6 +13,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { TerminalTarget } from './arrivals-api.service';
 import { TimeBaseService } from '../../shared/time-base.service';
 import { NearestApiService, NearestTrain, NearestVagon } from './nearest-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Перемещаемая модалка «Ближайшие поезда — <станция>» (перенос gtport Nearest):
@@ -308,7 +309,7 @@ export class NearestModalComponent implements OnInit {
   async exportTrain(): Promise<void> {
     const t = this.ctx();
     if (!t) return;
-    const XLSX = await import('xlsx-js-style');
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{
       'Индекс': t.index, 'Прибытие': this.fmtDT(t.time_jd),

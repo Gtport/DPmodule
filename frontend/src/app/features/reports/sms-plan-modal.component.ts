@@ -10,7 +10,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { toBlob } from 'html-to-image';
 import { apiErrorMessage } from '../../core/api/api-error';
 import {
-  BroadcastResult, PlanFormLine, PlanFormTerminal, MaxApiService, groupTrains,
+  BroadcastResult, PlanFormDay, PlanFormLine, PlanFormTerminal, MaxApiService, groupTrains,
 } from './max-api.service';
 import { addDaysIso, todayMsk } from '../../shared/msk-date';
 
@@ -174,8 +174,20 @@ export class SmsPlanModalComponent implements OnInit {
 
   ngOnInit(): void { void this.reload(); }
 
-  /** Раскладка по ЖД-суткам (порядок задан бэком: отсечка 18:00). */
-  days(f: PlanFormTerminal) { return groupTrains(f.trains, 'jd'); }
+  /**
+   * Раскладка по ЖД-суткам (порядок задан бэком: отсечка 18:00). Сутки «вчера» и
+   * «сегодня» показываются ВСЕГДА, даже когда поездов в них нет: в этих блоках
+   * живут цифры учётного листа, а список дней строится из самих поездов. День без
+   * подвода, но с выгрузкой (остаток 13 → выгрузка 13 → остаток 0) иначе исчезал
+   * из формы целиком вместе со своими числами.
+   */
+  days(f: PlanFormTerminal): PlanFormDay[] {
+    const out = groupTrains(f.trains, 'jd');
+    for (const date of [this.prevDate(), this.date()]) {
+      if (!out.some((d) => d.date === date)) out.push({ date, trains: [] });
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date));
+  }
 
   prevDate(): string { return addDaysIso(this.date(), -1); }
   isPrev(d: string): boolean { return d === this.prevDate(); }

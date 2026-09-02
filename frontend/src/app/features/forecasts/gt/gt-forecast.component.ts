@@ -24,6 +24,7 @@ import { GtTrainTableComponent } from './train-table.component';
 import { GtTrainEditComponent } from './train-edit-dialog.component';
 import { GtSnapshotsComponent } from './snapshots-dialog.component';
 import { GtSpeedsComponent } from './speeds-dialog.component';
+import { loadXlsx } from '../../../shared/xlsx';
 
 /**
  * Вкладка «Прогноз прибытия/выгрузки» (перенос страницы «Прогноз GT» gtport).
@@ -477,7 +478,7 @@ export class GtForecastComponent implements OnInit {
   async exportExcel(): Promise<void> {
     const d = this.viewData();
     if (!d) return;
-    const XLSX = await import('xlsx-js-style');
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
     const headStyle = { font: { bold: true } };
     const head = (cells: string[]) => cells.map((v) => ({ v, s: headStyle }));

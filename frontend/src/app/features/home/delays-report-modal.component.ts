@@ -13,6 +13,7 @@ import { addDaysIso, todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
 import { DelayEpisode, DelaysApiService } from './delays-api.service';
 import { VagonTrailModalComponent } from './vagon-trail-modal.component';
+import { loadXlsx } from '../../shared/xlsx';
 
 /** Поезд-группа эпизодов периода — та же агрегация, что в «Задержанных вагонах». */
 interface ReportGroup {
@@ -309,7 +310,7 @@ export class DelaysReportModalComponent implements OnInit {
     const recs = this.filteredRecords();
     if (!recs.length) return;
     try {
-      const XLSX = await import('xlsx-js-style');
+      const XLSX = await loadXlsx();
       const wb = XLSX.utils.book_new();
       const durD = (h: number) => (h ? Math.round((h / 24) * 100) / 100 : 0); // сутки, сотые
 

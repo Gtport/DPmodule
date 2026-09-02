@@ -9,6 +9,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { AuthService } from '../../core/auth/auth.service';
 import { TrailDelay, TrailOp, TrailVisit, VagonTrail, VagonTrailApiService } from './vagon-trail-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Ширины колонок выгрузки в единицах Excel — порядок как в строке экспорта:
@@ -284,7 +285,7 @@ export class VagonTrailModalComponent implements OnInit {
   async exportExcel(): Promise<void> {
     const t = this.trail();
     if (!t?.count) return;
-    const XLSX = await import('xlsx-js-style');
+    const XLSX = await loadXlsx();
     const rows = t.visits.flatMap((v: TrailVisit) => v.ops.map((o) => ({
       'Вагон': t.vagon,
       'Станция': v.station || '',

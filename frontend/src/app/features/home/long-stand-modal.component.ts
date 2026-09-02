@@ -13,6 +13,7 @@ import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService } from './arrivals-api.service';
 import { LongStandApiService, LongStandVagon } from './long-stand-api.service';
 import { VagonTrailModalComponent } from './vagon-trail-modal.component';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Перемещаемая модалка «Долгостой»: вагоны, стоящие на станции назначения
@@ -221,7 +222,7 @@ export class LongStandModalComponent implements OnInit {
     const recs = this.rows();
     if (!recs.length) return;
     try {
-      const XLSX = await import('xlsx-js-style');
+      const XLSX = await loadXlsx();
       const wb = XLSX.utils.book_new();
       const sh = [
         ['Терминал', 'Вагон', 'Состояние', 'Индекс', 'Станция дислокации', 'Операция',

@@ -19,6 +19,7 @@ import {
   ArrivalGroup, ArrivalSubgroup, ArrivalsApiService, ArrivalsUpdate, ArrivalVagon, TerminalTarget,
 } from './arrivals-api.service';
 import { VagonTrailModalComponent } from './vagon-trail-modal.component';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Модалка «История прибывших — <станция>» (перенос gtport HistoryTable):
@@ -634,29 +635,37 @@ export class ArrivalsHistoryComponent implements OnInit {
 
   // ── Экспорт в Excel (в браузере, как gtport) ─────────────────────────────
   async exportAll(): Promise<void> {
-    const XLSX = await import('xlsx-js-style');
-    const wb = XLSX.utils.book_new();
-    const trains = this.filteredGroups().map((g) => {
-      const row: Record<string, string | number> = {
-        'Дата': this.fmtD(g.date_prib_d), 'Индекс поезда': g.index_pp,
-        'План (ЖД)': this.fmtDT(g.plan_jd), 'Факт': this.fmtT(g.date_prib),
-        'Отклонение': g.otkl, 'Всего вагонов': g.vagon_count,
-      };
-      for (const t of this.terminals()) {
-        row[t.name] = this.subsFor(g, t.name).map((sg) => sg.display).join('; ');
-      }
-      return row;
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trains), 'Поезда');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(this.vagonRows(this.filteredGroups())), 'Вагоны');
-    XLSX.writeFile(wb, `История_${this.station()}_${this.from()}_${this.to()}.xlsx`);
+    try {
+      const XLSX = await loadXlsx();
+      const wb = XLSX.utils.book_new();
+      const trains = this.filteredGroups().map((g) => {
+        const row: Record<string, string | number> = {
+          'Дата': this.fmtD(g.date_prib_d), 'Индекс поезда': g.index_pp,
+          'План (ЖД)': this.fmtDT(g.plan_jd), 'Факт': this.fmtT(g.date_prib),
+          'Отклонение': g.otkl, 'Всего вагонов': g.vagon_count,
+        };
+        for (const t of this.terminals()) {
+          row[t.name] = this.subsFor(g, t.name).map((sg) => sg.display).join('; ');
+        }
+        return row;
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(trains), 'Поезда');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(this.vagonRows(this.filteredGroups())), 'Вагоны');
+      XLSX.writeFile(wb, `История_${this.station()}_${this.from()}_${this.to()}.xlsx`);
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    }
   }
 
   async exportGroup(g: ArrivalGroup): Promise<void> {
-    const XLSX = await import('xlsx-js-style');
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(this.vagonRows([g])), 'Вагоны');
-    XLSX.writeFile(wb, `Поезд_${g.index_pp || 'без_индекса'}_${this.fmtD(g.date_prib_d)}.xlsx`);
+    try {
+      const XLSX = await loadXlsx();
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(this.vagonRows([g])), 'Вагоны');
+      XLSX.writeFile(wb, `Поезд_${g.index_pp || 'без_индекса'}_${this.fmtD(g.date_prib_d)}.xlsx`);
+    } catch (err) {
+      this.msg.error(apiErrorMessage(err));
+    }
   }
 
   private vagonRows(groups: ArrivalGroup[]): Record<string, string | number>[] {

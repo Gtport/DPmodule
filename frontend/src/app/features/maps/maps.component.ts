@@ -18,6 +18,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { environment } from '../../../environments/environment';
 import { TimeBaseService } from '../../shared/time-base.service';
 import { MapGroup, MapSubgroup, MapTarget, MapWagon, MapsApiService } from './maps-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /** Режим показа: все / ходовые (есть прогноз) / отцепки (нет прогноза). */
 type RunMode = 'all' | 'running' | 'detached';
@@ -837,7 +838,7 @@ export class MapsComponent implements AfterViewInit, OnDestroy {
 
   /** Excel вагонов группы — на клиенте, как прочие выгрузки (xlsx-js-style). */
   async exportWagons(): Promise<void> {
-    const XLSX = await import('xlsx-js-style');
+    const XLSX = await loadXlsx();
     const header = ['№', 'Вагон', 'Накладная', 'Марка груза', 'Вес, т', 'Собственник',
       'Статус', 'Получ.', 'Назн.', 'Ст. отправления', 'Отправитель', 'Погружен', 'Отправление', 'Срок доставки'];
     const rows = this.wagons().map((v) => [

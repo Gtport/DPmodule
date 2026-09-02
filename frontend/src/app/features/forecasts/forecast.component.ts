@@ -12,6 +12,7 @@ import {
   ForecastBoardDTO,
   ForecastLine,
 } from './forecast-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Экран «Новый прогноз» (перенос gtport PrognozNew).
@@ -705,7 +706,7 @@ export class ForecastComponent implements OnInit {
     const singleSheet = this.isSummary();
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const XLSX: any = await import('xlsx-js-style');
+      const XLSX: any = await loadXlsx();
       const wb = XLSX.utils.book_new();
       const numCols = 6 + dates.length;
       const colWidths = [

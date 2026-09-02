@@ -12,6 +12,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { addDaysIso, todayMsk, yesterdayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { VygruzkaApiService, VygruzkaDay, VygruzkaPeriod } from './vygruzka-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Перемещаемая модалка «Выгрузка за период» (перенос gtport
@@ -275,7 +276,7 @@ export class VygruzkaModalComponent implements OnInit {
     const days = this.days();
     if (!days.length) return;
     try {
-      const XLSX = await import('xlsx-js-style');
+      const XLSX = await loadXlsx();
       const border = { style: 'thin', color: { rgb: '000000' } };
       const borders = { top: border, bottom: border, left: border, right: border };
       const center = { horizontal: 'center', vertical: 'center' };

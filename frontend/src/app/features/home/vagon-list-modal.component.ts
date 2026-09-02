@@ -12,6 +12,7 @@ import { NzDropDownModule, NzContextMenuService, NzDropdownMenuComponent } from 
 import { apiErrorMessage } from '../../core/api/api-error';
 import { todayMsk } from '../../shared/msk-date';
 import { VagonTrailModalComponent } from './vagon-trail-modal.component';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Строка списка вагонов «сбоку от снимка» (сейчас — «Проблемные вагоны»,
@@ -210,7 +211,7 @@ export class VagonListModalComponent {
     const recs = this.filtered();
     if (!recs.length) return;
     try {
-      const XLSX = await import('xlsx-js-style');
+      const XLSX = await loadXlsx();
       const wb = XLSX.utils.book_new();
       const sh = [
         ['Вагон', 'Индекс', 'Станция дислокации', 'Операция', 'Время оп.', 'Терминал',

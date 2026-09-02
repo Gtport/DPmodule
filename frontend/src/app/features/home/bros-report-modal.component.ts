@@ -16,6 +16,7 @@ import { ArrivalsApiService } from './arrivals-api.service';
 import {
   BrosApiService, BrosRecord, BrosReportRow, BrosReasonCode, BrosTopReason, BrosJournalEntry,
 } from './bros-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /** Суточный агрегат периода. */
 interface DailyStat { date: string; count: number; created: number; lifted: number; }
@@ -620,7 +621,7 @@ export class BrosReportModalComponent implements OnInit {
     if (this.rows().length === 0) return;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const XLSX: any = await import('xlsx-js-style');
+      const XLSX: any = await loadXlsx();
       const wb = XLSX.utils.book_new();
       const ed = (ts: string | null) => (ts && ts.length >= 10 ? this.fmtDate(ts) : '-'); // пусто → «-»
 

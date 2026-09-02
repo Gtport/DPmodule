@@ -11,6 +11,7 @@ import { ArrivalsApiService } from './arrivals-api.service';
 import { OverdueApiService, OverdueGroup, OverdueVagon } from './overdue-api.service';
 import { OverdueReportModalComponent } from './overdue-report-modal.component';
 import { VagonTrailModalComponent } from './vagon-trail-modal.component';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Перемещаемая модалка «Просрочка доставки» — вагоны текущего снимка, у которых
@@ -223,7 +224,7 @@ export class OverdueModalComponent implements OnInit {
     const groups = this.groups();
     if (!groups.length) return;
     try {
-      const XLSX = await import('xlsx-js-style');
+      const XLSX = await loadXlsx();
       const wb = XLSX.utils.book_new();
       const rows: (string | number)[][] = [
         ['Накладная', 'Вагон', 'Индекс', 'Грузоотправитель', 'Ст. отправления', 'Ст. назначения',

@@ -13,6 +13,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { todayMsk } from '../../shared/msk-date';
 import { VagonTrailModalComponent } from '../home/vagon-trail-modal.component';
 import { Train, TrainSubgroup, TrainVagon, TrainsApiService, TrainsTarget } from './trains-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /** Режим «Управление»: все / ходовые (есть прогноз) / отцепки (нет прогноза). */
 type RunMode = 'all' | 'running' | 'detached';
@@ -715,7 +716,7 @@ export class TrainsComponent implements OnInit {
   // ── Excel ────────────────────────────────────────────────────────────────
   /** Вся таблица (или результаты поиска) двумя листами «Поезда» + «Вагоны». */
   async exportAll(): Promise<void> {
-    const XLSX = await import('xlsx-js-style');
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
     const mode = this.searchMode();
     if (!mode) {
@@ -752,7 +753,7 @@ export class TrainsComponent implements OnInit {
   /** Натурный лист одного поезда. */
   async exportTrain(t: Train | null): Promise<void> {
     if (!t) return;
-    const XLSX = await import('xlsx-js-style');
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
     const rows = t.sub_groups.flatMap((sg) => sg.vagons.map((v) => ({
       '№': v.npp_vag ?? '', 'Вагон': v.vagon, 'Накладная': v.invoice,

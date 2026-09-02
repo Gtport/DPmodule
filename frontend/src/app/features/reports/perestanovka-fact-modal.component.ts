@@ -13,6 +13,7 @@ import { apiErrorMessage } from '../../core/api/api-error';
 import { todayMsk } from '../../shared/msk-date';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { PerestanovkaApiService, PerestanovkaFactRow } from './perestanovka-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Перемещаемая модалка «Факт. перестановки» (перенос gtport RearrangementFact):
@@ -203,7 +204,7 @@ export class PerestanovkaFactModalComponent implements OnInit {
   /** Excel полной раскладкой gtport (все строки, включая скрытые с экрана поля). */
   async exportExcel(): Promise<void> {
     try {
-      const XLSX = await import('xlsx-js-style');
+      const XLSX = await loadXlsx();
       const headers = [
         'Вагон', 'Накладная Р', 'Накладная', 'Индекс Р', 'Индекс ПП',
         'Дата погр', 'Ст. погр', 'Грузоотпр', 'Получатель', 'Назначение',

@@ -15,6 +15,7 @@ import { readableTextColor } from '../../shared/readable-color';
 import { ArrivalsApiService, TerminalTarget } from '../home/arrivals-api.service';
 import { MaxApiService } from './max-api.service';
 import { PodhodApiService, PodhodItem, PodhodReport, PodhodSubgroup } from './podhod-api.service';
+import { loadXlsx } from '../../shared/xlsx';
 
 /**
  * Перемещаемая модалка «Подход — терминал» (перенос gtport PortReportTable):
@@ -314,7 +315,7 @@ export class PodhodModalComponent implements OnInit {
     const items = this.rows();
     if (!items.length) return;
     try {
-      const XLSX = await import('xlsx-js-style');
+      const XLSX = await loadXlsx();
       const border = { style: 'thin', color: { rgb: '000000' } };
       const borders = { top: border, bottom: border, left: border, right: border };
       const center = { horizontal: 'center', vertical: 'center' };
