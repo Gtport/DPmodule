@@ -90,7 +90,7 @@ export class ArrivalsCardComponent implements OnInit, OnDestroy {
    *  строки трекаются по ключу, DOM меняется только у изменившихся). */
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  /** Последние 5 прибывших, свежие сверху (группы приходят по возрастанию времени). */
+  /** Последние 5 прибывших, свежие сверху (группы приходят по возрастанию реального времени прибытия). */
   readonly topGroups = computed(() => [...this.groups()].reverse().slice(0, 5));
 
   ngOnInit(): void {

@@ -774,7 +774,8 @@ func arrivalsRange(fromS, toS string) (domain.LocalTime, domain.LocalTime, error
 // groupArrivals — группировка строк истории в поезда (эталон gtport):
 // группа = index_pp + date_prib, подгруппа = index_main|naznach|gruzpol_s|sms_1.
 // Строки приходят отсортированными (date_prib, index_pp, vagon) — порядок
-// групп/вагонов сохраняется стабильным.
+// подгрупп/вагонов сохраняется стабильным; поезда затем переупорядочиваются по
+// реальному (МСК) моменту прибытия, см. arrivalMoment.
 func groupArrivals(rows []domain.VagonHistory) []ArrivalGroupDTO {
 	type subKey struct{ im, nz, gp, sms string }
 	var order []string
@@ -833,7 +834,26 @@ func groupArrivals(rows []domain.VagonHistory) []ArrivalGroupDTO {
 		sort.SliceStable(g.SubGroups, func(i, j int) bool { return g.SubGroups[i].Key < g.SubGroups[j].Key })
 		out = append(out, *g)
 	}
+	// Поезда — по РЕАЛЬНОМУ моменту прибытия, а не по ЖД-штампу: вечерний поезд
+	// (час ≥ 18) хранится с датой +1 и при сортировке по штампу вставал после
+	// дневных поездов тех же ЖД-суток, хотя пришёл накануне вечером.
+	sort.SliceStable(out, func(i, j int) bool {
+		ti, tj := arrivalMoment(out[i].DatePrib), arrivalMoment(out[j].DatePrib)
+		if !ti.Equal(tj) {
+			return ti.Before(tj)
+		}
+		return out[i].IndexPp < out[j].IndexPp
+	})
 	return out
+}
+
+// arrivalMoment — реальный (МСК) момент прибытия из ЖД-штампа для сортировки
+// поездов; пустой штамп уходит в конец списка.
+func arrivalMoment(jd *domain.LocalTime) time.Time {
+	if jd == nil || jd.IsZero() {
+		return time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)
+	}
+	return planMskFromJd(jd).Time()
 }
 
 // arrivalDisplay — строка состава подгруппы в формате gtport:

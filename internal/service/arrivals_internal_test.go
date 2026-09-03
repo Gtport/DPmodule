@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,6 +62,28 @@ func TestGroupArrivals(t *testing.T) {
 		if !seen {
 			t.Errorf("не найден display %q (есть: %v)", d, disp)
 		}
+	}
+}
+
+// Порядок поездов — по реальному (МСК) моменту прибытия, а не по ЖД-штампу:
+// поезд с ЖД-временем 02.09 21:12 пришёл 01.09 вечером и должен стоять раньше
+// утреннего 02.09 07:31, хотя строки из базы идут по возрастанию штампа.
+func TestGroupArrivalsChronological(t *testing.T) {
+	jd := func(d, h, m int) time.Time { return time.Date(2026, 9, d, h, m, 0, 0, time.UTC) }
+	rows := []domain.VagonHistory{ // порядок из БД: ORDER BY date_prib, index_pp
+		histRow("1", "V1", "9700-468-9845", "9700-468-9845", "МЕЖДУРЕЧЕНСК", "УТ-1", "УТ-1", jd(2, 7, 31)),
+		histRow("2", "V2", "8631-903-9847", "8631-903-9847", "БАРДИНО", "УТ-1", "УТ-1", jd(2, 17, 6)),
+		histRow("3", "V3", "9131-609-9861", "9131-609-9861", "УЛАК", "УТ-1", "УТ-1", jd(2, 21, 12)),      // реально 01.09 21:12
+		histRow("4", "V4", "9700-470-9845", "9700-470-9845", "ПОЛОСУХИНО", "УТ-1", "УТ-1", jd(2, 22, 9)), // реально 01.09 22:09
+		histRow("5", "V5", "9700-474-9845", "9700-474-9845", "УЛАК", "УТ-1", "УТ-1", jd(3, 3, 38)),
+	}
+	var got []string
+	for _, g := range groupArrivals(rows) {
+		got = append(got, g.IndexPp)
+	}
+	want := []string{"9131-609-9861", "9700-470-9845", "9700-468-9845", "8631-903-9847", "9700-474-9845"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("порядок поездов:\n got %v\nwant %v", got, want)
 	}
 }
 
