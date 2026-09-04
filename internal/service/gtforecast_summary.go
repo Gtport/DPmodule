@@ -55,11 +55,19 @@ type GtSnapshotSummaryRow struct {
 	FreeSlotsH0     int     `json:"free_slots_h0"`     // свободных ниток станции на стартовые сутки (только Total)
 	FreeSlotsH1     int     `json:"free_slots_h1"`
 	FreeSlotsH2     int     `json:"free_slots_h2"`
+	// Очередь у ворот по факту (gtforecast_gate.go): прибыли на станцию
+	// назначения, не выгружены (статусы 9/10).
+	TrainsAtStation   int     `json:"trains_at_station"`
+	WagonsAtStation   int     `json:"wagons_at_station"`
+	TrainsOnFront     int     `json:"trains_on_front"`      // из них поданы / выгружаются
+	TrainsWaitingFeed int     `json:"trains_waiting_feed"`  // из них ждут подачи
+	MaxHoursAtStation float64 `json:"max_hours_at_station"` // дольше всех стоящий, ч от факта прибытия
 }
 
-// gtSnapshotSummary считает агрегаты по результату симуляции. start — стартовые
-// ЖД-сутки расчёта (дата без времени, как в GtSimulateRequest.StartDate).
-func gtSnapshotSummary(start time.Time, res GtSimulateDTO) GtSnapshotSummary {
+// gtSnapshotSummary считает агрегаты по результату симуляции и очереди у ворот.
+// start — стартовые ЖД-сутки расчёта (дата без времени, как в
+// GtSimulateRequest.StartDate); gate — поезда у ворот на момент расчёта.
+func gtSnapshotSummary(start time.Time, res GtSimulateDTO, gate []GtGateTrainDTO) GtSnapshotSummary {
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
 	total := &GtSnapshotSummaryRow{}
 	rows := map[string]*GtSnapshotSummaryRow{}
@@ -196,6 +204,21 @@ func gtSnapshotSummary(start time.Time, res GtSimulateDTO) GtSnapshotSummary {
 			total.FreeSlotsH1++
 		case 2:
 			total.FreeSlotsH2++
+		}
+	}
+
+	for _, g := range gate {
+		for _, r := range []*GtSnapshotSummaryRow{total, row(g.Terminal)} {
+			r.TrainsAtStation++
+			r.WagonsAtStation += g.VagonCount
+			if g.Phase == GtGateOnFront {
+				r.TrainsOnFront++
+			} else {
+				r.TrainsWaitingFeed++
+			}
+			if g.HoursAtStation != nil && *g.HoursAtStation > r.MaxHoursAtStation {
+				r.MaxHoursAtStation = math.Round(*g.HoursAtStation*10) / 10
+			}
 		}
 	}
 

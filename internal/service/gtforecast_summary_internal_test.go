@@ -57,7 +57,13 @@ func TestGtSnapshotSummary(t *testing.T) {
 		},
 	}
 
-	s := gtSnapshotSummary(start, res)
+	h10, h3 := 10.0, 3.4
+	gate := []GtGateTrainDTO{
+		{Index: "G1", Terminal: "АЭ", VagonCount: 71, Phase: GtGateOnFront, HoursAtStation: &h10},
+		{Index: "G2", Terminal: "АЭ", VagonCount: 60, Phase: GtGateWaitingFeed, HoursAtStation: &h3},
+		{Index: "G3", Terminal: "ГУТ-2", VagonCount: 55, Phase: GtGateWaitingFeed},
+	}
+	s := gtSnapshotSummary(start, res, gate)
 	tot := s.Total
 	check := func(name string, got, want int) {
 		t.Helper()
@@ -92,6 +98,13 @@ func TestGtSnapshotSummary(t *testing.T) {
 	check("total.FreeSlotsH0", tot.FreeSlotsH0, 1)
 	check("total.FreeSlotsH1", tot.FreeSlotsH1, 2)
 	check("total.FreeSlotsH2", tot.FreeSlotsH2, 1)
+	check("total.TrainsAtStation", tot.TrainsAtStation, 3)
+	check("total.WagonsAtStation", tot.WagonsAtStation, 186)
+	check("total.TrainsOnFront", tot.TrainsOnFront, 1)
+	check("total.TrainsWaitingFeed", tot.TrainsWaitingFeed, 2)
+	if tot.MaxHoursAtStation != 10 {
+		t.Errorf("total.MaxHoursAtStation %v, ожидалось 10", tot.MaxHoursAtStation)
+	}
 
 	ae, ok := s.ByTerminal["АЭ"]
 	if !ok {
@@ -112,6 +125,10 @@ func TestGtSnapshotSummary(t *testing.T) {
 	check("АЭ.IdleMinDay0", ae.IdleMinDay0, 300)
 	check("АЭ.NormSpeed", ae.NormSpeed, 144)
 	check("АЭ.FreeSlotsH1 (только Total)", ae.FreeSlotsH1, 0)
+	check("АЭ.TrainsAtStation", ae.TrainsAtStation, 2)
+	check("АЭ.WagonsAtStation", ae.WagonsAtStation, 131)
+	check("АЭ.TrainsOnFront", ae.TrainsOnFront, 1)
+	check("ГУТ-2.TrainsWaitingFeed", s.ByTerminal["ГУТ-2"].TrainsWaitingFeed, 1)
 
 	gut := s.ByTerminal["ГУТ-2"]
 	check("ГУТ-2.TrainsQueue", gut.TrainsQueue, 2) // B, F
