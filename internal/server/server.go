@@ -65,11 +65,12 @@ func Build(
 	jwtMW *middleware.KeycloakJWT,
 	log *zap.Logger,
 	mountMetrics bool,
-) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.GU2BService, *service.VagonOpService, *service.BrosJournalService, *service.NotificationService) {
+) (*http.Server, *service.ASUIngest, *service.ReferenceService, *service.GU2BService, *service.VagonOpService, *service.BrosJournalService, *service.NotificationService, *service.GtForecastService) {
 	// asuIngest, refSvc и gu2bSvc отдаём наружу: их фоновые крон-воркеры живут в
 	// main (жизненный цикл процесса), а ручки остаются здесь. nil, если нет
 	// БД/справочников (тогда воркер не запускается).
 	var asuIngest *service.ASUIngest
+	var gtSvc *service.GtForecastService // наружу — крону автоснапшота (gt_snapshot)
 	var vagonOps *service.VagonOpService
 	// brosJournal отдаём наружу для крона ежедневного bulk-save (nil без БД).
 	var brosJournal *service.BrosJournalService
@@ -529,9 +530,10 @@ func Build(
 				// gtport): очередь поездов причальной станции + серверная
 				// симуляция выгрузки (пакет unloadsim, golden-тесты);
 				// снапшоты планов и CSV-аналитика «прогноз vs факт».
-				handler.NewGtForecastHandler(service.NewGtForecastService(
+				gtSvc = service.NewGtForecastService(
 					actualCache, dirCache, historyRepo, cwSvc, cfgCache, gtSnapRepo,
-					planRepo, cargoWorkRepo)).RegisterRoutes(api)
+					planRepo, cargoWorkRepo)
+				handler.NewGtForecastHandler(gtSvc).RegisterRoutes(api)
 			}
 		}
 	}
@@ -541,7 +543,7 @@ func Build(
 		Handler:      router,
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
-	}, asuIngest, refSvc, gu2bSvc, vagonOps, brosJournal, notifSvc
+	}, asuIngest, refSvc, gu2bSvc, vagonOps, brosJournal, notifSvc, gtSvc
 }
 
 // lkFetcher — переходник адаптер → сервис: таблицу кабинета сервис знает своим

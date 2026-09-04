@@ -23,8 +23,12 @@ type gtSnapshotModel struct {
 	FreeSlots string            `gorm:"column:free_slots"`
 	Journal   string            `gorm:"column:journal"`
 	SavedBy   string            `gorm:"column:saved_by"`
-	CreatedAt *domain.LocalTime `gorm:"column:created_at"`
-	UpdatedAt *domain.LocalTime `gorm:"column:updated_at"`
+	// Паспорт расчёта (миграция 000064).
+	ComputedAt *domain.LocalTime `gorm:"column:computed_at"`
+	Kind       string            `gorm:"column:kind"`
+	Meta       string            `gorm:"column:meta"`
+	CreatedAt  *domain.LocalTime `gorm:"column:created_at"`
+	UpdatedAt  *domain.LocalTime `gorm:"column:updated_at"`
 }
 
 func (gtSnapshotModel) TableName() string { return "dpport.gt_forecast_snapshot" }
@@ -43,20 +47,27 @@ func (r *GtSnapshotRepository) Upsert(ctx context.Context, s domain.GtSnapshot) 
 		PlanDate: s.PlanDate, Station: s.Station, StartDate: s.StartDate,
 		DaysCount: s.DaysCount, Request: s.Request, Trains: s.Trains,
 		Flows: s.Flows, FreeSlots: s.FreeSlots, Journal: s.Journal,
-		SavedBy: s.SavedBy, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
+		SavedBy: s.SavedBy, ComputedAt: s.ComputedAt, Kind: s.Kind, Meta: s.Meta,
+		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
+	}
+	if m.Kind == "" {
+		m.Kind = domain.GtSnapshotManual
+	}
+	if m.Meta == "" {
+		m.Meta = "null" // jsonb: пустая строка не разбирается
 	}
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "plan_date"}, {Name: "station"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"start_date", "days_count", "request", "trains", "flows",
-			"free_slots", "journal", "saved_by", "updated_at",
+			"free_slots", "journal", "saved_by", "computed_at", "kind", "meta", "updated_at",
 		}),
 	}).Create(&m).Error
 }
 
 func (r *GtSnapshotRepository) List(ctx context.Context, from, to domain.LocalTime, station string) ([]domain.GtSnapshot, error) {
 	return r.list(ctx, from, to, station,
-		"id, plan_date, station, start_date, days_count, saved_by, created_at, updated_at")
+		"id, plan_date, station, start_date, days_count, saved_by, computed_at, kind, created_at, updated_at")
 }
 
 func (r *GtSnapshotRepository) ListFull(ctx context.Context, from, to domain.LocalTime, station string) ([]domain.GtSnapshot, error) {
@@ -106,6 +117,7 @@ func toDomainSnapshot(m gtSnapshotModel) domain.GtSnapshot {
 		ID: m.ID, PlanDate: m.PlanDate, Station: m.Station, StartDate: m.StartDate,
 		DaysCount: m.DaysCount, Request: m.Request, Trains: m.Trains, Flows: m.Flows,
 		FreeSlots: m.FreeSlots, Journal: m.Journal, SavedBy: m.SavedBy,
+		ComputedAt: m.ComputedAt, Kind: m.Kind, Meta: m.Meta,
 		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 	}
 }

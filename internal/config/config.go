@@ -31,6 +31,12 @@ type Config struct {
 	MAX       MAX       `yaml:"max"`
 	Bros      Bros      `yaml:"bros"`
 
+	// GtSnapshot — ежедневное автосохранение расчёта прогноза ГТ по всем
+	// причальным станциям (аналитика «обстановка», docs/ANALYTICS.md §7.1):
+	// панель «прогноз vs факт» рвётся, если диспетчер забыл нажать кнопку.
+	// Ручной снапшот тех же суток крон не перезаписывает.
+	GtSnapshot GtSnapshot `yaml:"gt_snapshot"`
+
 	// Tiles — вторая БД: кэш тайлов OSM для карты (docs/MAP_TILES.md). Тип
 	// переиспользуется целиком; на стендах, где тайлы лежат в общей базе,
 	// отличается только schema. Enabled=false → карта работает без подложки.
@@ -76,6 +82,13 @@ func (m MapView) EnabledOrDefault() bool { return m.Enabled == nil || *m.Enabled
 type Bros struct {
 	Enabled     bool   `yaml:"enabled"`      // включить ежедневный крон bulk-save журнала
 	JournalCron string `yaml:"journal_cron"` // время bulk-save по МСК «HH:MM»; дефолт 01:00
+}
+
+// GtSnapshot — крон автосохранения расчёта прогноза ГТ (см. Config.GtSnapshot).
+type GtSnapshot struct {
+	Enabled bool   `yaml:"enabled"` // включить ежедневный автоснапшот
+	Cron    string `yaml:"cron"`    // время расчёта по МСК «HH:MM»; дефолт 06:30 (после утренней версии плана подвода)
+	Days    int    `yaml:"days"`    // горизонт очереди, суток; дефолт 10
 }
 
 // MAX — исходящая рассылка форм («План подвода»/оперативка) в мессенджер MAX.
@@ -610,6 +623,12 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.MAX.SendDelay == 0 {
 		cfg.MAX.SendDelay = 500 * time.Millisecond
+	}
+	if cfg.GtSnapshot.Cron == "" {
+		cfg.GtSnapshot.Cron = "06:30"
+	}
+	if cfg.GtSnapshot.Days <= 0 || cfg.GtSnapshot.Days > 14 {
+		cfg.GtSnapshot.Days = 10
 	}
 	if cfg.Bros.JournalCron == "" {
 		cfg.Bros.JournalCron = "01:00"

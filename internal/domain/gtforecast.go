@@ -16,6 +16,17 @@ type GtSnapshot struct {
 	FreeSlots string // свободные нитки горизонта
 	Journal   string // журнал what-if правок
 	SavedBy   string
-	CreatedAt *LocalTime
-	UpdatedAt *LocalTime
+	// Паспорт расчёта (миграция 000064): момент расчёта, вид (manual|auto),
+	// jsonb-паспорт (скорости линий, отсечка, горизонт, правки).
+	ComputedAt *LocalTime
+	Kind       string
+	Meta       string
+	CreatedAt  *LocalTime
+	UpdatedAt  *LocalTime
 }
+
+// Виды снапшота прогноза ГТ.
+const (
+	GtSnapshotManual = "manual" // кнопка диспетчера
+	GtSnapshotAuto   = "auto"   // ежедневный крон gt_snapshot
+)

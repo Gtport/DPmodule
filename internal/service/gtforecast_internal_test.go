@@ -26,13 +26,18 @@ func TestGtTransitTrains(t *testing.T) {
 		// Поезд с плановой ниткой: три вагона, две подгруппы (разные станции отправления).
 		{Index: "8650-101-9840", IndexPp: "8650-555-9840", StationOper: "ТАЙШЕТ", Status: ip(2),
 			ProgJd: prog, RasstStanNazn: ip(500), Naznach: "АЭ", GruzpolS: "АЭ",
-			StanNazn: "МЫС АСТАФЬЕВА", StationNach: "ЕРУНАКОВО", CargoGroup: "УГОЛЬ", Color: "#7030A0"},
+			StanNazn: "МЫС АСТАФЬЕВА", StationNach: "ЕРУНАКОВО", CargoGroup: "УГОЛЬ", Color: "#7030A0",
+			DorogaOper: "ВСБ", TimeOp: lt("2026-08-03T20:00:00"), Oper: "ПРИБ", ProstCh: ip(5),
+			Gruzotpr: "РУК", Client: "САВИТАР"},
 		{Index: "8650-101-9840", IndexPp: "8650-555-9840", StationOper: "ТАЙШЕТ", Status: ip(2),
 			ProgJd: prog, RasstStanNazn: ip(500), Naznach: "АЭ", GruzpolS: "АЭ",
-			StanNazn: "МЫС АСТАФЬЕВА", StationNach: "ЕРУНАКОВО", CargoGroup: "УГОЛЬ", Color: "#7030A0"},
+			StanNazn: "МЫС АСТАФЬЕВА", StationNach: "ЕРУНАКОВО", CargoGroup: "УГОЛЬ", Color: "#7030A0",
+			DorogaOper: "ВСБ", TimeOp: lt("2026-08-03T21:30:00"), Oper: "ОТПР", ProstCh: ip(3), ProstMin: ip(30),
+			Gruzotpr: "РУК", Client: "САВИТАР"},
 		{Index: "8650-101-9840", IndexPp: "8650-555-9840", StationOper: "ТАЙШЕТ", Status: ip(2),
-			ProgJd: prog, RasstStanNazn: ip(500), Naznach: "ГУТ-2", GruzpolS: "ГУТ-2",
-			StanNazn: "МЫС АСТАФЬЕВА", StationNach: "УЛАК", CargoGroup: "МЕТАЛЛ", Color: "#FF5722"},
+			ProgJd: prog, RasstStanNazn: ip(500), Naznach: "ГУТ-2", GruzpolS: "АЭ",
+			StanNazn: "МЫС АСТАФЬЕВА", StationNach: "УЛАК", CargoGroup: "МЕТАЛЛ", Color: "#FF5722",
+			DorogaOper: "ВСБ", Gruzotpr: "ЕВРАЗ"},
 		// Без индекса → Б/И 1.
 		{Index: "", StationOper: "ХАБАРОВСК", Status: ip(4),
 			ProgJd: lt("2026-08-05T02:00:00"), RasstStanNazn: ip(900), Naznach: "АЭ", GruzpolS: "АЭ",
@@ -71,6 +76,60 @@ func TestGtTransitTrains(t *testing.T) {
 	}
 	if got[1].Index != "Б/И 1" {
 		t.Errorf("безындексный поезд получил %q, ожидалось «Б/И 1»", got[1].Index)
+	}
+
+	// Дислокация на момент расчёта (аналитика «обстановка»): дорога и станция
+	// назначения — с первого вагона; операция — самая поздняя по вагонам;
+	// простой — минимальный (3 ч 30 мин, а не 5 ч); адрес и клиент — в подгруппе.
+	if tr.DorogaOper != "ВСБ" || tr.StanNazn != "МЫС АСТАФЬЕВА" {
+		t.Errorf("дорога %q / назначение %q, ожидались ВСБ / МЫС АСТАФЬЕВА", tr.DorogaOper, tr.StanNazn)
+	}
+	if tr.RasstStanNazn == nil || *tr.RasstStanNazn != 500 {
+		t.Errorf("км до назначения %v, ожидалось 500", tr.RasstStanNazn)
+	}
+	if tr.TimeOp == nil || time.Time(*tr.TimeOp) != time.Time(*lt("2026-08-03T21:30:00")) || tr.Oper != "ОТПР" {
+		t.Errorf("операция %v %q, ожидалась самая поздняя 21:30 ОТПР", tr.TimeOp, tr.Oper)
+	}
+	if tr.IdleHours == nil || *tr.IdleHours != 3.5 {
+		t.Errorf("простой %v ч, ожидалось минимальное 3.5", tr.IdleHours)
+	}
+	for _, sg := range tr.SubGroups {
+		switch sg.Naznach {
+		case "АЭ":
+			if sg.GruzpolS != "АЭ" || sg.Gruzotpr != "РУК" || sg.Client != "САВИТАР" {
+				t.Errorf("подгруппа АЭ: адрес %q отправитель %q клиент %q", sg.GruzpolS, sg.Gruzotpr, sg.Client)
+			}
+		case "ГУТ-2":
+			if sg.GruzpolS != "АЭ" { // адрес АЭ, назначение ГУТ-2 — перестановка видна из снапшота
+				t.Errorf("подгруппа ГУТ-2: адрес %q, ожидался АЭ (перестановка)", sg.GruzpolS)
+			}
+		}
+	}
+	if got[1].IdleHours != nil || got[1].TimeOp != nil {
+		t.Errorf("поезд без полей простоя/операции должен оставить их пустыми: %v %v", got[1].IdleHours, got[1].TimeOp)
+	}
+}
+
+// Автоснапшот: сутки — текущие ЖД-сутки (час ≥ 18 → завтра) без времени; крон
+// не перезаписывает ручной снапшот (в том числе с пустым kind до миграции
+// 000064), но перезаписывает свой авто-снапшот.
+func TestGtAutoSnapshotRules(t *testing.T) {
+	d := gtAutoPlanDate(time.Date(2026, 9, 5, 6, 30, 0, 0, time.UTC))
+	if d != time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC) {
+		t.Errorf("06:30 → %v, ожидались сутки 05.09", d)
+	}
+	d = gtAutoPlanDate(time.Date(2026, 9, 5, 18, 5, 0, 0, time.UTC))
+	if d != time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC) {
+		t.Errorf("18:05 → %v, ожидались ЖД-сутки 06.09", d)
+	}
+	if !gtAutoShouldSave(nil) {
+		t.Error("нет снапшота — надо сохранять")
+	}
+	if gtAutoShouldSave(&domain.GtSnapshot{Kind: domain.GtSnapshotManual}) || gtAutoShouldSave(&domain.GtSnapshot{}) {
+		t.Error("ручной снапшот (и с пустым kind) крон трогать не должен")
+	}
+	if !gtAutoShouldSave(&domain.GtSnapshot{Kind: domain.GtSnapshotAuto}) {
+		t.Error("свой авто-снапшот крон перезаписывает")
 	}
 }
 

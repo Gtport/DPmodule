@@ -273,7 +273,7 @@ func run() error {
 	// -- http server --
 	// Metrics get a dedicated port unless metrics.port == http.port.
 	metricsOnMain := cfg.Metrics.Port == cfg.HTTP.Port
-	srv, asuIngest, refSvc, gu2bSvc, vagonOps, brosJournal, notifSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, gu2bRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, tilesRepo, notifRepo, jwtMW, log, metricsOnMain)
+	srv, asuIngest, refSvc, gu2bSvc, vagonOps, brosJournal, notifSvc, gtSvc := server.Build(cfg, sqlDB, cfgCache, dirCache, dislRepo, actualCache, status9Cache, status6Cache, historyRepo, unplRepo, planRepo, journalRepo, adminRepo, brosReasonRepo, brosRepo, brosJournalRepo, delayRepo, vagonOpRepo, cargoWorkRepo, maxChatRepo, lkAccountRepo, pamCursorRepo, gu2bRepo, reportPresetRepo, nmtpRepo, gtSnapRepo, tilesRepo, notifRepo, jwtMW, log, metricsOnMain)
 
 	var metricsSrv *http.Server
 	if !metricsOnMain {
@@ -346,6 +346,26 @@ func run() error {
 				func(ctx context.Context) error {
 					_, err := brosJournal.BulkSave(ctx)
 					return err
+				}))
+		}
+	}
+
+	// Ежедневный автоснапшот расчёта прогноза ГТ по всем причальным станциям
+	// (аналитика «прогноз vs факт», docs/ANALYTICS.md §7.1). Время — из
+	// gt_snapshot.cron (МСК «HH:MM»), по умолчанию 06:30 — после утренней версии
+	// плана подвода. Ручной снапшот тех же суток крон не перезаписывает; свой
+	// авто-снапшот перезаписывает (повтор идемпотентен).
+	if cfg.GtSnapshot.Enabled && gtSvc != nil {
+		offset, err := mskDailyOffset(cfg.GtSnapshot.Cron)
+		if err != nil {
+			log.Error("крон автоснапшота прогноза ГТ выключен: gt_snapshot.cron не ЧЧ:ММ (МСК)",
+				logger.Comp(logger.CompStartup),
+				zap.String("value", cfg.GtSnapshot.Cron), zap.Error(err))
+		} else {
+			days := cfg.GtSnapshot.Days
+			workers = append(workers, worker.NewAlignedCronWorker("gt-snapshot-auto", 24*time.Hour, offset, log,
+				func(ctx context.Context) error {
+					return gtSvc.AutoSnapshot(ctx, days)
 				}))
 		}
 	}

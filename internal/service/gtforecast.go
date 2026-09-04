@@ -72,6 +72,11 @@ type GtSubGroupDTO struct {
 	Color       string            `json:"color"`
 	IndexMain   string            `json:"index_main"`
 	IsUniversal bool              `json:"is_universal"` // груз можно переместить на другой терминал
+	// Обстановка (аналитика снапшотов, docs/ANALYTICS.md §7.1): адрес по накладной
+	// и клиент. Naznach ≠ GruzpolS — перестановка на соседний терминал.
+	GruzpolS string `json:"gruzpol_s,omitempty"` // грузополучатель (адрес)
+	Gruzotpr string `json:"gruzotpr,omitempty"`  // грузоотправитель
+	Client   string `json:"client,omitempty"`    // клиент (marka)
 }
 
 // GtTrainDTO — поезд очереди (транзит из снимка либо прибывший из истории).
@@ -88,6 +93,15 @@ type GtTrainDTO struct {
 	RaschMsk    *domain.LocalTime `json:"rasch_msk"`
 	Mistake     *float64          `json:"mistake"`
 	ToGo        *float64          `json:"to_go"`
+	// Дислокация на момент расчёта (аналитика «обстановка»: волна по удалённости,
+	// стояние, дорога; docs/ANALYTICS.md §7.1). Заполняется у транзита; у
+	// прибывших из истории пусто.
+	DorogaOper    string            `json:"doroga_oper,omitempty"`
+	StanNazn      string            `json:"stan_nazn,omitempty"`
+	RasstStanNazn *int              `json:"rasst_stan_nazn,omitempty"` // км до станции назначения
+	TimeOp        *domain.LocalTime `json:"time_op,omitempty"`         // последняя операция (самая поздняя по вагонам)
+	Oper          string            `json:"oper,omitempty"`            // имя последней операции
+	IdleHours     *float64          `json:"idle_hours,omitempty"`      // простой на станции операции, ч (минимальный по вагонам)
 	// DelayHours — эффективная задержка (эталон delay_hours): 72 у брошенных
 	// конвейером, значение правки у what-if-бросков/восстановлений, 0 иначе.
 	DelayHours float64         `json:"delay_hours"`
@@ -493,11 +507,21 @@ func gtTransitTrains(rows []domain.Dislocation, known map[string]bool, univers m
 					PlanJd: r.PlanJd, PlanMsk: r.PlanMsk, ProgJd: r.ProgJd, ProgMsk: r.ProgMsk,
 					RaschJd: r.RaschJd, RaschMsk: r.RaschMsk, Mistake: r.Mistake, ToGo: r.ToGo,
 					DelayHours: delay,
+					DorogaOper: r.DorogaOper, StanNazn: r.StanNazn, RasstStanNazn: r.RasstStanNazn,
+					TimeOp: r.TimeOp, Oper: r.Oper, IdleHours: gtIdleHours(r),
 				},
 				subs: map[string]*GtSubGroupDTO{},
 			}
 			trains[key] = t
 			order = append(order, key)
+		} else {
+			// Поезд — по самой поздней операции среди вагонов, простой — минимальный.
+			if r.TimeOp != nil && (t.t.TimeOp == nil || time.Time(*r.TimeOp).After(time.Time(*t.t.TimeOp))) {
+				t.t.TimeOp, t.t.Oper = r.TimeOp, r.Oper
+			}
+			if ih := gtIdleHours(r); ih != nil && (t.t.IdleHours == nil || *ih < *t.t.IdleHours) {
+				t.t.IdleHours = ih
+			}
 		}
 
 		subKey := r.IndexMain + "|" + r.StationNach + "|" + r.GruzpolS + "|" + r.Naznach + "|" + r.CargoGroup
@@ -507,6 +531,7 @@ func gtTransitTrains(rows []domain.Dislocation, known map[string]bool, univers m
 				Key: subKey, StationNach: r.StationNach, CargoGroup: r.CargoGroup,
 				Naznach: r.Naznach, Color: r.Color, IndexMain: r.IndexMain,
 				IsUniversal: univers[r.StanNazn+"|"+r.StationNach],
+				GruzpolS: r.GruzpolS, Gruzotpr: r.Gruzotpr, Client: r.Client,
 			}
 			t.subs[subKey] = sg
 			t.ord = append(t.ord, subKey)
@@ -536,6 +561,25 @@ func gtTransitTrains(rows []domain.Dislocation, known map[string]bool, univers m
 		out = append(out, t.t)
 	}
 	return out
+}
+
+// gtIdleHours — простой вагона на станции операции в часах (prost_dn/ch/min
+// потока дислокации); nil, если поток простой не дал.
+func gtIdleHours(r *domain.Dislocation) *float64 {
+	if r.ProstDn == nil && r.ProstCh == nil && r.ProstMin == nil {
+		return nil
+	}
+	h := 0.0
+	if r.ProstDn != nil {
+		h += float64(*r.ProstDn) * 24
+	}
+	if r.ProstCh != nil {
+		h += float64(*r.ProstCh)
+	}
+	if r.ProstMin != nil {
+		h += float64(*r.ProstMin) / 60
+	}
+	return &h
 }
 
 // gtArrivedTrains — прибывшие за сутки поезда из вех истории: группа по
