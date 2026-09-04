@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -63,6 +64,10 @@ type GtSnapshotPassport struct {
 	Overrides  int                      `json:"overrides"` // what-if правок в сеансе
 	Trains     int                      `json:"trains"`    // поездов в очереди
 	Lines      []GtSnapshotLinePassport `json:"lines"`
+	// Summary — агрегаты обстановки на момент расчёта (gtforecast_summary.go):
+	// корзины волны, брошенные, нитки, прибытие и остаток по диаграмме,
+	// свободные нитки — по станции и по терминалам.
+	Summary GtSnapshotSummary `json:"summary"`
 }
 
 // GtSnapshotLinePassport — скорости одной линии выгрузки на день расчёта.
@@ -117,17 +122,19 @@ func (s *GtForecastService) saveSnapshot(ctx context.Context, planDate time.Time
 		SavedBy:    savedBy,
 		ComputedAt: &now,
 		Kind:       kind,
-		Meta:       marshal(s.snapshotPassport(req, res)),
+		Meta:       marshal(s.snapshotPassport(startDate, req, res)),
 		CreatedAt:  &now, UpdatedAt: &now,
 	})
 }
 
-// snapshotPassport собирает паспорт расчёта из входа и результата симуляции.
-func (s *GtForecastService) snapshotPassport(req GtSimulateRequest, res GtSimulateDTO) GtSnapshotPassport {
+// snapshotPassport собирает паспорт расчёта из входа и результата симуляции;
+// start — стартовые ЖД-сутки (для агрегатов по суткам).
+func (s *GtForecastService) snapshotPassport(start time.Time, req GtSimulateRequest, res GtSimulateDTO) GtSnapshotPassport {
 	p := GtSnapshotPassport{
 		Engine: "unloadsim", Days: req.Days, UseNorm: req.UseNorm,
 		CutoffHour: s.cutoffHour(), Overrides: len(req.Overrides), Trains: len(res.Trains),
-		Lines: []GtSnapshotLinePassport{},
+		Lines:   []GtSnapshotLinePassport{},
+		Summary: gtSnapshotSummary(start, res),
 	}
 	for _, f := range res.Flows {
 		l := GtSnapshotLinePassport{Terminal: f.Terminal, CargoKey: f.CargoKey}
@@ -310,6 +317,30 @@ func (s *GtForecastService) SnapshotAnalytics(ctx context.Context, from, to time
 	}}
 	slotsCSV := [][]string{{"план_на", "станция", "нитка_мск", "нитка_жд"}}
 	metaCSV := [][]string{{"план_на", "станция", "вид", "время_расчёта", "сохранил", "старт", "горизонт", "паспорт"}}
+	// summary.csv — агрегаты обстановки из паспорта: строка «ИТОГО» по станции и
+	// строка на терминал (панель «обстановка дня», docs/ANALYTICS.md §7.1).
+	summaryCSV := [][]string{{
+		"план_на", "вид", "станция", "терминал",
+		"поездов_в_очереди", "вагонов_в_очереди", "у_ворот_поездов", "у_ворот_вагонов",
+		"волна_поездов", "волна_вагонов", "поездов_3_7_сут", "поездов_дальше_7_сут",
+		"брошенных", "брошенных_вагонов", "брошенных_у_ворот", "ожидающих_по_расчёту",
+		"ниток_сегодня", "ниток_завтра", "вагонов_в_нитках_завтра",
+		"прибытие_сегодня", "прибытие_завтра", "остаток_на_конец", "перенесено_поездов",
+		"простой_мин", "сумма_норм", "нагрузка_плана_завтра",
+		"свободных_ниток_0", "свободных_ниток_1", "свободных_ниток_2",
+	}}
+	summaryRow := func(planDate, kind, station, terminal string, r GtSnapshotSummaryRow) []string {
+		return []string{
+			planDate, kind, station, terminal,
+			strconv.Itoa(r.TrainsQueue), strconv.Itoa(r.WagonsQueue), strconv.Itoa(r.TrainsGate), strconv.Itoa(r.WagonsGate),
+			strconv.Itoa(r.TrainsWave), strconv.Itoa(r.WagonsWave), strconv.Itoa(r.Trains3to7), strconv.Itoa(r.TrainsFar),
+			strconv.Itoa(r.TrainsBros), strconv.Itoa(r.WagonsBros), strconv.Itoa(r.TrainsBrosGate), strconv.Itoa(r.TrainsWaiting),
+			strconv.Itoa(r.NitkiDay0), strconv.Itoa(r.NitkiDay1), strconv.Itoa(r.WagonsNitkiDay1),
+			strconv.Itoa(r.ArrivalDay0), strconv.Itoa(r.ArrivalDay1), strconv.Itoa(r.RemainingDay0), strconv.Itoa(r.CarriedDay0),
+			strconv.Itoa(r.IdleMinDay0), strconv.Itoa(r.NormSpeed), strconv.FormatFloat(r.PlanLoadDay1, 'f', 2, 64),
+			strconv.Itoa(r.FreeSlotsH0), strconv.Itoa(r.FreeSlotsH1), strconv.Itoa(r.FreeSlotsH2),
+		}
+	}
 
 	for _, sn := range snaps {
 		planDate := time.Time(sn.PlanDate).Format("2006-01-02")
@@ -318,6 +349,22 @@ func (s *GtForecastService) SnapshotAnalytics(ctx context.Context, from, to time
 			planDate, sn.Station, sn.Kind, computedAt, sn.SavedBy,
 			time.Time(sn.StartDate).Format("2006-01-02"), strconv.Itoa(sn.DaysCount), sn.Meta,
 		})
+		// Паспорт есть у снапшотов с 000064; у старых meta = null — строк не будет.
+		if sn.Meta != "" && sn.Meta != "null" {
+			var passport GtSnapshotPassport
+			if err := json.Unmarshal([]byte(sn.Meta), &passport); err != nil {
+				return nil, fmt.Errorf("снапшот %s/%s: паспорт не разбирается: %w", planDate, sn.Station, err)
+			}
+			summaryCSV = append(summaryCSV, summaryRow(planDate, sn.Kind, sn.Station, "ИТОГО", passport.Summary.Total))
+			terms := make([]string, 0, len(passport.Summary.ByTerminal))
+			for term := range passport.Summary.ByTerminal {
+				terms = append(terms, term)
+			}
+			sort.Strings(terms)
+			for _, term := range terms {
+				summaryCSV = append(summaryCSV, summaryRow(planDate, sn.Kind, sn.Station, term, passport.Summary.ByTerminal[term]))
+			}
+		}
 
 		var trains []GtTrainDTO
 		if err := json.Unmarshal([]byte(sn.Trains), &trains); err != nil {
@@ -404,7 +451,7 @@ func (s *GtForecastService) SnapshotAnalytics(ctx context.Context, from, to time
 
 	for name, records := range map[string][][]string{
 		"trains.csv": trainsCSV, "gantt_days.csv": ganttCSV, "free_slots.csv": slotsCSV,
-		"meta.csv": metaCSV,
+		"meta.csv": metaCSV, "summary.csv": summaryCSV,
 	} {
 		w, err := zw.Create(name)
 		if err != nil {
