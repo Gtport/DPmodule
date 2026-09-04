@@ -46,13 +46,23 @@ func TestGtTransitTrains(t *testing.T) {
 		{Index: "X1", StationOper: "П", Status: ip(10), ProgJd: prog, Naznach: "АЭ"},
 		{Index: "X2", StationOper: "П", Status: ip(2), ProgJd: nil, Naznach: "АЭ"},
 		{Index: "X3", StationOper: "П", Status: ip(2), ProgJd: prog, Naznach: "УТ-1"},
+		// Брошенный: ключ агрегации id_status5 уезжает в поезд как bros_id.
+		{Index: "9001-001-9840", StationOper: "ЮКТАЛИ", Status: ip(5), ProgJd: lt("2026-08-07T08:00:00"),
+			IdStatus5: "9001-001-9840|93210|2026-08-01T04:10:00", Naznach: "АЭ", GruzpolS: "АЭ",
+			StanNazn: "МЫС АСТАФЬЕВА", StationNach: "МЕЖДУРЕЧЕНСК", CargoGroup: "УГОЛЬ"},
 	}
 	known := map[string]bool{"АЭ": true, "ГУТ-2": true}
 	univers := map[string]bool{"МЫС АСТАФЬЕВА|УЛАК": true}
 
 	got := gtTransitTrains(rows, known, univers)
-	if len(got) != 2 {
-		t.Fatalf("поездов %d, ожидалось 2", len(got))
+	if len(got) != 3 {
+		t.Fatalf("поездов %d, ожидалось 3", len(got))
+	}
+	if got[2].Status != "5" || got[2].BrosID != "9001-001-9840|93210|2026-08-01T04:10:00" || got[2].DelayHours != 72 {
+		t.Errorf("брошенный: статус %q bros_id %q задержка %v", got[2].Status, got[2].BrosID, got[2].DelayHours)
+	}
+	if got[0].BrosID != "" {
+		t.Errorf("у поезда в пути bros_id должен быть пуст, получено %q", got[0].BrosID)
 	}
 
 	tr := got[0]
@@ -107,6 +117,39 @@ func TestGtTransitTrains(t *testing.T) {
 	}
 	if got[1].IdleHours != nil || got[1].TimeOp != nil {
 		t.Errorf("поезд без полей простоя/операции должен оставить их пустыми: %v %v", got[1].IdleHours, got[1].TimeOp)
+	}
+}
+
+// Подклейка активного броска к поезду по id_status5: совпавший ключ даёт
+// реквизиты и ответственность по коду (5/01 — порт, прочее и пусто —
+// перевозчик); поезд без ключа или без активной записи остаётся без броска.
+func TestGtAttachBros(t *testing.T) {
+	d := domain.LocalTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
+	pod := domain.LocalTime(time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC))
+	trains := []GtTrainDTO{
+		{Index: "A", Status: "5", BrosID: "A|1|t"},
+		{Index: "B", Status: "5", BrosID: "B|2|t"},
+		{Index: "C", Status: "5", BrosID: "C|3|t"}, // в реестре нет
+		{Index: "D", Status: "2"},
+	}
+	active := []domain.Bros{
+		{ID: "A|1|t", DateBr: &d, StationBr: "ЮКТАЛИ", DorogaBr: "ДВС", Reason: "5", DatePod: &pod, VagonCount: 71},
+		{ID: "B|2|t", DateBr: &d, StationBr: "ТАЙШЕТ", DorogaBr: "ВСБ", Reason: "", VagonCount: 64},
+	}
+	gtAttachBros(trains, active)
+	if b := trains[0].Bros; b == nil || b.StationBr != "ЮКТАЛИ" || b.Responsibility != domain.BrosSidePort || b.DatePod == nil || b.VagonCount != 71 {
+		t.Errorf("поезд A: %+v", trains[0].Bros)
+	}
+	if b := trains[1].Bros; b == nil || b.Responsibility != domain.BrosSideCarrier || b.DorogaBr != "ВСБ" {
+		t.Errorf("поезд B (код пуст → перевозчик): %+v", trains[1].Bros)
+	}
+	if trains[2].Bros != nil || trains[3].Bros != nil {
+		t.Errorf("поезда без активной записи / без ключа должны остаться без броска: %+v %+v", trains[2].Bros, trains[3].Bros)
+	}
+	for _, c := range []struct{ code, want string }{{"5", domain.BrosSidePort}, {"01", domain.BrosSidePort}, {"22", domain.BrosSideCarrier}, {"", domain.BrosSideCarrier}} {
+		if got := domain.BrosResponsibility(c.code); got != c.want {
+			t.Errorf("код %q → %q, ожидалось %q", c.code, got, c.want)
+		}
 	}
 }
 

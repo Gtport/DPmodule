@@ -40,6 +40,24 @@ type Bros struct {
 	UpdatedAt   *LocalTime `json:"updated_at"`
 }
 
+// Ответственность за бросок по коду причины (решение владельца 03.09.2026,
+// docs/GLOSSARY.md «Код причины броска»): коды порта → «порт», всё прочее и
+// пустой код → «перевозчик». Эталон группировки — экспорт gtport
+// (reason IN ('5','01') → порт).
+const (
+	BrosSidePort    = "порт"
+	BrosSideCarrier = "перевозчик"
+)
+
+// BrosResponsibility — сторона ответственности по коду причины.
+func BrosResponsibility(reason string) string {
+	switch reason {
+	case "5", "05", "01", "1":
+		return BrosSidePort
+	}
+	return BrosSideCarrier
+}
+
 // BrosFilter — фильтр отчёта по броскам (перенос gtport): терминалы, период,
 // статус активности. Пустые поля — без ограничения.
 type BrosFilter struct {

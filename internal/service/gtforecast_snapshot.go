@@ -300,6 +300,7 @@ func (s *GtForecastService) SnapshotAnalytics(ctx context.Context, from, to time
 		"операция", "время_операции", "стоит_ч", "км_до_назначения", "часов_хода",
 		"задержка_ч", "план_жд", "расчёт_жд", "прогноз_жд", "откл_сут",
 		"факт_прибытия_жд", "прогноз_vs_факт_ч",
+		"бросок_дата", "бросок_станция", "бросок_дорога", "бросок_код", "ответственность", "подъём_план",
 	}}
 	ganttCSV := [][]string{{
 		"план_на", "вид", "станция", "терминал", "груз", "сутки", "план_скорость",
@@ -333,6 +334,10 @@ func (s *GtForecastService) SnapshotAnalytics(ctx context.Context, from, to time
 					diffStr = strconv.FormatFloat(d, 'f', 1, 64)
 				}
 			}
+			bros := [6]string{}
+			if b := t.Bros; b != nil {
+				bros = [6]string{fmtDate(b.DateBr), b.StationBr, b.DorogaBr, b.Reason, b.Responsibility, fmtDate(b.DatePod)}
+			}
 			subs := t.SubGroups
 			if len(subs) == 0 {
 				subs = []GtSubGroupDTO{{}}
@@ -346,6 +351,7 @@ func (s *GtForecastService) SnapshotAnalytics(ctx context.Context, from, to time
 					strconv.FormatFloat(t.DelayHours, 'f', -1, 64),
 					fmtLT(t.PlanJd), fmtLT(t.RaschJd), fmtLT(t.ProgJd),
 					fmtF(t.Mistake), factStr, diffStr,
+					bros[0], bros[1], bros[2], bros[3], bros[4], bros[5],
 				})
 			}
 		}
@@ -431,6 +437,13 @@ func fmtF(f *float64) string {
 		return ""
 	}
 	return strconv.FormatFloat(*f, 'f', 2, 64)
+}
+
+func fmtDate(lt *domain.LocalTime) string {
+	if lt == nil {
+		return ""
+	}
+	return time.Time(*lt).Format("2006-01-02")
 }
 
 func fmtF1(f *float64) string {

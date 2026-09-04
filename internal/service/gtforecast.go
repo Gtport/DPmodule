@@ -102,11 +102,27 @@ type GtTrainDTO struct {
 	TimeOp        *domain.LocalTime `json:"time_op,omitempty"`         // последняя операция (самая поздняя по вагонам)
 	Oper          string            `json:"oper,omitempty"`            // имя последней операции
 	IdleHours     *float64          `json:"idle_hours,omitempty"`      // простой на станции операции, ч (минимальный по вагонам)
+	// Бросок: ключ агрегации id_status5 (= Bros.ID) у поездов статуса 5 и
+	// реквизиты активного броска из реестра (подклейка в Simulate).
+	BrosID string          `json:"bros_id,omitempty"`
+	Bros   *GtTrainBrosDTO `json:"bros,omitempty"`
 	// DelayHours — эффективная задержка (эталон delay_hours): 72 у брошенных
 	// конвейером, значение правки у what-if-бросков/восстановлений, 0 иначе.
 	DelayHours float64         `json:"delay_hours"`
 	VagonCount int             `json:"vagon_count"`
 	SubGroups  []GtSubGroupDTO `json:"sub_groups"`
+}
+
+// GtTrainBrosDTO — реквизиты активного броска поезда на момент расчёта
+// (реестр bros; аналитика «обстановка», docs/ANALYTICS.md §7.1).
+type GtTrainBrosDTO struct {
+	DateBr         *domain.LocalTime `json:"date_br"`
+	StationBr      string            `json:"station_br"`
+	DorogaBr       string            `json:"doroga_br"`
+	Reason         string            `json:"reason"`         // код причины РЖД («» — не указан)
+	Responsibility string            `json:"responsibility"` // порт | перевозчик (по коду, правило владельца)
+	DatePod        *domain.LocalTime `json:"date_pod"`       // плановый подъём
+	VagonCount     int               `json:"vagon_count"`
 }
 
 // GtOperationDTO — блок диаграммы Ганта (выгрузка / остаток / простой).
@@ -218,14 +234,15 @@ type GtForecastService struct {
 	snapshots port.GtSnapshotRepository
 	plans     port.PlanRepository      // свободные нитки — из текущего плана подвода
 	lines     port.CargoWorkRepository // правка скоростей линий из вкладки
+	bros      port.BrosRepository      // реквизиты активных бросков к поездам статуса 5 (nil — без подклейки)
 }
 
 func NewGtForecastService(actual *ActualCache, dir *DirectoryCache,
 	history port.HistoryRepository, cargo *CargoWorkService, cfg *ConfigCache,
 	snapshots port.GtSnapshotRepository, plans port.PlanRepository,
-	lines port.CargoWorkRepository) *GtForecastService {
+	lines port.CargoWorkRepository, bros port.BrosRepository) *GtForecastService {
 	return &GtForecastService{actual: actual, dir: dir, history: history, cargo: cargo,
-		cfg: cfg, snapshots: snapshots, plans: plans, lines: lines}
+		cfg: cfg, snapshots: snapshots, plans: plans, lines: lines, bros: bros}
 }
 
 // GtSpeedUpdate — правка скоростей линии выгрузки (диалог настроек вкладки).
@@ -336,6 +353,15 @@ func (s *GtForecastService) Simulate(ctx context.Context, req GtSimulateRequest)
 		return GtSimulateDTO{}, fmt.Errorf("прибывшие за сутки: %w", err)
 	}
 	trains = append(trains, gtArrivedTrains(rows, known)...)
+
+	// Реквизиты активных бросков — к поездам статуса 5 по ключу id_status5.
+	if s.bros != nil {
+		active, err := s.bros.Active(ctx)
+		if err != nil {
+			return GtSimulateDTO{}, fmt.Errorf("активные броски: %w", err)
+		}
+		gtAttachBros(trains, active)
+	}
 
 	// Фиксированное стартовое время what-if — от БАЗОВЫХ поездов, до правок
 	// (эталон fixedStartTime: правка, снявшая план с последнего планового,
@@ -509,6 +535,7 @@ func gtTransitTrains(rows []domain.Dislocation, known map[string]bool, univers m
 					DelayHours: delay,
 					DorogaOper: r.DorogaOper, StanNazn: r.StanNazn, RasstStanNazn: r.RasstStanNazn,
 					TimeOp: r.TimeOp, Oper: r.Oper, IdleHours: gtIdleHours(r),
+					BrosID: r.IdStatus5,
 				},
 				subs: map[string]*GtSubGroupDTO{},
 			}
@@ -561,6 +588,34 @@ func gtTransitTrains(rows []domain.Dislocation, known map[string]bool, univers m
 		out = append(out, t.t)
 	}
 	return out
+}
+
+// gtAttachBros подклеивает к поездам очереди реквизиты активного броска по
+// ключу id_status5 (= Bros.ID). Поезд без ключа или без активной записи в
+// реестре остаётся без броска: реестр заполняется reconcile-слоем после
+// Stage 4, и снимок может опережать его на один пересбор.
+func gtAttachBros(trains []GtTrainDTO, active []domain.Bros) {
+	if len(active) == 0 {
+		return
+	}
+	byID := make(map[string]*domain.Bros, len(active))
+	for i := range active {
+		byID[active[i].ID] = &active[i]
+	}
+	for i := range trains {
+		if trains[i].BrosID == "" {
+			continue
+		}
+		b, ok := byID[trains[i].BrosID]
+		if !ok {
+			continue
+		}
+		trains[i].Bros = &GtTrainBrosDTO{
+			DateBr: b.DateBr, StationBr: b.StationBr, DorogaBr: b.DorogaBr,
+			Reason: b.Reason, Responsibility: domain.BrosResponsibility(b.Reason),
+			DatePod: b.DatePod, VagonCount: b.VagonCount,
+		}
+	}
 }
 
 // gtIdleHours — простой вагона на станции операции в часах (prost_dn/ch/min

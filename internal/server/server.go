@@ -532,7 +532,7 @@ func Build(
 				// снапшоты планов и CSV-аналитика «прогноз vs факт».
 				gtSvc = service.NewGtForecastService(
 					actualCache, dirCache, historyRepo, cwSvc, cfgCache, gtSnapRepo,
-					planRepo, cargoWorkRepo)
+					planRepo, cargoWorkRepo, brosRepo)
 				handler.NewGtForecastHandler(gtSvc).RegisterRoutes(api)
 			}
 		}
